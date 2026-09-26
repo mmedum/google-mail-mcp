@@ -1,0 +1,12 @@
+budget: 24000 characters
+message 000000000000001d · thread 000000000000001d · 2026-03-04 04:00 UTC · labels: SPAM, UNREAD
+<<<untrusted-mail TESTTOKEN: headers from winner@prizes.invalid in 000000000000001d>>>
+From: Prize Desk <winner@prizes.invalid>
+To: Rae Reader <reader@example.com>
+Date: Wed, 04 Mar 2026 04:00:00 +0000
+Subject: You have won
+Message-ID: <fixture.000000000000001d@mail.example.com>
+<<<end-untrusted-mail TESTTOKEN>>>
+<<<untrusted-mail TESTTOKEN: body from winner@prizes.invalid in 000000000000001d>>>
+Congratulations! Claim your prize at prizes.invalid.
+<<<end-untrusted-mail TESTTOKEN>>>

@@ -1,0 +1,35 @@
+budget: 24000 characters
+4 messages on this page
+complete: yes
+
+message 0000000000000006 · thread 0000000000000006 · 2026-03-02 18:00 UTC · labels: INBOX, Projects · attachments: yes
+<<<untrusted-mail TESTTOKEN: message summary from zoe@example.org in 0000000000000006>>>
+From: Zoë Ångström <zoe@example.org>
+To: Rae Reader <reader@example.com>
+Subject: Résumé du projet
+Snippet: Bonjour Rae, Voici le résumé du projet, avec les pièces jointes. À bientôt, Zoë
+<<<end-untrusted-mail TESTTOKEN>>>
+
+message 0000000000000007 · thread 0000000000000006 · 2026-03-02 19:00 UTC · labels: INBOX, Projects · attachments: yes
+<<<untrusted-mail TESTTOKEN: message summary from hanako@example.com in 0000000000000007>>>
+From: 山田 花子 <hanako@example.com>
+To: Rae Reader <reader@example.com>
+Subject: Re: プロジェクト概要
+Snippet: レイさん、 資料を確認しました。ありがとうございます。 山田
+<<<end-untrusted-mail TESTTOKEN>>>
+
+message 0000000000000008 · thread 0000000000000006 · 2026-03-02 20:00 UTC · labels: INBOX, Projects · attachments: yes
+<<<untrusted-mail TESTTOKEN: message summary from ivan@example.org in 0000000000000008>>>
+From: Иван Петров <ivan@example.org>
+To: Rae Reader <reader@example.com>
+Subject: Re: Отчёт по проекту
+Snippet: Добрый день! Спасибо за отчёт. Всё получил. Иван
+<<<end-untrusted-mail TESTTOKEN>>>
+
+message 0000000000000009 · thread 0000000000000006 · 2026-03-02 21:00 UTC · labels: INBOX, UNREAD, Projects · attachments: no
+<<<untrusted-mail TESTTOKEN: message summary from lilei@example.com in 0000000000000009>>>
+From: 李雷 <lilei@example.com>
+To: Rae Reader <reader@example.com>
+Subject: Re: 项目概要
+Snippet: 你好， 收到，谢谢。 李雷
+<<<end-untrusted-mail TESTTOKEN>>>

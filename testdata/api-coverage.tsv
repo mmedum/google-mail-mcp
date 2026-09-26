@@ -1,0 +1,83 @@
+# One verdict per published Gmail API method. Held by `go run ./scripts/gates api-coverage`.
+# Columns: method id, state, phase, verdict. The verb and path live in testdata/api-surface.json.
+# used: a client call exists (internal/gapi). planned: judged used or gated, built in the named phase (§16).
+# out: deferred or written off; the verdict says why.
+gmail.users.drafts.create	planned	2	Used: `create_draft`, including replies (§4.5)
+gmail.users.drafts.delete	planned	2	Used: `delete_draft`, with `confirm: true`. Permanent, but only ever the caller's own unsent text; §17 argues why it is not behind the destructive flag
+gmail.users.drafts.get	used	-	Used: `get_draft`, and the witness read before `update_draft` (§4.4)
+gmail.users.drafts.list	used	-	Used: `list_drafts`
+gmail.users.drafts.send	planned	3	Gated: `send_draft`, registered only with `GMAIL_ENABLE_SEND=true`; never retried; the outcome is settled by reading (§4.3)
+gmail.users.drafts.update	planned	2	Used: `update_draft`. PUT-only and no ETag; guarded by the message-id witness of §4.4, a recorded deviation (§17b)
+gmail.users.getProfile	used	-	Used: `get_profile`; also the login email lookup and `doctor`'s probe
+gmail.users.history.list	planned	1	Used: `list_changes` (§7.6)
+gmail.users.labels.create	planned	2	Used: `create_label`
+gmail.users.labels.delete	planned	3	Gated: `delete_label`, behind `GMAIL_ENABLE_DESTRUCTIVE`; it strips the label from every message and cannot be undone
+gmail.users.labels.get	used	-	Used: `list_labels` with `counts: true` (list omits the counts)
+gmail.users.labels.list	used	-	Used: `list_labels`, and label-name resolution (§6.3)
+gmail.users.labels.patch	planned	2	Used: `update_label`
+gmail.users.labels.update	out	-	Written off: PUT replaces the whole label; `patch` covers every edit (§4.4)
+gmail.users.messages.attachments.get	used	-	Used: `download_attachment`
+gmail.users.messages.batchDelete	out	-	Written off: "provides no guarantees that messages were not already deleted or even existed", so its result cannot be reported truthfully; `delete_permanently` loops `messages.delete` under a cap instead
+gmail.users.messages.batchModify	planned	2	Used: `modify_labels` on 2–100 explicit ids (§4.7 caps it far below Google's 1000)
+gmail.users.messages.delete	planned	3	Gated: `delete_permanently`, registered only with `GMAIL_ENABLE_DESTRUCTIVE=true`; the only scope it accepts is `https://mail.google.com/`
+gmail.users.messages.get	used	-	Used: `get_message`, `download_attachment` (to find the part), reply construction (to read `Message-ID`/`References`)
+gmail.users.messages.import	out	-	Written off: mailbox migration, not an assistant task; it runs spam and virus classification as though delivered
+gmail.users.messages.insert	out	-	Written off for the server: it plants mail that was never delivered, bypassing the classification a received message gets. Used by the live driver only, to write the messages it reads (§9.1)
+gmail.users.messages.list	used	-	Used: `search_messages`
+gmail.users.messages.modify	planned	2	Used: `modify_labels` on one message
+gmail.users.messages.send	out	-	Written off: sending goes through `drafts.send` only, so what leaves is always something that existed as a draft the person could see (§4.2); `send_draft` covers every case a one-shot send would
+gmail.users.messages.trash	planned	2	Used: `trash`
+gmail.users.messages.untrash	planned	2	Used: `restore`
+gmail.users.settings.cse.identities.create	out	-	Written off with CSE
+gmail.users.settings.cse.identities.delete	out	-	Written off with CSE
+gmail.users.settings.cse.identities.get	out	-	Written off with CSE
+gmail.users.settings.cse.identities.list	out	-	Written off: client-side encryption is Workspace-admin key management; an encrypted body is unreadable through this API regardless
+gmail.users.settings.cse.identities.patch	out	-	Written off with CSE
+gmail.users.settings.cse.keypairs.create	out	-	Written off with CSE
+gmail.users.settings.cse.keypairs.disable	out	-	Written off with CSE
+gmail.users.settings.cse.keypairs.enable	out	-	Written off with CSE
+gmail.users.settings.cse.keypairs.get	out	-	Written off with CSE
+gmail.users.settings.cse.keypairs.list	out	-	Written off with CSE
+gmail.users.settings.cse.keypairs.obliterate	out	-	Written off with CSE: permanent key destruction
+gmail.users.settings.delegates.create	out	-	Written off: grants another person the mailbox; `gmail.settings.sharing`
+gmail.users.settings.delegates.delete	out	-	Written off: `gmail.settings.sharing`
+gmail.users.settings.delegates.get	out	-	Written off with `delegates.list`
+gmail.users.settings.delegates.list	out	-	Written off: delegation is account administration; `gmail.settings.basic`
+gmail.users.settings.filters.create	out	-	Deferred (§17): a filter's `action.forward` is auto-forwarding by another route; buildable only with forward refused structurally
+gmail.users.settings.filters.delete	out	-	Deferred with `filters.create`
+gmail.users.settings.filters.get	planned	1	Used: `list_filters` (one filter)
+gmail.users.settings.filters.list	planned	1	Used: `list_filters`
+gmail.users.settings.forwardingAddresses.create	out	-	Written off: exfiltration path (§4.1); `gmail.settings.sharing`
+gmail.users.settings.forwardingAddresses.delete	out	-	Written off: `gmail.settings.sharing`, which this server never requests
+gmail.users.settings.forwardingAddresses.get	planned	1	Used: `get_settings`
+gmail.users.settings.forwardingAddresses.list	planned	1	Used: `get_settings` (read)
+gmail.users.settings.getAutoForwarding	planned	1	Used: `get_settings` (read, so a person can see whether mail is leaving)
+gmail.users.settings.getImap	planned	1	Used: `get_settings`
+gmail.users.settings.getLanguage	planned	1	Used: `get_settings`
+gmail.users.settings.getPop	planned	1	Used: `get_settings`
+gmail.users.settings.getVacation	planned	1	Used: `get_settings`
+gmail.users.settings.sendAs.create	out	-	Written off: `gmail.settings.sharing`; identity administration
+gmail.users.settings.sendAs.delete	out	-	Written off: `gmail.settings.sharing`
+gmail.users.settings.sendAs.get	planned	2	Used: `create_draft` validates a chosen `from`
+gmail.users.settings.sendAs.list	planned	1	Used: `get_settings`, and the `from` choices of `create_draft`
+gmail.users.settings.sendAs.patch	out	-	Written off: `gmail.settings.basic`/`sharing`; signature editing is deferred to §17
+gmail.users.settings.sendAs.smimeInfo.delete	out	-	Written off: key administration
+gmail.users.settings.sendAs.smimeInfo.get	out	-	Written off with `smimeInfo.list`
+gmail.users.settings.sendAs.smimeInfo.insert	out	-	Written off: uploads a private key
+gmail.users.settings.sendAs.smimeInfo.list	out	-	Written off: S/MIME key administration
+gmail.users.settings.sendAs.smimeInfo.setDefault	out	-	Written off: key administration
+gmail.users.settings.sendAs.update	out	-	Written off: PUT, and as `patch`
+gmail.users.settings.sendAs.verify	out	-	Written off: `gmail.settings.sharing`
+gmail.users.settings.updateAutoForwarding	out	-	Written off: turning forwarding on sends all future mail elsewhere; the single most dangerous write this API offers to an injected instruction (§4.1)
+gmail.users.settings.updateImap	out	-	Written off: client-protocol configuration, not an assistant task
+gmail.users.settings.updateLanguage	out	-	Written off: display preference, no assistant task
+gmail.users.settings.updatePop	out	-	Written off: as IMAP
+gmail.users.settings.updateVacation	out	-	Deferred (§17): an auto-reply writes to every sender, so it is sending by another name and needs its own argument
+gmail.users.stop	out	-	Written off with `watch`
+gmail.users.threads.delete	planned	3	Gated: `delete_permanently` on a thread, as `messages.delete`
+gmail.users.threads.get	used	-	Used: `get_thread`
+gmail.users.threads.list	used	-	Used: `search_threads`
+gmail.users.threads.modify	planned	2	Used: `modify_labels` on a thread
+gmail.users.threads.trash	planned	2	Used: `trash` on a thread
+gmail.users.threads.untrash	planned	2	Used: `restore` on a thread
+gmail.users.watch	out	-	Written off: push goes to a Cloud Pub/Sub topic, which a stdio process cannot own or receive. `list_changes` polls `history.list` instead

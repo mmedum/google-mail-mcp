@@ -1,0 +1,8 @@
+# Tools and options the live driver (scripts/livemail) does not drive, and why.
+# Held by `go run ./scripts/gates live-cover`: every tool a step never calls and
+# every option no step sends needs a row here; a row for something a step now
+# drives fails. Columns, TAB-separated:
+#   tool or tool.option	undrivable|undriven	reason
+# undrivable: this account or API cannot exercise it; say what blocks it.
+# undriven: a step could and does not yet; say what closing it takes. Ceiling in
+# scripts/gates/livecover.go, and it only goes down.

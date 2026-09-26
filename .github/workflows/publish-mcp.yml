@@ -1,0 +1,116 @@
+# Publishes this server's entry to the MCP registry.
+#
+# Its own workflow, callable from release.yml and by hand, because the
+# registry checks the bundle's download URL before it accepts an entry:
+# this can only run after the release exists, and a step that runs last
+# needs a way to be run again on its own, including for an old tag.
+#
+# Its own job for privilege too. mcp-publisher is a third-party binary
+# handed a token that can publish under this namespace; it runs here, not
+# beside the release job's contents: write.
+#
+# Both paths read the published release's checksums.txt and verify
+# cosign's signature over it before reading it, so the hash a client
+# checks is the number cosign signed.
+name: Publish to the MCP registry
+
+on:
+  workflow_call:
+    inputs:
+      tag:
+        description: The release tag whose bundle the entry points at.
+        required: true
+        type: string
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: The release tag whose bundle the entry points at, such as v1.0.0.
+        required: true
+        type: string
+
+permissions:
+  contents: read
+
+defaults:
+  run:
+    shell: bash
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      # The registry proves the namespace from this token.
+      id-token: write
+      contents: read
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        with:
+          go-version-file: go.mod
+
+      # cosign is here to verify; this job signs nothing.
+      - uses: sigstore/cosign-installer@6f9f17788090df1f26f669e9d70d6ae9567deba6 # v4.1.2
+        with:
+          cosign-release: v3.1.3
+
+      - name: Take the checksums from the published release
+        env:
+          TAG: ${{ inputs.tag }}
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -euo pipefail
+          gh release download "${TAG}" --pattern 'checksums.txt*' --dir dist
+          ls dist
+
+      # The entry's fileSha256 comes out of this file. Unverified, anyone
+      # able to replace a release asset could edit it and this job would
+      # copy their digest into a registry whose entries cannot be
+      # withdrawn. The identity carries the exact tag, not a pattern: a
+      # file signed by another workflow or for another tag is not this
+      # release.
+      - name: Verify the signature over them before reading them
+        env:
+          TAG: ${{ inputs.tag }}
+          REPO: ${{ github.repository }}
+        run: |
+          set -euo pipefail
+          cosign verify-blob dist/checksums.txt \
+            --bundle dist/checksums.txt.bundle \
+            --certificate-identity \
+              "https://github.com/${REPO}/.github/workflows/release.yml@refs/tags/${TAG}" \
+            --certificate-oidc-issuer https://token.actions.githubusercontent.com
+
+      - name: Write the entry, and show it
+        env:
+          TAG: ${{ inputs.tag }}
+        run: |
+          set -euo pipefail
+          go run ./scripts/gates server-json "${TAG}" dist/checksums.txt > server.json
+          cat server.json
+
+      - name: Publish it
+        env:
+          # Pinned, like everything else that decides what a release is.
+          PUBLISHER_VERSION: v1.8.1
+          BASE: https://github.com/modelcontextprotocol/registry/releases/download
+        run: |
+          set -euo pipefail
+          asset=mcp-publisher_linux_amd64.tar.gz
+          curl -fsSL -O "${BASE}/${PUBLISHER_VERSION}/${asset}"
+          curl -fsSL -O "${BASE}/${PUBLISHER_VERSION}/${asset}.sigstore.json"
+          # A version names which artifact to fetch, not that its bytes
+          # are the ones upstream built. The binary is verified before it
+          # is unpacked, which is why it is a file and not a pipe into tar.
+          # The identity carries the exact tag, so bumping the version
+          # without bumping it here fails loudly.
+          cosign verify-blob "${asset}" \
+            --bundle "${asset}.sigstore.json" \
+            --certificate-identity \
+              "https://github.com/modelcontextprotocol/registry/.github/workflows/release.yml@refs/tags/${PUBLISHER_VERSION}" \
+            --certificate-oidc-issuer https://token.actions.githubusercontent.com
+          tar xzf "${asset}" mcp-publisher
+          ./mcp-publisher login github-oidc
+          ./mcp-publisher publish server.json

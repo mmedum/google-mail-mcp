@@ -22,7 +22,7 @@ or missed. Siblings are never named in this repository (rule 1).
 
 ## Hard rules
 
-1. **Nothing internal, ever.** No organisation names, message, thread,
+1. **Nothing internal, ever.** No organization names, message, thread,
    draft, label or history ids, account or correspondent email
    addresses, Cloud project ids, OAuth client ids or secrets; no
    subject, body, snippet, header, attachment name or label name from a
@@ -149,7 +149,9 @@ than the gate loosened.
   draft and label; `internal/render/` text output and the untrusted-content
   boundaries; `internal/service/` orchestration and policy;
   `internal/tools/` the MCP tools; `internal/server/` SDK wiring and the
-  schema dump; `internal/redact/` log and output masking.
+  schema dump, with `internal/server/testutil/` connecting a client to
+  it in tests; `internal/redact/` log and output masking;
+  `internal/version/` the build stamp.
 - `scripts/gates/` the repository's own checks, as Go;
   `scripts/internal/` what the gates and drivers share;
   `scripts/livemail/` the live driver; `scripts/evals/` the model-facing
@@ -172,7 +174,7 @@ changelog-links transcript live-cover outcomes evals-check mcpb
 release server-json actionlint goreleaser-check parity
 ```
 
-Plus tests for new behaviour, `/simplify`, and `/code-review high` and
+Plus tests for new behavior, `/simplify`, and `/code-review high` and
 `/security-review` with findings resolved or written down in §16a. Look
 at the schema diff for anything breaking, resources included.
 
@@ -200,7 +202,7 @@ a fresh session: read this file, the status line and §15, §16, §17 and
 §17a of `docs/architecture.md`, `CHANGELOG.md` under `[Unreleased]`,
 `git log --oneline -20` and `git status`; run `make check`; then continue
 the phase §16 names, on a topic branch. Commit at the end of the phase,
-say what is ready to tag, and stop. A tag does not authorise the next
+say what is ready to tag, and stop. A tag does not authorize the next
 phase; wait for an explicit "go".
 
 ## Docs and releases

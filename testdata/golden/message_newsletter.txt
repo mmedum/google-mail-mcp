@@ -1,0 +1,33 @@
+budget: 24000 characters
+message 0000000000000004 · thread 0000000000000004 · 2026-03-02 15:00 UTC · labels: INBOX, CATEGORY_PROMOTIONS, Newsletters
+<<<untrusted-mail TESTTOKEN: headers from news@harbor-weekly.invalid in 0000000000000004>>>
+From: Harbor Weekly <news@harbor-weekly.invalid>
+To: Rae Reader <reader@example.com>
+Date: Mon, 02 Mar 2026 15:00:00 +0000
+Subject: This week at the harbor
+Message-ID: <fixture.0000000000000004@mail.example.com>
+List-Unsubscribe: <mailto:leave@harbor-weekly.invalid>, <https://harbor-weekly.invalid/unsubscribe>
+<<<end-untrusted-mail TESTTOKEN>>>
+<<<untrusted-mail TESTTOKEN: body from news@harbor-weekly.invalid in 0000000000000004>>>
+This week at the harbor
+
+The spring regatta opens on Saturday. Boats launch at nine from the east pier.
+
+Members can renew at https://members.example.com/renew <track.harbor-weekly.invalid> before Friday.
+
+Read the full issue online <harbor-weekly.invalid>.
+
+Harbor office hours: 9–5, Monday to Friday.
+
+Everyone welcome.
+
+[image: Harbor Weekly logo]
+
+Unsubscribe <harbor-weekly.invalid>
+<<<end-untrusted-mail TESTTOKEN>>>
+note: 185 characters a reader would not see were removed from the body (display:none 100; hidden by a style sheet rule 32; text colored like its background 30; HTML comment 19; zero or near-zero font size 2; zero-width or bidi-control characters 2).
+note: 1 link whose text names a different site from the one it points to; the block below pairs each.
+<<<untrusted-mail TESTTOKEN: links whose text names another site from news@harbor-weekly.invalid in 0000000000000004>>>
+text names members.example.com, link points to track.harbor-weekly.invalid
+<<<end-untrusted-mail TESTTOKEN>>>
+note: the body was converted from HTML; no image or link was fetched.

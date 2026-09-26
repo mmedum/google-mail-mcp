@@ -1,0 +1,25 @@
+version: 2
+updates:
+  - package-ecosystem: gomod
+    directory: "/"
+    schedule:
+      interval: weekly
+    open-pull-requests-limit: 5
+    # One pull request for the week's module bumps rather than one each.
+    groups:
+      go-deps:
+        patterns:
+          - "*"
+  - package-ecosystem: github-actions
+    directory: "/"
+    schedule:
+      interval: weekly
+    open-pull-requests-limit: 5
+    # codeql-action is three actions that must run the same version: init
+    # writes a configuration that analyze reads back, and a mismatch fails
+    # the run. Ungrouped, each of the three bump pull requests fails
+    # CodeQL and none can merge first.
+    groups:
+      codeql-action:
+        patterns:
+          - "github/codeql-action*"

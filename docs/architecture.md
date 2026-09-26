@@ -1,11 +1,11 @@
 # Architecture — google-mail-mcp
 
-**Status: design only, 2026-09-24. Nothing is built or tagged.** This
-document is the whole of phase −1: the platform facts, the design bets,
-a verdict on all 79 published API methods, the phase plan and the
-spikes that must answer before the phases that depend on them. Phase 0
-(§16) starts from this file and `CLAUDE.md` alone, after the maintainer
-says "go".
+**Status: phase 0 is built and run live, 2026-09-26, on a topic branch, and
+not tagged.** The scaffolding of §5a, every gate of the `check` list,
+`internal/mime`'s parse side, the in-memory mailbox and the eight read
+tools; `make check` green; two live runs against a real account, 12 steps
+and 38 of 38 options each, transcripts read. Spikes F, G and K are
+answered in §15. Phase 1 waits for an explicit "go".
 
 ## 1. Mission and scope
 
@@ -32,7 +32,7 @@ from.
   person's own Cloud project with the Gmail MCP API enabled. Requests
   `gmail.readonly` and `gmail.compose`, and ships **no send, no trash
   and no delete tool** — although `gmail.compose` can send (§2.10). Its
-  surface is search, read, drafts and labelling. It is the strongest
+  surface is search, read, drafts and labeling. It is the strongest
   evidence that registration, not scope, is how a Gmail server withholds
   sending, and §4.2 takes the same position.
 - **The claude.ai Gmail connector.** Hosted; asks for approval before
@@ -142,7 +142,7 @@ Each is checked against the Gmail v1 discovery document (revision
     `STARRED`, `IMPORTANT`, `SPAM`, `TRASH`, `SENT`, `DRAFT`,
     `CATEGORY_*`), and Google calls that list "not exhaustive". `SENT`
     and `DRAFT` cannot be applied by hand, and a draft cannot be
-    labelled. A thread-level change does not reach messages added to the
+    labeled. A thread-level change does not reach messages added to the
     thread later. At most 5,000 labels per account.
 13. **Batches.** `batchModify` accepts up to 1,000 ids; the HTTP batch
     endpoint caps at 100 calls and Google's error guide says not to
@@ -218,7 +218,7 @@ add its own voice to the attacker's.
    `untrusted_*`.
 2. **Hidden text is removed and counted.** HTML is converted to text by
    the server. Text a person would not see — `display:none`, zero-size
-   or same-colour-as-background runs, zero-width and bidi-control
+   or same-color-as-background runs, zero-width and bidi-control
    characters, HTML comments — is dropped, and the result says how many
    characters were dropped and why. The count is the signal: legitimate
    mail rarely hides much.
@@ -411,7 +411,7 @@ sibling.** Three siblings' newest pins already trailed upstream:
 |---|---|
 | Go | 1.27.1 (`go-version-file: go.mod` in CI) |
 | MCP Go SDK | v1.8.0 |
-| golangci-lint | v2.13.2 |
+| golangci-lint | v2.14.0 |
 | goreleaser | v2.18.2 |
 | cosign | v3.1.3 (`cosign-release:` on the installer) |
 | syft | v1.52.0 (`syft-version:` on the installer) |
@@ -458,7 +458,7 @@ comment, re-resolved at scaffold time.
 | `release-notes` | the CHANGELOG section lifted verbatim, refusing an empty one |
 | `api-coverage` | offline, three directions; the row bound to its method by verb and path from the client's AST; out-of-scope methods derived from discovery scopes; a minimum length on a write-off reason; floors on methods, verdicts and client calls |
 | `api-diff` (manual) | one fetch covering methods and fields; written through a temp file and rename; a network failure leaves the committed snapshot untouched, **held by a test against a closed port** |
-| `api-fields` | recursive over inline objects; every struct the wire package declares judged; floors on published and modelled fields |
+| `api-fields` | recursive over inline objects; every struct the wire package declares judged; floors on published and modeled fields |
 | `schema-diff` | a committed baseline so it works before the first tag; the tool surface **and resources**; fails on a removed tool, a lost input or output field, or a new required input; the whole `mcp.Tool` dumped, `_meta` and output schema included; a floor on tools |
 | `leaks` | allow-list rules, each anchored on a shape generated fields cannot take (an `@` with a dotted domain; a Gmail URL prefix; a keyword before a hex id; the OAuth shapes); every allow-list entry carries a reason, asserted; tracked files and untracked-unignored files both scanned; a tracked binary (ELF, Mach-O, PE magic) is a finding; history mode covering blobs, commit messages and tags with a derived floor; findings printed redacted |
 | `transcript` | drivers cannot reach `os.Stdout`, `os.Stderr` or `log.*`; exactly one exempt package with exactly one write site, which redacts; an unlisted driver fails; a listed directory that is missing fails; a floor on mentions |
@@ -477,7 +477,7 @@ comment, re-resolved at scaffold time.
 | Component | Must carry |
 |---|---|
 | `cmd` | `run(args, stdin, stdout, stderr, env)` so the serve path is testable; `help`/`-h` exit 0; an unknown command prints usage to stderr and exits non-zero; errors printed through a redactor that masks addresses and client ids; disconnect matched by JSON-RPC code; the token warmed off the startup path; version from ldflags with a `debug.ReadBuildInfo` fallback |
-| `login`/`logout`/`status`/`doctor` | `--no-browser` printing the URL and the exact `ssh -L` line; `status --json`; the account and client-secret path masked in every output; `doctor` walking client JSON → token → granted scopes → API enabled → one `getProfile`, naming what is missing; the keyring replaced package-wide in tests by `TestMain`, with a decoy test proving the replacement happened |
+| `login`/`logout`/`status`/`doctor` | `logout` revoking the token at Google before deleting the local copy, and leaving an env-provided token alone; `--no-browser` printing the URL and the exact `ssh -L` line; `status --json`; the account and client-secret path masked in every output; `doctor` walking client JSON → token → granted scopes → API enabled → one `getProfile`, naming what is missing; the keyring replaced package-wide in tests by `TestMain`, with a decoy test proving the replacement happened |
 | `auth` | loopback on `127.0.0.1:0`; PKCE S256; `state` checked; a bounded HTTP client on refresh; tokeninfo errors stripped of their URL, which carries the token; `invalid_grant` mapped to "log in again"; granted scopes stored |
 | `scopes` | one source of truth per mode; an implication table (`https://mail.google.com/` ⊃ `gmail.modify` ⊃ `gmail.readonly`, `gmail.compose`, `gmail.labels`) with `Satisfied` and `Missing`; the generator for `docs/gcp-setup.md` |
 | `credentials` | resolution **env → keyring → file**, documented as that order (four sibling documents describe the fallbacks and got the precedence wrong); a silent keyring told apart from a missing login; a warning on every use of the plaintext file |
@@ -488,7 +488,7 @@ comment, re-resolved at scaffold time.
 | `server` | per-call log line with method, tool, outcome, milliseconds and units; the SDK's own logger only at debug; instructions built from the configuration, so read-only and send-enabled servers say different things; the schema dump taking the SDK version from build info rather than a constant (two siblings' constants are already wrong) |
 | `app` | startup assembly reachable without `main`, used by the schema dump; settings that redact the token when logged |
 | `tools` | one `register` deciding annotations, gating, `_meta`, the dry-run context and the rendering from one `Kind`; an explicit output schema with `date-time` for times; `Content` set so the SDK does not duplicate the JSON |
-| `gapi` | write and repeatability derived from the HTTP method, POST failing closed, declared exceptions only; a POST retried only on a turned-away status; `Retry-After` honoured as a minimum; full-jitter backoff; the unit budget of §4.9; a body cap; transport errors stripped of the URL; **a context under which the client refuses every write**, which is what `dry_run` is; a closed `Class` type with `Retryable()`; addresses masked in API error text; a per-call counter of requests and units |
+| `gapi` | write and repeatability derived from the HTTP method, POST failing closed, declared exceptions only; a POST retried only on a turned-away status; `Retry-After` honored as a minimum; full-jitter backoff; the unit budget of §4.9; a body cap; an origin allow-list, port included, checked before any credential is attached and on every redirect; transport errors stripped of the URL; **a context under which the client refuses every write**, which is what `dry_run` is; a closed `Class` type with `Retryable()`; addresses masked in API error text; a per-call counter of requests and units |
 | logging test | every registered tool driven with canary values at debug; asserts the logs are non-empty and contain no canary |
 
 ## 6. Addressing
@@ -499,10 +499,10 @@ By the ids Gmail gives them, which are stable and opaque, and which the
 standard's §2 allows ("a stable id the platform gives you"). The model
 never sees an index or a position. A result that lists messages gives
 each id beside it. A draft has two ids — the draft's and the message
-inside it — and every draft result names both, labelled, because
+inside it — and every draft result names both, labeled, because
 confusing them is how a reply lands on the wrong message.
 
-RFC 5322 `Message-ID` values are shown as `rfc822_message_id` and
+RFC 5322 `Message-ID` values are shown as `untrusted_rfc822_message_id` and
 accepted wherever a message id is, prefixed with `rfc822:`; the server
 resolves them through `rfc822msgid:` search and refuses `[ambiguous]` if
 two messages carry one (mailing lists do that).
@@ -545,7 +545,7 @@ forces:
 | `invalid` | malformed or under-specified arguments, or too large (§2.6) | fix the arguments |
 | `not_found` | no such message, thread, draft or label | check the id |
 | `auth` | not signed in, token revoked or expired (§2.11), or scope missing | run `login` |
-| `forbidden` | signed in, but the organisation or account refuses this | ask an administrator |
+| `forbidden` | signed in, but the organization or account refuses this | ask an administrator |
 | `conflict` | the state refuses it: label name taken, `SENT` applied by hand | read and reconsider |
 | `stale` | the draft moved since the witness was read (§4.4) | re-read and retry |
 | `ambiguous` | a label name or `rfc822:` id matched more than one | pass an id |
@@ -606,19 +606,19 @@ JSON `raw` path; above it, multipart media upload; above 35 MB it
 refuses before building (§2.6). `update_draft` per §4.4; `delete_draft`
 with `confirm: true` (§17.1); `list_drafts`, `get_draft`.
 
-### 7.5 Organising
+### 7.5 Organizing
 
 `modify_labels` adds and removes labels on up to 100 message or thread
 ids. Archiving is removing `INBOX`, marking read is removing `UNREAD`,
 starring is adding `STARRED`; the description says so rather than
 growing a tool per verb, and the result names the verb it amounted to.
 `trash`, `restore` (§4.6). `create_label`, `update_label` (patch: name,
-colour, visibility). `delete_label` gated.
+color, visibility). `delete_label` gated.
 
 ### 7.6 Changes
 
 `list_changes` takes a `history_id` (from `get_profile` or a previous
-call) and returns added, deleted and relabelled messages since, with the
+call) and returns added, deleted and relabeled messages since, with the
 next `history_id`. A 404 is not `not_found`: it is reported as
 **"cursor expired — history before this point is gone"** with the
 current `history_id` to restart from and a note that changes in between
@@ -682,95 +682,12 @@ as `get_thread` and `get_message` under the same budget and boundaries;
 
 ### 8a. Every published method, with a verdict
 
-All 79 methods of the discovery document, revision 20260917. Phase 0
-moves this table into `testdata/api-coverage.tsv`, and the `api-coverage`
-gate holds it from then on; this table is then deleted from here and
-replaced by a pointer, so that there is one copy.
-
-Thirty-four used, four gated, three deferred to §17, thirty-eight
-written off.
-
-| Method | Verb | Verdict |
-|---|---|---|
-| `drafts.create` | POST | Used: `create_draft`, including replies (§4.5) |
-| `drafts.delete` | DELETE | Used: `delete_draft`, with `confirm: true`. Permanent, but only ever the caller's own unsent text; §17 argues why it is not behind the destructive flag |
-| `drafts.get` | GET | Used: `get_draft`, and the witness read before `update_draft` (§4.4) |
-| `drafts.list` | GET | Used: `list_drafts` |
-| `drafts.send` | POST | Gated: `send_draft`, registered only with `GMAIL_ENABLE_SEND=true`; never retried; the outcome is settled by reading (§4.3) |
-| `drafts.update` | PUT | Used: `update_draft`. PUT-only and no ETag; guarded by the message-id witness of §4.4, a recorded deviation (§17b) |
-| `getProfile` | GET | Used: `get_profile`; also the login email lookup and `doctor`'s probe |
-| `history.list` | GET | Used: `list_changes` (§7.6) |
-| `labels.create` | POST | Used: `create_label` |
-| `labels.delete` | DELETE | Gated: `delete_label`, behind `GMAIL_ENABLE_DESTRUCTIVE`; it strips the label from every message and cannot be undone |
-| `labels.get` | GET | Used: `list_labels` with `counts: true` (list omits the counts) |
-| `labels.list` | GET | Used: `list_labels`, and label-name resolution (§6.3) |
-| `labels.patch` | PATCH | Used: `update_label` |
-| `labels.update` | PUT | Written off: PUT replaces the whole label; `patch` covers every edit (§4.4) |
-| `messages.attachments.get` | GET | Used: `download_attachment` |
-| `messages.batchDelete` | POST | Written off: "provides no guarantees that messages were not already deleted or even existed", so its result cannot be reported truthfully; `delete_permanently` loops `messages.delete` under a cap instead |
-| `messages.batchModify` | POST | Used: `modify_labels` on 2–100 explicit ids (§4.7 caps it far below Google's 1000) |
-| `messages.delete` | DELETE | Gated: `delete_permanently`, registered only with `GMAIL_ENABLE_DESTRUCTIVE=true`; the only scope it accepts is `https://mail.google.com/` |
-| `messages.get` | GET | Used: `get_message`, `download_attachment` (to find the part), reply construction (to read `Message-ID`/`References`) |
-| `messages.import` | POST | Written off: mailbox migration, not an assistant task; it runs spam and virus classification as though delivered |
-| `messages.insert` | POST | Written off for the server: it plants mail that was never delivered, bypassing the classification a received message gets. Used by the live driver only, to write the messages it reads (§9.1) |
-| `messages.list` | GET | Used: `search_messages` |
-| `messages.modify` | POST | Used: `modify_labels` on one message |
-| `messages.send` | POST | Written off: sending goes through `drafts.send` only, so what leaves is always something that existed as a draft the person could see (§4.2); `send_draft` covers every case a one-shot send would |
-| `messages.trash` | POST | Used: `trash` |
-| `messages.untrash` | POST | Used: `restore` |
-| `settings.cse.identities.create` | POST | Written off with CSE |
-| `settings.cse.identities.delete` | DELETE | Written off with CSE |
-| `settings.cse.identities.get` | GET | Written off with CSE |
-| `settings.cse.identities.list` | GET | Written off: client-side encryption is Workspace-admin key management; an encrypted body is unreadable through this API regardless |
-| `settings.cse.identities.patch` | PATCH | Written off with CSE |
-| `settings.cse.keypairs.create` | POST | Written off with CSE |
-| `settings.cse.keypairs.disable` | POST | Written off with CSE |
-| `settings.cse.keypairs.enable` | POST | Written off with CSE |
-| `settings.cse.keypairs.get` | GET | Written off with CSE |
-| `settings.cse.keypairs.list` | GET | Written off with CSE |
-| `settings.cse.keypairs.obliterate` | POST | Written off with CSE: permanent key destruction |
-| `settings.delegates.create` | POST | Written off: grants another person the mailbox; `gmail.settings.sharing` |
-| `settings.delegates.delete` | DELETE | Written off: `gmail.settings.sharing` |
-| `settings.delegates.get` | GET | Written off with `delegates.list` |
-| `settings.delegates.list` | GET | Written off: delegation is account administration; `gmail.settings.basic` |
-| `settings.filters.create` | POST | Deferred (§17): a filter's `action.forward` is auto-forwarding by another route; buildable only with forward refused structurally |
-| `settings.filters.delete` | DELETE | Deferred with `filters.create` |
-| `settings.filters.get` | GET | Used: `list_filters` (one filter) |
-| `settings.filters.list` | GET | Used: `list_filters` |
-| `settings.forwardingAddresses.create` | POST | Written off: exfiltration path (§4.1); `gmail.settings.sharing` |
-| `settings.forwardingAddresses.delete` | DELETE | Written off: `gmail.settings.sharing`, which this server never requests |
-| `settings.forwardingAddresses.get` | GET | Used: `get_settings` |
-| `settings.forwardingAddresses.list` | GET | Used: `get_settings` (read) |
-| `settings.getAutoForwarding` | GET | Used: `get_settings` (read, so a person can see whether mail is leaving) |
-| `settings.getImap` | GET | Used: `get_settings` |
-| `settings.getLanguage` | GET | Used: `get_settings` |
-| `settings.getPop` | GET | Used: `get_settings` |
-| `settings.getVacation` | GET | Used: `get_settings` |
-| `settings.sendAs.create` | POST | Written off: `gmail.settings.sharing`; identity administration |
-| `settings.sendAs.delete` | DELETE | Written off: `gmail.settings.sharing` |
-| `settings.sendAs.get` | GET | Used: `create_draft` validates a chosen `from` |
-| `settings.sendAs.list` | GET | Used: `get_settings`, and the `from` choices of `create_draft` |
-| `settings.sendAs.patch` | PATCH | Written off: `gmail.settings.basic`/`sharing`; signature editing is deferred to §17 |
-| `settings.sendAs.smimeInfo.delete` | DELETE | Written off: key administration |
-| `settings.sendAs.smimeInfo.get` | GET | Written off with `smimeInfo.list` |
-| `settings.sendAs.smimeInfo.insert` | POST | Written off: uploads a private key |
-| `settings.sendAs.smimeInfo.list` | GET | Written off: S/MIME key administration |
-| `settings.sendAs.smimeInfo.setDefault` | POST | Written off: key administration |
-| `settings.sendAs.update` | PUT | Written off: PUT, and as `patch` |
-| `settings.sendAs.verify` | POST | Written off: `gmail.settings.sharing` |
-| `settings.updateAutoForwarding` | PUT | Written off: turning forwarding on sends all future mail elsewhere; the single most dangerous write this API offers to an injected instruction (§4.1) |
-| `settings.updateImap` | PUT | Written off: client-protocol configuration, not an assistant task |
-| `settings.updateLanguage` | PUT | Written off: display preference, no assistant task |
-| `settings.updatePop` | PUT | Written off: as IMAP |
-| `settings.updateVacation` | PUT | Deferred (§17): an auto-reply writes to every sender, so it is sending by another name and needs its own argument |
-| `stop` | POST | Written off with `watch` |
-| `threads.delete` | DELETE | Gated: `delete_permanently` on a thread, as `messages.delete` |
-| `threads.get` | GET | Used: `get_thread` |
-| `threads.list` | GET | Used: `search_threads` |
-| `threads.modify` | POST | Used: `modify_labels` on a thread |
-| `threads.trash` | POST | Used: `trash` on a thread |
-| `threads.untrash` | POST | Used: `restore` on a thread |
-| `watch` | POST | Written off: push goes to a Cloud Pub/Sub topic, which a stdio process cannot own or receive. `list_changes` polls `history.list` instead |
+All 79 methods of the discovery document have a verdict in
+`testdata/api-coverage.tsv` — used, planned for a named phase, or
+written off with a reason — and the `api-coverage` gate holds it. The
+table that stood here during design moved there in phase 0, so there is
+one copy. At that move: thirty-four used, four gated, three deferred to
+§17, thirty-eight written off.
 
 ### 8b. Field coverage
 
@@ -780,7 +697,7 @@ Phase 0 records a verdict for every field of `Message`, `MessagePart`,
 `ListMessagesResponse`, `ListThreadsResponse`, `ListDraftsResponse`,
 `ListHistoryResponse`, `VacationSettings`, `AutoForwarding`,
 `ForwardingAddress`, `ImapSettings`, `PopSettings`, `LanguageSettings`,
-`SendAs` and `Filter` with its criteria and action — modelled, or left
+`SendAs` and `Filter` with its criteria and action — modeled, or left
 out with a reason — held by `api-fields`. Two are called out now:
 `Message.classificationLabelValues` (Workspace classification; read and
 shown, never written, since `batchModify` can change it and that is an
@@ -862,7 +779,7 @@ OS keyring with a warned 0600 file fallback.
 Gmail adds three things:
 
 - **Every scope is restricted** (§2.11). The person's own client is
-  either **Internal** to a Workspace organisation, or **External** in
+  either **Internal** to a Workspace organization, or **External** in
   Testing with themselves as a test user — whose refresh tokens expire
   after seven days. `docs/gcp-setup.md` says which to choose and why,
   `doctor` reports the client's type where the token response shows
@@ -975,10 +892,23 @@ None has run.
 - **Spike F — `messages.insert` as a fixture source.** Do inserted
   messages appear in `threads.list`, `q` search and `history.list` like
   delivered ones? §9.1's driver depends on it.
+
+  **Answered 2026-09-26.** Yes for listing and search: inserted messages
+  appear in `threads.list`, in `q` search and in `rfc822msgid:` lookups
+  like delivered ones. `history.list` is not yet exercised (phase 1). And
+  a date surprise: with `internalDateSource=receivedTime`, Gmail recorded
+  the message's own `Date` header as `internalDate`, while `after:` still
+  matched it by the time of the insert (§18 row 35).
 - **Spike G — scope refusals.** Under `gmail.modify`, `messages.delete`
   is refused 403 (the reason §4.6 gates by scope as well); under
   `gmail.readonly`, every write is refused. The error shape of each,
   for §6.5's mapping.
+
+  **Positive half answered 2026-09-26:** `messages.delete` on the run's
+  own message under `gmail.modify` answered 403, so permanent deletion
+  needs `https://mail.google.com/` and §4.6's scope gate holds. The
+  negative half needs a profile granted only `gmail.readonly` and is
+  still owed.
 - **Spike H — rate limiting.** What a 429 looks like: `Retry-After`
   present or not, and the reason string that tells the sending limit
   apart from the rest.
@@ -989,6 +919,10 @@ None has run.
   none, or an error? §10.
 - **Spike K — expired history.** A `startHistoryId` far below the
   current one: 404, and the body's shape. §7.6.
+
+  **Answered 2026-09-26:** `startHistoryId=1` answered 404, as the sync
+  guide says. The body's shape is still to be recorded when
+  `list_changes` is built (phase 1).
 
 Spikes B, C and D send real mail and need the maintainer's second
 address; they are the "ask before doing" of `CLAUDE.md`.
@@ -1015,6 +949,26 @@ untrusted-content rendering of §4.1 and the budget of §4.8. §8a moved
 to `testdata/api-coverage.tsv`; §8b's record. Spikes F, G and K. A live
 run whose transcript is read.
 
+Built 2026-09-25, on a topic branch. Beyond the list above: the smoke gate
+probes `server/discover`, since the 2026-07-28 revision is not reachable
+through `initialize` (§18 row 32); the README's tool table is held to the
+binary's surface; and `messages.attachments.get` moved into this phase,
+because `get_message` must fetch body parts Gmail stores behind an
+attachment id (§7.2). After the reviews, the boundary between mail and the
+server's voice is a type rather than a rule: `internal/render` writes
+server text only from typed parts, so sender text cannot reach a note
+without going through a block, and a property test plants markers in every
+sender-controlled field of hostile mail across every renderer.
+
+Run live 2026-09-26, twice. Both runs passed every step, and reading the
+first transcript found four things the green steps did not: the Cloud
+project number in the `Received` header Gmail stamps on inserted mail,
+which the transcript redactor let through (§18 row 34); dates that were
+the `Date` header rather than the time of the insert (spike F, §18 row
+35); Gmail's result estimate stated as a count when it was 201 for a
+search matching 3 (§18 row 33); and escaped angle brackets in the
+driver's argument echo. The second run is the one with all four fixed.
+
 **Phase 1 — attachments, changes, settings, resources (v0.2.0).**
 `download_attachment`, `list_changes`, `get_settings`, `list_filters`,
 the three resources. Spike I.
@@ -1035,8 +989,41 @@ injection tasks of §13; the surface frozen into the schema baseline;
 
 ### 16a. Found by review, and fixed
 
-Empty. Each phase's `/code-review high` and `/security-review` findings
-are recorded here with the commit that fixed them.
+Each phase's `/code-review high` and `/security-review` findings, with
+what fixed them.
+
+- **Phase 0, security review: sender text reached the server's voice.**
+  A part's `charset` parameter, which RFC 2231 lets a sender
+  percent-encode with newlines, was printed unsanitized in a `note:` line
+  after the untrusted block closed; a crafted header could write fake
+  server notes. An unsafe attachment name was echoed in a note the same
+  way, on one line. Fixed: `internal/mime` returns a charset label only
+  when it has the IANA shape, and the attachment note no longer names the
+  file. `TestSenderTextNeverReachesTheServersVoice` drives hostile raw mail
+  through parse, model and render, and fails on the old code in all three
+  cases.
+- **Phase 0, code review: ten findings, all fixed, each with a test that
+  failed first.**
+  - Three more ways sender text reached the server's voice: a `mailto:`
+    link's percent-decoded host in the link-mismatch note (hosts are now
+    host-shaped or absent); the senders of messages a thread read did not
+    show (now inside a block); and invisible or bidi characters in an
+    address, which were never stripped (now stripped and counted).
+  - Two quadratic paths over sender text: `StripInvisible` on a long
+    invisible run, and quote-span marking. Both are linear, held by tests
+    with 300k-character and 200k-span inputs.
+  - A `Retry-After` above the cap was honored on 503 and 5xx, so one call
+    could sleep an hour. One place now reports a long wait for every
+    status.
+  - The server instructions named tools phase 0 does not have. They are
+    now built from the tools actually registered.
+  - Google's error text kept a third party's domain. Addresses in it are
+    now masked domain and all.
+  - Listings read each row one after another, 22 round trips for a default
+    `search_threads`. They now read up to five at a time, in row order,
+    with the first failing row's error.
+  - The scripts carried their own copy of `redact.ID` with different
+    rules. They now use the server's.
 
 ### Closing a phase
 
@@ -1062,9 +1049,10 @@ are recorded here with the commit that fixed them.
    "what might be". Proposed: shown, marked as a draft, after the sent
    messages. **Open.**
 3. **go-licenses v1.6.0 or v2.** One sibling runs the v2 module; the
-   rest call v1.6.0 current. Unknown whether v2 classifies MIT-0, which
-   one of our transitive candidates carries. Decide in phase 0 by
-   running both over the real module graph. **Open.**
+   rest call v1.6.0 current. **Decided in phase 0: v1.6.0.** It runs
+   clean over this module's real graph on Go 1.27.1 (2026-09-25), and no
+   dependency here carries MIT-0, which was the case for v2. Revisit when
+   one does.
 4. **Vacation responder writes.** `updateVacation` is deferred: an
    auto-reply writes to every sender, which is sending by another name.
    If built, it belongs behind `GMAIL_ENABLE_SEND` with the recipient
@@ -1085,7 +1073,10 @@ are recorded here with the commit that fixed them.
 
 ### 17a. Deferred cleanups
 
-None yet.
+- **A header block larger than the whole budget still gets a 200-character
+  body.** Only a message with an enormous header set reaches it, and the
+  result says it was cut; bounding the header block itself belongs with
+  phase 1's budget work.
 
 ### 17b. Deviations from the shared standard
 
@@ -1095,7 +1086,7 @@ The standard at `~/.claude/mcp-server-standard.md`, read 2026-09-24.
 |---|---|---|
 | Errors use six classes | Twelve (§6.5) | `stale` and `ambiguous_outcome` are forced by §2.3 and §2.4; `rate_limited` must separate the sending limit from request limits; `forbidden` and `auth` ask for different fixes; `ambiguous` and `blocked` as the siblings use them |
 | Never overwrite; compute a minimal diff | Held for labels (patch); **not holdable** for drafts | `drafts.update` is PUT-only and gmail/v1 has no ETag (§2.4). §4.4's witness narrows the lost-update window without closing it, and omitted fields are carried over rather than dropped |
-| Destructive tools are not registered unless enabled | Held, and extended to sending | One sibling now registers deletes and refuses per call, and another retired its flag in favour of per-call guards. Neither fits here: the permanent-delete methods accept only a scope this server requests only when the flag is set, so a registered delete tool would fail every call by default; and a registered send tool is exactly the control an injected instruction gets to argue with |
+| Destructive tools are not registered unless enabled | Held, and extended to sending | One sibling now registers deletes and refuses per call, and another retired its flag in favor of per-call guards. Neither fits here: the permanent-delete methods accept only a scope this server requests only when the flag is set, so a registered delete tool would fail every call by default; and a registered send tool is exactly the control an injected instruction gets to argue with |
 | Read-only mode requests read-only scopes | Held | Recorded because one sibling requests write scopes in read-only mode to avoid a second consent; here the difference is `gmail.readonly` versus a scope that can send |
 
 Everything else is adopted as written, including the preamble's three
@@ -1141,7 +1132,7 @@ live** — §15 exists to settle these, and they are marked.
 | 19 | System label ids are a closed, documented set | Gmail labels guide | **Refuted.** "Not exhaustive." Label resolution never hard-codes the list beyond aliases for the common ones; spike I |
 | 20 | `SENT` and `DRAFT` can be applied like other labels | Gmail labels guide | **Refuted.** Refused; `conflict` in §6.5 |
 | 21 | Mail content can be shown to the model as plain text | Workspace MCP guide ("hidden instructions that can hijack your session"); a public issue reporting an injected forward | **Rejected.** §4.1 |
-| 22 | The vendor's own Gmail MCP server offers send | Workspace MCP configuration guide | **Refuted.** Requests `gmail.readonly` and `gmail.compose`, ships drafts but no send, trash or delete. Supports §4.2's position. Whether it is labelled Developer Preview is **tier 3** |
+| 22 | The vendor's own Gmail MCP server offers send | Workspace MCP configuration guide | **Refuted.** Requests `gmail.readonly` and `gmail.compose`, ships drafts but no send, trash or delete. Supports §4.2's position. Whether it is labeled Developer Preview is **tier 3** |
 | 23 | Sending limits are request quota | Gmail and Workspace help | **Refuted.** Separate daily and per-message recipient limits, surfaced as 429, possibly minutes late. §6.5 `rate_limited` separates them; spike H |
 | 24 | Attachments may be read from any path the caller names | A surveyed server's README | **Rejected.** Only base names inside `GMAIL_LOCAL_DIR`. The exfiltration scenario is this design's inference, not a reported incident |
 | 25 | Non-ASCII headers can be sent raw | RFC 5322 §2.2, RFC 2047; public 400s on accented display names | **Refuted.** Encoded-words, ≤75 characters each. §4.10; spike E |
@@ -1150,3 +1141,8 @@ live** — §15 exists to settle these, and they are marked.
 | 28 | A sibling's newest pin is upstream's newest | Upstream release listings, 2026-09-24 | **Refuted** for goreleaser, syft and codeql-action. §5a takes pins from upstream |
 | 29 | A sibling's generated setup page is gated, as its source comments say | The sibling's gates and tests | **Refuted (tier 2).** Nothing read the page. §5a's `staleness` generates and compares it |
 | 30 | The MCP Go SDK version can be a constant in the schema dump | Two siblings' constants against their `go.mod` | **Refuted.** Both constants were a version behind. §5a derives it from build info |
+| 31 | The discovery document the design was verified against is current | `api-diff` on 2026-09-25 fetched revision 20260921; compared with 20260917 excluding `revision` and `etag` | **Confirmed.** No method, parameter, scope or schema changed. The committed snapshot is 20260921 |
+| 32 | A smoke test can reach the newest protocol revision through `initialize` | MCP Go SDK v1.8.0 source, `negotiatedVersion`; the smoke gate against the built binary | **Refuted.** From 2026-07-28 the handshake is deprecated and the SDK caps `initialize` at 2025-11-25; the newest revision is reached through `server/discover`, which the smoke gate now probes and holds to the SDK's newest |
+| 33 | `resultSizeEstimate` is a usable count | Live run, 2026-09-26: a search scoped to a label holding 3 messages, and a draft search matching 2 | **Refuted.** Gmail answered 201 for both. The text no longer states it; the structured field is described as an estimate that is often far off |
+| 34 | A transcript of the driver's own mail carries nothing about the account | Live run, 2026-09-26, reading the transcript | **Refuted.** Gmail stamps inserted mail with `Received: from <number> named unknown by gmailapi.google.com`, and the number is the OAuth client's Cloud project. The transcript redactor now masks bare numbers of ten digits and more |
+| 35 | `messages.insert` with `internalDateSource=receivedTime` records the time of the insert | Discovery document (the parameter's default and enum); spike F live, 2026-09-26 | **Refuted.** `internalDate` was the message's `Date` header, two days earlier, while `after:` matched the message by the time of the insert. So Gmail's search and `internalDate` can disagree for inserted or imported mail; for delivered mail they agree. The tools show `internalDate` |

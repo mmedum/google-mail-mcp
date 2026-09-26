@@ -1,0 +1,7 @@
+# Goldens and fixtures are compared byte for byte, so they arrive with LF
+# on every platform. A message's own CRLF line endings live in .eml files,
+# which git must not touch.
+* text=auto eol=lf
+*.png binary
+*.pdf binary
+*.eml binary

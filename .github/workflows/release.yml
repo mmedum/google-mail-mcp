@@ -1,0 +1,146 @@
+name: release
+
+on:
+  push:
+    tags: ["v*.*.*"]
+  # GitHub drops tag events past the third when several are pushed at
+  # once, and a release can fail for reasons unrelated to the tag. Run it
+  # by hand against the TAG, not a branch: the checkout, the notes and
+  # goreleaser all read the same ref.
+  workflow_dispatch:
+
+# Read by default; the one job that publishes raises what it needs.
+permissions:
+  contents: read
+
+defaults:
+  run:
+    shell: bash
+
+env:
+  # One goreleaser for every step below. `make pins` holds it equal to
+  # the Makefile's GORELEASER, which is what `release-rehearse` runs.
+  GORELEASER_VERSION: v2.18.2
+
+jobs:
+  # A tag is only a pointer, and nothing stops one landing on a commit
+  # whose CI never ran or ran red. Everything below is irreversible, so a
+  # green `ci` run for this commit comes first.
+  verify-ci:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: read
+      actions: read
+    steps:
+      - name: Require a successful ci run for this commit
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          REPO: ${{ github.repository }}
+          SHA: ${{ github.sha }}
+        run: |
+          set -euo pipefail
+          conclusion=$(gh api \
+            "repos/${REPO}/actions/workflows/ci.yml/runs?head_sha=${SHA}&status=completed" \
+            --jq '[.workflow_runs[] | select(.conclusion != null)][0].conclusion // "none"')
+          echo "ci conclusion for ${SHA}: ${conclusion}"
+          if [ "${conclusion}" != "success" ]; then
+            echo "::error::Refusing to release ${SHA}: ci is '${conclusion}', not 'success'."
+            exit 1
+          fi
+
+  goreleaser:
+    needs: verify-ci
+    runs-on: ubuntu-latest
+    timeout-minutes: 40
+    permissions:
+      contents: write
+      # Keyless signing and build provenance both need an OIDC token.
+      id-token: write
+      attestations: write
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+          # goreleaser reads tags, and a shallow clone has none.
+          fetch-depth: 0
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        with:
+          go-version-file: go.mod
+
+      # ci ran this on three platforms for this commit. This closes the
+      # gap between "ci was green" and "these are the bytes being signed".
+      - name: Test
+        run: go test ./...
+
+      # The CHANGELOG entry is the release note. Written outside the
+      # checkout: goreleaser refuses to release from a dirty tree, and an
+      # untracked file there makes it dirty. `--snapshot` skips that
+      # check, so no rehearsal would find it.
+      - name: Release notes from the CHANGELOG
+        env:
+          REF_NAME: ${{ github.ref_name }}
+        run: go run ./scripts/gates release-notes "${REF_NAME}" > "${RUNNER_TEMP}/release-notes.md"
+
+      # A pinned action does not pin the tool it installs. Both of these
+      # fetch one, so both name its version; `make pins` holds that.
+      - uses: sigstore/cosign-installer@6f9f17788090df1f26f669e9d70d6ae9567deba6 # v4.1.2
+        with:
+          cosign-release: v3.1.3
+      - uses: anchore/sbom-action/download-syft@3ad7283483fc7af8ff2b4ea19663c2d5ca935e26 # v0.24.2
+        with:
+          syft-version: v1.52.0
+
+      # The release claims a tag rebuilds byte for byte. This is the only
+      # thing that proves it: one target, built twice by the same config,
+      # hashes compared. The universal binary and its bundle hook are
+      # skipped, because a single Linux target has no darwin binaries.
+      - name: Reproducible build, first
+        uses: goreleaser/goreleaser-action@f06c13b6b1a9625abc9e6e439d9c05a8f2190e94 # v7.2.3
+        with:
+          version: ${{ env.GORELEASER_VERSION }}
+          args: build --single-target --snapshot --clean --output ${{ runner.temp }}/repro-1
+      - name: Reproducible build, second
+        uses: goreleaser/goreleaser-action@f06c13b6b1a9625abc9e6e439d9c05a8f2190e94 # v7.2.3
+        with:
+          version: ${{ env.GORELEASER_VERSION }}
+          args: build --single-target --snapshot --clean --output ${{ runner.temp }}/repro-2
+      - name: Compare the two builds
+        run: |
+          set -euo pipefail
+          a=$(sha256sum "${RUNNER_TEMP}/repro-1" | cut -d' ' -f1)
+          b=$(sha256sum "${RUNNER_TEMP}/repro-2" | cut -d' ' -f1)
+          if [ "${a}" != "${b}" ]; then
+            echo "::error::The same commit built twice gave ${a} and ${b}; the release is not reproducible."
+            exit 1
+          fi
+          echo "reproducible: ${a}"
+
+      - name: Release
+        uses: goreleaser/goreleaser-action@f06c13b6b1a9625abc9e6e439d9c05a8f2190e94 # v7.2.3
+        with:
+          version: ${{ env.GORELEASER_VERSION }}
+          args: release --clean --release-notes=${{ runner.temp }}/release-notes.md
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      # Provenance ties every published file to this workflow, commit and
+      # runner, checkable with `gh attestation verify`. The bundle is a
+      # subject in its own right: it is what most people install.
+      - uses: actions/attest-build-provenance@4d101475d8b20a2381f78447822ac1eab6504dd8 # v4.2.2
+        with:
+          subject-path: "dist/*.tar.gz,dist/*.zip,dist/*.mcpb,dist/checksums.txt"
+
+  # The registry entry, in its own workflow so it can be run by hand for
+  # a tag that already shipped. publish-mcp.yml says why.
+  registry:
+    needs: goreleaser
+    # A prerelease must not reach the registry: an entry cannot be taken
+    # back. The test is goreleaser's own for `prerelease: auto`.
+    if: ${{ !contains(github.ref_name, '-') }}
+    uses: ./.github/workflows/publish-mcp.yml
+    with:
+      tag: ${{ github.ref_name }}
+    permissions:
+      id-token: write
+      contents: read
