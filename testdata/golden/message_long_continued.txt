@@ -1,0 +1,42 @@
+budget: 3000 characters
+message 0000000000000015 · thread 000000000000000c · 2026-03-03 19:00 UTC · labels: SENT
+<<<untrusted-mail TESTTOKEN: headers from reader@example.com in 0000000000000015>>>
+From: Rae Reader <reader@example.com>
+To: Ada Quill <ada.quill@example.com>, Bruno Fennick <bruno.fennick@example.org>
+Date: Tue, 03 Mar 2026 19:00:00 +0000
+Subject: Re: Q2 roadmap
+Message-ID: <fixture.0000000000000015@mail.example.com>
+In-Reply-To: <fixture.0000000000000014@mail.example.com>
+<<<end-untrusted-mail TESTTOKEN>>>
+(body from character 2212 of 7816)
+<<<untrusted-mail TESTTOKEN: body from reader@example.com in 0000000000000015>>>
+Paragraph 15. We reviewed the venue and agreed to revisit it next week. Nobody raised a blocker, and the notes from the previous session still stand.
+
+Paragraph 16. We reviewed the staffing plan and agreed to revisit it next week. Nobody raised a blocker, and the notes from the previous session still stand.
+
+Paragraph 17. We reviewed the vendor list and agreed to revisit it next week. Nobody raised a blocker, and the notes from the previous session still stand.
+
+Paragraph 18. We reviewed the risk register and agreed to revisit it next week. Nobody raised a blocker, and the notes from the previous session still stand.
+
+Paragraph 19. We reviewed the budget and agreed to revisit it next week. Nobody raised a blocker, and the notes from the previous session still stand.
+
+Paragraph 20. We reviewed the schedule and agreed to revisit it next week. Nobody raised a blocker, and the notes from the previous session still stand.
+
+Paragraph 21. We reviewed the venue and agreed to revisit it next week. Nobody raised a blocker, and the notes from the previous session still stand.
+
+Paragraph 22. We reviewed the staffing plan and agreed to revisit it next week. Nobody raised a blocker, and the notes from the previous session still stand.
+
+Paragraph 23. We reviewed the vendor list and agreed to revisit it next week. Nobody raised a blocker, and the notes from the previous session still stand.
+
+Paragraph 24. We reviewed the risk register and agreed to revisit it next week. Nobody raised a blocker, and the notes from the previous session still stand.
+
+Paragraph 25. We reviewed the budget and agreed to revisit it next week. Nobody raised a blocker, and the notes from the previous session still stand.
+
+Paragraph 26. We reviewed the schedule and agreed to revisit it next week. Nobody raised a blocker, and the notes from the previous session still stand.
+
+Paragraph 27. We reviewed the venue and agreed to revisit it next week. Nobody raised a blocker, and the notes from the previous session still stand.
+
+Paragraph 28. We reviewed the staffing plan and agreed to revisit it next week. Nobody raised a blocker, and the notes from the previous session still stand.
+<<<end-untrusted-mail TESTTOKEN>>>
+collapsed: 71 lines of quoted text; show_quoted=true shows them.
+cut: the body continues at character 4386 of 7816; offset=4386 reads on.

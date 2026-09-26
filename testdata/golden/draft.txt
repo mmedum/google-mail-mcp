@@ -1,0 +1,13 @@
+budget: 24000 characters
+draft r000000000000001b · message 000000000000001a · thread 0000000000000018 · 2026-03-04 02:00 UTC
+<<<untrusted-mail TESTTOKEN: headers from reader@example.com in 000000000000001a>>>
+From: Rae Reader <reader@example.com>
+To: Freya Holm <freya.holm@example.org>
+Date: Wed, 04 Mar 2026 02:00:00 +0000
+Subject: Re: Budget sign-off
+Message-ID: <fixture.000000000000001a@mail.example.com>
+In-Reply-To: <fixture.0000000000000019@mail.example.com>
+<<<end-untrusted-mail TESTTOKEN>>>
+<<<untrusted-mail TESTTOKEN: body from reader@example.com in 000000000000001a>>>
+I will confirm the numbers by Friday.
+<<<end-untrusted-mail TESTTOKEN>>>

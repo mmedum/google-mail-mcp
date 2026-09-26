@@ -1,0 +1,58 @@
+budget: 24000 characters
+thread 0000000000000001 · 3 messages · newest first · labels: INBOX, IMPORTANT, Projects/Offsite, STARRED, SENT, UNREAD
+
+── 3 of 3 · message 0000000000000003 · thread 0000000000000001 · 2026-03-02 14:00 UTC · labels: INBOX, UNREAD, Projects/Offsite
+<<<untrusted-mail TESTTOKEN: headers from bruno.fennick@example.org in 0000000000000003>>>
+From: Bruno Fennick <bruno.fennick@example.org>
+To: Rae Reader <reader@example.com>, Ada Quill <ada.quill@example.com>
+Date: Mon, 02 Mar 2026 06:00:00 -0800
+Subject: Re: Offsite venue
+Message-ID: <fixture.0000000000000003@mail.example.com>
+In-Reply-To: <fixture.0000000000000002@mail.example.com>
+<<<end-untrusted-mail TESTTOKEN>>>
+<<<untrusted-mail TESTTOKEN: body from bruno.fennick@example.org in 0000000000000003>>>
+Agreed, the mill it is. I will book it for the second week of April.
+
+Bruno
+
+[… 16 lines of quoted text collapsed …]
+<<<end-untrusted-mail TESTTOKEN>>>
+collapsed: 16 lines of quoted text; show_quoted=true shows them.
+
+── 2 of 3 · message 0000000000000002 · thread 0000000000000001 · 2026-03-02 12:00 UTC · labels: SENT, Projects/Offsite
+<<<untrusted-mail TESTTOKEN: headers from reader@example.com in 0000000000000002>>>
+From: Rae Reader <reader@example.com>
+To: Ada Quill <ada.quill@example.com>, Bruno Fennick <bruno.fennick@example.org>
+Date: Mon, 02 Mar 2026 12:00:00 +0000
+Subject: Re: Offsite venue
+Message-ID: <fixture.0000000000000002@mail.example.com>
+In-Reply-To: <fixture.0000000000000001@mail.example.com>
+<<<end-untrusted-mail TESTTOKEN>>>
+<<<untrusted-mail TESTTOKEN: body from reader@example.com in 0000000000000002>>>
+The old mill works for me.
+
+[… 13 lines of quoted text collapsed …]
+<<<end-untrusted-mail TESTTOKEN>>>
+collapsed: 13 lines of quoted text; show_quoted=true shows them.
+
+── 1 of 3 · message 0000000000000001 · thread 0000000000000001 · 2026-03-02 09:00 UTC · labels: INBOX, IMPORTANT, Projects/Offsite, STARRED
+<<<untrusted-mail TESTTOKEN: headers from ada.quill@example.com in 0000000000000001>>>
+From: Ada Quill <ada.quill@example.com>
+To: Rae Reader <reader@example.com>
+Cc: Bruno Fennick <bruno.fennick@example.org>
+Date: Mon, 02 Mar 2026 10:00:00 +0100
+Subject: Offsite venue
+Message-ID: <fixture.0000000000000001@mail.example.com>
+<<<end-untrusted-mail TESTTOKEN>>>
+<<<untrusted-mail TESTTOKEN: body from ada.quill@example.com in 0000000000000001>>>
+Hi Rae,
+
+Could we settle the venue for the spring offsite this week? I have two options: the lake house and the old mill.
+
+The lake house sleeps twenty and has a meeting room. The old mill is closer to the station.
+
+Thanks,
+Ada
+[… 4 lines of signature collapsed …]
+<<<end-untrusted-mail TESTTOKEN>>>
+collapsed: a signature (4 lines); show_quoted=true shows them.

@@ -1,0 +1,40 @@
+# Nothing deployer-specific may enter this repository: no OAuth client
+# ids or secrets, no refresh tokens. gitleaks covers what has a
+# credential's shape; `go run ./scripts/gates leaks` covers identifiers
+# and mail content, which are not secrets and pass a credential scanner.
+title = "google-mail-mcp"
+
+[extend]
+useDefault = true
+
+[[rules]]
+id = "google-oauth-client-id"
+description = "Google OAuth client id"
+regex = '''[0-9]{8,}-[a-z0-9]{20,}\.apps\.googleusercontent\.com'''
+
+[[rules]]
+id = "google-oauth-client-secret"
+description = "Google OAuth client secret"
+regex = '''GOCSPX-[A-Za-z0-9_-]{20,}'''
+
+[[rules]]
+id = "google-refresh-token"
+description = "Google OAuth refresh token"
+regex = '''1//0[A-Za-z0-9_-]{30,}'''
+
+[allowlist]
+description = "Module checksums, reserved example domains, and the leak gate's own example"
+paths = [
+  '''go\.sum$''',
+]
+# Allowed as literal values rather than by path, so a real credential in
+# the same file is still a finding. An inline `gitleaks:allow` does not
+# serve: the history scan reads every commit, and a comment clears only
+# the commit that carries it.
+regexes = [
+  # RFC 2606 and RFC 6761 reserve these; they never resolve.
+  '''[A-Za-z0-9._%+\-]+@([A-Za-z0-9.\-]+\.)?(example|test|invalid)(\.[A-Za-z]{2,})?''',
+  # The identifier scan must contain an example of every shape it
+  # catches, or nobody can tell whether its rules match anything.
+  '''123456789012-abcdefghijklmnopqrstuvwxyz012345\.apps\.googleusercontent\.com''', # leakcheck:allow
+]

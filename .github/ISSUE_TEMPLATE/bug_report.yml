@@ -1,0 +1,75 @@
+name: Bug report
+description: Something the server did that it should not have
+labels: [bug]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        **Please do not paste anything from a real mailbox.** Not a subject,
+        a body, a snippet, a header, an attachment name, a label name, a
+        search query, an email address, or a message, thread or draft id.
+        Every message carries other people's addresses and words they wrote
+        to someone else, and a signature carries their phone number.
+
+        **A tool result is mail too.** `get_thread`, `get_message` and the
+        search tools return your mail. That is the answer to you, and this
+        server does not mask it. Describe what came back, or reproduce it
+        against a message you wrote to yourself.
+
+        `doctor`, `status`, `--version` and a debug log **are** safe to
+        paste, and a test holds that rather than hoping: the log carries the
+        method, the tool, the outcome, the duration and a truncated id, and
+        `doctor` and `status` mask the account address, the client id and
+        the client-secret path. Do not paste your OAuth client JSON.
+  - type: textarea
+    id: doctor
+    attributes:
+      label: doctor output
+      description: "`google-mail-mcp doctor`"
+      render: text
+    validations:
+      required: true
+  - type: input
+    id: version
+    attributes:
+      label: Version
+      description: "`google-mail-mcp --version`"
+    validations:
+      required: true
+  - type: dropdown
+    id: install
+    attributes:
+      label: How did you install it?
+      options:
+        - Release archive
+        - go install
+        - Claude Desktop bundle (.mcpb)
+        - Built from source
+    validations:
+      required: true
+  - type: input
+    id: client
+    attributes:
+      label: MCP client
+      placeholder: "Claude Desktop 1.2.3, Claude Code, ..."
+    validations:
+      required: true
+  - type: textarea
+    id: flags
+    attributes:
+      label: Flags in effect
+      description: "GMAIL_READ_ONLY, GMAIL_ENABLE_SEND, GMAIL_ENABLE_DESTRUCTIVE, and any other GMAIL_* you set. Names and values, but not the client JSON or a path inside your home directory."
+      render: text
+  - type: textarea
+    id: what
+    attributes:
+      label: What happened
+      description: What you asked for, what the server did, and what you expected. Describe mail by its shape, not its content.
+    validations:
+      required: true
+  - type: textarea
+    id: log
+    attributes:
+      label: Debug log
+      description: "Run with GMAIL_LOG_LEVEL=debug and paste stderr around the failure. It carries no mail content."
+      render: text
