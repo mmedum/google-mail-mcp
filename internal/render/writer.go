@@ -207,7 +207,11 @@ func idList(ids []string) part {
 // authorized created them, and a sender can neither create a label nor
 // name one — a filter only applies a label the account already has.
 // Control and invisible characters are removed so a name is one line.
-func labelName(s string) part {
+func labelName(s string) part { return part{oneLine(s, 225)} }
+
+// oneLine is text made one line: invisible characters removed, controls
+// made spaces, cut at max runes.
+func oneLine(s string, max int) string {
 	s, _ = mime.StripInvisible(s)
 	s = strings.Map(func(r rune) rune {
 		if unicode.IsControl(r) {
@@ -215,10 +219,10 @@ func labelName(s string) part {
 		}
 		return r
 	}, s)
-	if utf8.RuneCountInString(s) > 225 {
-		s = string([]rune(s)[:225]) + "…"
+	if utf8.RuneCountInString(s) > max {
+		s = string([]rune(s)[:max]) + "…"
 	}
-	return part{s}
+	return s
 }
 
 // labelList is a message's or thread's labels by name.
@@ -344,3 +348,38 @@ func labelType(s string) part {
 
 // size is a byte count, as the attachment lines write it.
 func size(n int64) part { return part{sizeText(int(n))} }
+
+// fixed is a value drawn from a set this server defines — an outcome,
+// a verb, a field name — shown as itself when it is one of known and as
+// "other" otherwise, so no caller can pass other text through it.
+func fixed(s string, known map[string]bool) part {
+	if known[s] {
+		return part{s}
+	}
+	return part{"other"}
+}
+
+// fixedList is values of a fixed set, comma-joined.
+func fixedList(ss []string, known map[string]bool) part {
+	out := make([]string, len(ss))
+	for i, s := range ss {
+		out[i] = fixed(s, known).s
+	}
+	return part{strings.Join(out, ", ")}
+}
+
+// classShape is an error class of §6.5: lowercase words and underscores.
+var classShape = regexp.MustCompile(`^[a-z_]{1,32}$`)
+
+// failure is one item's error, "[class] message". The message is this
+// server's own: it names ids and says what to do, and a text Google
+// returned in it has its addresses masked by the client (gapi). No
+// message a write fails with quotes mail, since a write reads only
+// labels. It is cleaned to one line and capped.
+func failure(class, message string) part {
+	c := "unavailable"
+	if classShape.MatchString(class) {
+		c = class
+	}
+	return part{"[" + c + "] " + oneLine(message, 400)}
+}

@@ -39,9 +39,7 @@ type classesPlan struct {
 // classesPlanned names every declared class nothing emits yet. It only
 // shrinks: an entry whose class is now emitted fails, and so does one
 // whose phase has begun.
-var classesPlanned = map[string]classesPlan{
-	"unsupported": {2, "modify_labels meets §2.12's first cannot-do: a draft cannot be labeled"},
-}
+var classesPlanned = map[string]classesPlan{}
 
 // classesLimits are the floors, a parameter so a test can use a small fixture.
 type classesLimits struct{ declared, files int }

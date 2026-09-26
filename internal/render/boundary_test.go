@@ -14,6 +14,7 @@ import (
 	"unicode/utf8"
 
 	"github.com/mmedum/google-mail-mcp/internal/gmail"
+	"github.com/mmedum/google-mail-mcp/internal/mime"
 	"github.com/mmedum/google-mail-mcp/internal/model"
 )
 
@@ -265,6 +266,8 @@ func TestSenderTextNeverReachesTheServersVoice(t *testing.T) {
 			"messages":        Messages(MessageList{Messages: append(append([]model.Message{}, meta...), msgs...)}, small),
 			"drafts":          Drafts(DraftList{Drafts: drafts}, o),
 			"profile, labels": {Text: Profile(model.Profile{Email: "reader@example.com"}) + Labels(model.NewLabels(testLabels, true))},
+			"draft written":   DraftWrite(hostileDraftWrite(h, msgs[0], "update"), o),
+			"reply written":   DraftWrite(hostileDraftWrite(h, msgs[1], "create"), small),
 		}
 		for name, res := range results {
 			if name == "thread omitted" && len(res.Omitted) == 0 {
@@ -289,6 +292,38 @@ func TestSenderTextNeverReachesTheServersVoice(t *testing.T) {
 	if checked < 40*12 {
 		t.Fatalf("checked %d renderings", checked)
 	}
+}
+
+// hostileDraftWrite is a write's result made of a hostile message: its
+// addresses as recipients, its subject, its attachments as files, and
+// markers in every field a caller or sender could shape.
+func hostileDraftWrite(h *hostile, m model.Message, op string) model.DraftWrite {
+	// Ids are the caller's or Gmail's, shown only in Gmail's id shape;
+	// no sender writes one.
+	d := model.DraftWrite{Op: op, DraftID: "r-17", MessageID: m.ID, PreviousMessageID: "00000000000000cc",
+		ThreadID: m.ThreadID, Subject: m.Subject, RFC822MessageID: m.RFC822MessageID,
+		Changed: []string{"to", h.mark()}, ThreadingAtRisk: true}
+	if len(m.From) > 0 {
+		d.From = &m.From[0]
+	}
+	origins := []model.Origin{model.FromParent, model.FromReplyAll, model.FromCaller, model.FromDraft}
+	for i, list := range []struct {
+		field string
+		as    []mime.Address
+	}{{"to", m.From}, {"to", m.To}, {"cc", m.Cc}, {"bcc", m.ReplyTo}} {
+		for _, a := range list.as {
+			d.Recipients = append(d.Recipients, model.Recipient{Address: a, Field: list.field, Origin: origins[i]})
+		}
+	}
+	for _, a := range m.Attachments {
+		f := model.File{Name: model.Untrusted(a.DeclaredName), MediaType: model.Untrusted(a.MimeType), Size: a.Size, PartID: a.PartID}
+		d.Files, d.Added, d.Removed = append(d.Files, f), append(d.Added, f), append(d.Removed, f)
+	}
+	d.Removed = append(d.Removed, model.File{Name: model.Untrusted(h.mark()), PartID: h.mark()})
+	if op == "create" {
+		d.Reply = &model.Reply{ParentID: m.ID, ParentThreadID: m.ThreadID, ReplyAll: true, DroppedOwn: 1, Unwritable: 2}
+	}
+	return d
 }
 
 // The named cases a security review found, kept as seeds of the property.

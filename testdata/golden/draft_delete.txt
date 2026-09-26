@@ -1,0 +1,6 @@
+deleted draft r0000000000000021 (message 0000000000000024) permanently.
+<<<untrusted-mail TESTTOKEN: draft headers in 0000000000000024>>>
+From: Rae Reader <reader@example.com>
+To: Bruno Fennick <bruno.fennick@example.org>
+Subject: Offsite, revised
+<<<end-untrusted-mail TESTTOKEN>>>

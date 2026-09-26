@@ -88,12 +88,12 @@ type smokeMode struct {
 // distinguishes. Each is driven through a whole session and must list
 // exactly the tools of its kinds from the dump.
 var smokeModes = []smokeMode{
-	{name: "default", localDir: true, registers: []string{smokeKindRead, smokeKindWrite}},
+	{name: "default", localDir: true, registers: []string{smokeKindRead, smokeKindWrite, smokeKindWriteForGood}},
 	{name: "read-only", env: []string{"GMAIL_READ_ONLY=true"}, registers: []string{smokeKindRead}},
 	{name: "send", env: []string{"GMAIL_ENABLE_SEND=true"}, localDir: true,
-		registers: []string{smokeKindRead, smokeKindWrite, smokeKindSend}},
+		registers: []string{smokeKindRead, smokeKindWrite, smokeKindWriteForGood, smokeKindSend}},
 	{name: "destructive", env: []string{"GMAIL_ENABLE_DESTRUCTIVE=true"}, localDir: true,
-		registers: []string{smokeKindRead, smokeKindWrite, smokeKindDestructive}},
+		registers: []string{smokeKindRead, smokeKindWrite, smokeKindWriteForGood, smokeKindDestructive}},
 }
 
 // smokeMinModes is the floor on modes driven: default, read-only, send
@@ -163,10 +163,11 @@ func smokeRun(out io.Writer, bin string) error {
 // internal/tools/register.go. Write covers both Write and
 // ReadWritesLocally, which carry the same annotations.
 const (
-	smokeKindRead        = "read"
-	smokeKindWrite       = "write"
-	smokeKindSend        = "send"
-	smokeKindDestructive = "destructive"
+	smokeKindRead         = "read"
+	smokeKindWrite        = "write"
+	smokeKindWriteForGood = "write-for-good"
+	smokeKindSend         = "send"
+	smokeKindDestructive  = "destructive"
 )
 
 // smokeUserInteraction is the _meta key a send or destructive tool
@@ -209,6 +210,8 @@ func smokeKind(name string, annotations, meta json.RawMessage) (string, error) {
 		return smokeKindSend, nil
 	case !ro && ui && de && !ow:
 		return smokeKindDestructive, nil
+	case !ro && !ui && de && !ow:
+		return smokeKindWriteForGood, nil
 	case !ro && !ui && !de && !ow:
 		return smokeKindWrite, nil
 	}

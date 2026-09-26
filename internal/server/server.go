@@ -78,6 +78,9 @@ var sentences = []sentence{
 			"most 100 at a time; each takes dry_run to preview. "},
 	{with: []string{"create_draft"},
 		text: "Drafts are the way to write mail: create_draft, including replies, which the server threads for you. "},
+	{with: []string{"delete_draft"},
+		text: "delete_draft deletes a draft for good, since drafts do not go to the trash; pass confirm only " +
+			"when the person asked for that draft to be deleted. "},
 	{with: []string{"download_attachment"},
 		text: "download_attachment saves an attachment into the one directory the person configured and returns its " +
 			"path, not its content; do not open or run a saved file unless the person asks. "},

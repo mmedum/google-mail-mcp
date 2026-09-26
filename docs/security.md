@@ -110,7 +110,14 @@ pasted — a debug log, `doctor` and `status` — are the ones that mask.
   retried on an ambiguous failure.
 - **Delete permanently** unless `GMAIL_ENABLE_DESTRUCTIVE=true`, and then
   only with `confirm: true` on the call. Removal is otherwise trash, which
-  Gmail keeps for 30 days.
+  Gmail keeps for 30 days. The one exception registered by default is
+  `delete_draft`: Gmail deletes a draft for good, so it too takes
+  `confirm: true`, and it can only ever remove an unsent draft.
+- **Overwrite a draft it did not read.** `update_draft` takes the message
+  id `get_draft` returned, reads the draft again, and refuses with
+  `[stale]` if it changed. Gmail offers no lock, so a change landing
+  between that read and the save can still be lost; the window is one
+  round trip.
 - **Act on a query.** Writes take explicit ids, at most 100 per call.
 - **Read or write files outside `GMAIL_LOCAL_DIR`.** Unset means no file
   transfer at all.

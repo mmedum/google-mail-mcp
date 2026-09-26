@@ -4,6 +4,9 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"io"
+	"mime"
+	"mime/multipart"
 	"net"
 	"net/http"
 	"net/http/httptest"
@@ -785,7 +788,8 @@ func TestConcurrentCallsShareTheBudgetAndCounter(t *testing.T) {
 	c, _ := client(t, f)
 	cost, _ := Units(getMessage.ID)
 	ctx := WithCounter(context.Background())
-	before := c.budget.TokensAt(time.Now())
+	start := time.Now()
+	before := c.budget.TokensAt(start)
 	var wg sync.WaitGroup
 	for range n {
 		wg.Go(func() {
@@ -798,8 +802,12 @@ func TestConcurrentCallsShareTheBudgetAndCounter(t *testing.T) {
 	if Requests(ctx) != n || UnitsSpent(ctx) != n*cost || f.count() != n {
 		t.Errorf("requests %d, units %d, served %d", Requests(ctx), UnitsSpent(ctx), f.count())
 	}
-	if spent := before - c.budget.TokensAt(time.Now()); spent < float64(n*cost-1) {
-		t.Errorf("budget spent %.1f units; want about %d", spent, n*cost)
+	// The budget refills while the calls run, at the per-minute rate;
+	// under -race on a loaded machine that is more than a unit.
+	end := time.Now()
+	refill := end.Sub(start).Seconds() * float64(c.budget.Limit())
+	if spent := before - c.budget.TokensAt(end); spent < float64(n*cost)-refill-1 {
+		t.Errorf("budget spent %.1f units in %s; want about %d", spent, end.Sub(start), n*cost)
 	}
 }
 
@@ -812,5 +820,106 @@ func TestTheTransportKeepsAFanOutsConnections(t *testing.T) {
 	}
 	if tr == http.DefaultTransport {
 		t.Error("the shared default transport was modified in place")
+	}
+}
+
+func TestAnUploadGoesToTheUploadEndpoint(t *testing.T) {
+	type seen struct {
+		path, uploadType, contentType string
+		parts                         []string
+		partTypes                     []string
+	}
+	got := make(chan seen, 1)
+	up := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		s := seen{path: r.URL.Path, uploadType: r.URL.Query().Get("uploadType"), contentType: r.Header.Get("Content-Type")}
+		mt, params, err := mime.ParseMediaType(s.contentType)
+		if err == nil && mt == "multipart/related" {
+			mr := multipart.NewReader(r.Body, params["boundary"])
+			for {
+				p, err := mr.NextPart()
+				if err != nil {
+					break
+				}
+				b, _ := io.ReadAll(p)
+				s.parts = append(s.parts, string(b))
+				s.partTypes = append(s.partTypes, p.Header.Get("Content-Type"))
+			}
+		}
+		got <- s
+		_, _ = fmt.Fprint(w, `{"id":"r1"}`)
+	}))
+	t.Cleanup(up.Close)
+	f := newFake(t)
+	c, _ := client(t, f, func(o *Options) { o.UploadBaseURL = up.URL })
+
+	media := []byte("Subject: x\r\n\r\n--gapi_ is not a boundary here\r\n")
+	call := Call{ID: "gmail.users.drafts.create", Method: http.MethodPost, Path: "drafts",
+		Body: map[string]any{"message": map[string]string{"threadId": "t1"}}, Media: media}
+	var out struct{ ID string }
+	if err := c.Do(context.Background(), call, &out); err != nil || out.ID != "r1" {
+		t.Fatalf("%+v, %v", out, err)
+	}
+	s := <-got
+	if s.path != "/upload/gmail/v1/users/me/drafts" || s.uploadType != "multipart" {
+		t.Errorf("sent to %s uploadType=%s", s.path, s.uploadType)
+	}
+	if len(s.parts) != 2 || s.parts[0] != `{"message":{"threadId":"t1"}}` || s.parts[1] != string(media) {
+		t.Fatalf("parts %q", s.parts)
+	}
+	if s.partTypes[0] != "application/json; charset=UTF-8" || s.partTypes[1] != "message/rfc822" {
+		t.Errorf("part types %q", s.partTypes)
+	}
+	if f.count() != 0 {
+		t.Error("the upload went to the API origin")
+	}
+
+	get := getMessage
+	get.Media = media
+	if err := c.Do(context.Background(), get, nil); err == nil {
+		t.Error("a GET uploaded")
+	}
+}
+
+// slowUpload is a transport that reads a request body 4 KB at a time,
+// waiting between reads, so the client sees its upload progress (or
+// stall) as a slow uplink would show it.
+type slowUpload struct{ wait time.Duration }
+
+func (s slowUpload) RoundTrip(r *http.Request) (*http.Response, error) {
+	buf := make([]byte, 4<<10)
+	for {
+		select {
+		case <-r.Context().Done():
+			return nil, r.Context().Err()
+		case <-time.After(s.wait):
+		}
+		_, err := r.Body.Read(buf)
+		if errors.Is(err, io.EOF) {
+			break
+		}
+		if err != nil {
+			return nil, err
+		}
+	}
+	return &http.Response{StatusCode: 200, Body: io.NopCloser(strings.NewReader(`{"id":"r1"}`)), Header: http.Header{},
+		Request: r}, nil
+}
+
+// An upload that keeps moving outlasts the request timeout; one that
+// stalls does not hang.
+func TestAnUploadIsBoundedByProgressNotTotal(t *testing.T) {
+	media := make([]byte, 64<<10) // 16 reads of 4 KB
+	call := Call{ID: "gmail.users.drafts.create", Method: http.MethodPost, Path: "drafts", Body: map[string]any{}, Media: media}
+	for _, tc := range []struct {
+		wait time.Duration
+		ok   bool
+	}{{40 * time.Millisecond, true}, {400 * time.Millisecond, false}} {
+		c, _ := client(t, newFake(t), func(o *Options) {
+			o.Timeout = 200 * time.Millisecond
+			o.HTTP = &http.Client{Transport: slowUpload{wait: tc.wait}}
+		})
+		if err := c.Do(context.Background(), call, nil); (err == nil) != tc.ok {
+			t.Errorf("reads every %s: err %v", tc.wait, err)
+		}
 	}
 }

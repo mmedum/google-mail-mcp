@@ -142,10 +142,21 @@ be saved to; `GMAIL_PROFILE` lets one machine hold several accounts.
 | `get_settings` | Forwarding, vacation reply, send-as addresses, IMAP and POP, read-only |
 | `list_filters` | The account's filters, with any that forward mail flagged |
 | `download_attachment` | Save an attachment into `GMAIL_LOCAL_DIR`, never overwriting; only when that is set |
+| `create_draft` | Save a new draft or a reply, threaded by the server; nothing is sent |
+| `update_draft` | Change only the fields given, refusing a draft that changed since it was read |
+| `delete_draft` | Delete a draft for good, with `confirm: true` |
+| `modify_labels` | Add and remove labels on up to 100 messages or threads, reported per item |
+| `trash` | Move up to 100 messages or threads to the trash, kept 30 days |
+| `restore` | Take messages or threads out of the trash |
+| `create_label` | Create a user label |
+| `update_label` | Rename a user label or change how it shows |
 
 Searches take Gmail's own search language in `q`, plus `after` and
 `before` as real instants — Gmail reads a date written inside `q` as
-midnight Pacific time. Every result states the quota it spent.
+midnight Pacific time. Every result states the quota it spent. Every
+write takes `dry_run`, names what it touches by id, and says what it
+changed, read from Gmail's answer. `GMAIL_READ_ONLY=true` leaves the
+writes out.
 
 For clients that attach rather than call, `gmail://threads/{id}`,
 `gmail://messages/{id}` and `gmail://labels` carry the same text as
@@ -155,8 +166,12 @@ For clients that attach rather than call, `gmail://threads/{id}`,
 
 - **Mail is data.** It arrives marked, with what was hidden removed and
   counted, and no tool description tells a model to act on it.
-- **Nothing reaches another person** from the tools above, and none of
-  them changes a setting: forwarding and filters are shown, never set.
+- **Nothing reaches another person** from the tools above: drafts wait
+  in Gmail to be sent, and none of the tools changes a setting.
+  Forwarding and filters are shown, never set.
+- **Removal is trash.** Gmail keeps trashed mail for 30 days, and
+  `restore` brings it back. The only permanent removal is
+  `delete_draft`, which needs `confirm: true`.
 - **Files go to one directory.** `download_attachment` writes only into
   `GMAIL_LOCAL_DIR`, under a name made safe, and never over an existing
   file.

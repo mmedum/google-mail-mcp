@@ -1,12 +1,15 @@
 # Architecture — google-mail-mcp
 
-**Status: phase 1 is built and run live, 2026-09-26, on a topic branch
-stacked on phase 0's; nothing is tagged yet.** Phase 0's scaffolding, gates, MIME
-parse side and eight read tools, and phase 1's `list_changes`,
-`get_settings`, `list_filters`, `download_attachment` and the three
-resources; `make check` green; three live runs against a real account,
-19 steps and 45 of 45 options each, transcripts read. Spikes F, G, I and K
-are answered in §15. Phase 2 waits for an explicit "go".
+**Status: phase 2 is built, 2026-09-26, on a topic branch stacked on
+phase 1's; nothing is tagged yet.** Phases 0 and 1 are built and were
+run live. Phase 2 adds the MIME build side and the eight writes:
+`create_draft` with replies, `update_draft` with the witness,
+`delete_draft`, `modify_labels`, `trash`, `restore`, `create_label` and
+`update_label`. `make check` is green. Two live runs, 45 steps and 95
+of 95 options each, transcripts read. Spikes A, D, F, G, I, J and K are
+answered in §15, and B and E in part. E's receiver half is the
+maintainer's to read in the second mailbox. Phase 3 waits for an
+explicit "go".
 
 ## 1. Mission and scope
 
@@ -270,7 +273,10 @@ On an ambiguous failure the tool returns `[ambiguous_outcome]` and has
 already done the read that settles it:
 
 - Every draft this server creates carries a `Message-ID` it generated.
-  Spike B checks that Gmail keeps it.
+  Spike B checks that Gmail keeps it. **Phase 2 found it does not:**
+  Gmail replaces the client's `Message-ID` on `drafts.create`, and on
+  `messages.send` (§18 row 41). Phase 3 settles by the id Gmail assigned,
+  read from the draft before the send, not by the one written.
 - After an ambiguous `drafts.send`, the server reads the draft
   (`drafts.get`) and searches `rfc822msgid:` for the generated id with
   the `SENT` label. The draft gone and the message in `SENT` means
@@ -305,16 +311,30 @@ ETag (§2.4), and `drafts.update` replaces the whole draft. So:
 A reply is built by the server from the parent message, never assembled
 by the model:
 
-- `reply_to` takes a **message id**. A thread id is accepted, and the
-  server picks the newest message that is not a draft, not in `TRASH`
-  and not a reaction, and names the chosen message in the result.
+- `reply_to` takes a **message id**; `reply_to_thread` takes a thread id,
+  and the server picks the newest message that is not a draft, not in
+  `TRASH` and not a reaction, and names the chosen message in the result.
+  They are two fields because the two ids cannot be told apart: a
+  thread's id is its first message's id (§18 row 40), so one field taking
+  both would answer the first message when the caller meant the thread.
+  A `reply_to` naming a draft, a trashed message or a reaction is
+  `[invalid]`.
 - The server reads the parent's `Message-ID`, `References`, `Subject`,
   `From`, `Reply-To`, `To` and `Cc`, and writes `In-Reply-To` = the
   parent's `Message-ID`, `References` = the parent's `References` plus
   that id, `threadId` = the parent's thread, and `Subject` = the
-  parent's, with a `Re:` prefix only if there is none.
+  parent's, with a `Re:` prefix only if there is none. A parent with no
+  `References` but one `In-Reply-To` contributes that (RFC 5322 §3.6.4);
+  References keep the parent's first id, its last 38 and the parent's
+  own, so a hostile parent cannot make a reply huge. A caller's `subject` on a reply is
+  `[invalid]`, since it is one of the three conditions.
 - `reply_all: true` expands recipients from the parent, drops the
   account's own addresses (from `sendAs.list`) and says who was added.
+  When the parent is the account's own, the reply goes to its To, as in
+  Gmail. Each recipient in the result carries its origin — the parent,
+  reply_all, or the caller, whose addresses are added last. A parent's
+  address that cannot be written into a header is left out and counted,
+  never quoted in the server's voice.
 - The result states whether the draft landed in the parent's thread, by
   reading the created draft's `threadId` rather than asserting it.
 
@@ -343,7 +363,12 @@ instruction empties a mailbox.
 
 Per-item outcomes are reported per item. A call that trashed 97 of 100
 says which three failed and why; it never reports the batch as one
-success.
+success. So each item is its own pair of calls: a read of its labels,
+then `messages.modify`, `trash` or `untrash` on the message (or the
+thread's), whose answer is the labels after. An item already as asked is
+not written and is reported unchanged. `batchModify` is written off: it
+answers with nothing, so it could say neither which messages changed nor
+why one failed (§18 row 39).
 
 ### 4.8 Reads are bounded and say what they left out
 
@@ -613,14 +638,30 @@ Attachments are never inlined into a tool result.
 
 ### 7.4 Drafts and replies
 
-`create_draft` takes `to`, `cc`, `bcc`, `subject`, `body` (plain text;
-`body_html` optional and sent as `multipart/alternative` with the plain
-part kept), `attachments` (base names inside `GMAIL_LOCAL_DIR` only; a
-path, a `..` or a symlink out of it is `[invalid]`), `from` (one of
-`sendAs.list`) and `reply_to`/`reply_all` (§4.5). Up to 5 MB it uses the
-JSON `raw` path; above it, multipart media upload; above 35 MB it
-refuses before building (§2.6). `update_draft` per §4.4; `delete_draft`
-with `confirm: true` (§17.1); `list_drafts`, `get_draft`.
+`create_draft` takes `to`, `cc`, `bcc` (one address per entry, ASCII
+local@domain; a refusal names the entry by position, not by what it
+says), `subject`, `body` (plain text; `body_html` optional and sent as
+`multipart/alternative` with the plain part kept, and refused without
+`body`), `attachments` (base names inside `GMAIL_LOCAL_DIR` only; a
+path, a `..` or a symlink out of it is `[invalid]`, and with the
+directory unset `[blocked]`), `from` (one of `sendAs.list`, which is read
+on every call for the default sender and the account's own addresses)
+and `reply_to`/`reply_to_thread`/`reply_all` (§4.5). The server writes a
+`Message-ID` at the sender's domain, and Gmail replaces it (§4.3), so
+`create_draft` reports none; `get_draft` shows the one Gmail kept. Up to
+5 MB it uses the JSON `raw` path; above it, multipart media upload;
+above 35 MB it refuses before sending (§2.6).
+
+`update_draft` per §4.4, as a tree edit of the draft's own bytes:
+headers the call names are replaced, parts it names are rebuilt or
+removed, and every other header and part is written back byte for byte.
+`to`, `cc` and `bcc` replace their header, and `[]` clears it.
+Attachments are removed by the `part_id` `get_draft` lists. A draft that
+has both a plain and an HTML body takes `body` and `body_html` together,
+so the two cannot disagree. A subject changed on a reply is saved and
+flagged, since it may take the draft out of its thread. `delete_draft`
+with `confirm: true` (§17.1); a draft deleted between the read and the
+delete is reported gone. `list_drafts`, `get_draft`.
 
 ### 7.5 Organizing
 
@@ -628,8 +669,15 @@ with `confirm: true` (§17.1); `list_drafts`, `get_draft`.
 ids. Archiving is removing `INBOX`, marking read is removing `UNREAD`,
 starring is adding `STARRED`; the description says so rather than
 growing a tool per verb, and the result names the verb it amounted to.
-`trash`, `restore` (§4.6). `create_label`, `update_label` (patch: name,
-color, visibility). `delete_label` gated.
+`SENT` and `DRAFT` are `[conflict]` before anything is sent; `TRASH` is
+`[invalid]`, pointing to `trash` and `restore`. A draft's message is
+`[unsupported]` for that item, since Gmail does not label drafts (§2.12).
+`trash`, `restore` (§4.6); trashing a draft is refused for that item and
+points to `delete_draft`. `create_label`, `update_label` (patch: name,
+color, visibility), with a name checked against the label list first,
+so a dry run answers as Gmail would (§6.2). Visibility is written in the
+tools' own words — `show`, `show_if_unread`, `hide` — in and out.
+`delete_label` gated.
 
 ### 7.6 Changes
 
@@ -673,6 +721,8 @@ Twenty-three tools: twenty by default, twelve in read-only mode, one
 fewer in each when `GMAIL_LOCAL_DIR` is unset.
 Annotations come from `Kind` in one place (`CLAUDE.md` rule 11);
 `openWorldHint` is true only where the call reaches another person.
+"Write, for good" is registered as a Write is and annotated destructive,
+because Gmail deletes a draft rather than trashing it.
 `_meta["anthropic/requiresUserInteraction"]` is set on Send and
 Destructive kinds, as a signal and not a control.
 
@@ -690,14 +740,14 @@ Destructive kinds, as a signal and not a control.
 | `get_settings` | Read | always | `gmail.readonly` | 1 each, 7 |
 | `list_filters` | Read | always | `gmail.readonly` | 1 + 1 |
 | `download_attachment` | Read (local write) | `GMAIL_LOCAL_DIR` set | `gmail.readonly` | 20 + 20 |
-| `create_draft` | Write | not read-only | `gmail.modify` | 10 (+20 reply parent) |
-| `update_draft` | Write | not read-only | `gmail.modify` | 20 + 10 |
-| `delete_draft` | Write | not read-only | `gmail.modify` | 20 + 10 |
-| `modify_labels` | Write | not read-only | `gmail.modify` | 5/message or 50/batch |
-| `trash` | Write | not read-only | `gmail.modify` | 20 each |
-| `restore` | Write | not read-only | `gmail.modify` | 20 each |
-| `create_label` | Write | not read-only | `gmail.modify` | 5 |
-| `update_label` | Write | not read-only | `gmail.modify` | 5 |
+| `create_draft` | Write | not read-only | `gmail.modify` | 1 + 10 (+20 reply_to, +40 reply_to_thread) |
+| `update_draft` | Write | not read-only | `gmail.modify` | 20 + 15 |
+| `delete_draft` | Write, for good | not read-only | `gmail.modify` | 20 + 10 |
+| `modify_labels` | Write | not read-only | `gmail.modify` | 1 + 25/message, 50/thread |
+| `trash` | Write | not read-only | `gmail.modify` | 1 + 40/message, 60/thread |
+| `restore` | Write | not read-only | `gmail.modify` | 1 + 25/message, 50/thread |
+| `create_label` | Write | not read-only | `gmail.modify` | 1 + 5 |
+| `update_label` | Write | not read-only | `gmail.modify` | 1 + 5 |
 | `send_draft` | Send | `GMAIL_ENABLE_SEND` | `gmail.modify` | 20 + 100 |
 | `delete_permanently` | Destructive | `GMAIL_ENABLE_DESTRUCTIVE` | `https://mail.google.com/` | 10 each |
 | `delete_label` | Destructive | `GMAIL_ENABLE_DESTRUCTIVE` | `gmail.modify` | 5 |
@@ -715,10 +765,12 @@ All 79 methods of the discovery document have a verdict in
 `testdata/api-coverage.tsv` — used, planned for a named phase, or
 written off with a reason — and the `api-coverage` gate holds it. The
 table that stood here during design moved there in phase 0, so there is
-one copy. It holds thirty-two used, four gated, three deferred to §17,
-forty written off. Phase 1 wrote off `filters.get` and
+one copy. It holds thirty used, four gated, three deferred to §17,
+forty-two written off. Phase 1 wrote off `filters.get` and
 `forwardingAddresses.get`, whose lists return the same fields (§18
-row 36).
+row 36). Phase 2 wrote off `messages.batchModify`, which reports nothing
+per item, and `sendAs.get`, whose list `create_draft` reads anyway (§18
+row 39).
 
 ### 8b. Field coverage
 
@@ -896,6 +948,8 @@ generated from `internal/scopes` and gated (§5a, `staleness`).
 | Send only through drafts; `messages.send` written off | this design | §4.2, §8a |
 | Unregistered, not registered-and-refusing, for gated tools | this design | §17b |
 | Release pipeline in phase 0 | this design | §12 |
+| `delete_draft` is a default write that takes `confirm: true`, not destructive-gated | maintainer, 2026-09-26 | §17.1, §7.4 |
+| Spikes D and E send in phase 2, from the live driver's run, to a second address the maintainer passes on the command line and never commits | maintainer, 2026-09-26 | §15; the transcript records the address redacted only |
 
 ## 15. What must be verified live
 
@@ -905,11 +959,20 @@ None has run.
 - **Spike A — does `drafts.update` change the draft's message id?** The
   witness of §4.4 depends on it. Create, update twice, read between.
   Verdict decides between the message id and a raw-bytes hash.
+
+  **Answered 2026-09-26, twice.** Yes: a create and two updates of the
+  same bytes gave three distinct message ids, and `drafts.get` named
+  each. The message id is the witness.
 - **Spike B — does Gmail keep a client-set `Message-ID`?** Create a
   draft with one, send it to the maintainer's second address, read the
   sent copy and the received copy. §4.3's settle-by-reading depends on
   it. If Gmail rewrites it, the fallback is the draft's own message id
   in `SENT`, which spike C checks.
+
+  **Answered in part 2026-09-26, by phase 2's runs.** No, for the
+  sender: `drafts.create` replaced the `Message-ID` of every draft the
+  server built, and `messages.send` replaced spike D's original's. The
+  received copy and `drafts.send` are phase 3's half.
 - **Spike C — what does `drafts.send` leave behind?** Is the sent
   message's id the draft's message id? Does `drafts.get` answer 404
   afterwards? §4.3's verdict table is written from this.
@@ -917,9 +980,31 @@ None has run.
   and each of the three conditions of §2.5 removed in turn, to see which
   ones Gmail actually enforces for the sender and for a non-Gmail
   receiver.
+
+  **Sender side answered 2026-09-26.** An original and four replies were
+  sent to the second address. The reply with all three conditions
+  joined the original's thread. So did the reply without `In-Reply-To`
+  and `References`, and the one with another subject. Only the reply
+  without `threadId` started a new thread. For the sender, `threadId`
+  alone decides (§18 row 42). Drafts agree: every reply draft the steps
+  made joined its parent's thread.
+
+  **Receiver side answered 2026-09-27 by the maintainer**, reading the
+  second mailbox, a Gmail account. The reply without `In-Reply-To` and
+  `References` did not thread there, and neither did the one with
+  another subject. So each condition matters to someone: `threadId` to
+  the sender, the headers and the subject to the receiver. That is what
+  §4.5 writes, and why a reply refuses a caller's subject. A non-Gmail
+  receiver is not yet checked.
 - **Spike E — non-ASCII round trip.** Subject, display names, body and
   an attachment filename in four scripts, built by `internal/mime`,
   read back from Gmail and from a non-Gmail receiver.
+
+  **Answered for Gmail 2026-09-26.** A draft and a sent message, each
+  with subject, display names, body and attachment name in Latin,
+  Cyrillic, Greek and Japanese, read back with every field intact.
+  How the receiver shows it is the maintainer's to read in the second
+  mailbox.
 - **Spike F — `messages.insert` as a fixture source.** Do inserted
   messages appear in `threads.list`, `q` search and `history.list` like
   delivered ones? §9.1's driver depends on it.
@@ -952,6 +1037,14 @@ None has run.
 - **Spike J — consent without `prompt=consent`.** With a refresh token
   already issued, does a login that omits it get a new refresh token,
   none, or an error? §10.
+
+  **Answered 2026-09-27 by the maintainer's login.** A new refresh token.
+  The authorization URL carried no `prompt`, every scope was already
+  granted, and Google still issued one, which `login` stored in place of
+  the old. So skipping consent spares the screen, not the token: every
+  login mints one toward the 100 per client (§18 row 43). The old token
+  stays valid at Google until it ages out or the cap evicts it; revoking
+  it at login is §17a's.
 - **Spike K — expired history.** A `startHistoryId` far below the
   current one: 404, and the body's shape. §7.6.
 
@@ -961,8 +1054,11 @@ None has run.
   expired, so `list_changes` reads any 404 from `history.list` as expiry
   (§7.6).
 
-Spikes B, C and D send real mail and need the maintainer's second
-address; they are the "ask before doing" of `CLAUDE.md`.
+Spikes B, C, D and E send real mail and need the maintainer's second
+address; they are the "ask before doing" of `CLAUDE.md`. D and E were
+approved on 2026-09-26 to send in phase 2 (§14), to that address only,
+passed to the driver as a flag. They sent six messages in one run; the
+second run sent none. B and C still wait for phase 3.
 
 ## 16. Delivery phases
 
@@ -1029,6 +1125,37 @@ masks the system temporary directory the download path runs through.
 its round-trip fuzz; `create_draft` with replies, `update_draft` with
 the witness, `delete_draft`, `modify_labels`, `trash`, `restore`,
 `create_label`, `update_label`; per-item outcomes. Spikes A, D, E, J.
+
+Built 2026-09-26, on a topic branch stacked on phase 1's. `internal/mime`
+builds with RFC 2047 headers, RFC 2231 filenames and quoted-printable
+text, and `EditRaw` edits a draft's own bytes as a tree, leaving every
+part it does not touch as Gmail stored it. Two fuzz targets hold them:
+built messages parse back to the same fields, and edits never break a
+parse. `gmailtest` reads what it is sent with the standard library rather
+than `internal/mime`, so the builder is not tested against its own
+parser's mistakes. It models threading on all three conditions, a new
+message id per draft save, `SENT` and `DRAFT` refused by hand, and a
+draft refused a label.
+
+Beyond the list: the reply's thread is its own field,
+`reply_to_thread` (§4.5). Each item of a multi-id write is read, then
+written only if needed (§4.7). `messages.batchModify` and `sendAs.get`
+were written off (§18 row 39). `login` now says whether Google issued a
+new refresh token, which is spike J's question. And the `outcomes` gate
+had been reading nothing since phase 0: it knew input types spelled
+`FooInput`, this repository spells them `FooIn`, and its floor caught
+that when the first write tool registered. It now reads both, with a
+test. Its floor counted distinct field names, and all the writes share
+one `dry_run`, so it now counts fields per input type.
+
+Run live 2026-09-26, twice, with every step passing each time. The first
+run sent six messages to the maintainer's second address for spikes D
+and E; the second sent none. Reading the first transcript found that
+Gmail replaces the `Message-ID` of a draft created through the API, so
+`create_draft` had reported an id Gmail did not keep (§18 row 41). It
+reports none now, and the fake replaces the id as Gmail does. It also
+found that the sender threads by `threadId` alone (§18 row 42). The
+second run is the one with the fix.
 
 **Phase 3 — sending and the gated tools (v0.4.0).** `send_draft` with
 the recipient guard and the settle-by-reading of §4.3;
@@ -1112,6 +1239,79 @@ what fixed them.
   message), and a test that runs `list_changes`'s renderer through the
   transcript redactor, which found "history from N" unmasked.
 
+- **Phase 2, code review: ten findings, seven fixed, three recorded.**
+  - A draft upload was bounded by the 60-second whole-request timeout,
+    so 35 MB on a slow uplink timed out as `[ambiguous_outcome]` and a
+    retry could make a second draft. Uploads are now bounded by time
+    without progress, as downloads are. A test drives a slow transport
+    past the timeout, and a stalled one fails.
+  - `delete_draft` carried `destructiveHint: false`, so a client that
+    runs non-destructive tools unasked would run it. It has its own
+    `Kind` now, registered as a Write and annotated destructive.
+  - An edit of a draft with more MIME parts than are read would have
+    dropped the rest. It is refused as `[unsupported]`.
+  - A named pipe in `GMAIL_LOCAL_DIR` hung `create_draft` on open. Files
+    are checked as regular before they are opened.
+  - A label whose visibility Gmail did not state read "other". It reads
+    "not set".
+  - A reply to a subject with a run longer than a line could hold was
+    refused. Such a subject is now encoded.
+  - `part_id ""` passed one check and failed another. It is refused with
+    what it means: the whole draft.
+
+  Recorded, not changed:
+  - `reply_to_thread` reads the thread with its bodies, which only a
+    format that carries the parts can tell a reaction by.
+  - A draft on `modify_labels` is `[unsupported]` and on `trash`
+    `[invalid]`. These are different conditions: Gmail refuses to label a
+    draft, while trash has a tool of its own for drafts.
+  - Upload bodies are copied once more into the multipart envelope.
+- **Phase 2, security review: nothing found.** It checked:
+  - header injection through a subject, a name, a filename or a parent's
+    References;
+  - recipients taken from a hostile parent;
+  - sender text in the server's voice in the write results;
+  - reading attachments out of `GMAIL_LOCAL_DIR`;
+  - the upload origin;
+  - writes under `dry_run`;
+  - the live driver's sending.
+  
+  Two notes, neither a vulnerability. `EditRaw` does not hold the
+  998-character line limit `Build` does, since a draft Gmail stored may
+  already carry longer lines and refusing them would refuse the edit. A
+  FIFO in `GMAIL_LOCAL_DIR` would block a read, which only the person who
+  owns the directory can arrange.
+- **Phase 2, `/simplify`: the `outcomes` gate was green and read
+  nothing.** Phase 2 moved every branch on a request field out of
+  `internal/tools` into `internal/service`, and the gate read only the
+  first. It now reads both. It treats as requests the struct types an
+  exported service method takes, and a bare bool such as `confirm`. It
+  fails when write tools exist and no branch was examined; a test holds
+  each case. Also folded:
+  - One table each in `model` for label visibility, the change verbs and
+    the updatable fields. Service and render derive from it, so no list
+    is typed twice.
+  - One base-name check (`mime.ValidFilename`) and one control-character
+    check (`mime.HasControl`). `NewMessageID` takes the sender's address.
+  - `splitHeaders` built on the raw splitter. The edit tree now classes a
+    boundary-less multipart as the parser does, so the two walkers agree
+    on which parts are bodies.
+  - One call per draft method, with `gapi.Uploads` deciding the path.
+  - Base64 written straight into a buffer of its final size, and buffers
+    sized once. The send-as list and a reply's parent read concurrently.
+  - The fake's shared insert, minimal format and upload routing.
+  - The driver's guard: it refuses a write argument it has no rule for,
+    and reads addresses with the server's parser. `Send` itself holds a
+    spike to `-send-to`.
+
+  Skipped, with reasons:
+  - `update_draft` parses the draft twice. It costs memory on drafts near
+    35 MB, and a headers-only parse is not worth a second parser.
+  - `Upload` and `Reply.Joined` are stored rather than derived. Each is
+    read from one decision at the point it is made.
+  - A thread's labels are read again when Gmail's write answer lists no
+    messages. The live run shows whether that fallback ever fires.
+
 ### Closing a phase
 
 1. `make check` green; the live driver run and its transcript read.
@@ -1129,7 +1329,8 @@ what fixed them.
    would put the destructive flag — and `https://mail.google.com/` —
    between the model and tidying up a draft it wrote a minute ago. The
    counter-argument is that a draft may be the person's own half-written
-   work, not the model's. **Open.**
+   work, not the model's. **Decided 2026-09-26 by the maintainer:
+   registered by default, each call taking `confirm: true`** (§14).
 2. **Should `get_thread` fold a thread's drafts in?** A draft reply
    appears inside its thread with the `DRAFT` label. Showing it helps a
    model see what is pending; hiding it keeps "what was said" apart from
@@ -1160,8 +1361,15 @@ what fixed them.
 
 ### 17a. Deferred cleanups
 
-None open. Phase 1 closed the header-block entry: a read's header block
-is capped at half its budget, cut at a line, and the cut is stated.
+- **Revoke the replaced refresh token at login.** Spike J found that
+  every login mints a refresh token, forced consent or not, and `login`
+  keeps only the newest. The one it replaces stays valid at Google.
+  `login` could revoke it, as `logout` revokes the stored one, so the
+  account does not accumulate live tokens toward the 100 per client.
+  Needs a test that the new token is stored before the old is revoked.
+
+Phase 1 closed the header-block entry: a read's header block is capped
+at half its budget, cut at a line, and the cut is stated.
 
 ### 17b. Deviations from the shared standard
 
@@ -1234,3 +1442,8 @@ live** — §15 exists to settle these, and they are marked.
 | 36 | `filters.get` and `forwardingAddresses.get` add something their lists lack | Discovery document: each `get` returns the schema its `list` returns an array of, at the same unit cost | **Refuted.** Both written off in phase 1; `list_filters` and `get_settings` read the lists. The in-scope floor of `api-coverage` moved with them |
 | 37 | Gmail allows user labels differing only in case, and user labels named like system labels | Spike I live, 2026-09-26 | **Refuted, both.** 409 "Label name exists or conflicts" for the second of `X-Case`/`X-case`; 400 "Invalid label name" for `INBOX` and `Inbox`. §6.2 |
 | 38 | The transcript redactor masks every id the account has | Live run, 2026-09-26, reading the first phase 1 transcript | **Refuted.** History ids are short decimal counters, shaped like any number, and passed through in `list_changes`'s lines and the argument echo. The redactor now masks a number after `history`, `history from`, `history_id=`, `"history_id":` and `startHistoryId=`, and a test runs `list_changes`'s renderer through it so a reworded line fails before a run |
+| 39 | `messages.batchModify` and `sendAs.get` add something their alternatives lack | Discovery document: `batchModify` returns an empty body; `sendAs.get` returns the schema `sendAs.list` returns an array of, at one unit each | **Refuted, both.** `batchModify` cannot report per item what §4.7 requires, and `messages.modify` per id, 5 units, answers with the labels after. `create_draft` reads `sendAs.list` on every call, which makes `get` redundant. Both written off; the in-scope floor of `api-coverage` moved with them |
+| 40 | A reply field can take a message id or a thread id and tell which it was given | Gmail's threads guide; the fake's model; the live driver's thread-id spike, 2026-09-26 | **Refuted.** A thread's id is its first message's id, which three of three inserted threads showed live, so the same string names both, and the server could not know whether the caller meant that message or the thread's newest. `reply_to` takes a message id and `reply_to_thread` a thread id |
+| 41 | Gmail keeps the `Message-ID` a client writes | Live runs, 2026-09-26: `get_draft` after `create_draft`, and spike D's sent original | **Refuted, for the sender.** `drafts.create` and `messages.send` both replaced it. `create_draft` no longer reports the one written, and the fake replaces it on create. Phase 3's settle-by-reading uses the id Gmail assigned (§4.3) |
+| 42 | Gmail needs all three of §2.5's conditions to thread a reply | Spike D live, 2026-09-26, sender side; the maintainer reading the receiving Gmail mailbox, 2026-09-27 | **Split.** For the sender, `threadId` alone decided: replies without the headers, or with another subject, joined its thread. For the receiver, both of those stayed out of the thread. All three are needed between the two, as §4.5 writes them; the fake models all three, so a test catches a reply missing any |
+| 43 | A login that does not force consent keeps the refresh token already issued | Spike J, the maintainer's login, 2026-09-27: every scope granted, no `prompt` in the authorization URL | **Refuted.** Google issued a new refresh token, and `login` stored it. Not forcing consent spares a screen, not a token; §17a proposes revoking the one replaced |

@@ -72,17 +72,29 @@ func TestInstructionsNameOnlyRegisteredTools(t *testing.T) {
 	}
 }
 
-// Only the read tools exist yet, so nothing is said about writing.
-func TestDefaultInstructionsDescribeOnlyReading(t *testing.T) {
+// The default server drafts and trashes and says it cannot send; a
+// read-only one says nothing about writing at all.
+func TestInstructionsDescribeWritingOnlyWhereItExists(t *testing.T) {
 	got, _ := served(t, config.Config{})
-	for _, s := range []string{"create_draft", "send_draft", "trash", "dry_run", "delete"} {
+	for _, s := range []string{"create_draft", "delete_draft", "Removal is trash", "dry_run", "cannot send mail"} {
+		if !strings.Contains(got, s) {
+			t.Errorf("default instructions lack %q:\n%s", s, got)
+		}
+	}
+	for _, s := range []string{"send_draft", "Permanent deletion"} {
 		if strings.Contains(got, s) {
 			t.Errorf("default instructions mention %q:\n%s", s, got)
 		}
 	}
+	ro, _ := served(t, config.Config{ReadOnly: true})
+	for _, s := range []string{"create_draft", "send_draft", "trash", "dry_run", "delete"} {
+		if strings.Contains(ro, s) {
+			t.Errorf("read-only instructions mention %q:\n%s", s, ro)
+		}
+	}
 	for _, s := range []string{"search_threads", "get_message"} {
-		if !strings.Contains(got, s) {
-			t.Errorf("default instructions lack %q:\n%s", s, got)
+		if !strings.Contains(ro, s) {
+			t.Errorf("read-only instructions lack %q:\n%s", s, ro)
 		}
 	}
 }

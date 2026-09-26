@@ -41,7 +41,7 @@ func probe(ctx context.Context, in probeIn) (probeOut, error) {
 	return probeOut{Seen: in.ID, DryRun: gapi.WritesForbidden(ctx)}, nil
 }
 
-var kinds = []Kind{Read, ReadWritesLocally, Write, Send, Destructive}
+var kinds = []Kind{Read, ReadWritesLocally, Write, WriteForGood, Send, Destructive}
 
 // registerProbes registers one probe per Kind, named after the kind.
 func registerProbes(s *mcp.Server, d Deps) {
@@ -68,15 +68,16 @@ func TestRegistrationGates(t *testing.T) {
 		cfg  config.Config
 		want []string
 	}{
-		{"default", config.Config{}, []string{"read", "write"}},
-		{"local dir", config.Config{LocalDir: "/x"}, []string{"read", "read_writes_locally", "write"}},
+		{"default", config.Config{}, []string{"read", "write", "write_for_good"}},
+		{"local dir", config.Config{LocalDir: "/x"}, []string{"read", "read_writes_locally", "write", "write_for_good"}},
 		{"read-only", config.Config{ReadOnly: true}, []string{"read"}},
 		{"read-only with local dir", config.Config{ReadOnly: true, LocalDir: "/x"}, []string{"read", "read_writes_locally"}},
-		{"send", config.Config{EnableSend: true}, []string{"read", "send", "write"}},
-		{"destructive", config.Config{EnableDestructive: true}, []string{"destructive", "read", "write"}},
+		{"send", config.Config{EnableSend: true}, []string{"read", "send", "write", "write_for_good"}},
+		{"destructive", config.Config{EnableDestructive: true}, []string{"destructive", "read", "write", "write_for_good"}},
 		// Config refuses this pair; the gate still holds if it is ever built.
 		{"read-only beats enable", config.Config{ReadOnly: true, EnableSend: true, EnableDestructive: true}, []string{"read"}},
-		{"full surface", FullSurface(config.Config{ReadOnly: true}), []string{"destructive", "read", "read_writes_locally", "send", "write"}},
+		{"full surface", FullSurface(config.Config{ReadOnly: true}), []string{"destructive", "read", "read_writes_locally", "send", "write",
+			"write_for_good"}},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
@@ -103,6 +104,7 @@ func TestAnnotationsAndMetaComeFromKind(t *testing.T) {
 		"read":                {readOnly: true, idempotent: true},
 		"read_writes_locally": {},
 		"write":               {},
+		"write_for_good":      {destructive: true, idempotent: true},
 		"send":                {openWorld: true, interaction: true},
 		"destructive":         {destructive: true, idempotent: true, interaction: true},
 	}

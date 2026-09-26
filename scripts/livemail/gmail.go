@@ -13,6 +13,7 @@ import (
 	"net/url"
 	"os"
 	"strconv"
+	"strings"
 	"time"
 
 	"golang.org/x/oauth2"
@@ -20,6 +21,7 @@ import (
 	"github.com/mmedum/google-mail-mcp/internal/app"
 	"github.com/mmedum/google-mail-mcp/internal/config"
 	"github.com/mmedum/google-mail-mcp/internal/credentials"
+	"github.com/mmedum/google-mail-mcp/internal/mime"
 )
 
 // gmailBase is where the driver's own calls go. They never go through
@@ -191,4 +193,93 @@ func (m *restMailbox) InternalDate(ctx context.Context, messageID string) (int64
 		return 0, err
 	}
 	return strconv.ParseInt(out.InternalDate, 10, 64)
+}
+
+func (m *restMailbox) UpdateDraft(ctx context.Context, draftID string, raw []byte) (string, error) {
+	var out struct {
+		Message struct {
+			ID string `json:"id"`
+		} `json:"message"`
+	}
+	err := m.call(ctx, http.MethodPut, "drafts/"+url.PathEscape(draftID), nil,
+		map[string]any{"message": map[string]string{"raw": base64.URLEncoding.EncodeToString(raw)}}, &out)
+	return out.Message.ID, err
+}
+
+func (m *restMailbox) DraftMessageID(ctx context.Context, draftID string) (string, error) {
+	var out struct {
+		Message struct {
+			ID string `json:"id"`
+		} `json:"message"`
+	}
+	err := m.call(ctx, http.MethodGet, "drafts/"+url.PathEscape(draftID), url.Values{"format": {"minimal"}}, nil, &out)
+	return out.Message.ID, err
+}
+
+func (m *restMailbox) Send(ctx context.Context, o mime.Outgoing, to, threadID string) (string, string, error) {
+	name := ""
+	if len(o.To) > 0 {
+		name = o.To[0].Name
+	}
+	o.To, o.Cc, o.Bcc = []mime.Address{{Name: name, Email: to}}, nil, nil
+	raw, err := mime.Build(o)
+	if err != nil {
+		return "", "", err
+	}
+	var out struct {
+		ID       string `json:"id"`
+		ThreadID string `json:"threadId"`
+	}
+	body := map[string]string{"raw": base64.URLEncoding.EncodeToString(raw)}
+	if threadID != "" {
+		body["threadId"] = threadID
+	}
+	err = m.call(ctx, http.MethodPost, "messages/send", nil, body, &out)
+	return out.ID, out.ThreadID, err
+}
+
+func (m *restMailbox) Label(ctx context.Context, messageID, labelID string) error {
+	return m.call(ctx, http.MethodPost, "messages/"+url.PathEscape(messageID)+"/modify", nil,
+		map[string]any{"addLabelIds": []string{labelID}}, nil)
+}
+
+func (m *restMailbox) SentCopy(ctx context.Context, messageID string) (string, []byte, error) {
+	var out struct {
+		ThreadID string `json:"threadId"`
+		Raw      string `json:"raw"`
+	}
+	if err := m.call(ctx, http.MethodGet, "messages/"+url.PathEscape(messageID), url.Values{"format": {"raw"}}, nil, &out); err != nil {
+		return "", nil, err
+	}
+	raw, err := base64.URLEncoding.DecodeString(out.Raw)
+	return out.ThreadID, raw, err
+}
+
+func (m *restMailbox) Header(ctx context.Context, messageID, name string) (string, error) {
+	var out struct {
+		Payload struct {
+			Headers []struct {
+				Name  string `json:"name"`
+				Value string `json:"value"`
+			} `json:"headers"`
+		} `json:"payload"`
+	}
+	if err := m.call(ctx, http.MethodGet, "messages/"+url.PathEscape(messageID),
+		url.Values{"format": {"metadata"}, "metadataHeaders": {name}}, nil, &out); err != nil {
+		return "", err
+	}
+	for _, h := range out.Payload.Headers {
+		if strings.EqualFold(h.Name, name) {
+			return h.Value, nil
+		}
+	}
+	return "", nil
+}
+
+func (m *restMailbox) Account(ctx context.Context) (string, error) {
+	var out struct {
+		EmailAddress string `json:"emailAddress"`
+	}
+	err := m.call(ctx, http.MethodGet, "profile", nil, nil, &out)
+	return out.EmailAddress, err
 }

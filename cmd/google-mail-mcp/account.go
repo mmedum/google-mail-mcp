@@ -84,14 +84,18 @@ func cmdLogin(args []string, stdout, stderr io.Writer, env func(string) string) 
 		return fail(stderr, "login failed: %v", err)
 	}
 
+	// Which of the three happened is spike J's question (§15), so the
+	// login says it.
 	src := storedSource
 	switch {
 	case tok.RefreshToken != "":
 		if src, err = p.Store.Save(tok.RefreshToken); err != nil {
 			return fail(stderr, "store the token: %v", err)
 		}
+		outf(stdout, "Google issued a new refresh token; it replaces any stored before.\n")
 	case storedErr == nil:
 		// Google kept the refresh token it had already issued; so do we.
+		outf(stdout, "Google issued no new refresh token; the one stored before is kept.\n")
 	default:
 		return fail(stderr, "%v", auth.ErrNoRefreshToken)
 	}

@@ -1,0 +1,2 @@
+created label Travel · id Label_5
+look: Travel · in label list: show_if_unread · in message list: show · color #ffffff on #16a766

@@ -28,6 +28,10 @@ var outputTypes = map[string]reflect.Type{
 	"SettingsOut": reflect.TypeFor[SettingsOut](),
 	"FiltersOut":  reflect.TypeFor[FiltersOut](),
 	"DownloadOut": reflect.TypeFor[DownloadOut](),
+
+	"DraftWriteOut": reflect.TypeFor[DraftWriteOut](),
+	"ItemsOut":      reflect.TypeFor[ItemsOut](),
+	"LabelWriteOut": reflect.TypeFor[LabelWriteOut](),
 }
 
 // registeredOutputs names the output type of every handler passed to

@@ -82,7 +82,7 @@ func runOutcomes(t *testing.T, files map[string]string, claims string) (string, 
 	}
 	root := writeTree(t, files)
 	var out sink
-	err := outcomesCheck(&out, root, "tools", "claims.tsv")
+	err := outcomesCheck(&out, root, []string{"tools"}, "claims.tsv")
 	return out.String(), err
 }
 
@@ -154,5 +154,67 @@ var specs = []Spec{{Name: "get_message", Kind: Read}}
 	}
 	if _, err := runOutcomes(t, map[string]string{"elsewhere/x.go": "package x\n"}, ""); err == nil {
 		t.Error("a missing directory passed")
+	}
+}
+
+// This repository names inputs FooIn; the gate reads them as it reads
+// FooInput.
+func TestOutcomesReadsInputsNamedIn(t *testing.T) {
+	dishonest := strings.ReplaceAll(outcomesDishonest, "RestoreInput", "RestoreIn")
+	files := map[string]string{"tools/register.go": outcomesRegister, "tools/trash.go": outcomesHonest,
+		"tools/restore.go": dishonest}
+	out, err := runOutcomes(t, files, "")
+	if err == nil || !strings.Contains(out, "tools/restore.go:12: this branch tests the request field Thread") {
+		t.Fatalf("an input named RestoreIn was not read: %v\n%s", err, out)
+	}
+}
+
+// A request acted on in the service, under a name that is not FooIn, and
+// a confirm passed as a bare bool, are read too.
+func TestOutcomesReadsServiceRequests(t *testing.T) {
+	service := `package tools
+
+type Move struct {
+	ID      string
+	Restore bool
+}
+
+type Service struct{}
+
+func (s *Service) Trash(in Move, confirm bool) string {
+	if in.Restore {
+		return "every message is back in the inbox"
+	}
+	if confirm {
+		return "the draft is deleted"
+	}
+	return ""
+}
+`
+	files := map[string]string{"tools/register.go": outcomesRegister, "tools/trash.go": outcomesHonest,
+		"tools/service.go": service}
+	out, err := runOutcomes(t, files, "")
+	if err == nil || !strings.Contains(out, "tests the request field Restore") || !strings.Contains(out, "tests the request field confirm") {
+		t.Fatalf("the service's branches were not read: %v\n%s", err, out)
+	}
+}
+
+// Write tools with inputs but no branch on any of them: the gate is not
+// reading the code that acts on requests.
+func TestOutcomesFloorOnBranches(t *testing.T) {
+	quiet := `package tools
+
+var specs = []Spec{{Name: "trash", Kind: Write}}
+
+type TrashIn struct {
+	ID     string
+	DryRun bool
+}
+
+func trash(in TrashIn) string { return in.ID }
+`
+	out, err := runOutcomes(t, map[string]string{"tools/register.go": outcomesRegister, "tools/trash.go": quiet}, "")
+	if err == nil || !strings.Contains(err.Error(), "no branch") {
+		t.Errorf("a surface with no branch passed: %v\n%s", err, out)
 	}
 }

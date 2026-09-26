@@ -10,7 +10,10 @@
 // set. Everything it prints goes through the redacting transcript, which
 // `gates transcript` holds.
 //
-//	go run -tags live ./scripts/livemail -profile NAME [-keep] [-run PATTERN]
+//	go run -tags live ./scripts/livemail -profile NAME [-keep] [-run PATTERN] [-send-to ADDRESS]
+//
+// Nothing is sent unless -send-to names the maintainer's second address;
+// then spikes D and E send to it, and to nothing else.
 package main
 
 import (
@@ -18,8 +21,10 @@ import (
 	"errors"
 	"flag"
 	"io"
+	netmail "net/mail"
 	"os"
 	"regexp"
+	"slices"
 	"strconv"
 	"time"
 
@@ -41,6 +46,10 @@ type options struct {
 	run     *regexp.Regexp
 	raw     bool
 	seed    int
+	// sendTo is the one address spikes D and E may send to: the
+	// maintainer's second address, given on the command line and never
+	// committed (§14). Without it, nothing is sent.
+	sendTo string
 }
 
 func main() { os.Exit(run(os.Args[1:])) }
@@ -79,14 +88,20 @@ func parseOptions(args []string) (options, *transcript.Transcript, error) {
 	fs.StringVar(&pattern, "run", "", "only steps whose name matches this regular expression")
 	fs.BoolVar(&o.raw, "raw", false, "turn redaction off, for a terminal nobody else sees")
 	fs.IntVar(&o.seed, "seed", 3, "how many synthetic messages to insert")
+	fs.StringVar(&o.sendTo, "send-to", "", "the maintainer's second address, which spikes D and E send to; none sends without it")
 	if err := fs.Parse(args); err != nil {
 		return o, nil, err
 	}
 	if o.profile == "" {
 		return o, nil, errors.New("-profile is required: the driver never guesses which account to write to")
 	}
-	if o.seed < 1 {
-		return o, nil, errors.New("-seed must be at least 1")
+	if o.seed < 3 {
+		return o, nil, errors.New("-seed must be at least 3: the steps use three inserted messages")
+	}
+	if o.sendTo != "" {
+		if a, err := netmail.ParseAddress(o.sendTo); err != nil || a.Address != o.sendTo {
+			return o, nil, errors.New("-send-to must be one bare address")
+		}
 	}
 	re, err := regexp.Compile(pattern)
 	if err != nil {
@@ -118,12 +133,16 @@ func drive(ctx context.Context, o options, tr *transcript.Transcript, box mailbo
 		}
 	}()
 
-	// The run's own directory for download_attachment, removed after.
+	// The run's own directory for download_attachment and the files the
+	// write steps attach, removed after.
 	localDir, err := os.MkdirTemp("", r.name+"-")
 	if err != nil {
 		return err
 	}
 	defer func() { _ = os.RemoveAll(localDir) }()
+	if err := writeLocalFiles(localDir, r); err != nil {
+		return err
+	}
 
 	session, err := mcpstdio.Start(o.binary, "GMAIL_PROFILE="+o.profile, "GMAIL_LOCAL_DIR="+localDir)
 	if err != nil {
@@ -141,7 +160,7 @@ func drive(ctx context.Context, o options, tr *transcript.Transcript, box mailbo
 	e := &env{session: session, tr: tr, seed: seed, localDir: localDir}
 
 	failed := 0
-	for _, s := range steps {
+	for _, s := range append(slices.Clone(steps), writeSteps...) {
 		if !o.run.MatchString(s.name) {
 			continue
 		}
@@ -153,7 +172,7 @@ func drive(ctx context.Context, o options, tr *transcript.Transcript, box mailbo
 		tr.Sayf("ok   %s", s.name)
 	}
 
-	runSpikes(ctx, box, seed, tr)
+	runSpikes(ctx, spikeRun{box: box, s: seed, sendTo: o.sendTo, account: e.account, draftSide: e.spikeE}, tr)
 
 	believed, srcErr := livecover.FromSource(driverDir, session.Options())
 	if srcErr != nil {
