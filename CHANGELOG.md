@@ -21,6 +21,12 @@ lifted verbatim.
 - `search_threads` and `search_messages` search with Gmail's query syntax, bounded and paged.
 - `get_thread` and `get_message` read mail with its content marked as untrusted data.
 - `list_labels`, `list_drafts` and `get_draft` read labels and drafts.
+- `list_changes` lists what changed since a history id, and says so when that cursor has expired.
+- `get_settings` shows forwarding, the vacation reply, send-as addresses, IMAP, POP and language, read-only.
+- `list_filters` shows the account's filters and flags any that forward mail.
+- `download_attachment` saves an attachment into `GMAIL_LOCAL_DIR`, streamed, never overwriting a file.
+- `get_message` and `get_thread` list each attachment's `part_id`.
+- Resources `gmail://threads/{id}`, `gmail://messages/{id}` and `gmail://labels` carry the same text as the matching tools.
 - `login`, `logout`, `status` and `doctor` manage and diagnose the OAuth login, with `--no-browser` for remote machines.
 - Read-only mode (`GMAIL_READ_ONLY`) registers only the read tools and requests only `gmail.readonly`.
 - Repository gates run by `make check` and CI: leaks, pins, error classes, API coverage, schema diff, smoke, staleness and more.

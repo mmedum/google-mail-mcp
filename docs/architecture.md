@@ -1,11 +1,12 @@
 # Architecture — google-mail-mcp
 
-**Status: phase 0 is built and run live, 2026-09-26, on a topic branch, and
-not tagged.** The scaffolding of §5a, every gate of the `check` list,
-`internal/mime`'s parse side, the in-memory mailbox and the eight read
-tools; `make check` green; two live runs against a real account, 12 steps
-and 38 of 38 options each, transcripts read. Spikes F, G and K are
-answered in §15. Phase 1 waits for an explicit "go".
+**Status: phase 1 is built and run live, 2026-09-26, on a topic branch
+stacked on phase 0's; nothing is tagged yet.** Phase 0's scaffolding, gates, MIME
+parse side and eight read tools, and phase 1's `list_changes`,
+`get_settings`, `list_filters`, `download_attachment` and the three
+resources; `make check` green; three live runs against a real account,
+19 steps and 45 of 45 options each, transcripts read. Spikes F, G, I and K
+are answered in §15. Phase 2 waits for an explicit "go".
 
 ## 1. Mission and scope
 
@@ -512,10 +513,13 @@ two messages carry one (mailing lists do that).
 By id or by exact name. System labels by their id in any case (`inbox`
 is `INBOX`). A user label's name resolves through `labels.list`, which
 is cached per call, not per process, because a label renamed in the web
-UI between two calls must not resolve to the old one. Whether Gmail
-treats two names differing only in case as one label is spike I; until
-it answers, a case-insensitive match that finds two labels is
-`[ambiguous]` with both ids.
+UI between two calls must not resolve to the old one. An exact name
+wins; otherwise a name matches case-insensitively. Spike I found that
+Gmail refuses a second user label differing only in case (409), and
+refuses `INBOX` and `Inbox` as user label names (400), so a
+case-insensitive match finds at most one label Gmail created. The
+`[ambiguous]` answer with both ids stays for a label list that says
+otherwise, since nothing documents the rule.
 
 ### 6.3 Time and search
 
@@ -589,11 +593,23 @@ Calendar invitations are listed as attachments with their method
 ### 7.3 Attachments
 
 `download_attachment` writes one attachment into `GMAIL_LOCAL_DIR` and
-is registered only when that is set. The filename is taken from the
-part's RFC 2231 or RFC 2047 name, reduced to a safe base name, and never
-overwrites: a clash gets a numeric suffix, and the result names the path
-written. Streaming to disk, never held whole in memory. Attachments are
-never inlined into a tool result.
+is registered only when that is set. It takes a message id and the
+attachment's `part_id`, which `get_message` lists: part ids are Gmail's
+structure and stable, where an `attachmentId` is not documented to be.
+The filename is taken from the part's RFC 2231 or RFC 2047 name, reduced
+to a safe base name, and never overwrites: the file is created with
+`O_EXCL` through an `os.Root` on the directory, a clash gets `-1`, `-2`
+before the extension, and the result names the path written with the
+file's size and SHA-256. The file is `0600`, or restricted by ACL on
+Windows; a failed or partial write is removed. Content is streamed to
+disk: `attachments.get` answers JSON, so the client reads it token by
+token up to `data` and decodes that string as it arrives, never holding
+it whole, and stops at 64 MB; an attachment declared larger is refused
+before it is read. A stream is bounded by `GMAIL_HTTP_TIMEOUT` without
+progress rather than in total, so a large file on a slow link finishes
+and a stalled one does not hang. A body cut anywhere is a failed read and
+retried; a retried read starts the file over.
+Attachments are never inlined into a tool result.
 
 ### 7.4 Drafts and replies
 
@@ -623,15 +639,28 @@ next `history_id`. A 404 is not `not_found`: it is reported as
 **"cursor expired — history before this point is gone"** with the
 current `history_id` to restart from and a note that changes in between
 cannot be recovered (§2.8). It never returns an empty list for an
-expired cursor.
+expired cursor. The 404's body is Google's ordinary envelope, reason
+`notFound`, "Requested entity was not found." (spike K), so the tool
+tells expiry apart by which call met it, not by the body. With a
+`label`, a 404 can also mean the label was deleted after it was
+resolved, so the label list is read again first: a missing label is
+`[not_found]`, never an expiry that would move the caller's cursor past
+changes it can still read. `label` limits
+the records to one label and `kinds` to some record types; while a
+`next_page_token` is set, the pages continue from the same `history_id`,
+and the returned one is used only once the listing is complete.
 
 ### 7.7 Settings, read-only
 
 `get_settings` returns vacation responder, auto-forwarding state and
 address, forwarding addresses, IMAP, POP, language and send-as
-identities. `list_filters` returns filters, each forward action flagged.
-Showing that mail is being forwarded is the useful half of those APIs;
-changing it is written off (§4.1).
+identities, forwarding first. `list_filters` returns filters, each
+forward action flagged, labels by name. Showing that mail is being
+forwarded is the useful half of those APIs; changing it is written off
+(§4.1). Addresses, display names and filter criteria are the account's
+own configuration and stand in the server's voice, like label names; the
+vacation reply and the signatures are free text that goes out as mail,
+so they sit inside blocks and in `untrusted_*` fields.
 
 ### 7.8 Sending
 
@@ -657,9 +686,9 @@ Destructive kinds, as a signal and not a control.
 | `list_labels` | Read | always | `gmail.readonly` | 1 (+1/label with counts) |
 | `list_drafts` | Read | always | `gmail.readonly` | 5 + 20/result |
 | `get_draft` | Read | always | `gmail.readonly` | 20 |
-| `list_changes` | Read | always | `gmail.readonly` | 2/page |
+| `list_changes` | Read | always | `gmail.readonly` | 2/page + 1 (+1 on expiry) |
 | `get_settings` | Read | always | `gmail.readonly` | 1 each, 7 |
-| `list_filters` | Read | always | `gmail.readonly` | 1 |
+| `list_filters` | Read | always | `gmail.readonly` | 1 + 1 |
 | `download_attachment` | Read (local write) | `GMAIL_LOCAL_DIR` set | `gmail.readonly` | 20 + 20 |
 | `create_draft` | Write | not read-only | `gmail.modify` | 10 (+20 reply parent) |
 | `update_draft` | Write | not read-only | `gmail.modify` | 20 + 10 |
@@ -686,8 +715,10 @@ All 79 methods of the discovery document have a verdict in
 `testdata/api-coverage.tsv` — used, planned for a named phase, or
 written off with a reason — and the `api-coverage` gate holds it. The
 table that stood here during design moved there in phase 0, so there is
-one copy. At that move: thirty-four used, four gated, three deferred to
-§17, thirty-eight written off.
+one copy. It holds thirty-two used, four gated, three deferred to §17,
+forty written off. Phase 1 wrote off `filters.get` and
+`forwardingAddresses.get`, whose lists return the same fields (§18
+row 36).
 
 ### 8b. Field coverage
 
@@ -914,6 +945,10 @@ None has run.
   apart from the rest.
 - **Spike I — label names and case.** Can `Foo` and `foo` coexist? What
   does creating a label named like a system label return?
+
+  **Answered 2026-09-26.** No: the second answered 409, reason `aborted`,
+  "Label name exists or conflicts". `INBOX` and `Inbox` both answered
+  400, reason `invalidArgument`, "Invalid label name". §6.2.
 - **Spike J — consent without `prompt=consent`.** With a refresh token
   already issued, does a login that omits it get a new refresh token,
   none, or an error? §10.
@@ -921,8 +956,10 @@ None has run.
   current one: 404, and the body's shape. §7.6.
 
   **Answered 2026-09-26:** `startHistoryId=1` answered 404, as the sync
-  guide says. The body's shape is still to be recorded when
-  `list_changes` is built (phase 1).
+  guide says, in Google's ordinary envelope: reason `notFound`, message
+  "Requested entity was not found." Nothing in the body says the cursor
+  expired, so `list_changes` reads any 404 from `history.list` as expiry
+  (§7.6).
 
 Spikes B, C and D send real mail and need the maintainer's second
 address; they are the "ask before doing" of `CLAUDE.md`.
@@ -972,6 +1009,21 @@ driver's argument echo. The second run is the one with all four fixed.
 **Phase 1 — attachments, changes, settings, resources (v0.2.0).**
 `download_attachment`, `list_changes`, `get_settings`, `list_filters`,
 the three resources. Spike I.
+
+Built 2026-09-26, on a topic branch stacked on phase 0's. Beyond the list:
+the client gained a streaming path for attachments (§7.3); `get_message`
+lists each attachment's `part_id`, which `download_attachment` takes; the
+header block of a read is capped at half the budget, closing the §17a
+entry; resource reads are logged and counted like tool calls; and
+`filters.get` and `forwardingAddresses.get` were written off (§18 row 36).
+`unsupported` moved to phase 2, where `modify_labels` meets a draft.
+
+Run live 2026-09-26, three times, every step passing each time. Reading
+the first transcript found the account's real history ids in the clear,
+in `list_changes`'s lines and the argument echo, which the redactor did
+not know as ids (§18 row 38); the second run has that fixed. The third
+ran after the review fixes to the streaming path, and its transcript also
+masks the system temporary directory the download path runs through.
 
 **Phase 2 — the write path (v0.3.0).** `internal/mime` build side and
 its round-trip fuzz; `create_draft` with replies, `update_draft` with
@@ -1025,6 +1077,41 @@ what fixed them.
   - The scripts carried their own copy of `redact.ID` with different
     rules. They now use the server's.
 
+- **Phase 1, security review: nothing found.** The download path, the
+  streaming decoder, the resources, the new renderers, the log line for a
+  resource read and the driver's transcript were each checked; none met
+  the bar of a real exploit. `fileperm.RestrictToOwner` works on a path
+  outside the `os.Root`, which only a local race inside the person's own
+  directory could turn; accepted, since the file is already created
+  `0600`.
+- **Phase 1, code review: ten findings, nine fixed, one accepted.**
+  - A body cut before the `data` string was read as a malformed answer
+    and not retried. Every cut is now a failed read; a test drives four.
+  - The whole-request timeout bounded a streamed attachment, so a large
+    one on a slow link could never finish. Streams are now bounded by
+    time without progress; a test shows a slow body outlasting the
+    timeout and a stalled one failing.
+  - An attachment declared over 64 MB was downloaded before it was
+    refused. It is now refused from its declared size, with no read.
+  - A label deleted between its resolution and `history.list` read as an
+    expired cursor (§7.6). The label list is read again first.
+  - The driver's download path ran through the system's temporary
+    directory, which can name the maintainer's account. The transcript
+    redactor masks it.
+  - `list_changes`'s description priced a page at two units; it is three,
+    four on expiry.
+  - A `history_id` with spaces round it was rendered as "(unreadable
+    id)". The rendering uses the trimmed id.
+  - POP showed as on for any window but `disabled`. Only the two
+    documented windows show as on; anything else is "unknown".
+  - The test meant to prove a JSON escape in `data` is refused had lost
+    its backslash. It has it back.
+  - `fileperm.RestrictToOwner` outside the root: accepted, as above.
+- **Phase 1, `/simplify`:** duplicates folded (the `rfc822:` resolver,
+  page-size bounds, change kinds, the forwarding count, the write-failure
+  message), and a test that runs `list_changes`'s renderer through the
+  transcript redactor, which found "history from N" unmasked.
+
 ### Closing a phase
 
 1. `make check` green; the live driver run and its transcript read.
@@ -1073,10 +1160,8 @@ what fixed them.
 
 ### 17a. Deferred cleanups
 
-- **A header block larger than the whole budget still gets a 200-character
-  body.** Only a message with an enormous header set reaches it, and the
-  result says it was cut; bounding the header block itself belongs with
-  phase 1's budget work.
+None open. Phase 1 closed the header-block entry: a read's header block
+is capped at half its budget, cut at a line, and the cut is stated.
 
 ### 17b. Deviations from the shared standard
 
@@ -1146,3 +1231,6 @@ live** — §15 exists to settle these, and they are marked.
 | 33 | `resultSizeEstimate` is a usable count | Live run, 2026-09-26: a search scoped to a label holding 3 messages, and a draft search matching 2 | **Refuted.** Gmail answered 201 for both. The text no longer states it; the structured field is described as an estimate that is often far off |
 | 34 | A transcript of the driver's own mail carries nothing about the account | Live run, 2026-09-26, reading the transcript | **Refuted.** Gmail stamps inserted mail with `Received: from <number> named unknown by gmailapi.google.com`, and the number is the OAuth client's Cloud project. The transcript redactor now masks bare numbers of ten digits and more |
 | 35 | `messages.insert` with `internalDateSource=receivedTime` records the time of the insert | Discovery document (the parameter's default and enum); spike F live, 2026-09-26 | **Refuted.** `internalDate` was the message's `Date` header, two days earlier, while `after:` matched the message by the time of the insert. So Gmail's search and `internalDate` can disagree for inserted or imported mail; for delivered mail they agree. The tools show `internalDate` |
+| 36 | `filters.get` and `forwardingAddresses.get` add something their lists lack | Discovery document: each `get` returns the schema its `list` returns an array of, at the same unit cost | **Refuted.** Both written off in phase 1; `list_filters` and `get_settings` read the lists. The in-scope floor of `api-coverage` moved with them |
+| 37 | Gmail allows user labels differing only in case, and user labels named like system labels | Spike I live, 2026-09-26 | **Refuted, both.** 409 "Label name exists or conflicts" for the second of `X-Case`/`X-case`; 400 "Invalid label name" for `INBOX` and `Inbox`. §6.2 |
+| 38 | The transcript redactor masks every id the account has | Live run, 2026-09-26, reading the first phase 1 transcript | **Refuted.** History ids are short decimal counters, shaped like any number, and passed through in `list_changes`'s lines and the argument echo. The redactor now masks a number after `history`, `history from`, `history_id=`, `"history_id":` and `startHistoryId=`, and a test runs `list_changes`'s renderer through it so a reworded line fails before a run |

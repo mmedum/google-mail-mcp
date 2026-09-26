@@ -4,7 +4,9 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/mmedum/google-mail-mcp/internal/model"
 	coreredact "github.com/mmedum/google-mail-mcp/internal/redact"
+	"github.com/mmedum/google-mail-mcp/internal/render"
 )
 
 // Planted values are built by concatenation, so the repository's own leak
@@ -109,5 +111,64 @@ func TestTheCloudProjectNumberInAReceivedHeaderIsMasked(t *testing.T) {
 	got := r.Do("Received: from 123456789012 named unknown by gmailapi.google.com with HTTPREST")
 	if strings.Contains(got, "123456789012") {
 		t.Errorf("the project number survived: %s", got)
+	}
+}
+
+func TestHistoryIDsAreMasked(t *testing.T) {
+	r := NewRedactor(false)
+	for _, line := range []string{
+		`=== list_changes {"history_id":"7399630","label":"x"} ===`,
+		"since history 7399630, messages labeled x only",
+		"history_id=7399679 continues from here next time.",
+		"history 7399632 · message <ID_1> added",
+		"history.list with startHistoryId=7399630 answered HTTP 404",
+	} {
+		got := r.Do(line)
+		if strings.Contains(got, "73996") || !strings.Contains(got, "<HISTORY_") {
+			t.Errorf("a history id survived: %s", got)
+		}
+	}
+	if got := r.Do("history_id=7399630 and history 7399630"); strings.Count(got, "<HISTORY_1>") != 2 {
+		t.Errorf("one id got two placeholders: %s", got)
+	}
+}
+
+// The history-id positions follow list_changes's wording, so the test
+// runs the renderer itself: rewording one of its lines without the
+// redactor fails here, before a live transcript carries the account's
+// ids again (architecture §18 row 38).
+func TestHistoryIDsInTheRenderedChangesAreMasked(t *testing.T) {
+	const start, current, record = "7390001", "7390099", "7390042"
+	change := []model.Change{{HistoryID: record, Kind: model.ChangeAdded, MessageID: "0000000000000001",
+		ThreadID: "0000000000000001"}}
+	for name, l := range map[string]render.ChangeList{
+		"complete": {Start: start, Changes: change, HistoryID: current},
+		"paged":    {Start: start, Changes: change, HistoryID: current, NextPageToken: "page-1"},
+		"labeled":  {Start: start, Changes: change, HistoryID: current, Label: &model.LabelRef{ID: "Label_1", Name: "L"}},
+		"expired":  {Start: start, Expired: true, HistoryID: current},
+	} {
+		text := render.Changes(l, render.Options{}).Text
+		got := NewRedactor(false).Do(text)
+		for _, id := range []string{start, current, record} {
+			if strings.Contains(got, id) {
+				t.Errorf("%s: history id %s survived:\n%s", name, id, got)
+			}
+		}
+	}
+}
+
+// The live driver's download directory sits under the system's
+// temporary directory, whose path can carry an account name.
+func TestTheDriversTemporaryDirectoryIsMasked(t *testing.T) {
+	for _, line := range []string{
+		"Path: /home/someone/tmp/livemail-20260926-203229-cce4b7-12345/livemail-synthetic.txt",
+		"Path: /var/folders/ab/cdef/T/livemail-20260926-203229-cce4b7-12345/livemail-synthetic-1.txt",
+		`Path: C:\Users\someone\AppData\Local\Temp\livemail-20260926-203229-cce4b7-12345\livemail-synthetic.txt`,
+	} {
+		got := NewRedactor(false).Do(line)
+		if strings.Contains(got, "someone") || strings.Contains(got, "folders") || !strings.Contains(got, "<DIR_1>") ||
+			!strings.Contains(got, "livemail-synthetic") {
+			t.Errorf("the directory was not masked, or the file name went with it: %s", got)
+		}
 	}
 }

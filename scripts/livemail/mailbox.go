@@ -5,6 +5,7 @@ package main
 import (
 	"context"
 	"crypto/rand"
+	"encoding/base64"
 	"encoding/hex"
 	"errors"
 	"fmt"
@@ -32,7 +33,13 @@ import (
 //   - CreateDraft and DeleteDraft make and remove the run's own drafts,
 //     whose subjects carry the run's name, since a draft cannot be labeled.
 //
-//   - Probe makes one call for a spike and returns only its status.
+//   - Probe makes one call for a spike and returns its status, Google's
+//     reason and message on a refusal, and the id of anything it created,
+//     so cleanup can remove it.
+//
+//   - HistoryID reads the mailbox's current history id before the run
+//     inserts anything, so list_changes has a start that precedes the
+//     run's own mail. It is a counter, not mail.
 //
 // It never lists, searches or reads the mailbox: that is the server's
 // job, and the driver only checks the server against what it inserted.
@@ -43,10 +50,20 @@ type mailbox interface {
 	DeleteLabel(ctx context.Context, labelID string) error
 	CreateDraft(ctx context.Context, raw []byte) (draftID string, err error)
 	DeleteDraft(ctx context.Context, draftID string) error
-	Probe(ctx context.Context, method, path string, q url.Values) (status int)
+	Probe(ctx context.Context, method, path string, q url.Values, body any) probeResult
+	HistoryID(ctx context.Context) (string, error)
 	// InternalDate reads the date Gmail recorded for a message the run
 	// inserted, in milliseconds, for spike F.
 	InternalDate(ctx context.Context, messageID string) (int64, error)
+}
+
+// probeResult is how Gmail answered a probe. Reason and Message are
+// Google's own words on a refusal; ID is set when the call created
+// something.
+type probeResult struct {
+	status          int
+	reason, message string
+	id              string
 }
 
 // runLabel names one run. The name is what every read is scoped to, so
@@ -82,6 +99,10 @@ type seeded struct {
 	messages []string
 	threads  []string
 	drafts   []string
+	// historyStart is the mailbox's history id before the first insert.
+	historyStart string
+	// extraLabels are labels a spike created, deleted at cleanup.
+	extraLabels []string
 }
 
 // owns reports whether an id is one the run inserted.
@@ -97,6 +118,9 @@ func seedMailbox(ctx context.Context, box mailbox, r runLabel, n int) (*seeded, 
 		return nil, fmt.Errorf("create the run's label: %w", err)
 	}
 	s := &seeded{label: r, labelID: labelID}
+	if s.historyStart, err = box.HistoryID(ctx); err != nil {
+		return nil, errors.Join(fmt.Errorf("read the history id: %w", err), cleanUp(ctx, box, s))
+	}
 	for i := range n {
 		msg, thread, err := box.Insert(ctx, labelID, syntheticMessage(r, i))
 		if err != nil {
@@ -133,6 +157,11 @@ func cleanUp(ctx context.Context, box mailbox, s *seeded) error {
 			errs = append(errs, fmt.Errorf("trash an inserted message: %w", err))
 		}
 	}
+	for _, id := range s.extraLabels {
+		if err := box.DeleteLabel(ctx, id); err != nil {
+			errs = append(errs, fmt.Errorf("delete a label a spike created: %w", err))
+		}
+	}
 	if s.labelID != "" {
 		if err := box.DeleteLabel(ctx, s.labelID); err != nil {
 			errs = append(errs, fmt.Errorf("delete the run's label: %w", err))
@@ -143,7 +172,8 @@ func cleanUp(ctx context.Context, box mailbox, s *seeded) error {
 
 // syntheticMessage builds message i of a run: addresses at reserved
 // domains, a subject naming the run, a body from a template. Nothing in it
-// came from anybody.
+// came from anybody. The first carries an attachment, for
+// download_attachment.
 func syntheticMessage(r runLabel, i int) []byte {
 	var b strings.Builder
 	fmt.Fprintf(&b, "From: Synthetic Sender <sender-%d@example.com>\r\n", i+1)
@@ -152,10 +182,29 @@ func syntheticMessage(r runLabel, i int) []byte {
 	fmt.Fprintf(&b, "Message-ID: <%s.%d@livemail.invalid>\r\n", r.name, i+1)
 	b.WriteString("Date: " + syntheticDateHeader + "\r\n")
 	b.WriteString("MIME-Version: 1.0\r\n")
-	b.WriteString("Content-Type: text/plain; charset=utf-8\r\n")
-	b.WriteString("\r\n")
-	fmt.Fprintf(&b, "Synthetic body %d, written by the live driver for run %s.\r\n", i+1, r.name)
+	body := fmt.Sprintf("Synthetic body %d, written by the live driver for run %s.\r\n", i+1, r.name)
+	if i != 0 {
+		b.WriteString("Content-Type: text/plain; charset=utf-8\r\n\r\n" + body)
+		return []byte(b.String())
+	}
+	const boundary = "livemail-synthetic-boundary"
+	b.WriteString("Content-Type: multipart/mixed; boundary=\"" + boundary + "\"\r\n\r\n")
+	b.WriteString("--" + boundary + "\r\nContent-Type: text/plain; charset=utf-8\r\n\r\n" + body + "\r\n")
+	b.WriteString("--" + boundary + "\r\nContent-Type: text/plain; charset=utf-8\r\n")
+	b.WriteString("Content-Disposition: attachment; filename=\"" + syntheticAttachmentName + "\"\r\n")
+	b.WriteString("Content-Transfer-Encoding: base64\r\n\r\n")
+	b.WriteString(base64.StdEncoding.EncodeToString(syntheticAttachment(r)) + "\r\n")
+	b.WriteString("--" + boundary + "--\r\n")
 	return []byte(b.String())
+}
+
+// syntheticAttachmentName names the first message's attachment.
+const syntheticAttachmentName = "livemail-synthetic.txt"
+
+// syntheticAttachment is the first message's attachment, whose hash the
+// download step checks.
+func syntheticAttachment(r runLabel) []byte {
+	return []byte("Synthetic attachment, written by the live driver for run " + r.name + ".\n")
 }
 
 // syntheticDraft builds draft i of a run, its subject naming the run so

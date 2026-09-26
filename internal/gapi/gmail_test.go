@@ -3,6 +3,7 @@ package gapi_test
 import (
 	"context"
 	"net/url"
+	"strconv"
 	"testing"
 	"time"
 
@@ -149,4 +150,68 @@ func flatten(p *gmail.MessagePart) []gmail.MessagePart {
 		out = append(out, flatten(&p.Parts[i])...)
 	}
 	return out
+}
+
+func TestListHistoryQueryAndExpiry(t *testing.T) {
+	c, fake := fakeClient(t)
+	ctx := context.Background()
+	start := strconv.FormatUint(fake.HistoryID()-3, 10)
+	res, err := c.ListHistory(ctx, gapi.HistoryOptions{StartHistoryID: start, LabelID: "INBOX",
+		Types: []string{"messageAdded", "labelAdded"}, Max: 2})
+	if err != nil {
+		t.Fatal(err)
+	}
+	q := lastQuery(t, fake, "gmail.users.history.list")
+	if q.Get("startHistoryId") != start || q.Get("labelId") != "INBOX" || len(q["historyTypes"]) != 2 || q.Get("maxResults") != "2" {
+		t.Errorf("history.list query = %v", q)
+	}
+	if res.HistoryID != strconv.FormatUint(fake.HistoryID(), 10) {
+		t.Errorf("historyId = %s; want the mailbox's current %d", res.HistoryID, fake.HistoryID())
+	}
+
+	_, err = c.ListHistory(ctx, gapi.HistoryOptions{StartHistoryID: "1"})
+	if cl, _ := gapi.ClassOf(err); cl != gapi.ClassNotFound {
+		t.Fatalf("an expired start = %v; want not_found for the service to read as expired", err)
+	}
+}
+
+func TestSettingsReads(t *testing.T) {
+	c, fake := fakeClient(t)
+	ctx := context.Background()
+	v, err := c.Vacation(ctx)
+	if err != nil || v.ResponseSubject == "" {
+		t.Fatalf("vacation = %+v, %v", v, err)
+	}
+	af, err := c.AutoForwarding(ctx)
+	if err != nil || af.Enabled {
+		t.Fatalf("auto-forwarding = %+v, %v", af, err)
+	}
+	fwd, err := c.ForwardingAddresses(ctx)
+	if err != nil || len(fwd.ForwardingAddresses) != 2 {
+		t.Fatalf("forwarding addresses = %+v, %v", fwd, err)
+	}
+	imap, err := c.Imap(ctx)
+	if err != nil || !imap.Enabled {
+		t.Fatalf("imap = %+v, %v", imap, err)
+	}
+	pop, err := c.Pop(ctx)
+	if err != nil || pop.AccessWindow != "disabled" {
+		t.Fatalf("pop = %+v, %v", pop, err)
+	}
+	lang, err := c.Language(ctx)
+	if err != nil || lang.DisplayLanguage == "" {
+		t.Fatalf("language = %+v, %v", lang, err)
+	}
+	as, err := c.SendAs(ctx)
+	if err != nil || len(as.SendAs) != 2 {
+		t.Fatalf("send-as = %+v, %v", as, err)
+	}
+	fs, err := c.Filters(ctx)
+	if err != nil || len(fs.Filter) != 3 {
+		t.Fatalf("filters = %+v, %v", fs, err)
+	}
+	// Every settings read is one unit, on the fake's own price list.
+	if got := fake.Units(); got != 8 {
+		t.Errorf("eight settings reads spent %d units; want 8", got)
+	}
 }

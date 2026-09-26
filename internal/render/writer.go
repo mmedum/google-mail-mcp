@@ -237,6 +237,37 @@ func labelList(ls []model.LabelRef) part {
 // account's own, never a sender's.
 func account(s string) part { return labelName(s) }
 
+// setting is a value of the account's own configuration: a forwarding
+// or send-as address, a display name, a filter's criteria. Like a label
+// name, a sender cannot write one — only the person, or an app they
+// authorized to change settings — so it stands outside the blocks,
+// cleaned the same way. Free text a setting sends as mail (a vacation
+// reply, a signature) is not a setting in this sense and goes in a
+// block.
+func setting(s string) part { return labelName(s) }
+
+// oneOf is a value Google draws from a fixed set — a verification
+// status, a disposition — shown as itself when it is one of known, and
+// as "other" when Google answers something new.
+func oneOf(s string, known ...phrase) part {
+	for _, k := range known {
+		if s == string(k) {
+			return part{s}
+		}
+	}
+	return part{"other"}
+}
+
+// sha is a SHA-256 in hex, computed by this server.
+var shaShape = regexp.MustCompile(`^[0-9a-f]{64}$`)
+
+func sha(s string) part {
+	if !shaShape.MatchString(s) {
+		return part{"(unreadable hash)"}
+	}
+	return part{s}
+}
+
 // hiddenReasons are the reasons mime drops hidden text, all of them the
 // server's own words.
 var hiddenReasons = map[string]bool{
@@ -310,3 +341,6 @@ func labelType(s string) part {
 	}
 	return part{"user"}
 }
+
+// size is a byte count, as the attachment lines write it.
+func size(n int64) part { return part{sizeText(int(n))} }

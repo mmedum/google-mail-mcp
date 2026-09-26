@@ -2,6 +2,7 @@ package gapi
 
 import (
 	"context"
+	"io"
 	"net/http"
 	"net/url"
 	"strconv"
@@ -147,4 +148,120 @@ func (c *Client) GetDraft(ctx context.Context, id string, f Format) (*gmail.Draf
 	err := c.Do(ctx, Call{ID: "gmail.users.drafts.get", Method: http.MethodGet, Path: "drafts/{}",
 		Args: []string{id}, Query: formatQuery(f, nil)}, &out)
 	return &out, err
+}
+
+// HistoryOptions narrow a history listing.
+type HistoryOptions struct {
+	// StartHistoryID is where the listing starts, exclusive. Required.
+	StartHistoryID string
+	// LabelID keeps only records about messages carrying this label.
+	LabelID string
+	// Types keeps only these record types: messageAdded,
+	// messageDeleted, labelAdded, labelRemoved. Empty keeps all.
+	Types []string
+	// Max is the page size; zero leaves Google's default of 100.
+	Max int
+	// PageToken continues a previous listing.
+	PageToken string
+}
+
+// ListHistory lists the mailbox's change records after a history id. A
+// start older than Gmail keeps is answered 404, which is an expired
+// cursor rather than a missing mailbox (§2.8); the caller tells them
+// apart, since only it knows it asked for history.
+func (c *Client) ListHistory(ctx context.Context, o HistoryOptions) (*gmail.ListHistoryResponse, error) {
+	q := url.Values{"startHistoryId": {o.StartHistoryID}}
+	if o.LabelID != "" {
+		q.Set("labelId", o.LabelID)
+	}
+	for _, t := range o.Types {
+		q.Add("historyTypes", t)
+	}
+	if o.Max > 0 {
+		q.Set("maxResults", strconv.Itoa(o.Max))
+	}
+	if o.PageToken != "" {
+		q.Set("pageToken", o.PageToken)
+	}
+	var out gmail.ListHistoryResponse
+	err := c.Do(ctx, Call{ID: "gmail.users.history.list", Method: http.MethodGet, Path: "history", Query: q}, &out)
+	return &out, err
+}
+
+// Vacation reads the vacation responder.
+func (c *Client) Vacation(ctx context.Context) (*gmail.VacationSettings, error) {
+	var out gmail.VacationSettings
+	err := c.Do(ctx, Call{ID: "gmail.users.settings.getVacation", Method: http.MethodGet, Path: "settings/vacation"}, &out)
+	return &out, err
+}
+
+// AutoForwarding reads whether all incoming mail is forwarded, and where.
+func (c *Client) AutoForwarding(ctx context.Context) (*gmail.AutoForwarding, error) {
+	var out gmail.AutoForwarding
+	err := c.Do(ctx, Call{ID: "gmail.users.settings.getAutoForwarding", Method: http.MethodGet,
+		Path: "settings/autoForwarding"}, &out)
+	return &out, err
+}
+
+// ForwardingAddresses lists the addresses mail may be forwarded to.
+func (c *Client) ForwardingAddresses(ctx context.Context) (*gmail.ListForwardingAddressesResponse, error) {
+	var out gmail.ListForwardingAddressesResponse
+	err := c.Do(ctx, Call{ID: "gmail.users.settings.forwardingAddresses.list", Method: http.MethodGet,
+		Path: "settings/forwardingAddresses"}, &out)
+	return &out, err
+}
+
+// Imap reads IMAP access.
+func (c *Client) Imap(ctx context.Context) (*gmail.ImapSettings, error) {
+	var out gmail.ImapSettings
+	err := c.Do(ctx, Call{ID: "gmail.users.settings.getImap", Method: http.MethodGet, Path: "settings/imap"}, &out)
+	return &out, err
+}
+
+// Pop reads POP access.
+func (c *Client) Pop(ctx context.Context) (*gmail.PopSettings, error) {
+	var out gmail.PopSettings
+	err := c.Do(ctx, Call{ID: "gmail.users.settings.getPop", Method: http.MethodGet, Path: "settings/pop"}, &out)
+	return &out, err
+}
+
+// Language reads the display language.
+func (c *Client) Language(ctx context.Context) (*gmail.LanguageSettings, error) {
+	var out gmail.LanguageSettings
+	err := c.Do(ctx, Call{ID: "gmail.users.settings.getLanguage", Method: http.MethodGet, Path: "settings/language"}, &out)
+	return &out, err
+}
+
+// SendAs lists the addresses the account may send as, its own primary
+// address included.
+func (c *Client) SendAs(ctx context.Context) (*gmail.ListSendAsResponse, error) {
+	var out gmail.ListSendAsResponse
+	err := c.Do(ctx, Call{ID: "gmail.users.settings.sendAs.list", Method: http.MethodGet, Path: "settings/sendAs"}, &out)
+	return &out, err
+}
+
+// Filters lists the account's filters.
+func (c *Client) Filters(ctx context.Context) (*gmail.ListFiltersResponse, error) {
+	var out gmail.ListFiltersResponse
+	err := c.Do(ctx, Call{ID: "gmail.users.settings.filters.list", Method: http.MethodGet, Path: "settings/filters"}, &out)
+	return &out, err
+}
+
+// DownloadAttachment streams a part stored behind an attachment id into
+// w, decoded, and returns how many bytes it wrote. The part is never
+// held whole in memory (§7.3). w is truncated through reset before each
+// attempt, so a retried read never appends to a partial one.
+func (c *Client) DownloadAttachment(ctx context.Context, messageID, attachmentID string, reset func() (io.Writer, error)) (int64, error) {
+	var n int64
+	err := c.Stream(ctx, Call{ID: "gmail.users.messages.attachments.get", Method: http.MethodGet,
+		Path: "messages/{}/attachments/{}", Args: []string{messageID, attachmentID}},
+		func(body io.Reader) error {
+			w, err := reset()
+			if err != nil {
+				return err
+			}
+			n, err = streamData(body, w)
+			return err
+		})
+	return n, err
 }

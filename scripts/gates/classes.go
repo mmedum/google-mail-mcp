@@ -40,7 +40,7 @@ type classesPlan struct {
 // shrinks: an entry whose class is now emitted fails, and so does one
 // whose phase has begun.
 var classesPlanned = map[string]classesPlan{
-	"unsupported": {1, "the refusals of §2's cannot-do list arrive with the tools that meet them"},
+	"unsupported": {2, "modify_labels meets §2.12's first cannot-do: a draft cannot be labeled"},
 }
 
 // classesLimits are the floors, a parameter so a test can use a small fixture.

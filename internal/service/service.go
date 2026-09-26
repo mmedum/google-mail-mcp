@@ -110,21 +110,26 @@ func ParseZone(name string) (*time.Location, error) {
 	return loc, nil
 }
 
-// pageSize applies the default and the bounds to a requested page size.
-func pageSize(max int) (int, error) {
+// pageSize applies a listing's default and bound to a requested page
+// size: DefaultMax and MaxMax for mail listings.
+func pageSize(max int) (int, error) { return pageSizeOf(max, DefaultMax, MaxMax) }
+
+func pageSizeOf(max, def, limit int) (int, error) {
 	switch {
 	case max == 0:
-		return DefaultMax, nil
-	case max < 0 || max > MaxMax:
-		return 0, gapi.Errf(gapi.ClassInvalid, "max must be between 1 and %d", MaxMax)
+		return def, nil
+	case max < 0 || max > limit:
+		return 0, gapi.Errf(gapi.ClassInvalid, "max must be between 1 and %d", limit)
 	}
 	return max, nil
 }
 
 // resolveLabels turns ids or names into ids (§6.2): a system label by
-// its id in any case, a user label by id or exact name. A name that
-// matches nothing is not_found; two labels differing only in case are
-// ambiguous until spike I says whether Gmail allows them.
+// its id in any case, a user label by id, exact name, or name in any
+// case. A name that matches nothing is not_found. Gmail refuses two
+// labels differing only in case (spike I), so two case-insensitive
+// matches should not happen; if a label list ever has them, the answer
+// is ambiguous rather than a guess.
 func resolveLabels(all []gmail.Label, wanted []string) ([]string, error) {
 	out := make([]string, 0, len(wanted))
 	for _, w := range wanted {

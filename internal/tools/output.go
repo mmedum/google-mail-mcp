@@ -21,6 +21,9 @@ type LabelRef struct {
 
 // Attachment describes an attachment without its content.
 type Attachment struct {
+	// PartID names the attachment to download_attachment. Gmail's own
+	// structure, not the sender's words.
+	PartID            string          `json:"part_id"`
 	UntrustedFilename model.Untrusted `json:"untrusted_filename"`
 	UntrustedMimeType model.Untrusted `json:"untrusted_mime_type"`
 	Size              int             `json:"size"`
@@ -124,7 +127,7 @@ func messageMeta(m model.Message) MessageMeta {
 
 func attachment(a mime.Attachment) Attachment {
 	return Attachment{
-		UntrustedFilename: model.Untrusted(a.Filename), UntrustedMimeType: model.Untrusted(a.MimeType),
+		PartID: a.PartID, UntrustedFilename: model.Untrusted(a.Filename), UntrustedMimeType: model.Untrusted(a.MimeType),
 		Size: a.Size, AttachmentID: a.AttachmentID, Inline: a.Inline,
 		UntrustedCalendarMethod: model.Untrusted(a.CalendarMethod),
 	}

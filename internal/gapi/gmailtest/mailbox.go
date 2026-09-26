@@ -152,6 +152,8 @@ func seed(s *Server) {
 	sd.draftReply()
 	sd.injection()
 	sd.spamAndTrash()
+	seedSettings(s)
+	s.clock = sd.at
 }
 
 func (sd *seeder) record(name string, ms []*message, draft string) {
@@ -408,4 +410,20 @@ func (sd *seeder) spamAndTrash() {
 	b = "Lunch on Thursday is canceled.\n"
 	m = sd.s.add(spec{from: Bruno, to: []Person{Reader}, subject: "Old lunch plan", at: at, labels: []string{"TRASH"}, body: utf8Text(b), text: b})
 	sd.record(ScenarioTrash, []*message{m}, "")
+}
+
+// AddAttachmentMessage adds a message from Ada carrying one attachment
+// with the given declared name and content, and returns the message id
+// and the attachment's part id. Tests use it for sizes and names the
+// generated mailbox does not hold.
+func (s *Server) AddAttachmentMessage(filename string, content []byte) (messageID, partID string) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.clock = s.clock.Add(time.Minute)
+	text := "The file is attached.\n"
+	m := s.add(spec{from: Ada, to: []Person{Reader}, subject: "A file", at: s.clock, labels: []string{"INBOX"},
+		body: multipart("mixed", "mix-added", utf8Text(text),
+			attachment(`application/octet-stream`, `attachment; filename="`+filename+`"`, filename, content)),
+		text: text})
+	return m.id, "1"
 }

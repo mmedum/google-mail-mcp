@@ -419,7 +419,7 @@ type Change struct {
 
 // NewChanges flattens history records into changes, in record order.
 func NewChanges(hs []gmail.History, labels LabelIndex) []Change {
-	var out []Change
+	out := []Change{}
 	add := func(h gmail.History, k ChangeKind, m *gmail.Message, ids []string) {
 		if m == nil {
 			return

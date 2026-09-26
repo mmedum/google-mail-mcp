@@ -162,6 +162,21 @@ func headerBlock(m model.Message, all bool) string {
 	return b.String()
 }
 
+// capHeaders keeps a header block to at most limit characters, cut at a
+// line, and returns how many characters it left out. A message can carry
+// headers larger than any budget (§17a); the body still gets its share.
+func capHeaders(text string, limit int) (string, int) {
+	total := utf8.RuneCountInString(text)
+	if total <= limit {
+		return text, 0
+	}
+	kept := text[:byteIndexOfRune(text, limit)]
+	if i := strings.LastIndexByte(kept, '\n'); i > 0 {
+		kept = kept[:i+1]
+	}
+	return kept, total - utf8.RuneCountInString(kept)
+}
+
 func addrList(as []mime.Address) model.Untrusted {
 	return joinUntrusted(model.UntrustedAddresses(as), ", ")
 }
@@ -189,6 +204,7 @@ func attachmentLine(a mime.Attachment) string {
 	if a.Renamed {
 		details = append(details, `declared name "`+a.DeclaredName+`"`)
 	}
+	details = append(details, `part_id "`+a.PartID+`"`)
 	return a.Filename + " (" + strings.Join(details, ", ") + ")"
 }
 
@@ -282,7 +298,12 @@ const minBody = 200
 // with the widest cut line it could need, and the body gets exactly what
 // is left.
 func (w *writer) messageBody(m model.Message, o Options, startRune, end int) int {
-	w.block("headers", m.Sender().Email, m.ID, headerBlock(m, o.AllHeaders))
+	headers, cut := capHeaders(headerBlock(m, o.AllHeaders), o.budget()/2)
+	w.block("headers", m.Sender().Email, m.ID, headers)
+	if cut > 0 {
+		w.say("cut: %s of the header block over half the budget were left out; the structured result lists every address.",
+			plural(cut, "character", "characters"))
+	}
 	if !m.Complete {
 		w.say("(headers only: this read did not include the body)")
 		return 0

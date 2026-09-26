@@ -149,11 +149,9 @@ func (s *Service) Thread(ctx context.Context, id string) (model.Thread, error) {
 // Message reads one message by id, or by "rfc822:<Message-ID>".
 func (s *Service) Message(ctx context.Context, id string) (model.Message, error) {
 	ls, g, err := withLabels(ctx, s, func(ctx context.Context) (*gmail.Message, error) {
-		if strings.HasPrefix(id, rfc822Prefix) {
-			var err error
-			if id, err = s.byRFC822ID(ctx, strings.TrimPrefix(id, rfc822Prefix)); err != nil {
-				return nil, err
-			}
+		id, err := s.messageID(ctx, id)
+		if err != nil {
+			return nil, err
 		}
 		return s.client.GetMessage(ctx, id, gapi.FormatFull)
 	})

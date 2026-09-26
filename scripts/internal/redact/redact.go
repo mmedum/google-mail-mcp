@@ -63,6 +63,27 @@ var patterns = []pattern{
 	{"NUMBER", regexp.MustCompile(`\b[0-9]{10,}\b`)},
 }
 
+// historyPositions are where a history id appears. It is a plain decimal
+// counter, too short for NUMBER and shaped like any other number, so it
+// is found by what stands before it: list_changes's "history N",
+// "history from N" and "history_id=N", an argument echo's "history_id":"N", and a request's
+// startHistoryId=N. A live transcript carried the account's real ones
+// before these existed.
+var historyPositions = []*regexp.Regexp{
+	regexp.MustCompile(`\bhistory (?:from )?(\d+)\b`),
+	regexp.MustCompile(`\bhistory_id=(\d+)\b`),
+	regexp.MustCompile(`"history_id":"(\d+)"`),
+	regexp.MustCompile(`\bstartHistoryId=(\d+)\b`),
+}
+
+// dirPositions are where the live driver's own directory appears: a
+// saved file's path runs through the system's temporary directory,
+// which can name the maintainer's account or machine. What stands before
+// the run's folder is masked, the folder itself kept.
+var dirPositions = []*regexp.Regexp{
+	regexp.MustCompile(`((?:[A-Za-z]:)?[/\\][^\s"<>]*?)[/\\]livemail-[0-9]{8}-[0-9]{6}-[0-9a-f]{6}-`),
+}
+
 // personName is the shape of a display name: capitalized words, with
 // the usual lowercase particles between them, or a dotted lowercase
 // token, which is what Gmail shows when no display name is set. It is
@@ -95,12 +116,20 @@ func (r *Redactor) Do(text string) string {
 			return r.placeholder(p.name, match)
 		})
 	}
+	text = r.inPositions(text, "HISTORY", historyPositions)
+	text = r.inPositions(text, "DIR", dirPositions)
 	// Names last: one of their positions is defined by an address
 	// placeholder.
-	for _, re := range personPositions {
+	return r.inPositions(text, "PERSON", personPositions)
+}
+
+// inPositions masks what each position's first group captures, keeping
+// the words around it that make it recognizable.
+func (r *Redactor) inPositions(text, kind string, positions []*regexp.Regexp) string {
+	for _, re := range positions {
 		text = re.ReplaceAllStringFunc(text, func(match string) string {
-			name := re.FindStringSubmatch(match)[1]
-			return strings.Replace(match, name, r.placeholder("PERSON", name), 1)
+			v := re.FindStringSubmatch(match)[1]
+			return strings.Replace(match, v, r.placeholder(kind, v), 1)
 		})
 	}
 	return text

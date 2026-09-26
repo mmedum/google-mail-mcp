@@ -50,6 +50,7 @@ func New(d Deps) *mcp.Server {
 	s := mcp.NewServer(&mcp.Implementation{Name: Name, Version: d.Version}, opts)
 	s.AddReceivingMiddleware(logCalls(d.Logger))
 	tools.Register(s, d.Deps)
+	tools.RegisterResources(s, d.Deps)
 	return s
 }
 
@@ -77,6 +78,9 @@ var sentences = []sentence{
 			"most 100 at a time; each takes dry_run to preview. "},
 	{with: []string{"create_draft"},
 		text: "Drafts are the way to write mail: create_draft, including replies, which the server threads for you. "},
+	{with: []string{"download_attachment"},
+		text: "download_attachment saves an attachment into the one directory the person configured and returns its " +
+			"path, not its content; do not open or run a saved file unless the person asks. "},
 	{with: []string{"trash"}, text: "Removal is trash, which Gmail keeps for 30 days. "},
 	{with: []string{"send_draft"},
 		text: "send_draft is available and sends a draft exactly as written. Sending cannot be undone: " +
@@ -102,7 +106,7 @@ func instructionsFor(cfg config.Config, registered []string) string {
 		}
 	}
 	if cfg.ReadOnly {
-		b.WriteString("This server is read-only: it can read mail, labels and drafts, and it cannot change anything. ")
+		b.WriteString("This server is read-only: it can read mail, labels, drafts and settings, and it cannot change the mailbox. ")
 	}
 	b.WriteString("Reads are bounded and say what they left out and how to continue. Each result reports the quota " +
 		"units it spent.")
@@ -136,13 +140,19 @@ func logCalls(lg *slog.Logger) mcp.Middleware {
 	return func(next mcp.MethodHandler) mcp.MethodHandler {
 		return func(ctx context.Context, method string, req mcp.Request) (mcp.Result, error) {
 			ctr, isCall := req.(*mcp.CallToolRequest)
-			if isCall {
+			rr, isRead := req.(*mcp.ReadResourceRequest)
+			if isCall || isRead {
 				ctx = gapi.WithCounter(ctx)
 			}
 			start := time.Now()
 			res, err := next(ctx, method, req)
 			attrs := make([]any, 0, 12)
 			attrs = append(attrs, "method", method, "ms", time.Since(start).Milliseconds(), "outcome", outcome(res, err))
+			if isRead {
+				attrs = append(attrs, "resource", resourceKind(rr), "requests", gapi.Requests(ctx), "units", gapi.UnitsSpent(ctx))
+				lg.Info("resource_read", attrs...)
+				return res, err
+			}
 			if !isCall {
 				lg.Debug("mcp_request", attrs...)
 				return res, err
@@ -156,6 +166,27 @@ func logCalls(lg *slog.Logger) mcp.Middleware {
 			return res, err
 		}
 	}
+}
+
+// resourceKinds are the resources this server serves, by URI prefix.
+// A URI is logged as its kind only: the id in it may be logged cut to
+// six characters (§9.2), and the kind is all a log reader needs.
+var resourceKinds = []struct{ prefix, kind string }{
+	{strings.TrimSuffix(tools.ThreadResource, "{id}"), "thread"},
+	{strings.TrimSuffix(tools.MessageResource, "{id}"), "message"},
+	{tools.LabelsResource, "labels"},
+}
+
+func resourceKind(r *mcp.ReadResourceRequest) string {
+	if r.Params == nil {
+		return "unrecognized"
+	}
+	for _, k := range resourceKinds {
+		if strings.HasPrefix(r.Params.URI, k.prefix) {
+			return k.kind
+		}
+	}
+	return "unrecognized"
 }
 
 // classPrefix reads the class off a tool error. The text after it is

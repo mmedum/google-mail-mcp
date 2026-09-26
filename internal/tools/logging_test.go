@@ -23,9 +23,9 @@ import (
 )
 
 // minTools is the floor on how many tools this test drives: the whole
-// phase 0 surface, so a test that drives nothing cannot pass for one
+// phase 1 surface, so a test that drives nothing cannot pass for one
 // that drives everything (standard, preamble). Raise it with the surface.
-var minTools = 8
+var minTools = 12
 
 // The rule (§9.2): a log line says when a call happened, what it was
 // and how it ended. It never carries an address, a subject, a body, a
@@ -121,6 +121,9 @@ func argsFor(tool *mcp.Tool) map[string]any {
 var validArgs = map[string]any{
 	"time_zone": "UTC", "after": "2026-01-01", "before": "2026-02-01",
 	"budget_chars": 0, "cursor": 0, "offset": 0,
+	// The canary message's one part has no part id, and carries the
+	// canary file name, so download_attachment writes it.
+	"part_id": "", "history_id": "1", "kinds": []any{"added"},
 }
 
 func canaryFor(name string) string {

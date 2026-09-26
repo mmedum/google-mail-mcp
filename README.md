@@ -138,16 +138,28 @@ be saved to; `GMAIL_PROFILE` lets one machine hold several accounts.
 | `list_labels` | Every label, optionally with counts |
 | `list_drafts` | Unsent drafts |
 | `get_draft` | Read one draft |
+| `list_changes` | What changed since a history id, and when that cursor has expired |
+| `get_settings` | Forwarding, vacation reply, send-as addresses, IMAP and POP, read-only |
+| `list_filters` | The account's filters, with any that forward mail flagged |
+| `download_attachment` | Save an attachment into `GMAIL_LOCAL_DIR`, never overwriting; only when that is set |
 
 Searches take Gmail's own search language in `q`, plus `after` and
 `before` as real instants — Gmail reads a date written inside `q` as
 midnight Pacific time. Every result states the quota it spent.
 
+For clients that attach rather than call, `gmail://threads/{id}`,
+`gmail://messages/{id}` and `gmail://labels` carry the same text as
+`get_thread`, `get_message` and `list_labels`.
+
 ## Safety
 
 - **Mail is data.** It arrives marked, with what was hidden removed and
   counted, and no tool description tells a model to act on it.
-- **Nothing reaches another person** from the tools above.
+- **Nothing reaches another person** from the tools above, and none of
+  them changes a setting: forwarding and filters are shown, never set.
+- **Files go to one directory.** `download_attachment` writes only into
+  `GMAIL_LOCAL_DIR`, under a name made safe, and never over an existing
+  file.
 - **Logs never carry mail.** No address, subject, body, label name or
   query; ids are cut to six characters. A test drives every tool with
   marker values and fails if one reaches a log, which is what makes a debug

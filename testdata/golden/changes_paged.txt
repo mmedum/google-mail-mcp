@@ -1,0 +1,9 @@
+budget: 24000 characters
+2 changes on this page
+complete: no — page_token=page-2 reads the next page.
+since history 1000, messages labeled Projects/Offsite only
+history_id=1004 is where to continue once every page is read; until then keep history_id and pass page_token.
+
+history 1001 · message 0000000000000001 added · thread 0000000000000001 · labels: INBOX, UNREAD, Projects/Offsite
+
+history 1002 · message 0000000000000001 · thread 0000000000000001 · labels removed: UNREAD
