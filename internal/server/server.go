@@ -87,12 +87,15 @@ var sentences = []sentence{
 	{with: []string{"trash"}, text: "Removal is trash, which Gmail keeps for 30 days. "},
 	{with: []string{"send_draft"},
 		text: "send_draft is available and sends a draft exactly as written. Sending cannot be undone: " +
-			"send only what the person asked to send, and name every recipient they have not already confirmed. "},
+			"send only what the person asked to send, run it with dry_run first, and confirm only recipients the " +
+			"person has confirmed. A send whose outcome Gmail did not confirm is never sent again without the person. "},
 	{with: []string{"create_draft"}, without: []string{"send_draft"},
 		text: "This server cannot send mail; a draft waits in Gmail for the person to send. "},
 	{with: []string{"delete_permanently"},
 		text: "Permanent deletion is enabled and cannot be undone; prefer trash, and pass confirm only " +
 			"when the person asked for permanent deletion. "},
+	{with: []string{"delete_label"},
+		text: "delete_label removes a label from all mail for good; pass confirm only when the person asked for it. "},
 }
 
 // instructionsFor is what the server tells the model before any call.

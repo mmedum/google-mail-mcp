@@ -134,9 +134,10 @@ type Item struct {
 	Before, After []LabelRef
 }
 
-// ItemsWrite is modify_labels, trash or restore over many ids.
+// ItemsWrite is modify_labels, trash, restore or delete_permanently
+// over many ids. For delete_permanently, Changed means deleted for good.
 type ItemsWrite struct {
-	// Op is "modify_labels", "trash" or "restore".
+	// Op is "modify_labels", "trash", "restore" or "delete_permanently".
 	Op     string
 	DryRun bool
 	// Add and Remove are the labels asked for, resolved.
@@ -157,17 +158,22 @@ func (w ItemsWrite) Count(o Outcome) int {
 	return n
 }
 
-// LabelWrite is a created or updated label.
+// LabelWrite is a created, updated or deleted label.
 type LabelWrite struct {
-	// Op is "create" or "update".
+	// Op is "create", "update" or "delete".
 	Op     string
 	DryRun bool
-	// Before is the label as it was, for an update.
+	// Before is the label as it was, for an update or a delete; a
+	// delete's carries its counts.
 	Before *Label
-	// After is the label Gmail answered with, or would be.
+	// After is the label Gmail answered with, or would be. Zero for a
+	// delete.
 	After Label
 	// Changed names the fields an update changed.
 	Changed []string
+	// Gone is set when Gmail answered a delete that the label was
+	// already gone, after it had been read.
+	Gone bool
 }
 
 // LabelListWords are this server's words for a label's place in Gmail's
@@ -212,4 +218,72 @@ var Verbs = []Verb{
 var (
 	DraftFields = []string{"to", "cc", "bcc", "subject", "body", "body_html", "attachments"}
 	LabelFields = []string{"name", "in_label_list", "in_message_list", "color"}
+)
+
+// SendRecipient is one address a draft is sent to, and how the recipient
+// guard of §4.2 judged it.
+type SendRecipient struct {
+	Address mime.Address
+	// Field is "to", "cc" or "bcc", and Position its place there from 0:
+	// the guard names it Field[Position].
+	Field    string
+	Position int
+	// Participant is set when the address is on a message of the thread
+	// the draft answers, so it needs no confirmation.
+	Participant bool
+	// Confirmed is set when confirm_recipients names it.
+	Confirmed bool
+}
+
+// Cleared reports whether the guard lets this recipient through.
+func (r SendRecipient) Cleared() bool { return r.Participant || r.Confirmed }
+
+// SendWrite is a sent draft, or what a dry run would send (§4.2).
+type SendWrite struct {
+	DryRun  bool
+	DraftID string
+	// MessageID is the message inside the draft, read before the send:
+	// the witness the call was checked against.
+	MessageID string
+	ThreadID  string
+	// Answers counts the thread's messages the draft answers: those that
+	// are not drafts, spam or trash. Zero is a new conversation, where
+	// every recipient needs confirming.
+	Answers int
+
+	From            *mime.Address
+	Recipients      []SendRecipient
+	Subject         Untrusted
+	RFC822MessageID Untrusted
+	Files           []File
+
+	// SentID, SentThreadID and SentLabels are Gmail's answer to the send.
+	SentID       string
+	SentThreadID string
+	SentLabels   []LabelRef
+}
+
+// Unconfirmed counts the recipients the guard stops.
+func (s SendWrite) Unconfirmed() int {
+	n := 0
+	for _, r := range s.Recipients {
+		if !r.Cleared() {
+			n++
+		}
+	}
+	return n
+}
+
+// Settled is what the reads after an ambiguous send found (§4.3).
+type Settled string
+
+// Verdicts.
+const (
+	// SettledSent: the draft is gone and its Message-ID is in SENT.
+	SettledSent Settled = "sent"
+	// SettledNotSent: the draft is still there and nothing carrying its
+	// Message-ID is in SENT.
+	SettledNotSent Settled = "not_sent"
+	// SettledUnknown: anything else, including a read that failed.
+	SettledUnknown Settled = "unknown"
 )

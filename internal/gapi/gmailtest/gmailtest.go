@@ -76,6 +76,10 @@ var unitCost = map[string]int{
 	"gmail.users.threads.untrash":  10,
 	"gmail.users.labels.create":    5,
 	"gmail.users.labels.patch":     5,
+	"gmail.users.labels.delete":    5,
+	"gmail.users.drafts.send":      100,
+	"gmail.users.messages.delete":  10,
+	"gmail.users.threads.delete":   20,
 }
 
 // Failure makes matching requests fail instead of being served.
@@ -91,6 +95,9 @@ type Failure struct {
 	RetryAfter string
 	// Reset closes the connection without answering, as a network reset.
 	Reset bool
+	// Served acts on the request before failing it, as when Google did
+	// the work and its answer was lost on the way back.
+	Served bool
 	// Times is how many requests fail; 0 means one.
 	Times int
 	// Then runs when the failure is served, outside the fake's lock, for
@@ -129,6 +136,11 @@ type Server struct {
 	// page size before filtering. A client that stops there has read a
 	// mailbox with mail in it as empty.
 	EmptyFirstPage bool
+
+	// FullScope is whether the token holds https://mail.google.com/.
+	// Without it, a permanent delete is refused 403, as Gmail refuses it
+	// under gmail.modify (spike G).
+	FullScope bool
 
 	// settings are the account's settings and filters, generated like
 	// the mail. UpdateSettings changes them.
@@ -301,6 +313,10 @@ var routes = []route{
 	{"POST", false, []string{"threads", "{}", "untrash"}, "gmail.users.threads.untrash", (*Server).untrashThread},
 	{"POST", false, []string{"labels"}, "gmail.users.labels.create", (*Server).createLabel},
 	{"PATCH", false, []string{"labels", "{}"}, "gmail.users.labels.patch", (*Server).patchLabel},
+	{"DELETE", false, []string{"labels", "{}"}, "gmail.users.labels.delete", (*Server).deleteLabel},
+	{"POST", false, []string{"drafts", "send"}, "gmail.users.drafts.send", (*Server).sendDraft},
+	{"DELETE", false, []string{"messages", "{}"}, "gmail.users.messages.delete", (*Server).deleteMessage},
+	{"DELETE", false, []string{"threads", "{}"}, "gmail.users.threads.delete", (*Server).deleteThread},
 }
 
 const prefix = "/gmail/v1/users/me/"
@@ -325,6 +341,9 @@ func (s *Server) serve(w http.ResponseWriter, r *http.Request) {
 		s.units += cost
 		f := s.takeFailure(rt.id)
 		if f != nil {
+			if f.Served {
+				rt.handle(s, discard{}, r, args)
+			}
 			s.mu.Unlock()
 			if f.Then != nil {
 				f.Then(s)
@@ -338,6 +357,14 @@ func (s *Server) serve(w http.ResponseWriter, r *http.Request) {
 	}
 	writeError(w, http.StatusNotFound, "notFound", "Method not found.")
 }
+
+// discard is a response nobody reads: a served request whose answer is
+// lost.
+type discard struct{}
+
+func (discard) Header() http.Header         { return http.Header{} }
+func (discard) Write(b []byte) (int, error) { return len(b), nil }
+func (discard) WriteHeader(int)             {}
 
 func match(pattern, segs []string) ([]string, bool) {
 	if len(pattern) != len(segs) {

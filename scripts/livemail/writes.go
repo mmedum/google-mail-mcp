@@ -307,12 +307,13 @@ var writeSteps = []step{
 // new input is guarded before it is driven, not after.
 var (
 	writeTools = map[string]bool{"create_draft": true, "update_draft": true, "delete_draft": true, "modify_labels": true,
-		"trash": true, "restore": true, "create_label": true, "update_label": true}
+		"trash": true, "restore": true, "create_label": true, "update_label": true, "send_draft": true,
+		"delete_permanently": true, "delete_label": true}
 	writeKeys = map[string]bool{
 		// Checked below or by guard.
 		"message_ids": true, "thread_ids": true, "to": true, "cc": true, "bcc": true, "from": true,
 		"attachments": true, "add_attachments": true, "name": true, "label": true,
-		"draft_id": true, "message_id": true, "reply_to": true, "reply_to_thread": true,
+		"draft_id": true, "message_id": true, "reply_to": true, "reply_to_thread": true, "confirm_recipients": true,
 		// Carry no id, address or file: text, flags, part ids of the run's
 		// own drafts, and the system labels STARRED and IMPORTANT.
 		"dry_run": true, "confirm": true, "reply_all": true, "subject": true, "body": true, "body_html": true,
@@ -343,9 +344,16 @@ func (e *env) guardWrite(tool string, args map[string]any) error {
 	for _, key := range []string{"to", "cc", "bcc"} {
 		list, _ := args[key].([]any)
 		for _, v := range list {
-			if a, _ := v.(string); !reservedAddress(a) {
-				return fmt.Errorf("%w: %s on %s is outside the reserved domains", errUnscoped, key, tool)
+			if a, _ := v.(string); !reservedAddress(a) && !e.isSendTo(a) {
+				return fmt.Errorf("%w: %s on %s is outside the reserved domains and is not -send-to", errUnscoped, key, tool)
 			}
+		}
+	}
+	// A send reaches only -send-to: the only address a step may vouch for.
+	confirm, _ := args["confirm_recipients"].([]any)
+	for _, v := range confirm {
+		if a, _ := v.(string); !e.isSendTo(a) {
+			return fmt.Errorf("%w: confirm_recipients names an address that is not -send-to", errUnscoped)
 		}
 	}
 	if from, ok := args["from"].(string); ok && from != e.account {
@@ -360,7 +368,7 @@ func (e *env) guardWrite(tool string, args map[string]any) error {
 		}
 	}
 	for _, key := range []string{"name", "label"} {
-		if tool != "create_label" && tool != "update_label" {
+		if tool != "create_label" && tool != "update_label" && tool != "delete_label" {
 			break
 		}
 		if v, ok := args[key].(string); ok && !strings.HasPrefix(strings.ToLower(v), strings.ToLower(e.seed.label.name)) {
@@ -369,6 +377,10 @@ func (e *env) guardWrite(tool string, args map[string]any) error {
 	}
 	return nil
 }
+
+// isSendTo reports whether an entry is exactly -send-to, when one was
+// given.
+func (e *env) isSendTo(entry string) bool { return e.sendTo != "" && entry == e.sendTo }
 
 // reservedAddress holds an entry to addresses at example.com, example.org
 // or .invalid, which RFC 2606 keeps from ever being delivered. It reads
@@ -441,6 +453,8 @@ var writeSpikes = []spike{
 // sendable reports why a sending spike cannot run, or "".
 func (x spikeRun) sendable() string {
 	switch {
+	case !x.spikesDE:
+		return "not run: answered 2026-09-26 (§15); -spikes-de sends it again"
 	case x.sendTo == "":
 		return "not run: it sends mail, and -send-to was not given"
 	case x.account == "":

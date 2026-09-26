@@ -338,6 +338,10 @@ func (c *Client) policyFor(call Call) (policy, error) {
 	}, nil
 }
 
+// Wait pauses for d, or until ctx ends, with the same sleep the client
+// backs off with, so a test that stubs one stubs both.
+func (c *Client) Wait(ctx context.Context, d time.Duration) error { return c.sleep(ctx, d) }
+
 // Do sends one call and decodes the response into out, which may be nil.
 func (c *Client) Do(ctx context.Context, call Call, out any) error {
 	return c.do(ctx, call, out, nil)

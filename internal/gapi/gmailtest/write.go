@@ -20,10 +20,10 @@ import (
 
 // The write handlers model what the server's logic depends on (§13):
 // threading by the three conditions of §2.5, a draft's message replaced
-// with a new id on every update (spike A's question, modeled as the
-// design expects until the spike answers it), SENT and DRAFT refused by
-// hand, labels that differ only in case refused (spike I), and every
-// change recorded in history. They run with s.mu held.
+// with a new id on every update (spike A), SENT and DRAFT refused by
+// hand, labels that differ only in case refused (spike I), permanent
+// deletion refused without https://mail.google.com/ (spike G), and
+// every change recorded in history. They run with s.mu held.
 
 // readDraft reads a drafts.create or drafts.update body: JSON with the
 // message's raw bytes, or a multipart upload with JSON metadata and the
@@ -127,7 +127,11 @@ func (s *Server) storeRaw(raw []byte, threadID string, labels []string) (*messag
 		return nil, err
 	}
 	id := s.nextID()
-	thread := s.threadFor(threadID, p, id)
+	return s.storeParsed(raw, p, id, s.threadFor(threadID, p, id), labels), nil
+}
+
+// storeParsed adds a message already parsed, in the thread given.
+func (s *Server) storeParsed(raw []byte, p parsedRaw, id, thread string, labels []string) *message {
 	s.clock = s.clock.Add(time.Minute)
 	m := &message{
 		id: id, threadID: thread, labels: labels, internalDate: s.clock, raw: raw,
@@ -140,7 +144,7 @@ func (s *Server) storeRaw(raw []byte, threadID string, labels []string) (*messag
 		hasAttachment: hasFilename(p.body),
 	}
 	s.insert(m, p.body, p.headers, labels)
-	return m, nil
+	return m
 }
 
 // replaceMessageID puts Gmail's own Message-ID on a created draft, as a
@@ -447,4 +451,100 @@ func (s *Server) patchLabel(w http.ResponseWriter, r *http.Request, args []strin
 	}
 	*l = next
 	writeJSON(w, l)
+}
+
+// sendDraft sends a draft as Gmail does (spikes B and C): the draft is
+// gone, and its message is filed in SENT in the draft's thread, under a
+// new id and a new Message-ID. A draft with no recipient is refused, as
+// Gmail refuses it.
+func (s *Server) sendDraft(w http.ResponseWriter, r *http.Request, _ []string) {
+	var d gmail.Draft
+	if err := json.NewDecoder(r.Body).Decode(&d); err != nil || d.ID == "" {
+		writeError(w, http.StatusBadRequest, "invalidArgument", "Missing draft id")
+		return
+	}
+	mid, found := s.drafts[d.ID]
+	if !found {
+		writeError(w, http.StatusNotFound, "notFound", "Requested entity was not found.")
+		return
+	}
+	old := s.messages[mid]
+	// Gmail replaces the draft's Message-ID on the sent copy (spike B).
+	raw := replaceMessageID(old.raw, "<sent."+strconv.FormatUint(s.counter+1, 16)+"@mail.example.com>")
+	p, err := parseRaw(raw)
+	if err != nil || strings.TrimSpace(headerValue(p.headers, "To")+headerValue(p.headers, "Cc")+headerValue(p.headers, "Bcc")) == "" {
+		writeError(w, http.StatusBadRequest, "invalidArgument", "Recipient address required")
+		return
+	}
+	sent := s.storeParsed(raw, p, s.nextID(), old.threadID, []string{"SENT"})
+	delete(s.drafts, d.ID)
+	s.drop(mid)
+	writeJSON(w, gmail.Message{ID: sent.id, ThreadID: sent.threadID, LabelIDs: slices.Clone(sent.labels)})
+}
+
+// needsFull refuses a permanent delete when the fake's token does not
+// hold https://mail.google.com/, as Gmail answers under gmail.modify
+// (spike G).
+func (s *Server) needsFull(w http.ResponseWriter) bool {
+	if s.FullScope {
+		return false
+	}
+	writeError(w, http.StatusForbidden, "insufficientPermissions", "Request had insufficient authentication scopes.")
+	return true
+}
+
+func (s *Server) deleteMessage(w http.ResponseWriter, _ *http.Request, args []string) {
+	_, found := s.messages[args[0]]
+	s.deleteAll(w, []string{args[0]}, found)
+}
+
+func (s *Server) deleteThread(w http.ResponseWriter, _ *http.Request, args []string) {
+	ids, found := s.threads[args[0]]
+	s.deleteAll(w, ids, found)
+}
+
+// deleteAll deletes messages for good, with the drafts they hold.
+func (s *Server) deleteAll(w http.ResponseWriter, ids []string, found bool) {
+	if s.needsFull(w) {
+		return
+	}
+	if !found {
+		writeError(w, http.StatusNotFound, "notFound", "Requested entity was not found.")
+		return
+	}
+	for _, id := range slices.Clone(ids) {
+		s.forgetDraftOf(id)
+		s.drop(id)
+	}
+	w.WriteHeader(http.StatusNoContent)
+}
+
+// forgetDraftOf removes the draft whose message is id, if any: deleting
+// a draft's message deletes the draft.
+func (s *Server) forgetDraftOf(id string) {
+	for d, mid := range s.drafts {
+		if mid == id {
+			delete(s.drafts, d)
+		}
+	}
+}
+
+// deleteLabel removes a user label and takes it off every message.
+func (s *Server) deleteLabel(w http.ResponseWriter, _ *http.Request, args []string) {
+	l, found := s.labels[args[0]]
+	if !found {
+		writeError(w, http.StatusNotFound, "notFound", "Requested entity was not found.")
+		return
+	}
+	if l.Type == gmail.LabelTypeSystem {
+		writeError(w, http.StatusBadRequest, "invalidArgument", "Invalid delete request")
+		return
+	}
+	for id, m := range s.messages {
+		if slices.Contains(m.labels, l.ID) {
+			s.relabel(id, nil, []string{l.ID})
+		}
+	}
+	delete(s.labels, l.ID)
+	w.WriteHeader(http.StatusNoContent)
 }

@@ -131,7 +131,7 @@ type MoveIn struct {
 type ItemOut struct {
 	ID           string     `json:"id"`
 	Kind         string     `json:"kind" jsonschema:"message or thread"`
-	Outcome      string     `json:"outcome" jsonschema:"changed, unchanged (already as asked), would_change (dry run) or failed"`
+	Outcome      string     `json:"outcome" jsonschema:"changed (for delete_permanently, deleted for good), unchanged (already as asked), would_change (dry run) or failed"`
 	Error        string     `json:"error,omitempty" jsonschema:"why it failed, as [class] message"`
 	LabelsBefore []LabelRef `json:"labels_before"`
 	LabelsAfter  []LabelRef `json:"labels_after"`

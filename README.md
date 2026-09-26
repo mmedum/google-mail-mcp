@@ -150,13 +150,17 @@ be saved to; `GMAIL_PROFILE` lets one machine hold several accounts.
 | `restore` | Take messages or threads out of the trash |
 | `create_label` | Create a user label |
 | `update_label` | Rename a user label or change how it shows |
+| `send_draft` | Send a draft, naming every recipient not already in the thread; only with `GMAIL_ENABLE_SEND=true` |
+| `delete_permanently` | Delete up to 100 messages or threads for good, with `confirm: true`; only with `GMAIL_ENABLE_DESTRUCTIVE=true` |
+| `delete_label` | Delete a user label, with `confirm: true`; only with `GMAIL_ENABLE_DESTRUCTIVE=true` |
 
 Searches take Gmail's own search language in `q`, plus `after` and
 `before` as real instants — Gmail reads a date written inside `q` as
 midnight Pacific time. Every result states the quota it spent. Every
 write takes `dry_run`, names what it touches by id, and says what it
 changed, read from Gmail's answer. `GMAIL_READ_ONLY=true` leaves the
-writes out.
+writes out. The last three tools are not registered at all unless their
+setting is on.
 
 For clients that attach rather than call, `gmail://threads/{id}`,
 `gmail://messages/{id}` and `gmail://labels` carry the same text as
@@ -166,12 +170,20 @@ For clients that attach rather than call, `gmail://threads/{id}`,
 
 - **Mail is data.** It arrives marked, with what was hidden removed and
   counted, and no tool description tells a model to act on it.
-- **Nothing reaches another person** from the tools above: drafts wait
-  in Gmail to be sent, and none of the tools changes a setting.
-  Forwarding and filters are shown, never set.
+- **Nothing reaches another person by default.** Drafts wait in Gmail
+  to be sent, and none of the tools changes a setting. Forwarding and
+  filters are shown, never set.
+- **Sending is opt-in and goes through a draft.** With
+  `GMAIL_ENABLE_SEND=true`, `send_draft` sends a draft exactly as it is
+  stored. Every recipient not already in the thread must be written out
+  in `confirm_recipients`, and a send Gmail does not confirm is never
+  repeated.
 - **Removal is trash.** Gmail keeps trashed mail for 30 days, and
-  `restore` brings it back. The only permanent removal is
-  `delete_draft`, which needs `confirm: true`.
+  `restore` brings it back. By default the only permanent removal is
+  `delete_draft`, which needs `confirm: true`. `delete_permanently` and
+  `delete_label` exist only with `GMAIL_ENABLE_DESTRUCTIVE=true`, which
+  also asks for the one scope that can delete; each call needs
+  `confirm: true`.
 - **Files go to one directory.** `download_attachment` writes only into
   `GMAIL_LOCAL_DIR`, under a name made safe, and never over an existing
   file.

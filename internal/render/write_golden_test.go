@@ -97,6 +97,39 @@ func TestGoldenItemsWrites(t *testing.T) {
 		{ID: "0000000000000002", Kind: model.KindMessage, Outcome: model.Unchanged, Before: []model.LabelRef{inbox}},
 	}}
 	golden(t, "restore", render.ItemsWrite(restore))
+
+	purge := model.ItemsWrite{Op: "delete_permanently", Items: []model.Item{
+		{ID: "0000000000000001", Kind: model.KindMessage, Outcome: model.Changed, Before: []model.LabelRef{inbox}},
+		{ID: "0000000000000009", Kind: model.KindThread, Outcome: model.Changed, Before: []model.LabelRef{inbox, starred}},
+		{ID: "0000000000000021", Kind: model.KindMessage, Outcome: model.Failed, Class: "invalid",
+			Error: "message 0000000000000021 is a draft; delete_draft removes a draft"},
+	}}
+	golden(t, "delete_permanently", render.ItemsWrite(purge))
+	purge.DryRun = true
+	purge.Items[0].Outcome, purge.Items[1].Outcome = model.WouldChange, model.WouldChange
+	golden(t, "delete_permanently_dry_run", render.ItemsWrite(purge))
+}
+
+func TestGoldenSendDraft(t *testing.T) {
+	from := addr(gmailtest.Reader)
+	sent := model.SendWrite{DraftID: "r0000000000000021", MessageID: "0000000000000022", ThreadID: "0000000000000001",
+		Answers: 2, From: &from, Subject: "Re: Budget sign-off", RFC822MessageID: "<draft.22@mail.example.com>",
+		Recipients: []model.SendRecipient{
+			{Address: addr(gmailtest.Freya), Field: "to", Participant: true},
+			{Address: addr(gmailtest.Ada), Field: "cc", Confirmed: true},
+		},
+		Files:  []model.File{{Name: "totals.csv", MediaType: "text/csv", Size: 2048, PartID: "1"}},
+		SentID: "0000000000000030", SentThreadID: "0000000000000001",
+		SentLabels: []model.LabelRef{{ID: "SENT", Name: "SENT"}},
+	}
+	golden(t, "send_draft", render.SendDraft(sent, opts()).Text)
+
+	dry := sent
+	dry.DryRun, dry.SentID, dry.SentThreadID, dry.SentLabels = true, "", "", nil
+	dry.Answers = 0
+	dry.Recipients = append(dry.Recipients, model.SendRecipient{Address: addr(gmailtest.Bruno), Field: "cc", Position: 1})
+	dry.Recipients[0].Participant = false
+	golden(t, "send_draft_dry_run", render.SendDraft(dry, opts()).Text)
 }
 
 func TestGoldenLabelWrites(t *testing.T) {
@@ -111,4 +144,10 @@ func TestGoldenLabelWrites(t *testing.T) {
 	renamed.Name, renamed.MessageListVisibility = "Trips", "hide"
 	golden(t, "label_update", render.LabelWrite(model.LabelWrite{Op: "update", Before: &created, After: renamed,
 		Changed: []string{"name", "in_message_list"}}))
+
+	counted := created
+	counted.HasCounts, counted.MessagesTotal, counted.ThreadsTotal = true, 12, 1
+	golden(t, "label_delete", render.LabelWrite(model.LabelWrite{Op: "delete", Before: &counted}))
+	golden(t, "label_delete_dry_run", render.LabelWrite(model.LabelWrite{Op: "delete", DryRun: true, Before: &counted}))
+	golden(t, "label_delete_gone", render.LabelWrite(model.LabelWrite{Op: "delete", Before: &counted, Gone: true}))
 }

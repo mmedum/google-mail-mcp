@@ -1,0 +1,2 @@
+label Label_5 is gone: it was read, and Gmail then answered the delete that no such label exists.
+look: Travel · in label list: show_if_unread · in message list: show · color #ffffff on #16a766

@@ -268,6 +268,8 @@ func TestSenderTextNeverReachesTheServersVoice(t *testing.T) {
 			"profile, labels": {Text: Profile(model.Profile{Email: "reader@example.com"}) + Labels(model.NewLabels(testLabels, true))},
 			"draft written":   DraftWrite(hostileDraftWrite(h, msgs[0], "update"), o),
 			"reply written":   DraftWrite(hostileDraftWrite(h, msgs[1], "create"), small),
+			"send":            SendDraft(hostileSendWrite(h, msgs[2], false), o),
+			"send dry run":    SendDraft(hostileSendWrite(h, msgs[3], true), small),
 		}
 		for name, res := range results {
 			if name == "thread omitted" && len(res.Omitted) == 0 {
@@ -324,6 +326,31 @@ func hostileDraftWrite(h *hostile, m model.Message, op string) model.DraftWrite 
 		d.Reply = &model.Reply{ParentID: m.ID, ParentThreadID: m.ThreadID, ReplyAll: true, DroppedOwn: 1, Unwritable: 2}
 	}
 	return d
+}
+
+// hostileSendWrite is a send's result made of a hostile message: its
+// addresses as recipients, some cleared and some not, its subject and
+// its attachments.
+func hostileSendWrite(h *hostile, m model.Message, dry bool) model.SendWrite {
+	sw := model.SendWrite{DryRun: dry, DraftID: "r-18", MessageID: m.ID, ThreadID: m.ThreadID, Answers: 1,
+		Subject: m.Subject, RFC822MessageID: m.RFC822MessageID}
+	if !dry {
+		sw.SentID, sw.SentThreadID = "00000000000000dd", "00000000000000de"
+	}
+	if len(m.From) > 0 {
+		sw.From = &m.From[0]
+	}
+	for i, list := range [][]mime.Address{m.From, m.To, m.Cc, m.ReplyTo} {
+		for j, a := range list {
+			sw.Recipients = append(sw.Recipients, model.SendRecipient{Address: a, Field: []string{"to", "cc", "bcc", h.mark()}[i],
+				Position: j, Participant: i == 0, Confirmed: i == 1})
+		}
+	}
+	for _, a := range m.Attachments {
+		sw.Files = append(sw.Files, model.File{Name: model.Untrusted(a.DeclaredName), MediaType: model.Untrusted(a.MimeType),
+			Size: a.Size, PartID: a.PartID})
+	}
+	return sw
 }
 
 // The named cases a security review found, kept as seeds of the property.

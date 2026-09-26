@@ -88,3 +88,20 @@ func TestMissingAndCovered(t *testing.T) {
 		t.Error("nothing granted covers something")
 	}
 }
+
+func TestExcess(t *testing.T) {
+	for _, tc := range []struct {
+		granted, required, want []string
+	}{
+		{[]string{Full}, []string{Full}, nil},
+		{[]string{Full}, []string{Modify}, []string{Full}},
+		{[]string{Modify}, []string{Readonly}, []string{Modify}},
+		{[]string{Modify, "openid", "email"}, []string{Modify}, nil},
+		{[]string{Readonly}, []string{Modify}, nil},
+		{[]string{Readonly, Labels}, []string{Modify}, nil},
+	} {
+		if got := Excess(tc.granted, tc.required); !slices.Equal(got, tc.want) {
+			t.Errorf("Excess(%v, %v) = %v; want %v", tc.granted, tc.required, got, tc.want)
+		}
+	}
+}

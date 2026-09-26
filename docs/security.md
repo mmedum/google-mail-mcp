@@ -107,7 +107,11 @@ pasted — a debug log, `doctor` and `status` — are the ones that mask.
 ## What the server refuses to do
 
 - **Send** unless `GMAIL_ENABLE_SEND=true`, and then only a draft, never
-  retried on an ambiguous failure.
+  retried on an ambiguous failure. Every recipient not already in the
+  thread being answered must be written out in `confirm_recipients`, so
+  an address a message talked into a draft is one the model has to type
+  itself; over 50 recipients is refused outright. The draft is sent as it
+  is stored, and refused as `[stale]` if it changed since it was read.
 - **Delete permanently** unless `GMAIL_ENABLE_DESTRUCTIVE=true`, and then
   only with `confirm: true` on the call. Removal is otherwise trash, which
   Gmail keeps for 30 days. The one exception registered by default is

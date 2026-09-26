@@ -383,3 +383,22 @@ func failure(class, message string) part {
 	}
 	return part{"[" + c + "] " + oneLine(message, 400)}
 }
+
+// recipientFields are the headers a recipient is addressed in.
+var recipientFields = map[string]bool{"to": true, "cc": true, "bcc": true}
+
+// recipientRef names a recipient by field and position, as "cc[1]":
+// the name send_draft's guard gives it, which carries nothing a sender
+// wrote.
+func recipientRef(field string, i int) part {
+	return part{fixed(field, recipientFields).s + "[" + strconv.Itoa(i) + "]"}
+}
+
+// partList is parts joined with commas.
+func partList(ps []part) part {
+	out := make([]string, len(ps))
+	for i, p := range ps {
+		out[i] = p.s
+	}
+	return part{strings.Join(out, ", ")}
+}

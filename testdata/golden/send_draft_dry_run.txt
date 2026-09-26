@@ -1,0 +1,15 @@
+dry run: nothing was sent; this is what send_draft would send.
+draft r0000000000000021 · message 0000000000000022 · thread 0000000000000001
+it starts a new conversation: every recipient needs confirming.
+recipients: 3 · 0 in the thread · 1 confirmed
+not confirmed: to[0], cc[1]. send_draft refuses until confirm_recipients names each of these addresses.
+attachments: 1, 2.0 KB
+<<<untrusted-mail TESTTOKEN: outgoing message in 0000000000000022>>>
+From: Rae Reader <reader@example.com>
+to[0]: Freya Holm <freya.holm@example.org>
+cc[0]: Ada Quill <ada.quill@example.com>
+cc[1]: Bruno Fennick <bruno.fennick@example.org>
+Subject: Re: Budget sign-off
+Message-ID: <draft.22@mail.example.com>
+Attachment: totals.csv (text/csv, 2.0 KB)
+<<<end-untrusted-mail TESTTOKEN>>>
