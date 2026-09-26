@@ -52,6 +52,10 @@ import (
 //   - Account reads the signed-in address, which a spike's Message-ID
 //     and a create_draft step's from take their domain and value from.
 //
+//   - FullScope says whether the profile's login granted
+//     https://mail.google.com/, read from the profile rather than asked of
+//     Google, so the delete steps know whether they can run.
+//
 //   - HistoryID reads the mailbox's current history id before the run
 //     inserts anything, so list_changes has a start that precedes the
 //     run's own mail. It is a counter, not mail.
@@ -79,6 +83,7 @@ type mailbox interface {
 	SentCopy(ctx context.Context, messageID string) (threadID string, raw []byte, err error)
 	Header(ctx context.Context, messageID, name string) (string, error)
 	Account(ctx context.Context) (string, error)
+	FullScope() bool
 }
 
 // probeResult is how Gmail answered a probe. Reason and Message are
@@ -88,6 +93,8 @@ type probeResult struct {
 	status          int
 	reason, message string
 	id              string
+	// retryAfter is the Retry-After header, for spike H.
+	retryAfter string
 }
 
 // runLabel names one run. The name is what every read is scoped to, so
@@ -130,12 +137,24 @@ type seeded struct {
 	// draftMessages are the ids of messages inside the run's drafts, now
 	// and before each save; a draft's message is the run's own.
 	draftMessages []string
+	// gone are messages the run deleted for good.
+	gone []string
 }
 
 // owns reports whether an id is one the run made.
 func (s *seeded) owns(id string) bool {
 	return slices.Contains(s.messages, id) || slices.Contains(s.threads, id) || slices.Contains(s.drafts, id) ||
 		slices.Contains(s.draftMessages, id)
+}
+
+// deleted marks messages the run deleted for good, so cleanup does not
+// try to trash them. They stay in messages, whose order the spikes read
+// beside threads.
+func (s *seeded) deleted(ids ...string) { s.gone = append(s.gone, ids...) }
+
+// forgetLabel drops a label the run deleted itself.
+func (s *seeded) forgetLabel(id string) {
+	s.extraLabels = slices.DeleteFunc(s.extraLabels, func(l string) bool { return l == id })
 }
 
 // forget drops a draft the run deleted itself, so cleanup does not.
@@ -188,6 +207,9 @@ func cleanUp(ctx context.Context, box mailbox, s *seeded) error {
 		}
 	}
 	for _, id := range s.messages {
+		if slices.Contains(s.gone, id) {
+			continue
+		}
 		if err := box.Trash(ctx, id); err != nil {
 			errs = append(errs, fmt.Errorf("trash an inserted message: %w", err))
 		}

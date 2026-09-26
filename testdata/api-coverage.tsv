@@ -6,12 +6,12 @@ gmail.users.drafts.create	used	-	Used: `create_draft`, including replies (§4.5)
 gmail.users.drafts.delete	used	-	Used: `delete_draft`, with `confirm: true`. Permanent, but only ever an unsent draft; decided in §17.1 not to sit behind the destructive flag
 gmail.users.drafts.get	used	-	Used: `get_draft`, and the witness read before `update_draft` (§4.4)
 gmail.users.drafts.list	used	-	Used: `list_drafts`
-gmail.users.drafts.send	planned	3	Gated: `send_draft`, registered only with `GMAIL_ENABLE_SEND=true`; never retried; the outcome is settled by reading (§4.3)
+gmail.users.drafts.send	used	-	Gated: `send_draft`, registered only with `GMAIL_ENABLE_SEND=true`, behind the recipient guard; never retried; an ambiguous outcome is settled by reading (§4.3)
 gmail.users.drafts.update	used	-	Used: `update_draft`. PUT-only and no ETag; guarded by the message-id witness of §4.4, a recorded deviation (§17b); a multipart upload above 5 MB
 gmail.users.getProfile	used	-	Used: `get_profile`; also the login email lookup and `doctor`'s probe
 gmail.users.history.list	used	-	Used: `list_changes` (§7.6)
 gmail.users.labels.create	used	-	Used: `create_label`, the name checked against the label list first (§6.2)
-gmail.users.labels.delete	planned	3	Gated: `delete_label`, behind `GMAIL_ENABLE_DESTRUCTIVE`; it strips the label from every message and cannot be undone
+gmail.users.labels.delete	used	-	Gated: `delete_label`, behind `GMAIL_ENABLE_DESTRUCTIVE` with `confirm: true`; it strips the label from every message and cannot be undone
 gmail.users.labels.get	used	-	Used: `list_labels` with `counts: true` (list omits the counts)
 gmail.users.labels.list	used	-	Used: `list_labels`, and label-name resolution (§6.3)
 gmail.users.labels.patch	used	-	Used: `update_label`; only the fields given are sent (§4.4)
@@ -19,7 +19,7 @@ gmail.users.labels.update	out	-	Written off: PUT replaces the whole label; `patc
 gmail.users.messages.attachments.get	used	-	Used: `download_attachment`
 gmail.users.messages.batchDelete	out	-	Written off: "provides no guarantees that messages were not already deleted or even existed", so its result cannot be reported truthfully; `delete_permanently` loops `messages.delete` under a cap instead
 gmail.users.messages.batchModify	out	-	Written off: it answers with no body, so it cannot say which messages changed or why one failed, and §4.7 reports per item. `modify_labels` calls `messages.modify` per message, 5 units each, whose answer is the message's labels after (§18 row 39)
-gmail.users.messages.delete	planned	3	Gated: `delete_permanently`, registered only with `GMAIL_ENABLE_DESTRUCTIVE=true`; the only scope it accepts is `https://mail.google.com/`
+gmail.users.messages.delete	used	-	Gated: `delete_permanently`, registered only with `GMAIL_ENABLE_DESTRUCTIVE=true`, with `confirm: true`; the only scope it accepts is `https://mail.google.com/`
 gmail.users.messages.get	used	-	Used: `get_message`, `download_attachment` (to find the part), reply construction (to read `Message-ID`/`References`)
 gmail.users.messages.import	out	-	Written off: mailbox migration, not an assistant task; it runs spam and virus classification as though delivered
 gmail.users.messages.insert	out	-	Written off for the server: it plants mail that was never delivered, bypassing the classification a received message gets. Used by the live driver only, to write the messages it reads (§9.1)
@@ -74,7 +74,7 @@ gmail.users.settings.updateLanguage	out	-	Written off: display preference, no as
 gmail.users.settings.updatePop	out	-	Written off: as IMAP
 gmail.users.settings.updateVacation	out	-	Deferred (§17): an auto-reply writes to every sender, so it is sending by another name and needs its own argument
 gmail.users.stop	out	-	Written off with `watch`
-gmail.users.threads.delete	planned	3	Gated: `delete_permanently` on a thread, as `messages.delete`
+gmail.users.threads.delete	used	-	Gated: `delete_permanently` on a thread, as `messages.delete`
 gmail.users.threads.get	used	-	Used: `get_thread`
 gmail.users.threads.list	used	-	Used: `search_threads`
 gmail.users.threads.modify	used	-	Used: `modify_labels` on a thread id

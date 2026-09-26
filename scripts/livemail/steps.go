@@ -40,6 +40,9 @@ type step struct {
 	args func(e *env) map[string]any
 	// check judges the result. It returns an error to fail the step.
 	check func(e *env, text string) error
+	// needs says why the step cannot run in this run, or "": a send
+	// needs -send-to, a permanent delete a profile that can delete.
+	needs func(e *env) string
 }
 
 // A thread or message id in a rendering, 16 hex digits after its noun.
@@ -264,6 +267,18 @@ type env struct {
 	replyDraft string
 	// spikeE is the draft side of spike E, from reading a draft back.
 	spikeE string
+	// sendTo is -send-to, the one address a step may send to; full is
+	// whether the profile holds https://mail.google.com/.
+	sendTo string
+	full   bool
+	// sent is what the send step read, for spikes B and C.
+	sent sentDraft
+}
+
+// sentDraft is a draft the run sent through send_draft: the draft, the
+// message it held and its Message-ID, and the message Gmail filed in SENT.
+type sentDraft struct {
+	draftID, draftMessage, rfc822, sentMessage string
 }
 
 func want(text, s string) error {
@@ -380,6 +395,16 @@ type spikeRun struct {
 	account string
 	// draftSide is what the write steps found for spike E without sending.
 	draftSide string
+	// full is whether the profile holds https://mail.google.com/, under
+	// which spike G's question cannot be asked.
+	full bool
+	// sent is the draft a step sent, for spikes B and C.
+	sent sentDraft
+	// spikeH floods the run's own message with reads for spike H, only
+	// when -spike-h is given.
+	spikeH bool
+	// spikesDE lets spikes D and E send again.
+	spikesDE bool
 }
 
 // spikes run after the steps, against the run's own mail only.
@@ -431,6 +456,10 @@ var spikes = []spike{
 	{name: "G (positive half)", question: "Does Gmail refuse messages.delete under gmail.modify, " +
 		"so only https://mail.google.com/ can delete permanently?",
 		ask: func(ctx context.Context, x spikeRun) string {
+			if x.full {
+				return "not run: the profile holds https://mail.google.com/, which the destructive steps need, " +
+					"so a delete would succeed. Asked under gmail.modify on 2026-09-26 (§15)"
+			}
 			s := x.s
 			last := s.messages[len(s.messages)-1]
 			status := x.box.Probe(ctx, http.MethodDelete, "messages/"+url.PathEscape(last), nil, nil).status
@@ -446,7 +475,7 @@ var spikes = []spike{
 }
 
 func runSpikes(ctx context.Context, x spikeRun, tr *transcript.Transcript) {
-	for _, sp := range append(slices.Clone(spikes), writeSpikes...) {
+	for _, sp := range slices.Concat(spikes, writeSpikes, sendSpikes) {
 		tr.Sayf("spike %s — question: %s", sp.name, sp.question)
 		tr.Sayf("spike %s — observed: %s", sp.name, sp.ask(ctx, x))
 	}

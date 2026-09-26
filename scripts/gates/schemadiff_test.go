@@ -7,12 +7,12 @@ import (
 	"testing"
 )
 
-// schemaDiffFixture is a surface of eight tools. edit changes the map
-// before it is encoded.
+// schemaDiffFixture is a surface as large as the floor. edit changes the
+// map before it is encoded.
 func schemaDiffFixture(t *testing.T, edit func(d map[string]any)) []byte {
 	t.Helper()
 	var tools []any
-	for i := range 8 {
+	for i := range schemaDiffMinTools {
 		tools = append(tools, map[string]any{
 			"name":        fmt.Sprintf("tool_%d", i),
 			"description": "reads",
@@ -50,7 +50,7 @@ func TestSchemaDiffSameSurfacePasses(t *testing.T) {
 	if err := schemaDiffCompare(&out, schemaDiffFixture(t, nil), schemaDiffFixture(t, nil)); err != nil {
 		t.Fatal(err)
 	}
-	out.mustSay(t, "baseline 8 tools, 1 resources, 1 templates; built 8 tools")
+	out.mustSay(t, fmt.Sprintf("baseline %d tools, 1 resources, 1 templates; built %d tools", schemaDiffMinTools, schemaDiffMinTools))
 }
 
 func TestSchemaDiffAdditionsPassAndAreReported(t *testing.T) {
@@ -124,7 +124,7 @@ func TestBaselineNormalizeSorts(t *testing.T) {
 		tools[0], tools[7] = tools[7], tools[0]
 	})
 	norm, n, err := baselineNormalize(raw)
-	if err != nil || n != 8 {
+	if err != nil || n != schemaDiffMinTools {
 		t.Fatalf("%d, %v", n, err)
 	}
 	if strings.Index(string(norm), `"tool_0"`) > strings.Index(string(norm), `"tool_7"`) {

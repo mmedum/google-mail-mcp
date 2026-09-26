@@ -383,7 +383,29 @@ func TestLoginStatusDoctorLogout(t *testing.T) {
 	if r.code != 1 || !strings.Contains(r.stdout, "not granted") {
 		t.Errorf("doctor with a grown scope set:\n%s", r.stdout)
 	}
+
+	// Logging in again asks for consent to the wider scope, and then
+	// nothing is missing.
+	g.mu.Lock()
+	g.granted, g.issueRefresh = scopes.Full, true
+	g.mu.Unlock()
+	r = runWith(env, nil, "login")
+	if r.code != 0 || g.authURLs[len(g.authURLs)-1].Get("prompt") != "consent" ||
+		!strings.Contains(g.authURLs[len(g.authURLs)-1].Get("scope"), scopes.Full) {
+		t.Fatalf("login with a grown scope set: %+v %v", r, g.authURLs[len(g.authURLs)-1])
+	}
+	r = runWith(env, nil, "doctor")
+	if r.code != 0 || strings.Contains(r.stdout, "wider than") {
+		t.Errorf("doctor after the login:\n%s", r.stdout)
+	}
+
+	// The flag off again: the token is wider than needed, which works
+	// and is said.
 	delete(env, "GMAIL_ENABLE_DESTRUCTIVE")
+	r = runWith(env, nil, "doctor")
+	if r.code != 0 || !strings.Contains(r.stdout, "wider than this configuration needs: "+scopes.Full) {
+		t.Errorf("doctor with a wider token:\n%s", r.stdout)
+	}
 
 	r = runWith(env, nil, "logout")
 	if r.code != 0 || !strings.Contains(r.stdout, "Revoked") {

@@ -4,6 +4,7 @@ import (
 	"iter"
 	"maps"
 	"slices"
+	"strconv"
 	"strings"
 
 	"github.com/mmedum/google-mail-mcp/internal/model"
@@ -211,7 +212,7 @@ func draftHeaders(d model.DraftWrite) string {
 		b.WriteString("Message-ID: " + string(d.RFC822MessageID) + "\n")
 	}
 	for _, f := range d.Files {
-		b.WriteString("Attachment: " + string(f.Name) + " (" + string(f.MediaType) + ", " + sizeText(f.Size) + ")\n")
+		b.WriteString(fileLine(f))
 	}
 	for _, f := range d.Removed {
 		b.WriteString("Removed: " + string(f.Name) + " (part_id \"" + f.PartID + "\")\n")
@@ -231,25 +232,36 @@ func ItemsWrite(iw model.ItemsWrite) string {
 				w.say("which is: %s", fixedList(iw.Verbs, verbNames))
 			}
 		}
+		// A permanent delete speaks of deleting, and never leaves an item
+		// unchanged; the other writes share their words.
+		purge := iw.Op == "delete_permanently"
+		done, doneWord, would := iw.Count(model.Changed), fill("changed"), fill("would change")
+		if purge {
+			doneWord, would = fill("deleted for good"), fill("would be deleted for good")
+		}
 		if iw.DryRun {
-			w.say("%s would change · %s unchanged · %s failed", num(iw.Count(model.WouldChange)),
-				num(iw.Count(model.Unchanged)), num(iw.Count(model.Failed)))
+			done, doneWord = iw.Count(model.WouldChange), would
+		}
+		if purge {
+			w.say("%s %s · %s failed", num(done), doneWord, num(iw.Count(model.Failed)))
 		} else {
-			w.say("%s changed · %s unchanged · %s failed", num(iw.Count(model.Changed)),
-				num(iw.Count(model.Unchanged)), num(iw.Count(model.Failed)))
+			w.say("%s %s · %s unchanged · %s failed", num(done), doneWord, num(iw.Count(model.Unchanged)),
+				num(iw.Count(model.Failed)))
 		}
 		for _, it := range iw.Items {
 			kind := fill("message")
 			if it.Kind == model.KindThread {
 				kind = fill("thread")
 			}
-			switch it.Outcome {
-			case model.Failed:
+			switch o := it.Outcome; {
+			case o == model.Failed:
 				w.say("%s %s: failed · %s", kind, gmailID(it.ID), failure(it.Class, it.Error))
-			case model.Unchanged:
+			case o == model.Unchanged:
 				w.say("%s %s: unchanged, %s · labels: %s", kind, gmailID(it.ID), already(iw.Op), labelList(it.Before))
-			case model.WouldChange:
-				w.say("%s %s: would change · labels now: %s", kind, gmailID(it.ID), labelList(it.Before))
+			case o == model.WouldChange:
+				w.say("%s %s: %s · labels now: %s", kind, gmailID(it.ID), would, labelList(it.Before))
+			case purge:
+				w.say("%s %s: deleted for good · labels it had: %s", kind, gmailID(it.ID), labelList(it.Before))
 			default:
 				w.say("%s %s: %s · labels before: %s · after: %s", kind, gmailID(it.ID),
 					fixed(string(it.Outcome), outcomes), labelList(it.Before), labelList(it.After))
@@ -269,9 +281,13 @@ func already(op string) part {
 	return fill("already as asked")
 }
 
-// LabelWrite renders a created or updated label.
+// LabelWrite renders a created, updated or deleted label.
 func LabelWrite(lw model.LabelWrite) string {
 	return plain(func(w *writer) {
+		if lw.Op == "delete" {
+			w.labelDeleted(lw)
+			return
+		}
 		a := lw.After
 		switch {
 		case lw.Op == "create" && lw.DryRun:
@@ -308,4 +324,103 @@ func labelLook(l model.Label) part {
 		look = fill("%s · color %s on %s", look, color(l.TextColor), color(l.BackgroundColor))
 	}
 	return look
+}
+
+func (w *writer) labelDeleted(lw model.LabelWrite) {
+	b := model.Label{}
+	if lw.Before != nil {
+		b = *lw.Before
+	}
+	msgs, threads := plural(b.MessagesTotal, "message", "messages"), plural(b.ThreadsTotal, "thread", "threads")
+	switch {
+	case lw.DryRun:
+		w.say("dry run: would delete label %s · id %s, and take it off %s in %s. This cannot be undone.",
+			labelName(b.Name), gmailID(b.ID), msgs, threads)
+	case lw.Gone:
+		w.say("label %s is gone: it was read, and Gmail then answered the delete that no such label exists.", gmailID(b.ID))
+	default:
+		w.say("deleted label %s · id %s; it came off %s in %s. The mail itself is untouched.",
+			labelName(b.Name), gmailID(b.ID), msgs, threads)
+	}
+	w.say("look: %s", labelLook(b))
+}
+
+// SendDraft renders a sent draft, or what a dry run would send (§4.2):
+// every recipient, whether the guard clears it, the subject, the files
+// and the thread. Addresses, the subject and file names are in a block,
+// one recipient per line under its field and position, which is how the
+// guard's refusal names them.
+func SendDraft(sw model.SendWrite, o Options) Result {
+	return render(o, func(w *writer) Result {
+		res := Result{Budget: o.budget()}
+		switch {
+		case sw.DryRun:
+			w.say("dry run: nothing was sent; this is what send_draft would send.")
+			w.say("draft %s · message %s · thread %s", gmailID(sw.DraftID), gmailID(sw.MessageID), gmailID(sw.ThreadID))
+		default:
+			w.say("sent draft %s · sent message %s · thread %s · labels: %s", gmailID(sw.DraftID), gmailID(sw.SentID),
+				gmailID(sw.SentThreadID), labelList(sw.SentLabels))
+			w.say("the draft held message %s.", gmailID(sw.MessageID))
+			if sw.ThreadID != "" && sw.SentThreadID != sw.ThreadID {
+				w.say("note: Gmail filed the sent message in thread %s, not the draft's thread %s.",
+					gmailID(sw.SentThreadID), gmailID(sw.ThreadID))
+			}
+		}
+		if sw.Answers > 0 {
+			w.say("it answers a thread of %s; their senders and recipients need no confirming.",
+				plural(sw.Answers, "message", "messages"))
+		} else {
+			w.say("it starts a new conversation: every recipient needs confirming.")
+		}
+		participants, confirmed := 0, 0
+		var stopped []part
+		for _, r := range sw.Recipients {
+			switch {
+			case r.Participant:
+				participants++
+			case r.Confirmed:
+				confirmed++
+			default:
+				stopped = append(stopped, recipientRef(r.Field, r.Position))
+			}
+		}
+		w.say("recipients: %s · %s in the thread · %s confirmed", num(len(sw.Recipients)), num(participants), num(confirmed))
+		if len(stopped) > 0 {
+			w.say("not confirmed: %s. send_draft refuses until confirm_recipients names each of these addresses.",
+				partList(stopped))
+		}
+		if len(sw.Files) > 0 {
+			total := 0
+			for _, f := range sw.Files {
+				total += f.Size
+			}
+			w.say("attachments: %s, %s", num(len(sw.Files)), size(int64(total)))
+		}
+		w.block("outgoing message", "", sw.MessageID, sendHeaders(sw))
+		return res
+	})
+}
+
+// sendHeaders is the outgoing message's headers, one recipient a line.
+func sendHeaders(sw model.SendWrite) string {
+	var b strings.Builder
+	if sw.From != nil {
+		b.WriteString("From: " + sw.From.String() + "\n")
+	}
+	for _, r := range sw.Recipients {
+		b.WriteString(r.Field + "[" + strconv.Itoa(r.Position) + "]: " + r.Address.String() + "\n")
+	}
+	b.WriteString("Subject: " + string(sw.Subject) + "\n")
+	if sw.RFC822MessageID != "" {
+		b.WriteString("Message-ID: " + string(sw.RFC822MessageID) + "\n")
+	}
+	for _, f := range sw.Files {
+		b.WriteString(fileLine(f))
+	}
+	return b.String()
+}
+
+// fileLine is a file's line in a draft's or a send's block.
+func fileLine(f model.File) string {
+	return "Attachment: " + string(f.Name) + " (" + string(f.MediaType) + ", " + sizeText(f.Size) + ")\n"
 }

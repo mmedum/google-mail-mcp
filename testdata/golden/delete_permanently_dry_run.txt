@@ -1,0 +1,5 @@
+dry run: nothing was changed; each line says what the call would do.
+2 would be deleted for good · 1 failed
+message 0000000000000001: would be deleted for good · labels now: INBOX
+thread 0000000000000009: would be deleted for good · labels now: INBOX, STARRED
+message 0000000000000021: failed · [invalid] message 0000000000000021 is a draft; delete_draft removes a draft

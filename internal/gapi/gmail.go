@@ -386,3 +386,35 @@ func (c *Client) PatchLabel(ctx context.Context, id string, l gmail.Label) (*gma
 		Args: []string{id}, Body: l}, &out)
 	return &out, err
 }
+
+// SendDraft sends a draft as it is stored and returns the sent message.
+// Never repeated, for any failure: Google does not deduplicate a send,
+// so a second attempt whose first landed is a second delivery (§4.3).
+// The client refuses to declare it repeatable.
+func (c *Client) SendDraft(ctx context.Context, id string) (*gmail.Message, error) {
+	var out gmail.Message
+	err := c.Do(ctx, Call{ID: "gmail.users.drafts.send", Method: http.MethodPost, Path: "drafts/send",
+		Body: gmail.Draft{ID: id}}, &out)
+	return &out, err
+}
+
+// DeleteMessage deletes a message for good, skipping the trash. Gmail
+// accepts it only under https://mail.google.com/ (§2.10).
+func (c *Client) DeleteMessage(ctx context.Context, id string) error {
+	return c.Do(ctx, Call{ID: "gmail.users.messages.delete", Method: http.MethodDelete, Path: "messages/{}",
+		Args: []string{id}}, nil)
+}
+
+// DeleteThread deletes every message of a thread for good, as
+// DeleteMessage does.
+func (c *Client) DeleteThread(ctx context.Context, id string) error {
+	return c.Do(ctx, Call{ID: "gmail.users.threads.delete", Method: http.MethodDelete, Path: "threads/{}",
+		Args: []string{id}}, nil)
+}
+
+// DeleteLabel deletes a user label and removes it from every message
+// and thread that carries it. It cannot be undone.
+func (c *Client) DeleteLabel(ctx context.Context, id string) error {
+	return c.Do(ctx, Call{ID: "gmail.users.labels.delete", Method: http.MethodDelete, Path: "labels/{}",
+		Args: []string{id}}, nil)
+}

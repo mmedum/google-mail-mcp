@@ -79,6 +79,8 @@ func (f *fakeMailbox) Header(context.Context, string, string) (string, error) { 
 
 func (f *fakeMailbox) Account(context.Context) (string, error) { return "reader@example.com", nil }
 
+func (f *fakeMailbox) FullScope() bool { return false }
+
 func (f *fakeMailbox) DeleteLabel(_ context.Context, id string) error {
 	f.deleted = append(f.deleted, id)
 	return nil
@@ -275,9 +277,10 @@ func TestTheGuardHoldsWritesToTheRun(t *testing.T) {
 func TestSendingSpikesNeedASecondAddress(t *testing.T) {
 	s := &seeded{label: newRunLabel(time.Now())}
 	for _, x := range []spikeRun{
-		{box: &fakeMailbox{}, s: s, account: "reader@example.com"},
-		{box: &fakeMailbox{}, s: s, account: "reader@example.com", sendTo: "Reader@example.com"},
-		{box: &fakeMailbox{}, s: s, sendTo: "second@example.org"},
+		{box: &fakeMailbox{}, s: s, account: "reader@example.com", spikesDE: true},
+		{box: &fakeMailbox{}, s: s, account: "reader@example.com", sendTo: "Reader@example.com", spikesDE: true},
+		{box: &fakeMailbox{}, s: s, sendTo: "second@example.org", spikesDE: true},
+		{box: &fakeMailbox{}, s: s, account: "reader@example.com", sendTo: "second@example.org"},
 	} {
 		for _, ask := range []func(context.Context, spikeRun) string{spikeD, spikeE} {
 			if got := ask(context.Background(), x); !strings.Contains(got, "not run") {
@@ -293,5 +296,120 @@ func TestSendingSpikesNeedASecondAddress(t *testing.T) {
 	}
 	if o, _, err := parseOptions([]string{"-profile", "p", "-send-to", "second@example.org"}); err != nil || o.sendTo != "second@example.org" {
 		t.Errorf("-send-to: %+v, %v", o, err)
+	}
+}
+
+func TestEveryGatedToolHasAStep(t *testing.T) {
+	have := map[string]bool{}
+	for _, s := range gatedSteps {
+		have[s.tool] = true
+	}
+	for _, tool := range []string{"send_draft", "delete_permanently", "delete_label"} {
+		if !have[tool] {
+			t.Errorf("no step for %s", tool)
+		}
+	}
+}
+
+// A send reaches -send-to and nothing else, and a step that sends or
+// deletes for good is skipped when the run cannot do it.
+func TestTheGuardHoldsSendsToSendTo(t *testing.T) {
+	r := newRunLabel(time.Now())
+	seed := &seeded{label: r, messages: []string{"0000000000000001"}, drafts: []string{"r1"},
+		draftMessages: []string{"0000000000000003"}}
+	without := &env{seed: seed}
+	with := &env{seed: seed, sendTo: "second@example.net", full: true}
+	send := map[string]any{"draft_id": "r1", "message_id": "0000000000000003", "confirm_recipients": []any{"second@example.net"}}
+	for _, tc := range []struct {
+		e    *env
+		tool string
+		args map[string]any
+		ok   bool
+	}{
+		{with, "create_draft", map[string]any{"to": []any{"second@example.net"}}, true},
+		{without, "create_draft", map[string]any{"to": []any{"second@example.net"}}, false},
+		{with, "create_draft", map[string]any{"to": []any{"Second <second@example.net>"}}, false},
+		{with, "create_draft", map[string]any{"cc": []any{"third@example.net"}}, false},
+		{with, "send_draft", send, true},
+		{without, "send_draft", send, false},
+		{with, "send_draft", map[string]any{"draft_id": "r1", "message_id": "0000000000000003",
+			"confirm_recipients": []any{"third@example.net"}}, false},
+		{with, "send_draft", map[string]any{"draft_id": "r9", "message_id": "0000000000000003"}, false},
+		{with, "delete_permanently", map[string]any{"message_ids": []any{"0000000000000009"}, "confirm": true}, false},
+		{with, "delete_label", map[string]any{"label": r.name + "-renamed", "confirm": true}, true},
+		{with, "delete_label", map[string]any{"label": "Receipts", "confirm": true}, false},
+	} {
+		err := tc.e.guard(tc.tool, tc.args)
+		if (err == nil) != tc.ok {
+			t.Errorf("guard(%s, %v) with send-to %q = %v, want ok=%v", tc.tool, tc.args, tc.e.sendTo, err, tc.ok)
+		}
+	}
+	for _, s := range gatedSteps {
+		if s.needs == nil {
+			continue
+		}
+		if why := s.needs(without); why == "" {
+			t.Errorf("%s runs without -send-to or the full scope", s.name)
+		}
+		if why := s.needs(with); why != "" {
+			t.Errorf("%s is skipped with -send-to and the full scope: %s", s.name, why)
+		}
+	}
+	for _, s := range gatedSteps {
+		sends := s.tool == "send_draft" && s.refuses == "" && !strings.Contains(s.name, "dry run")
+		if sends && s.needs == nil {
+			t.Errorf("%s sends and has no needs", s.name)
+		}
+	}
+}
+
+// Spike G is not asked under a scope that deletes, and B, C and H do not
+// run without what they need.
+func TestPhaseThreeSpikesNeedTheirInputs(t *testing.T) {
+	s := &seeded{label: newRunLabel(time.Now()), messages: []string{"0000000000000001"}}
+	x := spikeRun{box: &fakeMailbox{}, s: s, full: true}
+	for _, sp := range spikes {
+		if strings.HasPrefix(sp.name, "G") {
+			if got := sp.ask(context.Background(), x); !strings.HasPrefix(got, "not run") {
+				t.Errorf("spike G under the full scope: %s", got)
+			}
+		}
+	}
+	for _, sp := range sendSpikes {
+		if got := sp.ask(context.Background(), x); !strings.HasPrefix(got, "not run") {
+			t.Errorf("spike %s: %s", sp.name, got)
+		}
+	}
+	if len(s.messages) != 1 {
+		t.Error("a spike changed the run's messages")
+	}
+}
+
+// A message deleted for good is not trashed at cleanup, and stays in
+// place for the spikes that read messages beside threads.
+func TestCleanUpSkipsDeletedMessages(t *testing.T) {
+	box := &fakeMailbox{}
+	s := &seeded{messages: []string{"0000000000000001", "0000000000000002"}}
+	s.deleted("0000000000000002")
+	if err := cleanUp(context.Background(), box, s); err != nil {
+		t.Fatal(err)
+	}
+	if len(box.trashed) != 1 || box.trashed[0] != "0000000000000001" || len(s.messages) != 2 {
+		t.Errorf("trashed %v, messages %v", box.trashed, s.messages)
+	}
+}
+
+// -clean names a run and nothing else, so its one search can only find
+// the run's own mail.
+func TestCleanTakesOnlyARunName(t *testing.T) {
+	for _, name := range []string{"livemail-20260926-234553-62dca1"} {
+		if _, _, err := parseOptions([]string{"-profile", "p", "-clean", name}); err != nil {
+			t.Errorf("-clean %s: %v", name, err)
+		}
+	}
+	for _, name := range []string{"invoice", "livemail-", "livemail-20260926-234553-62dca1 OR is:inbox", "*"} {
+		if _, _, err := parseOptions([]string{"-profile", "p", "-clean", name}); err == nil {
+			t.Errorf("-clean %q was accepted", name)
+		}
 	}
 }

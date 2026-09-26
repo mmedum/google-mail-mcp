@@ -227,6 +227,70 @@ func (s *Service) move(restore bool) itemWrite {
 	}
 }
 
+// Purge is what delete_permanently was asked for.
+type Purge struct {
+	Targets
+	// Confirm must be set: nothing deleted this way can be restored.
+	Confirm bool
+}
+
+// DeletePermanently deletes each message and thread named for good,
+// skipping the trash (§4.6). Each item is read first, so the result
+// shows the labels it had; a draft's message is refused for that item
+// and points to delete_draft.
+func (s *Service) DeletePermanently(ctx context.Context, in Purge) (model.ItemsWrite, error) {
+	out := model.ItemsWrite{Op: "delete_permanently", DryRun: gapi.WritesForbidden(ctx)}
+	targets, err := in.list()
+	if err != nil {
+		return out, err
+	}
+	if !in.Confirm && !out.DryRun {
+		return out, gapi.Errf(gapi.ClassBlocked,
+			"delete_permanently skips the trash and cannot be undone; trash keeps mail for 30 days. Pass confirm: true to delete")
+	}
+	ls, err := s.labels(ctx)
+	if err != nil {
+		return out, err
+	}
+	out.Items = s.each(ctx, targets, ls.index, s.purge())
+	return out, nil
+}
+
+// purge is delete_permanently's item write. A delete Gmail answers 404
+// after the item was read is reported deleted: it is gone, whether by an
+// earlier attempt of this call or elsewhere.
+func (s *Service) purge() itemWrite {
+	return itemWrite{
+		check: func(t target, labels map[string][]string) (bool, error) {
+			for id, ls := range labels {
+				switch {
+				case !slices.Contains(ls, "DRAFT"):
+				case t.kind == model.KindMessage:
+					return false, gapi.Errf(gapi.ClassInvalid, "message %s is a draft; delete_draft removes a draft", id)
+				default:
+					// threads.delete would take the draft with it, past the
+					// delete_draft that says it is gone for good.
+					return false, gapi.Errf(gapi.ClassInvalid,
+						"thread %s holds draft message %s; delete it with delete_draft first, or name the thread's other messages", t.id, id)
+				}
+			}
+			return false, nil
+		},
+		write: func(ctx context.Context, t target, _ []string) ([]string, error) {
+			var err error
+			if t.kind == model.KindThread {
+				err = s.client.DeleteThread(ctx, t.id)
+			} else {
+				err = s.client.DeleteMessage(ctx, t.id)
+			}
+			if classOf(err) == gapi.ClassNotFound {
+				err = nil
+			}
+			return nil, err
+		},
+	}
+}
+
 // itemWrite is one kind of multi-id write.
 type itemWrite struct {
 	// check looks at the labels of an item's messages, keyed by message

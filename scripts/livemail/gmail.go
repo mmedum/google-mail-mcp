@@ -22,6 +22,7 @@ import (
 	"github.com/mmedum/google-mail-mcp/internal/config"
 	"github.com/mmedum/google-mail-mcp/internal/credentials"
 	"github.com/mmedum/google-mail-mcp/internal/mime"
+	"github.com/mmedum/google-mail-mcp/internal/scopes"
 )
 
 // gmailBase is where the driver's own calls go. They never go through
@@ -33,6 +34,9 @@ const gmailBase = "https://gmail.googleapis.com/gmail/v1/users/me/"
 type restMailbox struct {
 	http *http.Client
 	base string
+	// full is whether the profile's last login granted
+	// https://mail.google.com/.
+	full bool
 }
 
 // openMailbox signs in as profile the way the binary does, through the
@@ -58,26 +62,60 @@ func openMailbox(ctx context.Context, profile string) (*restMailbox, error) {
 	}
 	hc := oauth2.NewClient(ctx, ts)
 	hc.Timeout = time.Minute
-	return &restMailbox{http: hc, base: gmailBase}, nil
+	return &restMailbox{http: hc, base: gmailBase, full: scopes.Satisfied(scopes.Full, p.User.Scopes)}, nil
 }
 
+func (m *restMailbox) FullScope() bool { return m.full }
+
 // call sends one request and decodes a successful reply into out.
+// A rate-limit refusal is waited out and the call made again, up to
+// rateTries times: spike H spends the minute's quota, and the cleanup
+// after it must still run. Gmail answered those refusals 403, so a 403
+// is retried only when its body names a rate limit.
+const (
+	rateTries = 8
+	rateWait  = 15 * time.Second
+)
+
 func (m *restMailbox) call(ctx context.Context, method, path string, q url.Values, body, out any) error {
-	_, data, err := m.callRaw(ctx, method, path, q, body)
+	var (
+		status int
+		data   []byte
+		err    error
+	)
+	for try := range rateTries {
+		if try > 0 {
+			select {
+			case <-ctx.Done():
+				return ctx.Err()
+			case <-time.After(rateWait):
+			}
+		}
+		status, _, data, err = m.callRaw(ctx, method, path, q, body)
+		if !rateLimited(status, data) {
+			break
+		}
+	}
 	if err != nil || out == nil || len(data) == 0 {
 		return err
 	}
 	return json.Unmarshal(data, out)
 }
 
-// callRaw sends one request and returns the reply's body whatever the
-// status, so a probe can read Google's reason for a refusal.
-func (m *restMailbox) callRaw(ctx context.Context, method, path string, q url.Values, body any) (int, []byte, error) {
+// rateLimited reports a refusal that clears with time.
+func rateLimited(status int, body []byte) bool {
+	return status == http.StatusTooManyRequests ||
+		status == http.StatusForbidden && bytes.Contains(bytes.ToLower(body), []byte("ratelimitexceeded"))
+}
+
+// callRaw sends one request and returns the reply's header and body
+// whatever the status, so a probe can read Google's reason for a refusal.
+func (m *restMailbox) callRaw(ctx context.Context, method, path string, q url.Values, body any) (int, http.Header, []byte, error) {
 	var rd io.Reader
 	if body != nil {
 		b, err := json.Marshal(body)
 		if err != nil {
-			return 0, nil, err
+			return 0, nil, nil, err
 		}
 		rd = bytes.NewReader(b)
 	}
@@ -87,7 +125,7 @@ func (m *restMailbox) callRaw(ctx context.Context, method, path string, q url.Va
 	}
 	req, err := http.NewRequestWithContext(ctx, method, u, rd)
 	if err != nil {
-		return 0, nil, err
+		return 0, nil, nil, err
 	}
 	if body != nil {
 		req.Header.Set("Content-Type", "application/json")
@@ -96,17 +134,17 @@ func (m *restMailbox) callRaw(ctx context.Context, method, path string, q url.Va
 	if err != nil {
 		// The error names the URL, which carries only ids the run made;
 		// the transcript redacts those anyway.
-		return 0, nil, err
+		return 0, nil, nil, err
 	}
 	defer func() { _ = resp.Body.Close() }()
 	data, err := io.ReadAll(io.LimitReader(resp.Body, 1<<20))
 	if err != nil {
-		return resp.StatusCode, nil, err
+		return resp.StatusCode, resp.Header, nil, err
 	}
 	if resp.StatusCode/100 != 2 {
-		return resp.StatusCode, data, fmt.Errorf("%s %s: HTTP %d", method, path, resp.StatusCode)
+		return resp.StatusCode, resp.Header, data, fmt.Errorf("%s %s: HTTP %d", method, path, resp.StatusCode)
 	}
-	return resp.StatusCode, data, nil
+	return resp.StatusCode, resp.Header, data, nil
 }
 
 func (m *restMailbox) CreateLabel(ctx context.Context, name string) (string, error) {
@@ -166,9 +204,9 @@ func (m *restMailbox) Probe(ctx context.Context, method, path string, q url.Valu
 			} `json:"errors"`
 		} `json:"error"`
 	}
-	status, data, _ := m.callRaw(ctx, method, path, q, body)
+	status, header, data, _ := m.callRaw(ctx, method, path, q, body)
 	_ = json.Unmarshal(data, &out)
-	r := probeResult{status: status, id: out.ID, message: out.Error.Message}
+	r := probeResult{status: status, id: out.ID, message: out.Error.Message, retryAfter: header.Get("Retry-After")}
 	if len(out.Error.Errors) > 0 {
 		r.reason = out.Error.Errors[0].Reason
 	}
@@ -282,4 +320,33 @@ func (m *restMailbox) Account(ctx context.Context) (string, error) {
 	}
 	err := m.call(ctx, http.MethodGet, "profile", nil, nil, &out)
 	return out.EmailAddress, err
+}
+
+// Find lists the ids a search names, one page: drafts when drafts is set,
+// otherwise messages. Only -clean calls it, with a query that is a run's
+// own unique name.
+func (m *restMailbox) Find(ctx context.Context, q string, drafts bool) ([]string, error) {
+	var out struct {
+		Messages []struct {
+			ID string `json:"id"`
+		} `json:"messages"`
+		Drafts []struct {
+			ID string `json:"id"`
+		} `json:"drafts"`
+	}
+	path := "messages"
+	if drafts {
+		path = "drafts"
+	}
+	if err := m.call(ctx, http.MethodGet, path, url.Values{"q": {q}, "maxResults": {"100"}}, nil, &out); err != nil {
+		return nil, err
+	}
+	var ids []string
+	for _, x := range out.Messages {
+		ids = append(ids, x.ID)
+	}
+	for _, x := range out.Drafts {
+		ids = append(ids, x.ID)
+	}
+	return ids, nil
 }

@@ -30,7 +30,7 @@ type Deps struct {
 // registrations is every group of tools, in the order they appear in
 // tools/list. Each entry calls register once per tool, and register
 // decides whether the configuration keeps it.
-var registrations = []func(*mcp.Server, Deps){registerRead, registerAccount, registerAttachment, registerWrite}
+var registrations = []func(*mcp.Server, Deps){registerRead, registerAccount, registerAttachment, registerWrite, registerGated}
 
 // Register adds every tool the configuration allows and returns their
 // names, in tools/list order. s may be nil only under Names.

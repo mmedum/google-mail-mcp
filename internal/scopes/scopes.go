@@ -14,7 +14,10 @@
 // exactly by the staleness gate.
 package scopes
 
-import "slices"
+import (
+	"slices"
+	"strings"
+)
 
 // Gmail scopes.
 const (
@@ -106,3 +109,22 @@ func Missing(granted, required []string) []string {
 // Covered reports whether granted covers every scope of required. Login
 // uses it to decide whether the consent screen must be shown again.
 func Covered(granted, required []string) bool { return len(Missing(granted, required)) == 0 }
+
+// Excess returns the Gmail scopes of granted that required does not
+// need: a token wider than its configuration. Turning the destructive
+// flag off leaves the login's https://mail.google.com/ in place, and a
+// read-only configuration may run on a token that can send. Scopes
+// other than Gmail's (openid, email) are not judged.
+func Excess(granted, required []string) []string {
+	var out []string
+	for _, g := range granted {
+		if isGmail(g) && !Satisfied(g, required) {
+			out = append(out, g)
+		}
+	}
+	return out
+}
+
+func isGmail(scope string) bool {
+	return scope == Full || strings.HasPrefix(scope, "https://www.googleapis.com/auth/gmail.")
+}

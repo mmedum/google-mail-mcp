@@ -31,8 +31,18 @@ organization (`gcp-setup.md` §2).
 
 The token was granted with a different configuration. Changing
 `GMAIL_READ_ONLY` or `GMAIL_ENABLE_DESTRUCTIVE` changes the scopes, and
-an existing token does not gain one. Run `login` again. `doctor` lists
-granted against wanted.
+an existing token does not gain one. Run `login` again with the same
+setting, and accept every scope asked for. `doctor` lists granted against
+wanted, and the server warns at startup.
+
+## `doctor` says the token is wider than needed
+
+The login granted more than the configuration now uses — typically
+`https://mail.google.com/` left over after `GMAIL_ENABLE_DESTRUCTIVE` was
+turned off. Everything works; the tools that delete for good are simply
+not registered. To hold only what the configuration needs, run
+`google-mail-mcp logout`, which revokes the token at Google, then
+`google-mail-mcp login`.
 
 ## The token is in a file, not the keyring
 
@@ -110,6 +120,15 @@ Two different limits share this class, and the message says which:
   client is using the same project. Wait a minute.
 - **Sending limit** — hundreds of messages or recipients a day. Google
   can report it minutes after the send that crossed it. Wait up to a day.
+
+## `[blocked]` from `send_draft`
+
+The draft reaches someone the call did not vouch for. Every recipient who
+is not already on a message of the thread the draft answers — for a new
+conversation, every recipient — must be written out in
+`confirm_recipients`. The refusal names them by field and position,
+`cc[1]`; `send_draft` with `dry_run: true` lists the addresses. A draft
+with more than 50 recipients is refused outright: send it from Gmail.
 
 ## `[ambiguous_outcome]` from `send_draft`
 

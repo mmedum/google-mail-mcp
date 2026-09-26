@@ -1,0 +1,4 @@
+2 deleted for good · 1 failed
+message 0000000000000001: deleted for good · labels it had: INBOX
+thread 0000000000000009: deleted for good · labels it had: INBOX, STARRED
+message 0000000000000021: failed · [invalid] message 0000000000000021 is a draft; delete_draft removes a draft

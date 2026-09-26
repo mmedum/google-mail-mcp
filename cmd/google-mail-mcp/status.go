@@ -251,7 +251,12 @@ func (d *doctor) run(ctx context.Context, cfg config.Config, p *app.Profile) {
 		d.report(false, "granted scopes", "not granted: "+strings.Join(missing, ", ")+
 			"\na flag that changes scopes needs `google-mail-mcp login` again; accept every scope asked for")
 	} else {
-		d.report(true, "granted scopes", strings.Join(info.Scopes, " "))
+		detail := strings.Join(info.Scopes, " ")
+		if excess := scopes.Excess(info.Scopes, required); len(excess) > 0 {
+			detail += "\nwider than this configuration needs: " + strings.Join(excess, ", ") +
+				"\nto hold only what it needs, run `google-mail-mcp logout`, then `google-mail-mcp login`"
+		}
+		d.report(true, "granted scopes", detail)
 	}
 
 	email, err := profileEmail(ctx, cfg, ts)

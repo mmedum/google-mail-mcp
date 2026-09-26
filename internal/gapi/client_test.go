@@ -426,6 +426,24 @@ func TestTheSendingLimitIsNotRetriedAndSaysSo(t *testing.T) {
 	}
 }
 
+// Spike H's answer, as Gmail gave it with the project number replaced:
+// the per-user unit limit is a 403 with no Retry-After, and it is a
+// request-rate limit to back off from, not the sending limit.
+func TestThePerUserUnitLimitIsRetried(t *testing.T) {
+	body := googleErr(403, "rateLimitExceeded", "Quota exceeded for quota metric 'Total Query Cost' and limit "+
+		"'Units per minute per user' of service 'gmail.googleapis.com' for consumer 'project_number:0'.")
+	f := newFake(t, reply(403, body), reply(200, `{}`))
+	c, sl := client(t, f)
+	if err := c.Do(context.Background(), listLabels, nil); err != nil || f.count() != 2 || len(sl.d) != 1 {
+		t.Fatalf("err %v after %d attempts, %d waits", err, f.count(), len(sl.d))
+	}
+	f = newFake(t, reply(403, body))
+	c, _ = client(t, f)
+	if err := c.Do(context.Background(), sendDraft, nil); classOf(t, err) != ClassRateLimited || strings.Contains(err.Error(), "24 hours") {
+		t.Errorf("a send met the unit limit: %v", err)
+	}
+}
+
 func TestRetryAfterIsAFloor(t *testing.T) {
 	f := newFake(t, replyAfter(429, "7", googleErr(429, "rateLimitExceeded", "wait")), reply(200, `{}`))
 	c, sl := client(t, f)

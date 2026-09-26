@@ -170,6 +170,46 @@ func (s *Service) UpdateLabel(ctx context.Context, label string, sp LabelSpec) (
 	return out, nil
 }
 
+// DeleteLabel deletes a user label, which takes it off every message
+// and thread that carries it and cannot be undone. The label is read
+// with its counts first, so the result says how much mail loses it.
+func (s *Service) DeleteLabel(ctx context.Context, label string, confirm bool) (model.LabelWrite, error) {
+	out := model.LabelWrite{Op: "delete", DryRun: gapi.WritesForbidden(ctx)}
+	if !confirm && !out.DryRun {
+		return out, gapi.Errf(gapi.ClassBlocked,
+			"delete_label removes the label from every message that carries it and cannot be undone. Pass confirm: true to delete it")
+	}
+	ls, err := s.labels(ctx)
+	if err != nil {
+		return out, err
+	}
+	id, err := resolveLabel(ls.all, label)
+	if err != nil {
+		return out, err
+	}
+	for _, l := range ls.all {
+		if l.ID == id && l.Type == gmail.LabelTypeSystem {
+			return out, gapi.Errf(gapi.ClassInvalid, "%s is a system label; Gmail does not delete it", id)
+		}
+	}
+	g, err := s.client.GetLabel(ctx, id)
+	if err != nil {
+		return out, err
+	}
+	before := model.NewLabel(*g, true)
+	out.Before = &before
+	if out.DryRun {
+		return out, nil
+	}
+	if err := s.client.DeleteLabel(ctx, id); err != nil {
+		if classOf(err) != gapi.ClassNotFound {
+			return out, err
+		}
+		out.Gone = true
+	}
+	return out, nil
+}
+
 // mergeLabel applies a patch to a label, for a dry run's preview.
 func mergeLabel(l *gmail.Label, p gmail.Label) {
 	if p.Name != "" {
