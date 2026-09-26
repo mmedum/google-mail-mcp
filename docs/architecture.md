@@ -6,10 +6,9 @@ run live. Phase 2 adds the MIME build side and the eight writes:
 `create_draft` with replies, `update_draft` with the witness,
 `delete_draft`, `modify_labels`, `trash`, `restore`, `create_label` and
 `update_label`. `make check` is green. Two live runs, 45 steps and 95
-of 95 options each, transcripts read. Spikes A, D, F, G, I, J and K are
-answered in §15, and B and E in part. E's receiver half is the
-maintainer's to read in the second mailbox. Phase 3 waits for an
-explicit "go".
+of 95 options each, transcripts read. Spikes A, D, E, F, G, I, J and K
+are answered in §15, and B in part; a non-Gmail receiver is unchecked
+for D and E. Phase 3 waits for an explicit "go".
 
 ## 1. Mission and scope
 
@@ -1003,8 +1002,12 @@ None has run.
   **Answered for Gmail 2026-09-26.** A draft and a sent message, each
   with subject, display names, body and attachment name in Latin,
   Cyrillic, Greek and Japanese, read back with every field intact.
-  How the receiver shows it is the maintainer's to read in the second
-  mailbox.
+
+  **Receiver side answered 2026-09-27 by the maintainer**, reading the
+  second mailbox, a Gmail account. The subject and body showed in all
+  four scripts, and so did the attachment's name, cut short only by the
+  attachment tile. The recipient's display name does not show in that
+  view. A non-Gmail receiver is not yet checked.
 - **Spike F — `messages.insert` as a fixture source.** Do inserted
   messages appear in `threads.list`, `q` search and `history.list` like
   delivered ones? §9.1's driver depends on it.
