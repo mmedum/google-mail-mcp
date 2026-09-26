@@ -54,7 +54,7 @@ type message struct {
 	snippet      string
 	rfc822ID     string
 
-	// Decoded fields search reads.
+	// Decoded fields search and threading read, lowercased.
 	from, to, subject, text string
 	hasAttachment           bool
 }
@@ -121,19 +121,26 @@ func (s *Server) add(sp spec) *message {
 		text:    strings.ToLower(sp.text),
 		snippet: snippet(sp.text),
 	}
-	m.payload = sp.body.payload("", hs, func(partID string) string {
+	m.hasAttachment = hasFilename(sp.body)
+	s.insert(m, sp.body, hs, sp.labels)
+	return m
+}
+
+// insert files a built message: its payload, with attachment bytes put
+// in the store, its thread, and a history record.
+func (s *Server) insert(m *message, body *Part, headers []gmail.MessagePartHeader, labels []string) {
+	m.payload = body.payload("", headers, func(partID string) string {
 		if partID == "" {
 			partID = "root"
 		}
-		return "att-" + id + "-" + partID
+		return "att-" + m.id + "-" + partID
 	}, s.store)
-	m.hasAttachment = hasFilename(sp.body)
-	s.messages[id] = m
-	s.threads[thread] = append(s.threads[thread], id)
+	s.messages[m.id] = m
+	s.threads[m.threadID] = append(s.threads[m.threadID], m.id)
 	s.historyID++
 	m.historyID = s.historyID
-	s.history = append(s.history, historyRecord{id: s.historyID, kind: kindAdded, message: id, labels: slices.Clone(sp.labels)})
-	return m
+	s.history = append(s.history, historyRecord{id: s.historyID, kind: kindAdded, message: m.id, thread: m.threadID,
+		labels: slices.Clone(labels)})
 }
 
 func hasFilename(p *Part) bool {
@@ -166,11 +173,11 @@ func (s *Server) relabel(id string, addLabels, removeLabels []string) {
 	}
 	if len(added) > 0 {
 		s.historyID++
-		s.history = append(s.history, historyRecord{id: s.historyID, kind: kindLabelAdded, message: id, labels: added})
+		s.history = append(s.history, historyRecord{id: s.historyID, kind: kindLabelAdded, message: id, thread: m.threadID, labels: added})
 	}
 	if len(removed) > 0 {
 		s.historyID++
-		s.history = append(s.history, historyRecord{id: s.historyID, kind: kindLabelRemoved, message: id, labels: removed})
+		s.history = append(s.history, historyRecord{id: s.historyID, kind: kindLabelRemoved, message: id, thread: m.threadID, labels: removed})
 	}
 	m.historyID = s.historyID
 }
@@ -261,24 +268,31 @@ const (
 	kindAdded historyKind = iota
 	kindLabelAdded
 	kindLabelRemoved
+	kindDeleted
 )
 
 var historyTypeNames = map[string]historyKind{
 	"messageAdded": kindAdded, "labelAdded": kindLabelAdded, "labelRemoved": kindLabelRemoved,
+	"messageDeleted": kindDeleted,
 }
 
 type historyRecord struct {
 	id      uint64
 	kind    historyKind
 	message string
+	thread  string
 	labels  []string
 }
 
 func (s *Server) historyWire(r historyRecord) gmail.History {
-	m := s.messages[r.message]
-	ref := gmail.Message{ID: m.id, ThreadID: m.threadID, LabelIDs: slices.Clone(m.labels)}
-	h := gmail.History{ID: strconv.FormatUint(r.id, 10), Messages: []gmail.Message{{ID: m.id, ThreadID: m.threadID}}}
+	ref := gmail.Message{ID: r.message, ThreadID: r.thread}
+	if m := s.messages[r.message]; m != nil {
+		ref.ThreadID, ref.LabelIDs = m.threadID, slices.Clone(m.labels)
+	}
+	h := gmail.History{ID: strconv.FormatUint(r.id, 10), Messages: []gmail.Message{{ID: ref.ID, ThreadID: ref.ThreadID}}}
 	switch r.kind {
+	case kindDeleted:
+		h.MessagesDeleted = []gmail.HistoryMessageDeleted{{Message: &ref}}
 	case kindAdded:
 		h.MessagesAdded = []gmail.HistoryMessageAdded{{Message: &ref}}
 	case kindLabelAdded:

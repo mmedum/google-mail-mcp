@@ -29,24 +29,31 @@ import (
 // The unit is the branch, not the function: a handler may read a field
 // and then ask Gmail before it speaks, and that is exactly right.
 func outcomes(out io.Writer, _ []string) error {
-	return outcomesCheck(out, ".", outcomesDir, outcomesClaims)
+	return outcomesCheck(out, ".", outcomesDirs, outcomesClaims)
 }
 
 const (
-	// outcomesDir is the MCP surface: where the input types, handlers and
-	// result wording live.
+	// outcomesDir is the MCP surface: where the input types and handlers
+	// live.
 	outcomesDir = "internal/tools"
+	// outcomesServiceDir is where the handlers' requests are acted on; a
+	// branch on a request field lives here as often as in the handler.
+	outcomesServiceDir = "internal/service"
 	// outcomesClaims records branches judged honest: file:Field, reason.
 	outcomesClaims = "testdata/outcome-claims.tsv"
 	// outcomesMinFiles is the floor on files read.
 	outcomesMinFiles = 2
 )
 
+// outcomesDirs are read together: a tool's input is declared in the
+// first and acted on in the second.
+var outcomesDirs = []string{outcomesDir, outcomesServiceDir}
+
 // outcomesWriteKinds are the Kinds whose tools change something. Until a
 // Spec literal names one, there are no writes to hold and the floors on
 // fields do not apply; from the first, each write tool must bring at
 // least one boolean input (its dry_run) for the gate to read.
-var outcomesWriteKinds = map[string]bool{"Write": true, "Send": true, "Destructive": true}
+var outcomesWriteKinds = map[string]bool{"Write": true, "WriteForGood": true, "Send": true, "Destructive": true}
 
 // outcomesFile is one parsed file with its slash path.
 type outcomesFile struct {
@@ -60,26 +67,36 @@ type outcomesClaim struct {
 	line               int
 }
 
-func outcomesCheck(out io.Writer, root, dir, claims string) error {
+func outcomesCheck(out io.Writer, root string, dirs []string, claims string) error {
 	claimsPath := filepath.Join(root, filepath.FromSlash(claims))
 	fset := token.NewFileSet()
-	files, err := outcomesParse(fset, root, dir)
-	if err != nil {
-		return err
+	var files []outcomesFile
+	for _, d := range dirs {
+		fs, err := outcomesParse(fset, root, d)
+		if err != nil {
+			return err
+		}
+		files = append(files, fs...)
 	}
+	dir := strings.Join(dirs, " and ")
 	if len(files) < outcomesMinFiles {
 		return fmt.Errorf("read %d Go file(s) in %s, want at least %d; this check is not looking at the "+
 			"code it is meant to", len(files), dir, outcomesMinFiles)
 	}
 	writes := outcomesWriteSpecs(files)
-	fields := outcomesBoolFields(files)
-	if len(fields) < writes {
+	fields, pairs := outcomesBoolFields(files)
+	if pairs < writes {
 		return fmt.Errorf("%d write tool(s) registered in %s and %d boolean input field(s): every write "+
-			"takes dry_run, so the gate is not reading their inputs", writes, dir, len(fields))
+			"takes dry_run, so the gate is not reading their inputs", writes, dir, pairs)
 	}
 	exempt, problems := outcomesReadClaims(claimsPath)
 
 	found, branches := outcomesFind(files, fields, fset)
+	if writes > 0 && branches == 0 {
+		return fmt.Errorf("%d write tool(s) registered and no branch in %s tests a boolean of a request; "+
+			"every write has at least a dry run or a confirm to branch on, so the gate is not reading the code "+
+			"that acts on requests", writes, dir)
+	}
 	used := map[string]int{}
 	for _, c := range found {
 		key := c.file + ":" + c.field
@@ -106,7 +123,7 @@ func outcomesCheck(out io.Writer, root, dir, claims string) error {
 		return err
 	}
 	_, _ = fmt.Fprintf(out, "outcomes ok (%d files in %s, %d write tool(s), %d boolean input field(s), "+
-		"%d branch(es) testing one, %d excused)\n", len(files), dir, writes, len(fields), branches, len(exempt))
+		"%d branch(es) testing one, %d excused)\n", len(files), dir, writes, pairs, branches, len(exempt))
 	return nil
 }
 
@@ -150,14 +167,58 @@ func outcomesWriteSpecs(files []outcomesFile) int {
 	return n
 }
 
-// outcomesBoolFields is every boolean field on every *Input type, from
-// the source, so a tool added later is covered by declaring its input.
-func outcomesBoolFields(files []outcomesFile) map[string]bool {
+// outcomesRequestType names a tool's input type: this repository's
+// FooIn, or FooInput as the shared standard writes it. The gate read
+// nothing until it knew the first spelling, which its floor caught the
+// day the first write tool was registered.
+func outcomesRequestType(name string) bool {
+	return strings.HasSuffix(name, "In") || strings.HasSuffix(name, "Input")
+}
+
+// outcomesServiceTypes are the struct types an exported method takes as
+// a parameter: the requests a handler passes on to the service, whatever
+// they are called.
+func outcomesServiceTypes(files []outcomesFile) map[string]bool {
+	structs := map[string]bool{}
+	for _, pf := range files {
+		ast.Inspect(pf.file, func(n ast.Node) bool {
+			if spec, ok := n.(*ast.TypeSpec); ok {
+				if _, ok := spec.Type.(*ast.StructType); ok {
+					structs[spec.Name.Name] = true
+				}
+			}
+			return true
+		})
+	}
 	out := map[string]bool{}
+	for _, pf := range files {
+		for _, decl := range pf.file.Decls {
+			fn, ok := decl.(*ast.FuncDecl)
+			if !ok || fn.Recv == nil || !fn.Name.IsExported() {
+				continue
+			}
+			for _, p := range fn.Type.Params.List {
+				if id, ok := p.Type.(*ast.Ident); ok && structs[id.Name] {
+					out[id.Name] = true
+				}
+			}
+		}
+	}
+	return out
+}
+
+// outcomesBoolFields is every boolean field on every input type, from
+// the source, so a tool added later is covered by declaring its input;
+// and how many there are counted per type, which the floor compares with
+// the write tools, since every write's input has at least its dry_run.
+func outcomesBoolFields(files []outcomesFile) (map[string]bool, int) {
+	out := map[string]bool{}
+	pairs := 0
+	service := outcomesServiceTypes(files)
 	for _, pf := range files {
 		ast.Inspect(pf.file, func(n ast.Node) bool {
 			spec, ok := n.(*ast.TypeSpec)
-			if !ok || !strings.HasSuffix(strings.ToLower(spec.Name.Name), "input") {
+			if !ok || !outcomesRequestType(spec.Name.Name) && !service[spec.Name.Name] {
 				return true
 			}
 			st, ok := spec.Type.(*ast.StructType)
@@ -168,20 +229,23 @@ func outcomesBoolFields(files []outcomesFile) map[string]bool {
 				if id, ok := f.Type.(*ast.Ident); ok && id.Name == "bool" {
 					for _, name := range f.Names {
 						out[name.Name] = true
+						pairs++
 					}
 				}
 			}
 			return true
 		})
 	}
-	return out
+	return out, pairs
 }
 
-// outcomesRequestNames is every identifier bound to an *Input value in the
-// file, by a function or a function literal.
-func outcomesRequestNames(file *ast.File) map[string]bool {
-	out := map[string]bool{}
-	collect := func(params *ast.FieldList) {
+// outcomesRequestNames is every identifier bound to a request in the
+// file: a parameter of an input or service request type, by a function
+// or a function literal, and apart from those, the bare bool parameters
+// of exported methods — a confirm passed on by itself.
+func outcomesRequestNames(file *ast.File, service map[string]bool) (requests, bools map[string]bool) {
+	requests, bools = map[string]bool{}, map[string]bool{}
+	collect := func(params *ast.FieldList, exported bool) {
 		if params == nil {
 			return
 		}
@@ -190,9 +254,16 @@ func outcomesRequestNames(file *ast.File) map[string]bool {
 			if star, ok := t.(*ast.StarExpr); ok {
 				t = star.X
 			}
-			if id, ok := t.(*ast.Ident); ok && strings.HasSuffix(strings.ToLower(id.Name), "input") {
-				for _, name := range p.Names {
-					out[name.Name] = true
+			id, ok := t.(*ast.Ident)
+			if !ok {
+				continue
+			}
+			for _, name := range p.Names {
+				switch {
+				case outcomesRequestType(id.Name) || service[id.Name]:
+					requests[name.Name] = true
+				case exported && id.Name == "bool":
+					bools[name.Name] = true
 				}
 			}
 		}
@@ -200,13 +271,13 @@ func outcomesRequestNames(file *ast.File) map[string]bool {
 	ast.Inspect(file, func(n ast.Node) bool {
 		switch v := n.(type) {
 		case *ast.FuncDecl:
-			collect(v.Type.Params)
+			collect(v.Type.Params, v.Recv != nil && v.Name.IsExported())
 		case *ast.FuncLit:
-			collect(v.Type.Params)
+			collect(v.Type.Params, false)
 		}
 		return true
 	})
-	return out
+	return requests, bools
 }
 
 // outcomesFind returns the dishonest branches and how many branches of
@@ -214,9 +285,10 @@ func outcomesRequestNames(file *ast.File) map[string]bool {
 func outcomesFind(files []outcomesFile, fields map[string]bool, fset *token.FileSet) ([]outcomesClaim, int) {
 	var found []outcomesClaim
 	branches := 0
+	service := outcomesServiceTypes(files)
 	for _, pf := range files {
-		requests := outcomesRequestNames(pf.file)
-		if len(requests) == 0 {
+		requests, bools := outcomesRequestNames(pf.file, service)
+		if len(requests)+len(bools) == 0 {
 			continue
 		}
 		ast.Inspect(pf.file, func(n ast.Node) bool {
@@ -224,7 +296,7 @@ func outcomesFind(files []outcomesFile, fields map[string]bool, fset *token.File
 			if !ok {
 				return true
 			}
-			field := outcomesTestedField(stmt.Cond, fields, requests)
+			field := outcomesTestedField(stmt.Cond, fields, requests, bools)
 			if field == "" {
 				return true
 			}
@@ -241,16 +313,24 @@ func outcomesFind(files []outcomesFile, fields map[string]bool, fset *token.File
 	return found, branches
 }
 
-// outcomesTestedField is the boolean request field a condition tests.
-func outcomesTestedField(cond ast.Expr, fields, requests map[string]bool) string {
+// outcomesTestedField is the boolean request field, or bare bool
+// parameter, a condition tests.
+func outcomesTestedField(cond ast.Expr, fields, requests, bools map[string]bool) string {
 	name := ""
 	ast.Inspect(cond, func(n ast.Node) bool {
-		sel, ok := n.(*ast.SelectorExpr)
-		if !ok || name != "" {
-			return name == ""
+		if name != "" {
+			return false
 		}
-		if id, ok := sel.X.(*ast.Ident); ok && requests[id.Name] && fields[sel.Sel.Name] {
-			name = sel.Sel.Name
+		switch v := n.(type) {
+		case *ast.SelectorExpr:
+			if id, ok := v.X.(*ast.Ident); ok && requests[id.Name] && fields[v.Sel.Name] {
+				name = v.Sel.Name
+			}
+			return false
+		case *ast.Ident:
+			if bools[v.Name] {
+				name = v.Name
+			}
 		}
 		return name == ""
 	})

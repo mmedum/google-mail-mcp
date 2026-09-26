@@ -4,11 +4,13 @@ package main
 
 import (
 	"context"
+
 	"crypto/rand"
 	"encoding/base64"
 	"encoding/hex"
 	"errors"
 	"fmt"
+	"github.com/mmedum/google-mail-mcp/internal/mime"
 	"net/url"
 	"slices"
 	"strings"
@@ -37,6 +39,19 @@ import (
 //     reason and message on a refusal, and the id of anything it created,
 //     so cleanup can remove it.
 //
+//   - UpdateDraft and DraftMessageID save a run draft again and read which
+//     message it holds, for spike A.
+//
+//   - Send and Label send one message the run built, to the address the
+//     maintainer passed as -send-to and nowhere else, and put it under the
+//     run's label so cleanup trashes it. Only spikes D and E send (§15).
+//
+//   - SentCopy reads back a message the run sent: its thread, and its
+//     bytes for spike E. Header reads one header of it, for spike D.
+//
+//   - Account reads the signed-in address, which a spike's Message-ID
+//     and a create_draft step's from take their domain and value from.
+//
 //   - HistoryID reads the mailbox's current history id before the run
 //     inserts anything, so list_changes has a start that precedes the
 //     run's own mail. It is a counter, not mail.
@@ -55,6 +70,15 @@ type mailbox interface {
 	// InternalDate reads the date Gmail recorded for a message the run
 	// inserted, in milliseconds, for spike F.
 	InternalDate(ctx context.Context, messageID string) (int64, error)
+	UpdateDraft(ctx context.Context, draftID string, raw []byte) (messageID string, err error)
+	DraftMessageID(ctx context.Context, draftID string) (string, error)
+	// Send sends o to the one address to: its own To name is kept, and
+	// every other recipient is dropped before it is built.
+	Send(ctx context.Context, o mime.Outgoing, to, threadID string) (messageID, sentThreadID string, err error)
+	Label(ctx context.Context, messageID, labelID string) error
+	SentCopy(ctx context.Context, messageID string) (threadID string, raw []byte, err error)
+	Header(ctx context.Context, messageID, name string) (string, error)
+	Account(ctx context.Context) (string, error)
 }
 
 // probeResult is how Gmail answered a probe. Reason and Message are
@@ -101,13 +125,24 @@ type seeded struct {
 	drafts   []string
 	// historyStart is the mailbox's history id before the first insert.
 	historyStart string
-	// extraLabels are labels a spike created, deleted at cleanup.
+	// extraLabels are labels a spike or step created, deleted at cleanup.
 	extraLabels []string
+	// draftMessages are the ids of messages inside the run's drafts, now
+	// and before each save; a draft's message is the run's own.
+	draftMessages []string
 }
 
-// owns reports whether an id is one the run inserted.
+// owns reports whether an id is one the run made.
 func (s *seeded) owns(id string) bool {
-	return slices.Contains(s.messages, id) || slices.Contains(s.threads, id) || slices.Contains(s.drafts, id)
+	return slices.Contains(s.messages, id) || slices.Contains(s.threads, id) || slices.Contains(s.drafts, id) ||
+		slices.Contains(s.draftMessages, id)
+}
+
+// forget drops a draft the run deleted itself, so cleanup does not.
+func (s *seeded) forget(draftID string) {
+	if i := slices.Index(s.drafts, draftID); i >= 0 {
+		s.drafts = slices.Delete(s.drafts, i, i+1)
+	}
 }
 
 // seedMailbox creates the label and inserts n synthetic messages. If an

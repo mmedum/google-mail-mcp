@@ -1,0 +1,14 @@
+created draft r0000000000000021 · message 0000000000000022 · thread 0000000000000001 · labels: DRAFT
+update_draft needs draft_id r0000000000000021 and message_id 0000000000000022.
+reply to message 0000000000000003 in thread 0000000000000001
+Gmail filed the draft in the parent's thread.
+left out: 1 address of this account's own.
+recipients: 1 from the parent's sender or Reply-To; 1 of the parent's other recipients (reply_all); 1 named in this call
+size: 28.3 KB, sent as JSON
+<<<untrusted-mail TESTTOKEN: draft headers in 0000000000000022>>>
+From: Rae Reader <reader@example.com>
+To: Bruno Fennick <bruno.fennick@example.org>, Ada Quill <ada.quill@example.com>
+Cc: Chiara Oddleaf <chiara@example.com>
+Subject: Re: Offsite venue
+Attachment: Отчёт.pdf (application/pdf, 20.0 KB)
+<<<end-untrusted-mail TESTTOKEN>>>

@@ -2,6 +2,7 @@ package gapi
 
 import (
 	"context"
+	"encoding/base64"
 	"io"
 	"net/http"
 	"net/url"
@@ -264,4 +265,124 @@ func (c *Client) DownloadAttachment(ctx context.Context, messageID, attachmentID
 			return err
 		})
 	return n, err
+}
+
+// UploadThreshold is the message size above which a draft is sent as a
+// multipart upload rather than in the JSON raw field. Google recommends
+// the simple path only up to 5 MB (§7.4).
+const UploadThreshold = 5 << 20
+
+// Uploads reports whether a message of n bytes goes as an upload.
+func Uploads(n int) bool { return n > UploadThreshold }
+
+// draftCall is a create or update of a draft: the message's thread, and
+// its bytes as base64url in the JSON body, or beside it as an upload.
+func draftCall(call Call, threadID string, raw []byte) Call {
+	m := &gmail.Message{ThreadID: threadID}
+	if Uploads(len(raw)) {
+		call.Media = raw
+	} else {
+		m.Raw = base64.URLEncoding.EncodeToString(raw)
+	}
+	call.Body = gmail.Draft{Message: m}
+	return call
+}
+
+// CreateDraft saves a new draft of raw RFC 5322 bytes, in threadID when
+// it is set. Never repeated after an ambiguous failure: a second
+// attempt whose first landed is a second draft.
+func (c *Client) CreateDraft(ctx context.Context, threadID string, raw []byte) (*gmail.Draft, error) {
+	var out gmail.Draft
+	err := c.Do(ctx, draftCall(Call{ID: "gmail.users.drafts.create", Method: http.MethodPost, Path: "drafts"}, threadID, raw), &out)
+	return &out, err
+}
+
+// UpdateDraft replaces a draft's message whole: drafts.update is a PUT
+// with no ETag (§2.4), so the caller checks its witness first (§4.4).
+func (c *Client) UpdateDraft(ctx context.Context, id, threadID string, raw []byte) (*gmail.Draft, error) {
+	var out gmail.Draft
+	err := c.Do(ctx, draftCall(Call{ID: "gmail.users.drafts.update", Method: http.MethodPut, Path: "drafts/{}",
+		Args: []string{id}}, threadID, raw), &out)
+	return &out, err
+}
+
+// DeleteDraft deletes a draft permanently; it does not go to the trash.
+func (c *Client) DeleteDraft(ctx context.Context, id string) error {
+	return c.Do(ctx, Call{ID: "gmail.users.drafts.delete", Method: http.MethodDelete, Path: "drafts/{}",
+		Args: []string{id}}, nil)
+}
+
+// labelsRepeat is why a label change may be sent twice: applying a label
+// already applied, or removing one already gone, changes nothing (§11).
+const labelsRepeat = "a label added or removed twice ends in the same labels"
+
+// ModifyMessage adds and removes labels on one message and returns the
+// message with its labels after.
+func (c *Client) ModifyMessage(ctx context.Context, id string, req gmail.ModifyMessageRequest) (*gmail.Message, error) {
+	var out gmail.Message
+	err := c.Do(ctx, Call{ID: "gmail.users.messages.modify", Method: http.MethodPost, Path: "messages/{}/modify",
+		Args: []string{id}, Body: req, Repeatable: labelsRepeat}, &out)
+	return &out, err
+}
+
+// ModifyThread adds and removes labels on every message of a thread.
+func (c *Client) ModifyThread(ctx context.Context, id string, req gmail.ModifyThreadRequest) (*gmail.Thread, error) {
+	var out gmail.Thread
+	err := c.Do(ctx, Call{ID: "gmail.users.threads.modify", Method: http.MethodPost, Path: "threads/{}/modify",
+		Args: []string{id}, Body: req, Repeatable: labelsRepeat}, &out)
+	return &out, err
+}
+
+// trashRepeat is why a trash or untrash may be sent twice.
+const trashRepeat = "trashing what is in the trash, or restoring what is not, leaves it where it is"
+
+// TrashMessage moves a message to the trash, where Gmail keeps it for 30
+// days (§4.6).
+func (c *Client) TrashMessage(ctx context.Context, id string) (*gmail.Message, error) {
+	var out gmail.Message
+	err := c.Do(ctx, Call{ID: "gmail.users.messages.trash", Method: http.MethodPost, Path: "messages/{}/trash",
+		Args: []string{id}, Repeatable: trashRepeat}, &out)
+	return &out, err
+}
+
+// UntrashMessage takes a message out of the trash.
+func (c *Client) UntrashMessage(ctx context.Context, id string) (*gmail.Message, error) {
+	var out gmail.Message
+	err := c.Do(ctx, Call{ID: "gmail.users.messages.untrash", Method: http.MethodPost, Path: "messages/{}/untrash",
+		Args: []string{id}, Repeatable: trashRepeat}, &out)
+	return &out, err
+}
+
+// TrashThread moves every message of a thread to the trash.
+func (c *Client) TrashThread(ctx context.Context, id string) (*gmail.Thread, error) {
+	var out gmail.Thread
+	err := c.Do(ctx, Call{ID: "gmail.users.threads.trash", Method: http.MethodPost, Path: "threads/{}/trash",
+		Args: []string{id}, Repeatable: trashRepeat}, &out)
+	return &out, err
+}
+
+// UntrashThread takes every message of a thread out of the trash.
+func (c *Client) UntrashThread(ctx context.Context, id string) (*gmail.Thread, error) {
+	var out gmail.Thread
+	err := c.Do(ctx, Call{ID: "gmail.users.threads.untrash", Method: http.MethodPost, Path: "threads/{}/untrash",
+		Args: []string{id}, Repeatable: trashRepeat}, &out)
+	return &out, err
+}
+
+// CreateLabel creates a user label. Not repeated after an ambiguous
+// failure: a second attempt whose first landed would be refused as a
+// taken name and read as one.
+func (c *Client) CreateLabel(ctx context.Context, l gmail.Label) (*gmail.Label, error) {
+	var out gmail.Label
+	err := c.Do(ctx, Call{ID: "gmail.users.labels.create", Method: http.MethodPost, Path: "labels", Body: l}, &out)
+	return &out, err
+}
+
+// PatchLabel changes the fields of a label that l sets, and no others
+// (§4.4: labels are patched, never replaced).
+func (c *Client) PatchLabel(ctx context.Context, id string, l gmail.Label) (*gmail.Label, error) {
+	var out gmail.Label
+	err := c.Do(ctx, Call{ID: "gmail.users.labels.patch", Method: http.MethodPatch, Path: "labels/{}",
+		Args: []string{id}, Body: l}, &out)
+	return &out, err
 }

@@ -2,32 +2,32 @@
 # Columns: method id, state, phase, verdict. The verb and path live in testdata/api-surface.json.
 # used: a client call exists (internal/gapi). planned: judged used or gated, built in the named phase (§16).
 # out: deferred or written off; the verdict says why.
-gmail.users.drafts.create	planned	2	Used: `create_draft`, including replies (§4.5)
-gmail.users.drafts.delete	planned	2	Used: `delete_draft`, with `confirm: true`. Permanent, but only ever the caller's own unsent text; §17 argues why it is not behind the destructive flag
+gmail.users.drafts.create	used	-	Used: `create_draft`, including replies (§4.5); a multipart upload above 5 MB (§7.4). Never repeated after an ambiguous failure
+gmail.users.drafts.delete	used	-	Used: `delete_draft`, with `confirm: true`. Permanent, but only ever an unsent draft; decided in §17.1 not to sit behind the destructive flag
 gmail.users.drafts.get	used	-	Used: `get_draft`, and the witness read before `update_draft` (§4.4)
 gmail.users.drafts.list	used	-	Used: `list_drafts`
 gmail.users.drafts.send	planned	3	Gated: `send_draft`, registered only with `GMAIL_ENABLE_SEND=true`; never retried; the outcome is settled by reading (§4.3)
-gmail.users.drafts.update	planned	2	Used: `update_draft`. PUT-only and no ETag; guarded by the message-id witness of §4.4, a recorded deviation (§17b)
+gmail.users.drafts.update	used	-	Used: `update_draft`. PUT-only and no ETag; guarded by the message-id witness of §4.4, a recorded deviation (§17b); a multipart upload above 5 MB
 gmail.users.getProfile	used	-	Used: `get_profile`; also the login email lookup and `doctor`'s probe
 gmail.users.history.list	used	-	Used: `list_changes` (§7.6)
-gmail.users.labels.create	planned	2	Used: `create_label`
+gmail.users.labels.create	used	-	Used: `create_label`, the name checked against the label list first (§6.2)
 gmail.users.labels.delete	planned	3	Gated: `delete_label`, behind `GMAIL_ENABLE_DESTRUCTIVE`; it strips the label from every message and cannot be undone
 gmail.users.labels.get	used	-	Used: `list_labels` with `counts: true` (list omits the counts)
 gmail.users.labels.list	used	-	Used: `list_labels`, and label-name resolution (§6.3)
-gmail.users.labels.patch	planned	2	Used: `update_label`
+gmail.users.labels.patch	used	-	Used: `update_label`; only the fields given are sent (§4.4)
 gmail.users.labels.update	out	-	Written off: PUT replaces the whole label; `patch` covers every edit (§4.4)
 gmail.users.messages.attachments.get	used	-	Used: `download_attachment`
 gmail.users.messages.batchDelete	out	-	Written off: "provides no guarantees that messages were not already deleted or even existed", so its result cannot be reported truthfully; `delete_permanently` loops `messages.delete` under a cap instead
-gmail.users.messages.batchModify	planned	2	Used: `modify_labels` on 2–100 explicit ids (§4.7 caps it far below Google's 1000)
+gmail.users.messages.batchModify	out	-	Written off: it answers with no body, so it cannot say which messages changed or why one failed, and §4.7 reports per item. `modify_labels` calls `messages.modify` per message, 5 units each, whose answer is the message's labels after (§18 row 39)
 gmail.users.messages.delete	planned	3	Gated: `delete_permanently`, registered only with `GMAIL_ENABLE_DESTRUCTIVE=true`; the only scope it accepts is `https://mail.google.com/`
 gmail.users.messages.get	used	-	Used: `get_message`, `download_attachment` (to find the part), reply construction (to read `Message-ID`/`References`)
 gmail.users.messages.import	out	-	Written off: mailbox migration, not an assistant task; it runs spam and virus classification as though delivered
 gmail.users.messages.insert	out	-	Written off for the server: it plants mail that was never delivered, bypassing the classification a received message gets. Used by the live driver only, to write the messages it reads (§9.1)
 gmail.users.messages.list	used	-	Used: `search_messages`
-gmail.users.messages.modify	planned	2	Used: `modify_labels` on one message
+gmail.users.messages.modify	used	-	Used: `modify_labels`, once per message, its answer the labels after
 gmail.users.messages.send	out	-	Written off: sending goes through `drafts.send` only, so what leaves is always something that existed as a draft the person could see (§4.2); `send_draft` covers every case a one-shot send would
-gmail.users.messages.trash	planned	2	Used: `trash`
-gmail.users.messages.untrash	planned	2	Used: `restore`
+gmail.users.messages.trash	used	-	Used: `trash`
+gmail.users.messages.untrash	used	-	Used: `restore`
 gmail.users.settings.cse.identities.create	out	-	Written off with CSE
 gmail.users.settings.cse.identities.delete	out	-	Written off with CSE
 gmail.users.settings.cse.identities.get	out	-	Written off with CSE
@@ -58,7 +58,7 @@ gmail.users.settings.getPop	used	-	Used: `get_settings`
 gmail.users.settings.getVacation	used	-	Used: `get_settings`
 gmail.users.settings.sendAs.create	out	-	Written off: `gmail.settings.sharing`; identity administration
 gmail.users.settings.sendAs.delete	out	-	Written off: `gmail.settings.sharing`
-gmail.users.settings.sendAs.get	planned	2	Used: `create_draft` validates a chosen `from`
+gmail.users.settings.sendAs.get	out	-	Written off: `sendAs.list` returns every field `get` does for the same one unit, and `create_draft` reads the list anyway for the default sender and the account's own addresses (§18 row 39)
 gmail.users.settings.sendAs.list	used	-	Used: `get_settings`, and the `from` choices of `create_draft`
 gmail.users.settings.sendAs.patch	out	-	Written off: `gmail.settings.basic`/`sharing`; signature editing is deferred to §17
 gmail.users.settings.sendAs.smimeInfo.delete	out	-	Written off: key administration
@@ -77,7 +77,7 @@ gmail.users.stop	out	-	Written off with `watch`
 gmail.users.threads.delete	planned	3	Gated: `delete_permanently` on a thread, as `messages.delete`
 gmail.users.threads.get	used	-	Used: `get_thread`
 gmail.users.threads.list	used	-	Used: `search_threads`
-gmail.users.threads.modify	planned	2	Used: `modify_labels` on a thread
-gmail.users.threads.trash	planned	2	Used: `trash` on a thread
-gmail.users.threads.untrash	planned	2	Used: `restore` on a thread
+gmail.users.threads.modify	used	-	Used: `modify_labels` on a thread id
+gmail.users.threads.trash	used	-	Used: `trash` on a thread id
+gmail.users.threads.untrash	used	-	Used: `restore` on a thread id
 gmail.users.watch	out	-	Written off: push goes to a Cloud Pub/Sub topic, which a stdio process cannot own or receive. `list_changes` polls `history.list` instead

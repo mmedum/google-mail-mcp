@@ -1,9 +1,12 @@
 package gapi_test
 
 import (
+	"bytes"
 	"context"
 	"net/url"
+	"slices"
 	"strconv"
+	"strings"
 	"testing"
 	"time"
 
@@ -12,6 +15,7 @@ import (
 	"github.com/mmedum/google-mail-mcp/internal/gapi"
 	"github.com/mmedum/google-mail-mcp/internal/gapi/gmailtest"
 	"github.com/mmedum/google-mail-mcp/internal/gmail"
+	"github.com/mmedum/google-mail-mcp/internal/mime"
 )
 
 func fakeClient(t *testing.T) (*gapi.Client, *gmailtest.Server) {
@@ -213,5 +217,213 @@ func TestSettingsReads(t *testing.T) {
 	// Every settings read is one unit, on the fake's own price list.
 	if got := fake.Units(); got != 8 {
 		t.Errorf("eight settings reads spent %d units; want 8", got)
+	}
+}
+
+// rawReply builds a reply to a parent message with the server's MIME
+// builder, dropping whichever of §2.5's conditions the test names.
+func rawReply(t *testing.T, fake *gmailtest.Server, parentID, drop string, size int) (threadID string, raw []byte) {
+	t.Helper()
+	parent, ok := fake.Message(parentID, "full")
+	if !ok {
+		t.Fatalf("no message %s", parentID)
+	}
+	pm, err := mime.ParsePayload(parent.Payload, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	o := mime.Outgoing{
+		To: pm.From, Subject: "Re: " + pm.Subject, Text: "Reply.\n", MessageID: mime.NewMessageID("a@example.com"),
+		InReplyTo: pm.MessageID, References: append(append([]string(nil), pm.References...), pm.MessageID),
+	}
+	threadID = parent.ThreadID
+	switch drop {
+	case "threadId":
+		threadID = ""
+	case "headers":
+		o.InReplyTo, o.References = "", nil
+	case "subject":
+		o.Subject = "Something else"
+	}
+	if size > 0 {
+		o.Attachments = []mime.OutAttachment{{Filename: "big.bin", Content: make([]byte, size)}}
+	}
+	raw, err = mime.Build(o)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return threadID, raw
+}
+
+func TestDraftsThreadOnlyWithAllThreeConditions(t *testing.T) {
+	c, fake := fakeClient(t)
+	ctx := context.Background()
+	parent := fake.Scenario(gmailtest.ScenarioPlainThread)
+	last := parent.MessageIDs[len(parent.MessageIDs)-1]
+	for _, drop := range []string{"", "threadId", "headers", "subject"} {
+		threadID, raw := rawReply(t, fake, last, drop, 0)
+		d, err := c.CreateDraft(ctx, threadID, raw)
+		if err != nil {
+			t.Fatalf("drop %q: %v", drop, err)
+		}
+		joined := d.Message.ThreadID == parent.ThreadID
+		if joined != (drop == "") {
+			t.Errorf("drop %q: joined the thread = %v", drop, joined)
+		}
+		if !slices.Equal(d.Message.LabelIDs, []string{"DRAFT"}) || !strings.HasPrefix(d.ID, "r") {
+			t.Errorf("draft %+v", d)
+		}
+	}
+}
+
+func TestADraftUpdateReplacesItsMessage(t *testing.T) {
+	c, fake := fakeClient(t)
+	ctx := context.Background()
+	sc := fake.Scenario(gmailtest.ScenarioPlainThread)
+	threadID, raw := rawReply(t, fake, sc.MessageIDs[len(sc.MessageIDs)-1], "", 0)
+	d, err := c.CreateDraft(ctx, threadID, raw)
+	if err != nil {
+		t.Fatal(err)
+	}
+	u, err := c.UpdateDraft(ctx, d.ID, threadID, raw)
+	if err != nil || u.ID != d.ID || u.Message.ID == d.Message.ID || u.Message.ThreadID != sc.ThreadID {
+		t.Fatalf("update %+v, %v", u, err)
+	}
+	if _, ok := fake.Message(d.Message.ID, "minimal"); ok {
+		t.Error("the replaced message is still there")
+	}
+	got, err := c.GetDraft(ctx, d.ID, gapi.FormatRaw)
+	if err != nil || got.Message.Raw == "" {
+		t.Fatalf("read back %v", err)
+	}
+	if err := c.DeleteDraft(ctx, d.ID); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := c.GetDraft(ctx, d.ID, gapi.FormatMinimal); !isClass(err, gapi.ClassNotFound) {
+		t.Errorf("after delete: %v", err)
+	}
+	if err := c.DeleteDraft(ctx, d.ID); !isClass(err, gapi.ClassNotFound) {
+		t.Errorf("second delete: %v", err)
+	}
+	if _, err := c.UpdateDraft(ctx, d.ID, "", raw); !isClass(err, gapi.ClassNotFound) {
+		t.Errorf("update of a deleted draft: %v", err)
+	}
+}
+
+func TestALargeDraftGoesThroughTheUploadPath(t *testing.T) {
+	c, fake := fakeClient(t)
+	ctx := context.Background()
+	sc := fake.Scenario(gmailtest.ScenarioPlainThread)
+	threadID, raw := rawReply(t, fake, sc.MessageIDs[len(sc.MessageIDs)-1], "", gapi.UploadThreshold)
+	d, err := c.CreateDraft(ctx, threadID, raw)
+	if err != nil || d.Message.ThreadID != sc.ThreadID {
+		t.Fatalf("create %+v, %v", d, err)
+	}
+	if u, err := c.UpdateDraft(ctx, d.ID, threadID, raw); err != nil || u.Message.ThreadID != sc.ThreadID {
+		t.Fatalf("update %+v, %v", u, err)
+	}
+	var uploads int
+	for _, call := range fake.Calls() {
+		if strings.HasPrefix(call.Path, "/upload/") {
+			uploads++
+		}
+	}
+	if uploads != 2 {
+		t.Errorf("%d uploads", uploads)
+	}
+	stored, _ := fake.Message(mustDraftMessage(t, c, d.ID), "raw")
+	back, err := mime.DecodeBase64URL(stored.Raw)
+	if err != nil || !bytes.Equal(back, raw) {
+		t.Error("the uploaded bytes were not stored as sent")
+	}
+}
+
+func mustDraftMessage(t *testing.T, c *gapi.Client, id string) string {
+	t.Helper()
+	d, err := c.GetDraft(context.Background(), id, gapi.FormatMinimal)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return d.Message.ID
+}
+
+func isClass(err error, want gapi.Class) bool {
+	c, ok := gapi.ClassOf(err)
+	return ok && c == want
+}
+
+func TestLabelWritesOnMessagesAndThreads(t *testing.T) {
+	c, fake := fakeClient(t)
+	ctx := context.Background()
+	sc := fake.Scenario(gmailtest.ScenarioPlainThread)
+	m, err := c.ModifyMessage(ctx, sc.MessageIDs[0], gmail.ModifyMessageRequest{AddLabelIDs: []string{"STARRED"}, RemoveLabelIDs: []string{"INBOX"}})
+	if err != nil || !slices.Contains(m.LabelIDs, "STARRED") || slices.Contains(m.LabelIDs, "INBOX") {
+		t.Fatalf("modify %+v, %v", m, err)
+	}
+	th, err := c.ModifyThread(ctx, sc.ThreadID, gmail.ModifyThreadRequest{AddLabelIDs: []string{"Label_1"}})
+	if err != nil || len(th.Messages) != len(sc.MessageIDs) || !slices.Contains(th.Messages[0].LabelIDs, "Label_1") {
+		t.Fatalf("thread modify %+v, %v", th, err)
+	}
+	for _, bad := range []string{"SENT", "DRAFT", "Label_999"} {
+		_, err := c.ModifyMessage(ctx, sc.MessageIDs[0], gmail.ModifyMessageRequest{AddLabelIDs: []string{bad}})
+		if !isClass(err, gapi.ClassInvalid) {
+			t.Errorf("add %s: %v", bad, err)
+		}
+	}
+	draft := fake.Scenario(gmailtest.ScenarioDraftReply)
+	if _, err := c.ModifyMessage(ctx, draft.MessageIDs[2], gmail.ModifyMessageRequest{AddLabelIDs: []string{"STARRED"}}); !isClass(err, gapi.ClassInvalid) {
+		t.Errorf("labeling a draft: %v", err)
+	}
+
+	tm, err := c.TrashMessage(ctx, sc.MessageIDs[0])
+	if err != nil || !slices.Contains(tm.LabelIDs, "TRASH") {
+		t.Fatalf("trash %+v, %v", tm, err)
+	}
+	if um, err := c.UntrashMessage(ctx, sc.MessageIDs[0]); err != nil || slices.Contains(um.LabelIDs, "TRASH") {
+		t.Fatalf("untrash %+v, %v", um, err)
+	}
+	tt, err := c.TrashThread(ctx, sc.ThreadID)
+	if err != nil || !slices.Contains(tt.Messages[len(tt.Messages)-1].LabelIDs, "TRASH") {
+		t.Fatalf("trash thread %+v, %v", tt, err)
+	}
+	if ut, err := c.UntrashThread(ctx, sc.ThreadID); err != nil || slices.Contains(ut.Messages[0].LabelIDs, "TRASH") {
+		t.Fatalf("untrash thread %+v, %v", ut, err)
+	}
+	if _, err := c.TrashMessage(ctx, "00000000000fffff"); !isClass(err, gapi.ClassNotFound) {
+		t.Errorf("trash of nothing: %v", err)
+	}
+}
+
+func TestLabelCreateAndPatch(t *testing.T) {
+	c, _ := fakeClient(t)
+	ctx := context.Background()
+	l, err := c.CreateLabel(ctx, gmail.Label{Name: "Travel", LabelListVisibility: "labelShowIfUnread",
+		Color: &gmail.LabelColor{TextColor: "#ffffff", BackgroundColor: "#16a766"}})
+	if err != nil || l.ID == "" || l.Type != gmail.LabelTypeUser || l.MessageListVisibility != "show" || l.Color == nil {
+		t.Fatalf("create %+v, %v", l, err)
+	}
+	for name, want := range map[string]gapi.Class{"travel": gapi.ClassConflict, "Inbox": gapi.ClassInvalid, " ": gapi.ClassInvalid} {
+		if _, err := c.CreateLabel(ctx, gmail.Label{Name: name}); !isClass(err, want) {
+			t.Errorf("create %q: %v, want %s", name, err, want)
+		}
+	}
+	p, err := c.PatchLabel(ctx, l.ID, gmail.Label{Name: "Trips", MessageListVisibility: "hide"})
+	if err != nil || p.Name != "Trips" || p.MessageListVisibility != "hide" || p.LabelListVisibility != "labelShowIfUnread" || p.Color == nil {
+		t.Fatalf("patch %+v, %v", p, err)
+	}
+	if _, err := c.PatchLabel(ctx, l.ID, gmail.Label{Name: "TRIPS"}); err != nil {
+		t.Errorf("a label renamed in its own case: %v", err)
+	}
+	if _, err := c.PatchLabel(ctx, "Label_1", gmail.Label{Name: "Receipts"}); !isClass(err, gapi.ClassConflict) {
+		t.Errorf("rename onto a taken name: %v", err)
+	}
+	if _, err := c.PatchLabel(ctx, "INBOX", gmail.Label{Name: "x"}); !isClass(err, gapi.ClassInvalid) {
+		t.Errorf("patch a system label: %v", err)
+	}
+	if _, err := c.PatchLabel(ctx, l.ID, gmail.Label{Color: &gmail.LabelColor{TextColor: "red"}}); !isClass(err, gapi.ClassInvalid) {
+		t.Errorf("a bad color: %v", err)
+	}
+	if _, err := c.PatchLabel(ctx, "Label_999", gmail.Label{Name: "x"}); !isClass(err, gapi.ClassNotFound) {
+		t.Errorf("patch nothing: %v", err)
 	}
 }

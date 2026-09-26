@@ -18,7 +18,7 @@ once rather than one per run.
 | `GMAIL_READ_ONLY` | `--read-only` | `false` | Register only the read tools, and ask for `gmail.readonly` at login. Refused together with either `ENABLE_` setting. |
 | `GMAIL_ENABLE_SEND` | `--enable-send` | `false` | Register `send_draft`. Scopes do not change: the default scope can already send, which is why the tool, not the scope, is the control. |
 | `GMAIL_ENABLE_DESTRUCTIVE` | `--enable-destructive` | `false` | Register `delete_permanently` and `delete_label`, and ask for `https://mail.google.com/` at login — the only scope Google accepts for permanent deletion. Each call still needs `confirm: true`. |
-| `GMAIL_LOCAL_DIR` | `--local-dir` | unset | The one directory attachments are written to (and, from phase 2, read from). An absolute path to a directory that exists. **Unset means no file transfer**, and `download_attachment` is not registered. |
+| `GMAIL_LOCAL_DIR` | `--local-dir` | unset | The one directory attachments are written to, and read from to attach to a draft. An absolute path to a directory that exists. **Unset means no file transfer**: `download_attachment` is not registered, and `create_draft` and `update_draft` refuse attachments. |
 | `GMAIL_LOG_LEVEL` | `--log-level` | `info` | `debug`, `info`, `warn` or `error`. Logs go to stderr. |
 | `GMAIL_LOG_FORMAT` | `--log-format` | `text` | `text` or `json`. |
 | `GMAIL_HTTP_TIMEOUT` | `--http-timeout` | `60s` | Deadline for one attempt at a Google API call. |

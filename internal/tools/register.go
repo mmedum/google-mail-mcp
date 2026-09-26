@@ -31,6 +31,12 @@ const (
 	// Write changes the mailbox and reaches nobody else: drafts, labels,
 	// trash. Not registered in read-only mode.
 	Write
+	// WriteForGood is a Write that cannot be undone: delete_draft, since
+	// Gmail deletes a draft rather than trashing it. Registered as Write
+	// is (§17.1), and annotated destructive, because a client that runs
+	// non-destructive tools unasked must not run this one on that
+	// strength. Its call still takes confirm: true.
+	WriteForGood
 	// Send delivers mail to other people. Registered only with
 	// GMAIL_ENABLE_SEND (§4.2).
 	Send
@@ -49,6 +55,8 @@ func (k Kind) String() string {
 		return "read-writes-locally"
 	case Write:
 		return "write"
+	case WriteForGood:
+		return "write-for-good"
 	case Send:
 		return "send"
 	case Destructive:
@@ -65,7 +73,7 @@ func (k Kind) allowed(cfg config.Config) bool {
 		return true
 	case ReadWritesLocally:
 		return cfg.LocalDir != ""
-	case Write:
+	case Write, WriteForGood:
 		return !cfg.ReadOnly
 	case Send:
 		return cfg.EnableSend && !cfg.ReadOnly
@@ -89,7 +97,7 @@ func (k Kind) annotations() *mcp.ToolAnnotations {
 		return &mcp.ToolAnnotations{DestructiveHint: no, OpenWorldHint: no}
 	case Send:
 		return &mcp.ToolAnnotations{DestructiveHint: no, OpenWorldHint: yes}
-	case Destructive:
+	case Destructive, WriteForGood:
 		// Deleting what is already gone changes nothing more.
 		return &mcp.ToolAnnotations{DestructiveHint: yes, IdempotentHint: true, OpenWorldHint: no}
 	default:

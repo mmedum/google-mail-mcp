@@ -175,6 +175,7 @@ func TestSmokeKindFollowsRegister(t *testing.T) {
 		{`{"destructiveHint":false,"openWorldHint":true}`, `{"anthropic/requiresUserInteraction":true}`, smokeKindSend},
 		{`{"destructiveHint":true,"idempotentHint":true,"openWorldHint":false}`,
 			`{"anthropic/requiresUserInteraction":true}`, smokeKindDestructive},
+		{`{"destructiveHint":true,"idempotentHint":true,"openWorldHint":false}`, ``, smokeKindWriteForGood},
 		{`{"destructiveHint":false,"openWorldHint":true}`, ``, ""},
 		{`{}`, ``, ""},
 		{`{"readOnlyHint":true}`, `{"anthropic/requiresUserInteraction":true}`, ""},
@@ -194,7 +195,7 @@ func TestSmokeModesCoverEveryKind(t *testing.T) {
 			seen[k]++
 		}
 	}
-	for _, k := range []string{smokeKindRead, smokeKindWrite, smokeKindSend, smokeKindDestructive} {
+	for _, k := range []string{smokeKindRead, smokeKindWrite, smokeKindWriteForGood, smokeKindSend, smokeKindDestructive} {
 		if seen[k] == 0 {
 			t.Errorf("no mode registers %s tools", k)
 		}

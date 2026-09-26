@@ -78,10 +78,21 @@ as you**, whatever this server's flags say: the default scope can send.
 ## A draft did not land in the thread
 
 The reply was built by the server from the message named in `reply_to`,
-and the result says whether Gmail put it in that thread. If it did not,
-the result names the message it replied to; check that it was the one
-you meant, and that the subject was not changed — Gmail threads only on
-a matching subject.
+or the newest message of the thread named in `reply_to_thread`, and the
+result says whether Gmail put it in that thread. If it did not, the
+result names the message it replied to; check that it was the one you
+meant, and that the subject was not changed since — Gmail threads only
+on a matching subject, and `update_draft` warns when a reply's subject
+changes. A parent with no `Message-ID` header cannot be answered with
+the headers Gmail threads by; the result says so.
+
+## `[stale]` from `update_draft`
+
+The draft was saved since the `message_id` you passed was read: in
+Gmail, in another client, or by an earlier call. Read it again with
+`get_draft`, check what changed, and apply your change to that. Every
+save gives a draft a new message id, and each result names the current
+one.
 
 ## `list_changes` says the cursor expired
 

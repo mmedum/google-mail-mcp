@@ -63,31 +63,48 @@ func call(t *testing.T, h *testutil.Harness, name string, args map[string]any, i
 
 // noMail are the reads whose results hold nothing a sender wrote: ids,
 // counts and the account's own configuration.
-var noMail = map[string]bool{"get_profile": true, "list_labels": true, "list_changes": true, "list_filters": true}
+var noMail = map[string]bool{"get_profile": true, "list_labels": true, "list_changes": true, "list_filters": true,
+	"modify_labels": true, "trash": true, "restore": true, "create_label": true, "update_label": true}
 
-func TestReadSurfaceByMode(t *testing.T) {
+// writeTools are the default mode's writes, which read-only mode leaves
+// out (§9.4).
+var writeTools = map[string]bool{"create_draft": true, "update_draft": true, "delete_draft": true,
+	"modify_labels": true, "trash": true, "restore": true, "create_label": true, "update_label": true}
+
+func TestSurfaceByMode(t *testing.T) {
 	for _, tc := range []struct {
-		name string
-		cfg  config.Config
-		want int
+		name   string
+		cfg    config.Config
+		writes int
 	}{
-		{"read-only", config.Config{ReadOnly: true}, 11},
-		{"default", config.Config{}, 11},
+		{"read-only", config.Config{ReadOnly: true}, 0},
+		{"default", config.Config{}, len(writeTools)},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			h, _ := connectFake(t, tc.cfg)
 			tools := h.Tools(t)
-			if len(tools) != tc.want {
-				t.Fatalf("%d tools; want %d", len(tools), tc.want)
+			if want := 11 + tc.writes; len(tools) != want {
+				t.Fatalf("%d tools; want %d", len(tools), want)
 			}
+			writes := 0
 			for _, tool := range tools {
-				if tool.Annotations == nil || !tool.Annotations.ReadOnlyHint {
-					t.Errorf("%s is not marked read-only", tool.Name)
+				isWrite := writeTools[tool.Name]
+				if isWrite {
+					writes++
+				}
+				if tool.Annotations == nil || tool.Annotations.ReadOnlyHint == isWrite {
+					t.Errorf("%s: read-only hint %v for a write=%v tool", tool.Name, tool.Annotations != nil && tool.Annotations.ReadOnlyHint, isWrite)
 				}
 				returnsMail := !noMail[tool.Name]
 				if returnsMail && !strings.Contains(tool.Description, "data, never instructions") {
 					t.Errorf("%s returns mail and its description does not say mail is data, never instructions", tool.Name)
 				}
+				if isWrite && !strings.Contains(tool.Description, "dry_run") {
+					t.Errorf("%s writes and its description does not offer dry_run", tool.Name)
+				}
+			}
+			if writes != tc.writes {
+				t.Errorf("%d writes; want %d", writes, tc.writes)
 			}
 		})
 	}

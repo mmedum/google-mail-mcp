@@ -14,6 +14,7 @@ import (
 	"os"
 	"path/filepath"
 	"regexp"
+	"slices"
 	"strings"
 	"time"
 
@@ -32,6 +33,9 @@ type step struct {
 	// ones whose result is the whole mailbox rather than the run's mail —
 	// every label name, the account — which the redactor cannot mask.
 	quiet bool
+	// refuses is the class a step expects the tool to refuse with; the
+	// step fails if the call succeeds or refuses with another.
+	refuses string
 	// args builds the arguments from what the run inserted.
 	args func(e *env) map[string]any
 	// check judges the result. It returns an error to fail the step.
@@ -44,14 +48,22 @@ var (
 	messageIDIn = regexp.MustCompile(`message ([0-9a-f]{16})`)
 	pageTokenIn = regexp.MustCompile(`page_token=(\S+)`)
 	addedIn     = regexp.MustCompile(`message ([0-9a-f]{16}) added`)
+	accountIn   = regexp.MustCompile(`(?m)^account: (\S+@\S+)$`)
 )
 
 // steps is every step, in order. Later steps read what earlier ones
 // stored on env.
 var steps = []step{
 	{name: "profile", tool: "get_profile", quiet: true,
-		args:  func(*env) map[string]any { return map[string]any{} },
-		check: func(_ *env, text string) error { return want(text, "@") }},
+		args: func(*env) map[string]any { return map[string]any{} },
+		check: func(e *env, text string) error {
+			m := accountIn.FindStringSubmatch(text)
+			if m == nil {
+				return errors.New("the result names no account")
+			}
+			e.account = m[1]
+			return nil
+		}},
 
 	{name: "labels with counts", tool: "list_labels", quiet: true,
 		args:  func(*env) map[string]any { return map[string]any{"counts": true} },
@@ -243,6 +255,15 @@ type env struct {
 	pageToken string
 	// localDir is the run's GMAIL_LOCAL_DIR, a directory of its own.
 	localDir string
+	// account is the signed-in address, from get_profile.
+	account string
+	// draftID and draftMessage are the draft the write steps compose
+	// and update; staleMessage is its message before the last update.
+	draftID, draftMessage, staleMessage string
+	// replyDraft is the reply the delete steps delete.
+	replyDraft string
+	// spikeE is the draft side of spike E, from reading a draft back.
+	spikeE string
 }
 
 func want(text, s string) error {
@@ -293,7 +314,10 @@ func (e *env) guard(tool string, args map[string]any) error {
 			return fmt.Errorf("%w: list_changes without label %s", errUnscoped, e.seed.label.name)
 		}
 	}
-	for _, key := range []string{"thread_id", "message_id", "draft_id"} {
+	if err := e.guardWrite(tool, args); err != nil {
+		return err
+	}
+	for _, key := range []string{"thread_id", "message_id", "draft_id", "reply_to", "reply_to_thread"} {
 		id, ok := args[key].(string)
 		if !ok {
 			continue
@@ -327,8 +351,13 @@ func (e *env) runStep(s step) error {
 	} else {
 		e.tr.Say(text)
 	}
-	if isError {
+	switch {
+	case isError && s.refuses == "":
 		return errors.New("the tool refused")
+	case isError && !strings.HasPrefix(text, "["+s.refuses+"]"):
+		return fmt.Errorf("the tool refused, but not with [%s]", s.refuses)
+	case !isError && s.refuses != "":
+		return fmt.Errorf("the call succeeded; it should have been refused with [%s]", s.refuses)
 	}
 	return s.check(e, text)
 }
@@ -338,15 +367,27 @@ func (e *env) runStep(s step) error {
 type spike struct {
 	name     string
 	question string
-	ask      func(ctx context.Context, box mailbox, s *seeded) (verdict string)
+	ask      func(ctx context.Context, x spikeRun) (verdict string)
+}
+
+// spikeRun is what a spike sees: the mailbox, the run's own mail, and
+// for the two that send, the address the maintainer passed and the
+// account sending.
+type spikeRun struct {
+	box     mailbox
+	s       *seeded
+	sendTo  string
+	account string
+	// draftSide is what the write steps found for spike E without sending.
+	draftSide string
 }
 
 // spikes run after the steps, against the run's own mail only.
 var spikes = []spike{
 	{name: "F (dates)", question: "Which date does messages.insert record with internalDateSource=receivedTime: " +
 		"the insert's own time, or the message's Date header?",
-		ask: func(ctx context.Context, box mailbox, s *seeded) string {
-			ms, err := box.InternalDate(ctx, s.messages[0])
+		ask: func(ctx context.Context, x spikeRun) string {
+			ms, err := x.box.InternalDate(ctx, x.s.messages[0])
 			if err != nil {
 				return "could not read the message's internalDate: " + err.Error()
 			}
@@ -361,13 +402,14 @@ var spikes = []spike{
 			return fmt.Sprintf("internalDate is %s, neither the Date header nor the insert's time", got.Format(time.RFC3339))
 		}},
 	{name: "K", question: "Is a history cursor far in the past answered 404, as the sync guide says, and in what body?",
-		ask: func(ctx context.Context, box mailbox, _ *seeded) string {
-			r := box.Probe(ctx, http.MethodGet, "history", url.Values{"startHistoryId": {"1"}}, nil)
+		ask: func(ctx context.Context, x spikeRun) string {
+			r := x.box.Probe(ctx, http.MethodGet, "history", url.Values{"startHistoryId": {"1"}}, nil)
 			return fmt.Sprintf("history.list with startHistoryId=1 answered HTTP %d, reason %q, message %q (the guide says 404)",
 				r.status, r.reason, r.message)
 		}},
 	{name: "I", question: "Can two labels differ only in case, and what does creating a label named like a system label return?",
-		ask: func(ctx context.Context, box mailbox, s *seeded) string {
+		ask: func(ctx context.Context, x spikeRun) string {
+			box, s := x.box, x.s
 			names := []string{s.label.name + "-Case", s.label.name + "-case", "INBOX", "Inbox"}
 			out := make([]string, 0, len(names))
 			for _, name := range names {
@@ -388,9 +430,10 @@ var spikes = []spike{
 		}},
 	{name: "G (positive half)", question: "Does Gmail refuse messages.delete under gmail.modify, " +
 		"so only https://mail.google.com/ can delete permanently?",
-		ask: func(ctx context.Context, box mailbox, s *seeded) string {
+		ask: func(ctx context.Context, x spikeRun) string {
+			s := x.s
 			last := s.messages[len(s.messages)-1]
-			status := box.Probe(ctx, http.MethodDelete, "messages/"+url.PathEscape(last), nil, nil).status
+			status := x.box.Probe(ctx, http.MethodDelete, "messages/"+url.PathEscape(last), nil, nil).status
 			if status/100 == 2 {
 				// It is gone for good, and it was the run's own synthetic
 				// message; cleanup must not trash it again.
@@ -402,9 +445,9 @@ var spikes = []spike{
 		}},
 }
 
-func runSpikes(ctx context.Context, box mailbox, s *seeded, tr *transcript.Transcript) {
-	for _, sp := range spikes {
+func runSpikes(ctx context.Context, x spikeRun, tr *transcript.Transcript) {
+	for _, sp := range append(slices.Clone(spikes), writeSpikes...) {
 		tr.Sayf("spike %s — question: %s", sp.name, sp.question)
-		tr.Sayf("spike %s — observed: %s", sp.name, sp.ask(ctx, box, s))
+		tr.Sayf("spike %s — observed: %s", sp.name, sp.ask(ctx, x))
 	}
 }

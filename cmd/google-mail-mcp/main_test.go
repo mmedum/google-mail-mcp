@@ -317,6 +317,9 @@ func TestLoginStatusDoctorLogout(t *testing.T) {
 	if !strings.Contains(r.stdout, "…@example.com") {
 		t.Errorf("login did not name the account's domain:\n%s", r.stdout)
 	}
+	if !strings.Contains(r.stdout, "Google issued a new refresh token") {
+		t.Errorf("login did not say a refresh token was issued:\n%s", r.stdout)
+	}
 	if got, _ := keyringBackend.Get(credentials.ServiceName, "default"); got != refreshToken {
 		t.Fatalf("keyring holds %q", got)
 	}
@@ -364,6 +367,9 @@ func TestLoginStatusDoctorLogout(t *testing.T) {
 	}
 	if got, _ := keyringBackend.Get(credentials.ServiceName, "default"); got != refreshToken {
 		t.Errorf("the stored token was lost: %q", got)
+	}
+	if !strings.Contains(r.stdout, "Google issued no new refresh token; the one stored before is kept.") {
+		t.Errorf("the second login did not say the stored token was kept:\n%s", r.stdout)
 	}
 
 	// A flag that grows the scopes shows in status and doctor.

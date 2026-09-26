@@ -1,7 +1,6 @@
 package mime
 
 import (
-	"bytes"
 	"encoding/base64"
 	"regexp"
 	"strings"
@@ -28,43 +27,18 @@ func headerGet(hs []Header, name string) string {
 	return ""
 }
 
-// splitHeaders separates an entity's header block from its body. It
-// accepts CRLF and bare LF, unfolds continuation lines and skips lines
-// with no colon, so a malformed block yields what can be read of it.
+// splitHeaders separates an entity's header block from its body, each
+// value unfolded and trimmed. It reads what splitRawHeaders reads,
+// skipping lines that are not a header, so a malformed block yields what
+// can be read of it.
 func splitHeaders(b []byte) (hs []Header, body []byte) {
-	end, bodyStart := len(b), len(b)
-	if i := bytes.Index(b, []byte("\r\n\r\n")); i >= 0 {
-		end, bodyStart = i, i+4
-	}
-	if i := bytes.Index(b, []byte("\n\n")); i >= 0 && i < end {
-		end, bodyStart = i, i+2
-	}
-	// A message that opens with a blank line has no headers.
-	if bytes.HasPrefix(b, []byte("\r\n")) {
-		return nil, b[2:]
-	}
-	if bytes.HasPrefix(b, []byte("\n")) {
-		return nil, b[1:]
-	}
-	for line := range strings.SplitSeq(string(b[:end]), "\n") {
-		line = strings.TrimRight(line, "\r")
-		if line == "" {
-			continue
+	raw, body := splitRawHeaders(b)
+	for _, h := range raw {
+		if h.name != "" {
+			hs = append(hs, Header{Name: h.name, Value: h.value()})
 		}
-		if (line[0] == ' ' || line[0] == '\t') && len(hs) > 0 {
-			hs[len(hs)-1].Value += line
-			continue
-		}
-		name, value, ok := strings.Cut(line, ":")
-		if !ok || strings.TrimSpace(name) == "" || strings.ContainsAny(name, " \t") {
-			continue
-		}
-		hs = append(hs, Header{Name: name, Value: value})
 	}
-	for i := range hs {
-		hs[i].Value = strings.TrimSpace(hs[i].Value)
-	}
-	return hs, b[bodyStart:]
+	return hs, body
 }
 
 var encodedWord = regexp.MustCompile(`=\?([^?\s]+)\?([BbQq])\?([^?\s]*)\?=`)

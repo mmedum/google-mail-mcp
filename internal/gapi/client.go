@@ -13,6 +13,8 @@ package gapi
 import (
 	"bytes"
 	"context"
+	crand "crypto/rand"
+	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -67,8 +69,7 @@ type Options struct {
 	// server.
 	BaseURL string
 	// UploadBaseURL is the media upload origin. Unset means BaseURL,
-	// where Google serves /upload/gmail/v1/. Uploads arrive in phase 2;
-	// the origin is allowed from the start so the allowlist is whole.
+	// where Google serves /upload/gmail/v1/.
 	UploadBaseURL string
 	// Timeout bounds one HTTP attempt.
 	Timeout time.Duration
@@ -378,14 +379,28 @@ func (c *Client) do(ctx context.Context, call Call, out any, consume func(io.Rea
 	}
 
 	var payload []byte
+	contentType := "application/json; charset=UTF-8"
 	if call.Body != nil {
 		if payload, err = json.Marshal(call.Body); err != nil {
 			return Wrap(ClassInvalid, err, "the request for %s could not be encoded", call.ID)
 		}
 	}
 	endpoint := c.base + apiPrefix + path
-	if len(call.Query) > 0 {
-		endpoint += "?" + call.Query.Encode()
+	query := call.Query
+	if call.Media != nil {
+		if call.Method == http.MethodGet {
+			return Errf(ClassInvalid, "%s is a read and uploads nothing", call.ID)
+		}
+		payload, contentType = multipartRelated(payload, call.Media)
+		endpoint = c.upload + "/upload" + apiPrefix + path
+		query = url.Values{}
+		for k, v := range call.Query {
+			query[k] = v
+		}
+		query.Set("uploadType", "multipart")
+	}
+	if len(query) > 0 {
+		endpoint += "?" + query.Encode()
 	}
 
 	token, err := c.token()
@@ -405,7 +420,8 @@ func (c *Client) do(ctx context.Context, call Call, out any, consume func(io.Rea
 		}
 		charge(ctx, cost)
 		start := time.Now()
-		body, status, header, sendErr := c.attempt(ctx, call.Method, endpoint, payload, token, consume)
+		body, status, header, sendErr := c.attempt(ctx, call.Method, endpoint, payload, contentType, token,
+			call.Media != nil, consume)
 		v := decide(ctx, call, p, status, header, body, sendErr)
 		c.log.Debug("gmail_request", "id", call.ID, "attempt", attempt, "status", status,
 			"ms", time.Since(start).Milliseconds(), "units", cost, "outcome", v.outcome())
@@ -465,8 +481,12 @@ func fillPath(template string, args []string) (string, error) {
 // token is attached, so no path attaches a credential and validates
 // after. A successful answer goes to consume when it is set, unread
 // here; any other answer is read, bounded, for its error.
-func (c *Client) attempt(ctx context.Context, method, endpoint string, payload []byte, token string,
-	consume func(io.Reader) error,
+//
+// A stream, and an upload, is bounded by time without progress rather
+// than in total: a 35 MB draft on a slow uplink must finish, and a
+// timeout there would leave a draft that may or may not exist.
+func (c *Client) attempt(ctx context.Context, method, endpoint string, payload []byte, contentType, token string,
+	upload bool, consume func(io.Reader) error,
 ) ([]byte, int, http.Header, error) {
 	var reader io.Reader
 	if payload != nil {
@@ -474,7 +494,7 @@ func (c *Client) attempt(ctx context.Context, method, endpoint string, payload [
 	}
 	hc := c.http
 	var progress func()
-	if consume != nil {
+	if consume != nil || upload {
 		hc = c.streamHTTP
 		var cancel context.CancelFunc
 		ctx, cancel = context.WithCancel(ctx)
@@ -483,9 +503,15 @@ func (c *Client) attempt(ctx context.Context, method, endpoint string, payload [
 		defer idle.Stop()
 		progress = func() { idle.Reset(c.idleTimeout) }
 	}
+	if upload && reader != nil {
+		reader = progressReader{r: reader, progress: progress}
+	}
 	req, err := http.NewRequestWithContext(ctx, method, endpoint, reader)
 	if err != nil {
 		return nil, 0, nil, withoutURL(err)
+	}
+	if upload {
+		req.ContentLength = int64(len(payload))
 	}
 	if !c.allowURL(req.URL) {
 		return nil, 0, nil, ErrHostNotAllowed
@@ -495,7 +521,7 @@ func (c *Client) attempt(ctx context.Context, method, endpoint string, payload [
 	req.Header.Set("Accept", "application/json")
 	req.Header.Set("User-Agent", c.userAgent)
 	if payload != nil {
-		req.Header.Set("Content-Type", "application/json; charset=UTF-8")
+		req.Header.Set("Content-Type", contentType)
 	}
 	resp, err := hc.Do(req)
 	if err != nil {
@@ -520,6 +546,31 @@ func (c *Client) attempt(ctx context.Context, method, endpoint string, payload [
 		return nil, resp.StatusCode, resp.Header, errTooLarge
 	}
 	return body, resp.StatusCode, resp.Header, nil
+}
+
+// multipartRelated is Google's multipart upload body: the JSON metadata,
+// then the message. The boundary is drawn until neither part holds it.
+func multipartRelated(metadata, media []byte) ([]byte, string) {
+	if metadata == nil {
+		metadata = []byte("{}")
+	}
+	var boundary string
+	for {
+		var b [12]byte
+		_, _ = crand.Read(b[:])
+		boundary = "gapi_" + hex.EncodeToString(b[:])
+		if !bytes.Contains(media, []byte(boundary)) && !bytes.Contains(metadata, []byte(boundary)) {
+			break
+		}
+	}
+	var b bytes.Buffer
+	b.Grow(len(metadata) + len(media) + 4*len(boundary) + 128)
+	b.WriteString("--" + boundary + "\r\nContent-Type: application/json; charset=UTF-8\r\n\r\n")
+	b.Write(metadata)
+	b.WriteString("\r\n--" + boundary + "\r\nContent-Type: message/rfc822\r\n\r\n")
+	b.Write(media)
+	b.WriteString("\r\n--" + boundary + "--\r\n")
+	return b.Bytes(), "multipart/related; boundary=" + boundary
 }
 
 // progressReader reports each read that returned bytes.

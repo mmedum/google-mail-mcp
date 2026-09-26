@@ -18,8 +18,7 @@
 // Gmail's operators, spam and trash hidden unless asked for, paging that
 // can return an empty page with a token, bodies stored behind an
 // attachment id, a history cursor that expires (404), unit costs per
-// method, and injected failures. Write endpoints arrive in phase 2 and
-// slot into the same route table.
+// method, and injected failures. The writes are in write.go.
 package gmailtest
 
 import (
@@ -29,6 +28,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"net/url"
+	"slices"
 	"sort"
 	"strings"
 	"sync"
@@ -64,6 +64,18 @@ var unitCost = map[string]int{
 	"gmail.users.settings.getLanguage":              1,
 	"gmail.users.settings.sendAs.list":              1,
 	"gmail.users.settings.filters.list":             1,
+
+	"gmail.users.drafts.create":    10,
+	"gmail.users.drafts.update":    15,
+	"gmail.users.drafts.delete":    10,
+	"gmail.users.messages.modify":  5,
+	"gmail.users.threads.modify":   10,
+	"gmail.users.messages.trash":   20,
+	"gmail.users.messages.untrash": 5,
+	"gmail.users.threads.trash":    20,
+	"gmail.users.threads.untrash":  10,
+	"gmail.users.labels.create":    5,
+	"gmail.users.labels.patch":     5,
 }
 
 // Failure makes matching requests fail instead of being served.
@@ -248,39 +260,55 @@ func (s *Server) nextID() string {
 
 type route struct {
 	method string
+	// upload marks a method that also answers at the media upload path.
+	upload bool
 	// pattern is split on "/"; "{}" matches one segment.
 	pattern []string
 	id      string
 	handle  func(s *Server, w http.ResponseWriter, r *http.Request, args []string)
 }
 
-// routes are the read methods. Phase 2 adds the writes here.
+// routes are every method the client calls.
 var routes = []route{
-	{"GET", []string{"profile"}, "gmail.users.getProfile", (*Server).getProfile},
-	{"GET", []string{"messages"}, "gmail.users.messages.list", (*Server).listMessages},
-	{"GET", []string{"messages", "{}"}, "gmail.users.messages.get", (*Server).getMessage},
-	{"GET", []string{"messages", "{}", "attachments", "{}"}, "gmail.users.messages.attachments.get", (*Server).getAttachment},
-	{"GET", []string{"threads"}, "gmail.users.threads.list", (*Server).listThreads},
-	{"GET", []string{"threads", "{}"}, "gmail.users.threads.get", (*Server).getThread},
-	{"GET", []string{"labels"}, "gmail.users.labels.list", (*Server).listLabels},
-	{"GET", []string{"labels", "{}"}, "gmail.users.labels.get", (*Server).getLabel},
-	{"GET", []string{"drafts"}, "gmail.users.drafts.list", (*Server).listDrafts},
-	{"GET", []string{"drafts", "{}"}, "gmail.users.drafts.get", (*Server).getDraft},
-	{"GET", []string{"history"}, "gmail.users.history.list", (*Server).listHistory},
-	{"GET", []string{"settings", "vacation"}, "gmail.users.settings.getVacation", (*Server).getVacation},
-	{"GET", []string{"settings", "autoForwarding"}, "gmail.users.settings.getAutoForwarding", (*Server).getAutoForwarding},
-	{"GET", []string{"settings", "forwardingAddresses"}, "gmail.users.settings.forwardingAddresses.list", (*Server).listForwardingAddresses},
-	{"GET", []string{"settings", "imap"}, "gmail.users.settings.getImap", (*Server).getImap},
-	{"GET", []string{"settings", "pop"}, "gmail.users.settings.getPop", (*Server).getPop},
-	{"GET", []string{"settings", "language"}, "gmail.users.settings.getLanguage", (*Server).getLanguage},
-	{"GET", []string{"settings", "sendAs"}, "gmail.users.settings.sendAs.list", (*Server).listSendAs},
-	{"GET", []string{"settings", "filters"}, "gmail.users.settings.filters.list", (*Server).listFilters},
+	{"GET", false, []string{"profile"}, "gmail.users.getProfile", (*Server).getProfile},
+	{"GET", false, []string{"messages"}, "gmail.users.messages.list", (*Server).listMessages},
+	{"GET", false, []string{"messages", "{}"}, "gmail.users.messages.get", (*Server).getMessage},
+	{"GET", false, []string{"messages", "{}", "attachments", "{}"}, "gmail.users.messages.attachments.get", (*Server).getAttachment},
+	{"GET", false, []string{"threads"}, "gmail.users.threads.list", (*Server).listThreads},
+	{"GET", false, []string{"threads", "{}"}, "gmail.users.threads.get", (*Server).getThread},
+	{"GET", false, []string{"labels"}, "gmail.users.labels.list", (*Server).listLabels},
+	{"GET", false, []string{"labels", "{}"}, "gmail.users.labels.get", (*Server).getLabel},
+	{"GET", false, []string{"drafts"}, "gmail.users.drafts.list", (*Server).listDrafts},
+	{"GET", false, []string{"drafts", "{}"}, "gmail.users.drafts.get", (*Server).getDraft},
+	{"GET", false, []string{"history"}, "gmail.users.history.list", (*Server).listHistory},
+	{"GET", false, []string{"settings", "vacation"}, "gmail.users.settings.getVacation", (*Server).getVacation},
+	{"GET", false, []string{"settings", "autoForwarding"}, "gmail.users.settings.getAutoForwarding", (*Server).getAutoForwarding},
+	{"GET", false, []string{"settings", "forwardingAddresses"}, "gmail.users.settings.forwardingAddresses.list", (*Server).listForwardingAddresses},
+	{"GET", false, []string{"settings", "imap"}, "gmail.users.settings.getImap", (*Server).getImap},
+	{"GET", false, []string{"settings", "pop"}, "gmail.users.settings.getPop", (*Server).getPop},
+	{"GET", false, []string{"settings", "language"}, "gmail.users.settings.getLanguage", (*Server).getLanguage},
+	{"GET", false, []string{"settings", "sendAs"}, "gmail.users.settings.sendAs.list", (*Server).listSendAs},
+	{"GET", false, []string{"settings", "filters"}, "gmail.users.settings.filters.list", (*Server).listFilters},
+
+	{"POST", true, []string{"drafts"}, "gmail.users.drafts.create", (*Server).createDraft},
+	{"PUT", true, []string{"drafts", "{}"}, "gmail.users.drafts.update", (*Server).updateDraft},
+	{"DELETE", false, []string{"drafts", "{}"}, "gmail.users.drafts.delete", (*Server).deleteDraft},
+	{"POST", false, []string{"messages", "{}", "modify"}, "gmail.users.messages.modify", (*Server).modifyMessage},
+	{"POST", false, []string{"threads", "{}", "modify"}, "gmail.users.threads.modify", (*Server).modifyThread},
+	{"POST", false, []string{"messages", "{}", "trash"}, "gmail.users.messages.trash", (*Server).trashMessage},
+	{"POST", false, []string{"messages", "{}", "untrash"}, "gmail.users.messages.untrash", (*Server).untrashMessage},
+	{"POST", false, []string{"threads", "{}", "trash"}, "gmail.users.threads.trash", (*Server).trashThread},
+	{"POST", false, []string{"threads", "{}", "untrash"}, "gmail.users.threads.untrash", (*Server).untrashThread},
+	{"POST", false, []string{"labels"}, "gmail.users.labels.create", (*Server).createLabel},
+	{"PATCH", false, []string{"labels", "{}"}, "gmail.users.labels.patch", (*Server).patchLabel},
 }
 
 const prefix = "/gmail/v1/users/me/"
 
 func (s *Server) serve(w http.ResponseWriter, r *http.Request) {
-	rest, ok := strings.CutPrefix(r.URL.EscapedPath(), prefix)
+	path := r.URL.EscapedPath()
+	upload := strings.HasPrefix(path, "/upload"+prefix)
+	rest, ok := strings.CutPrefix(strings.TrimPrefix(path, "/upload"), prefix)
 	if !ok {
 		writeError(w, http.StatusNotFound, "notFound", "Not Found")
 		return
@@ -288,7 +316,7 @@ func (s *Server) serve(w http.ResponseWriter, r *http.Request) {
 	segs := strings.Split(rest, "/")
 	for _, rt := range routes {
 		args, ok := match(rt.pattern, segs)
-		if !ok || rt.method != r.Method {
+		if !ok || rt.method != r.Method || (upload && !rt.upload) {
 			continue
 		}
 		s.mu.Lock()
@@ -398,4 +426,23 @@ func writeError(w http.ResponseWriter, status int, reason, message string) {
 func writeJSON(w http.ResponseWriter, v any) {
 	w.Header().Set("Content-Type", "application/json; charset=UTF-8")
 	_ = json.NewEncoder(w).Encode(v)
+}
+
+// DraftIDs returns every draft id, newest first.
+func (s *Server) DraftIDs() []string {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return s.draftIDs()
+}
+
+// Raw returns a stored message's RFC 5322 bytes, as a draft write sent
+// them or as the generator built them.
+func (s *Server) Raw(id string) ([]byte, bool) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	m, ok := s.messages[id]
+	if !ok {
+		return nil, false
+	}
+	return slices.Clone(m.raw), true
 }

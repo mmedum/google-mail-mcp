@@ -27,6 +27,10 @@ type Call struct {
 	Query url.Values
 	// Body is marshalled as JSON when not nil.
 	Body any
+	// Media, when set, is an RFC 822 message sent as a multipart upload
+	// to the upload endpoint, with Body as its JSON metadata. Google
+	// recommends it over the JSON raw field above 5 MB (§7.4).
+	Media []byte
 	// Units are not set here: the client charges each call its cost from
 	// the quota table keyed by ID (docs/architecture.md §4.9).
 	//
