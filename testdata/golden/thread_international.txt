@@ -27,7 +27,7 @@ Date: Mon, 02 Mar 2026 23:00:00 +0300
 Subject: Re: Отчёт по проекту
 Message-ID: <fixture.0000000000000008@mail.example.com>
 In-Reply-To: <fixture.0000000000000007@mail.example.com>
-Attachment: invoicetxt.exe (application/octet-stream, 20 B, declared name "..\..\invoice\u{202E}txt.exe")
+Attachment: invoicetxt.exe (application/octet-stream, 20 B, declared name "..\..\invoice\u{202E}txt.exe", part_id "1")
 <<<end-untrusted-mail TESTTOKEN>>>
 <<<untrusted-mail TESTTOKEN: body from ivan@example.org in 0000000000000008>>>
 Добрый день!
@@ -46,7 +46,7 @@ Date: Tue, 03 Mar 2026 04:00:00 +0900
 Subject: Re: プロジェクト概要
 Message-ID: <fixture.0000000000000007@mail.example.com>
 In-Reply-To: <fixture.0000000000000006@mail.example.com>
-Attachment: 会議メモ.txt (text/plain, 15 B)
+Attachment: 会議メモ.txt (text/plain, 15 B, part_id "1")
 <<<end-untrusted-mail TESTTOKEN>>>
 <<<untrusted-mail TESTTOKEN: body from hanako@example.com in 0000000000000007>>>
 レイさん、
@@ -63,8 +63,8 @@ To: Rae Reader <reader@example.com>
 Date: Mon, 02 Mar 2026 18:00:00 +0000
 Subject: Résumé du projet
 Message-ID: <fixture.0000000000000006@mail.example.com>
-Attachment: résumé.pdf (application/pdf, 27 B)
-Attachment: 年度報告.xlsx (application/vnd.openxmlformats-officedocument.spreadsheetml.sheet, 20 B)
+Attachment: résumé.pdf (application/pdf, 27 B, part_id "1")
+Attachment: 年度報告.xlsx (application/vnd.openxmlformats-officedocument.spreadsheetml.sheet, 20 B, part_id "2")
 <<<end-untrusted-mail TESTTOKEN>>>
 <<<untrusted-mail TESTTOKEN: body from zoe@example.org in 0000000000000006>>>
 Bonjour Rae,

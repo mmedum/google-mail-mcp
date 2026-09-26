@@ -2,10 +2,13 @@ package render
 
 import (
 	"fmt"
+	"strconv"
 	"strings"
 	"testing"
 	"time"
+	"unicode/utf8"
 
+	"github.com/mmedum/google-mail-mcp/internal/gmail"
 	"github.com/mmedum/google-mail-mcp/internal/mime"
 	"github.com/mmedum/google-mail-mcp/internal/model"
 )
@@ -116,7 +119,7 @@ func TestMessageNotes(t *testing.T) {
 	m.Body.Missing = []string{"1"}
 	m.Body.PlaceholderSkipped = true
 	m.Body.Source = mime.SourceBoth
-	m.Attachments = []mime.Attachment{{Filename: "a.pdf", MimeType: "application/pdf", Size: 3 << 20, Inline: true}, {Filename: "b.bin", Size: 2048}}
+	m.Attachments = []mime.Attachment{{PartID: "1", Filename: "a.pdf", MimeType: "application/pdf", Size: 3 << 20, Inline: true}, {Filename: "b.bin", Size: 2048}}
 	text := Message(m, Options{Tokens: seq("T"), Location: time.FixedZone("CET", 3600)}).Text
 	for _, want := range []string{
 		"2 invisible characters were removed from the subject, names and addresses",
@@ -125,8 +128,8 @@ func TestMessageNotes(t *testing.T) {
 		"body parts not fetched: 1",
 		"only pointed to the HTML version",
 		"converted from HTML",
-		"a.pdf (application/pdf, 3.0 MB, inline)",
-		"b.bin (2.0 KB)",
+		`a.pdf (application/pdf, 3.0 MB, inline, part_id "1")`,
+		`b.bin (2.0 KB, part_id "")`,
 		"2026-03-02 10:00 CET",
 	} {
 		if !strings.Contains(text, want) {
@@ -215,6 +218,46 @@ func TestListingsOverBudget(t *testing.T) {
 	} {
 		if !res.Truncated || len(res.Omitted) == 0 || !strings.Contains(res.Text, "not shown (over the budget), from this page:") {
 			t.Errorf("%s: %+v", name, res.Omitted)
+		}
+	}
+}
+
+// §17a: a message whose headers alone exceed the budget still reads
+// within it, with its body's share, and says what it cut.
+func TestAHeaderBlockLargerThanTheBudgetIsCut(t *testing.T) {
+	m := plainMessage(strings.Repeat("Body paragraph. ", 200))
+	for i := range 2000 {
+		m.To = append(m.To, mime.Address{Name: "Recipient", Email: "r" + strconv.Itoa(i) + "@example.com"})
+	}
+	res := Message(m, Options{Tokens: seq("T"), Budget: MinBudget * 2})
+	if n := utf8.RuneCountInString(res.Text); n > res.Budget+minBody {
+		t.Fatalf("%d characters for a budget of %d", n, res.Budget)
+	}
+	if !strings.Contains(res.Text, "of the header block over half the budget were left out") {
+		t.Errorf("the cut is not stated:\n%s", res.Text)
+	}
+	if !strings.Contains(res.Text, "Body paragraph.") {
+		t.Errorf("the body lost its share to the headers:\n%s", res.Text)
+	}
+	head, cut := capHeaders("a: 1\nb: 2\nc: 3\n", 9)
+	if head != "a: 1\n" || cut != 10 {
+		t.Errorf("capHeaders = %q, %d; want the whole lines that fit and the rest counted", head, cut)
+	}
+	if head, cut := capHeaders("short\n", 100); head != "short\n" || cut != 0 {
+		t.Errorf("capHeaders cut a block under the limit: %q, %d", head, cut)
+	}
+}
+
+// POP is shown as on only for the windows Google documents as on; a
+// value it adds later is not claimed to be either.
+func TestPOPIsOnOnlyForKnownWindows(t *testing.T) {
+	for window, want := range map[string]string{
+		"allMail": "POP: on for all mail", "fromNowOn": "POP: on for mail from now on",
+		"disabled": "POP: off", "": "POP: off", "accessWindowUnspecified": "POP: unknown",
+	} {
+		st := model.Settings{Pop: gmail.PopSettings{AccessWindow: window, Disposition: "archive"}}
+		if text := Settings(st, Options{Tokens: seq("T")}).Text; !strings.Contains(text, want) {
+			t.Errorf("window %q:\n%s\nwant %q", window, text, want)
 		}
 	}
 }

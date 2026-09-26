@@ -3,11 +3,16 @@
 package main
 
 import (
+	"bytes"
 	"context"
+	"crypto/sha256"
+	"encoding/hex"
 	"errors"
 	"fmt"
 	"net/http"
 	"net/url"
+	"os"
+	"path/filepath"
 	"regexp"
 	"strings"
 	"time"
@@ -38,6 +43,7 @@ var (
 	threadIDIn  = regexp.MustCompile(`thread ([0-9a-f]{16})`)
 	messageIDIn = regexp.MustCompile(`message ([0-9a-f]{16})`)
 	pageTokenIn = regexp.MustCompile(`page_token=(\S+)`)
+	addedIn     = regexp.MustCompile(`message ([0-9a-f]{16}) added`)
 )
 
 // steps is every step, in order. Later steps read what earlier ones
@@ -148,6 +154,85 @@ var steps = []step{
 				"all_headers": true, "time_zone": "UTC", "offset": 0}
 		},
 		check: func(_ *env, text string) error { return want(text, "Synthetic draft 1") }},
+
+	{name: "changes since before the run, in the run label, first page", tool: "list_changes",
+		args: func(e *env) map[string]any {
+			return map[string]any{"history_id": e.seed.historyStart, "label": e.seed.label.name,
+				"kinds": []any{"added"}, "max": 2}
+		},
+		check: func(e *env, text string) error {
+			if err := e.ownsAll(addedIn, text, 2); err != nil {
+				return err
+			}
+			m := pageTokenIn.FindStringSubmatch(text)
+			if m == nil {
+				return errors.New("three inserts at max 2 gave no next page")
+			}
+			e.pageToken = m[1]
+			return nil
+		}},
+
+	{name: "changes since before the run, in the run label, second page", tool: "list_changes",
+		args: func(e *env) map[string]any {
+			return map[string]any{"history_id": e.seed.historyStart, "label": e.seed.label.name,
+				"kinds": []any{"added"}, "max": 2, "page_token": e.pageToken}
+		},
+		check: func(e *env, text string) error {
+			if err := e.ownsAll(addedIn, text, 1); err != nil {
+				return err
+			}
+			return want(text, "complete: yes")
+		}},
+
+	{name: "changes from an expired cursor", tool: "list_changes",
+		args: func(e *env) map[string]any {
+			return map[string]any{"history_id": "1", "label": e.seed.label.name}
+		},
+		check: func(_ *env, text string) error { return want(text, "cursor expired") }},
+
+	{name: "settings", tool: "get_settings", quiet: true,
+		args:  func(*env) map[string]any { return map[string]any{} },
+		check: func(_ *env, text string) error { return want(text, "forwarding") }},
+
+	{name: "filters", tool: "list_filters", quiet: true,
+		args:  func(*env) map[string]any { return map[string]any{} },
+		check: func(_ *env, text string) error { return want(text, "forwarding mail out of the account") }},
+
+	{name: "download the run's attachment", tool: "download_attachment",
+		args: func(e *env) map[string]any {
+			return map[string]any{"message_id": e.seed.messages[0], "part_id": "1"}
+		},
+		check: func(e *env, text string) error { return e.checkDownload(text, syntheticAttachmentName) }},
+
+	{name: "download it again, by its Message-ID", tool: "download_attachment",
+		args: func(e *env) map[string]any {
+			return map[string]any{"message_id": "rfc822:<" + e.seed.label.name + ".1@livemail.invalid>", "part_id": "1"}
+		},
+		check: func(e *env, text string) error {
+			if err := want(text, "a number was added"); err != nil {
+				return err
+			}
+			return e.checkDownload(text, "livemail-synthetic-1.txt")
+		}},
+}
+
+// checkDownload holds a download to what the run inserted: the file is in
+// the run's directory under the expected name, and its bytes and the hash
+// the result states are the attachment's.
+func (e *env) checkDownload(text, name string) error {
+	content := syntheticAttachment(e.seed.label)
+	sum := sha256.Sum256(content)
+	if err := want(text, "sha256: "+hex.EncodeToString(sum[:])); err != nil {
+		return err
+	}
+	got, err := os.ReadFile(filepath.Join(e.localDir, name))
+	if err != nil {
+		return fmt.Errorf("the file is not where the result says: %w", err)
+	}
+	if !bytes.Equal(got, content) {
+		return fmt.Errorf("the file holds %d bytes that are not the attachment's %d", len(got), len(content))
+	}
+	return nil
 }
 
 // env is what a step sees.
@@ -156,6 +241,8 @@ type env struct {
 	tr        *transcript.Transcript
 	seed      *seeded
 	pageToken string
+	// localDir is the run's GMAIL_LOCAL_DIR, a directory of its own.
+	localDir string
 }
 
 func want(text, s string) error {
@@ -198,6 +285,12 @@ func (e *env) guard(tool string, args map[string]any) error {
 	case "list_drafts":
 		if !strings.Contains(q, e.seed.label.name) {
 			return fmt.Errorf("%w: list_drafts without the run's name in q", errUnscoped)
+		}
+	case "list_changes":
+		// Changes are ids, not mail, but they are the whole mailbox's ids:
+		// the run's label keeps them to its own.
+		if label, _ := args["label"].(string); label != e.seed.label.name {
+			return fmt.Errorf("%w: list_changes without label %s", errUnscoped, e.seed.label.name)
 		}
 	}
 	for _, key := range []string{"thread_id", "message_id", "draft_id"} {
@@ -267,16 +360,37 @@ var spikes = []spike{
 			}
 			return fmt.Sprintf("internalDate is %s, neither the Date header nor the insert's time", got.Format(time.RFC3339))
 		}},
-	{name: "K", question: "Is a history cursor far in the past answered 404, as the sync guide says?",
+	{name: "K", question: "Is a history cursor far in the past answered 404, as the sync guide says, and in what body?",
 		ask: func(ctx context.Context, box mailbox, _ *seeded) string {
-			status := box.Probe(ctx, http.MethodGet, "history", url.Values{"startHistoryId": {"1"}})
-			return fmt.Sprintf("history.list with startHistoryId=1 answered HTTP %d (the guide says 404)", status)
+			r := box.Probe(ctx, http.MethodGet, "history", url.Values{"startHistoryId": {"1"}}, nil)
+			return fmt.Sprintf("history.list with startHistoryId=1 answered HTTP %d, reason %q, message %q (the guide says 404)",
+				r.status, r.reason, r.message)
+		}},
+	{name: "I", question: "Can two labels differ only in case, and what does creating a label named like a system label return?",
+		ask: func(ctx context.Context, box mailbox, s *seeded) string {
+			names := []string{s.label.name + "-Case", s.label.name + "-case", "INBOX", "Inbox"}
+			out := make([]string, 0, len(names))
+			for _, name := range names {
+				r := box.Probe(ctx, http.MethodPost, "labels", nil,
+					map[string]string{"name": name, "labelListVisibility": "labelHide", "messageListVisibility": "hide"})
+				if r.id != "" {
+					// Whatever a spike creates, cleanup deletes.
+					s.extraLabels = append(s.extraLabels, r.id)
+				}
+				shown := name
+				if strings.HasPrefix(name, s.label.name) {
+					shown = "<run>" + strings.TrimPrefix(name, s.label.name)
+				}
+				out = append(out, fmt.Sprintf("%s: HTTP %d reason %q message %q created %v", shown, r.status, r.reason,
+					r.message, r.id != ""))
+			}
+			return strings.Join(out, "; ")
 		}},
 	{name: "G (positive half)", question: "Does Gmail refuse messages.delete under gmail.modify, " +
 		"so only https://mail.google.com/ can delete permanently?",
 		ask: func(ctx context.Context, box mailbox, s *seeded) string {
 			last := s.messages[len(s.messages)-1]
-			status := box.Probe(ctx, http.MethodDelete, "messages/"+url.PathEscape(last), nil)
+			status := box.Probe(ctx, http.MethodDelete, "messages/"+url.PathEscape(last), nil, nil).status
 			if status/100 == 2 {
 				// It is gone for good, and it was the run's own synthetic
 				// message; cleanup must not trash it again.

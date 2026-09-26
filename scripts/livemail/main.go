@@ -118,7 +118,14 @@ func drive(ctx context.Context, o options, tr *transcript.Transcript, box mailbo
 		}
 	}()
 
-	session, err := mcpstdio.Start(o.binary, "GMAIL_PROFILE="+o.profile)
+	// The run's own directory for download_attachment, removed after.
+	localDir, err := os.MkdirTemp("", r.name+"-")
+	if err != nil {
+		return err
+	}
+	defer func() { _ = os.RemoveAll(localDir) }()
+
+	session, err := mcpstdio.Start(o.binary, "GMAIL_PROFILE="+o.profile, "GMAIL_LOCAL_DIR="+localDir)
 	if err != nil {
 		return err
 	}
@@ -131,7 +138,7 @@ func drive(ctx context.Context, o options, tr *transcript.Transcript, box mailbo
 
 	rec := livecover.NewRecorder()
 	session.OnCall(rec.Sent)
-	e := &env{session: session, tr: tr, seed: seed}
+	e := &env{session: session, tr: tr, seed: seed, localDir: localDir}
 
 	failed := 0
 	for _, s := range steps {

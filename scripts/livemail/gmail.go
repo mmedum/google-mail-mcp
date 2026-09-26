@@ -59,14 +59,23 @@ func openMailbox(ctx context.Context, profile string) (*restMailbox, error) {
 	return &restMailbox{http: hc, base: gmailBase}, nil
 }
 
-// call sends one request and decodes the reply into out. The status is
-// returned for the probes, which judge it rather than fail on it.
-func (m *restMailbox) call(ctx context.Context, method, path string, q url.Values, body, out any) (int, error) {
+// call sends one request and decodes a successful reply into out.
+func (m *restMailbox) call(ctx context.Context, method, path string, q url.Values, body, out any) error {
+	_, data, err := m.callRaw(ctx, method, path, q, body)
+	if err != nil || out == nil || len(data) == 0 {
+		return err
+	}
+	return json.Unmarshal(data, out)
+}
+
+// callRaw sends one request and returns the reply's body whatever the
+// status, so a probe can read Google's reason for a refusal.
+func (m *restMailbox) callRaw(ctx context.Context, method, path string, q url.Values, body any) (int, []byte, error) {
 	var rd io.Reader
 	if body != nil {
 		b, err := json.Marshal(body)
 		if err != nil {
-			return 0, err
+			return 0, nil, err
 		}
 		rd = bytes.NewReader(b)
 	}
@@ -76,7 +85,7 @@ func (m *restMailbox) call(ctx context.Context, method, path string, q url.Value
 	}
 	req, err := http.NewRequestWithContext(ctx, method, u, rd)
 	if err != nil {
-		return 0, err
+		return 0, nil, err
 	}
 	if body != nil {
 		req.Header.Set("Content-Type", "application/json")
@@ -85,27 +94,24 @@ func (m *restMailbox) call(ctx context.Context, method, path string, q url.Value
 	if err != nil {
 		// The error names the URL, which carries only ids the run made;
 		// the transcript redacts those anyway.
-		return 0, err
+		return 0, nil, err
 	}
 	defer func() { _ = resp.Body.Close() }()
 	data, err := io.ReadAll(io.LimitReader(resp.Body, 1<<20))
 	if err != nil {
-		return resp.StatusCode, err
+		return resp.StatusCode, nil, err
 	}
 	if resp.StatusCode/100 != 2 {
-		return resp.StatusCode, fmt.Errorf("%s %s: HTTP %d", method, path, resp.StatusCode)
+		return resp.StatusCode, data, fmt.Errorf("%s %s: HTTP %d", method, path, resp.StatusCode)
 	}
-	if out != nil && len(data) > 0 {
-		return resp.StatusCode, json.Unmarshal(data, out)
-	}
-	return resp.StatusCode, nil
+	return resp.StatusCode, data, nil
 }
 
 func (m *restMailbox) CreateLabel(ctx context.Context, name string) (string, error) {
 	var out struct {
 		ID string `json:"id"`
 	}
-	_, err := m.call(ctx, http.MethodPost, "labels", nil,
+	err := m.call(ctx, http.MethodPost, "labels", nil,
 		map[string]string{"name": name, "labelListVisibility": "labelShow", "messageListVisibility": "show"}, &out)
 	return out.ID, err
 }
@@ -115,18 +121,18 @@ func (m *restMailbox) Insert(ctx context.Context, labelID string, raw []byte) (s
 		ID       string `json:"id"`
 		ThreadID string `json:"threadId"`
 	}
-	_, err := m.call(ctx, http.MethodPost, "messages", url.Values{"internalDateSource": {"receivedTime"}},
+	err := m.call(ctx, http.MethodPost, "messages", url.Values{"internalDateSource": {"receivedTime"}},
 		map[string]any{"raw": base64.URLEncoding.EncodeToString(raw), "labelIds": []string{labelID}}, &out)
 	return out.ID, out.ThreadID, err
 }
 
 func (m *restMailbox) Trash(ctx context.Context, messageID string) error {
-	_, err := m.call(ctx, http.MethodPost, "messages/"+url.PathEscape(messageID)+"/trash", nil, nil, nil)
+	err := m.call(ctx, http.MethodPost, "messages/"+url.PathEscape(messageID)+"/trash", nil, nil, nil)
 	return err
 }
 
 func (m *restMailbox) DeleteLabel(ctx context.Context, labelID string) error {
-	_, err := m.call(ctx, http.MethodDelete, "labels/"+url.PathEscape(labelID), nil, nil, nil)
+	err := m.call(ctx, http.MethodDelete, "labels/"+url.PathEscape(labelID), nil, nil, nil)
 	return err
 }
 
@@ -134,28 +140,53 @@ func (m *restMailbox) CreateDraft(ctx context.Context, raw []byte) (string, erro
 	var out struct {
 		ID string `json:"id"`
 	}
-	_, err := m.call(ctx, http.MethodPost, "drafts", nil,
+	err := m.call(ctx, http.MethodPost, "drafts", nil,
 		map[string]any{"message": map[string]string{"raw": base64.URLEncoding.EncodeToString(raw)}}, &out)
 	return out.ID, err
 }
 
 func (m *restMailbox) DeleteDraft(ctx context.Context, draftID string) error {
-	_, err := m.call(ctx, http.MethodDelete, "drafts/"+url.PathEscape(draftID), nil, nil, nil)
+	err := m.call(ctx, http.MethodDelete, "drafts/"+url.PathEscape(draftID), nil, nil, nil)
 	return err
 }
 
-// Probe makes one call for a spike and returns only its status. It reads
-// nothing back: a probe asks how Gmail answers, never what it holds.
-func (m *restMailbox) Probe(ctx context.Context, method, path string, q url.Values) int {
-	status, _ := m.call(ctx, method, path, q, nil, nil)
-	return status
+// Probe makes one call for a spike. It reads back only how Gmail
+// answered: the status, Google's reason and message on a refusal, and the
+// id of what it created. A probe asks how Gmail answers, never what the
+// mailbox holds.
+func (m *restMailbox) Probe(ctx context.Context, method, path string, q url.Values, body any) probeResult {
+	var out struct {
+		ID    string `json:"id"`
+		Error struct {
+			Message string `json:"message"`
+			Errors  []struct {
+				Reason string `json:"reason"`
+			} `json:"errors"`
+		} `json:"error"`
+	}
+	status, data, _ := m.callRaw(ctx, method, path, q, body)
+	_ = json.Unmarshal(data, &out)
+	r := probeResult{status: status, id: out.ID, message: out.Error.Message}
+	if len(out.Error.Errors) > 0 {
+		r.reason = out.Error.Errors[0].Reason
+	}
+	return r
+}
+
+// HistoryID reads the mailbox's current history id.
+func (m *restMailbox) HistoryID(ctx context.Context) (string, error) {
+	var out struct {
+		HistoryID string `json:"historyId"`
+	}
+	err := m.call(ctx, http.MethodGet, "profile", nil, nil, &out)
+	return out.HistoryID, err
 }
 
 func (m *restMailbox) InternalDate(ctx context.Context, messageID string) (int64, error) {
 	var out struct {
 		InternalDate string `json:"internalDate"`
 	}
-	if _, err := m.call(ctx, http.MethodGet, "messages/"+url.PathEscape(messageID),
+	if err := m.call(ctx, http.MethodGet, "messages/"+url.PathEscape(messageID),
 		url.Values{"format": {"minimal"}}, nil, &out); err != nil {
 		return 0, err
 	}

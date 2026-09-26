@@ -6,8 +6,8 @@ To: Rae Reader <reader@example.com>
 Date: Mon, 02 Mar 2026 23:00:00 +0000
 Subject: Invitation: Design review @ Tue 10 Mar 2026 10:00
 Message-ID: <fixture.000000000000000b@mail.example.com>
-Attachment: invite.ics (text/calendar, 271 B, invitation method REQUEST)
-Attachment: invite.ics (application/ics, 271 B, invitation method REQUEST)
+Attachment: invite.ics (text/calendar, 271 B, invitation method REQUEST, part_id "0.2")
+Attachment: invite.ics (application/ics, 271 B, invitation method REQUEST, part_id "1")
 <<<end-untrusted-mail TESTTOKEN>>>
 <<<untrusted-mail TESTTOKEN: body from emeka@example.com in 000000000000000b>>>
 You have been invited to Design review on Tue 10 Mar 2026 10:00 UTC.

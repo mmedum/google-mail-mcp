@@ -55,6 +55,15 @@ var unitCost = map[string]int{
 	"gmail.users.messages.attachments.get": 20,
 	"gmail.users.drafts.get":               20,
 	"gmail.users.threads.get":              40,
+
+	"gmail.users.settings.getVacation":              1,
+	"gmail.users.settings.getAutoForwarding":        1,
+	"gmail.users.settings.forwardingAddresses.list": 1,
+	"gmail.users.settings.getImap":                  1,
+	"gmail.users.settings.getPop":                   1,
+	"gmail.users.settings.getLanguage":              1,
+	"gmail.users.settings.sendAs.list":              1,
+	"gmail.users.settings.filters.list":             1,
 }
 
 // Failure makes matching requests fail instead of being served.
@@ -72,6 +81,9 @@ type Failure struct {
 	Reset bool
 	// Times is how many requests fail; 0 means one.
 	Times int
+	// Then runs when the failure is served, outside the fake's lock, for
+	// a change that happens between two of a call's requests.
+	Then func(s *Server)
 }
 
 // Call is one request the fake served.
@@ -105,6 +117,10 @@ type Server struct {
 	// page size before filtering. A client that stops there has read a
 	// mailbox with mail in it as empty.
 	EmptyFirstPage bool
+
+	// settings are the account's settings and filters, generated like
+	// the mail. UpdateSettings changes them.
+	settings Settings
 
 	failures  []*Failure
 	calls     []Call
@@ -251,6 +267,14 @@ var routes = []route{
 	{"GET", []string{"drafts"}, "gmail.users.drafts.list", (*Server).listDrafts},
 	{"GET", []string{"drafts", "{}"}, "gmail.users.drafts.get", (*Server).getDraft},
 	{"GET", []string{"history"}, "gmail.users.history.list", (*Server).listHistory},
+	{"GET", []string{"settings", "vacation"}, "gmail.users.settings.getVacation", (*Server).getVacation},
+	{"GET", []string{"settings", "autoForwarding"}, "gmail.users.settings.getAutoForwarding", (*Server).getAutoForwarding},
+	{"GET", []string{"settings", "forwardingAddresses"}, "gmail.users.settings.forwardingAddresses.list", (*Server).listForwardingAddresses},
+	{"GET", []string{"settings", "imap"}, "gmail.users.settings.getImap", (*Server).getImap},
+	{"GET", []string{"settings", "pop"}, "gmail.users.settings.getPop", (*Server).getPop},
+	{"GET", []string{"settings", "language"}, "gmail.users.settings.getLanguage", (*Server).getLanguage},
+	{"GET", []string{"settings", "sendAs"}, "gmail.users.settings.sendAs.list", (*Server).listSendAs},
+	{"GET", []string{"settings", "filters"}, "gmail.users.settings.filters.list", (*Server).listFilters},
 }
 
 const prefix = "/gmail/v1/users/me/"
@@ -274,6 +298,9 @@ func (s *Server) serve(w http.ResponseWriter, r *http.Request) {
 		f := s.takeFailure(rt.id)
 		if f != nil {
 			s.mu.Unlock()
+			if f.Then != nil {
+				f.Then(s)
+			}
 			fail(w, f)
 			return
 		}

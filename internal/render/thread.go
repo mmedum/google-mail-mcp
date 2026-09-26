@@ -141,7 +141,7 @@ func Threads(l ThreadList, o Options) Result {
 				"Participants: "+string(addrList(t.Participants()))+"\n"+
 					"Subject: "+string(t.Subject())+"\n"+
 					"Snippet: "+string(snip)+"\n")
-		})
+		}, nil)
 }
 
 // MessageList is one page of search_messages, messages read with
@@ -164,7 +164,7 @@ func Messages(l MessageList, o Options) Result {
 					"To: "+string(addrList(m.To))+"\n"+
 					"Subject: "+string(m.Subject)+"\n"+
 					"Snippet: "+string(m.Snippet)+"\n")
-		})
+		}, nil)
 }
 
 // DraftList is one page of list_drafts, each draft's message read with
@@ -191,18 +191,22 @@ func Drafts(l DraftList, o Options) Result {
 			b.WriteString("Subject: " + string(m.Subject) + "\n")
 			b.WriteString("Snippet: " + string(m.Snippet) + "\n")
 			w.block("draft summary", "", m.ID, b.String())
-		})
+		}, nil)
 }
 
 // listing renders one page of a listing: what the page holds, then a
-// row per item while the row and the list of rows after it fit.
+// row per item while the row and the list of rows after it fit. head,
+// when set, adds lines after the page's own.
 func listing[T any](o Options, items []T, token string, one, many phrase,
-	id func(T) string, row func(w *writer, item T),
+	id func(T) string, row func(w *writer, item T), head func(w *writer),
 ) Result {
 	return render(o, func(w *writer) Result {
 		res := Result{Budget: o.budget()}
 		w.say("budget: %s characters", num(res.Budget))
 		w.listingHead(len(items), one, many, token)
+		if head != nil {
+			head(w)
+		}
 		ids := make([]string, len(items))
 		for i, it := range items {
 			ids[i] = id(it)

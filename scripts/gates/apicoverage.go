@@ -30,11 +30,12 @@ const (
 	// apiCoverageMinMethods is the published count on 2026-09-25.
 	apiCoverageMinMethods = 79
 	// apiCoverageMinInScope is §8a's used plus gated. Moving a method
-	// out is an argued decision, so it moves this floor too.
-	apiCoverageMinInScope = 38
+	// out is an argued decision, so it moves this floor too: 38, less
+	// filters.get and forwardingAddresses.get in phase 1 (§18 row 36).
+	apiCoverageMinInScope = 36
 	// apiCoverageMinCalls rises as each phase lands its client calls:
-	// nine read methods at the end of phase 0.
-	apiCoverageMinCalls = 0
+	// twenty at the end of phase 1.
+	apiCoverageMinCalls = 20
 )
 
 // apiCoverageStates are the record's states. A used row has a client

@@ -103,6 +103,10 @@ type Client struct {
 	userAgent    string
 	sleep        func(ctx context.Context, d time.Duration) error
 	allowed      map[string]bool
+	// streamHTTP is http without the whole-request timeout, for Stream;
+	// idleTimeout bounds each wait for progress instead.
+	streamHTTP  *http.Client
+	idleTimeout time.Duration
 }
 
 // googleOrigins are Google's own API origins an access token may go to,
@@ -169,6 +173,12 @@ func New(o Options) *Client {
 	}
 	hc.CheckRedirect = c.checkRedirect
 	c.http = hc
+	// A stream is bounded by how long it goes without progress rather
+	// than by how long it takes: a large attachment on a slow link must
+	// finish, and a stalled one must not hang (§3.16).
+	streaming := *hc
+	streaming.Timeout = 0
+	c.streamHTTP, c.idleTimeout = &streaming, hc.Timeout
 
 	c.allowed = map[string]bool{}
 	for _, origin := range append([]string{c.base, c.upload}, googleOrigins...) {
@@ -329,6 +339,22 @@ func (c *Client) policyFor(call Call) (policy, error) {
 
 // Do sends one call and decodes the response into out, which may be nil.
 func (c *Client) Do(ctx context.Context, call Call, out any) error {
+	return c.do(ctx, call, out, nil)
+}
+
+// Stream sends one GET and hands a successful response body to consume
+// instead of reading it whole, for a body that may be larger than
+// maxResponseBytes. consume runs once per attempt, so it starts its
+// output over each time. A *Error it returns is final; any other error
+// is a failed read of the response, retried as a GET is.
+func (c *Client) Stream(ctx context.Context, call Call, consume func(io.Reader) error) error {
+	if call.Method != http.MethodGet {
+		return fmt.Errorf("gapi: %s: only a GET streams", call.ID)
+	}
+	return c.do(ctx, call, nil, consume)
+}
+
+func (c *Client) do(ctx context.Context, call Call, out any, consume func(io.Reader) error) error {
 	cost, ok := unitCost[call.ID]
 	if !ok {
 		return fmt.Errorf("gapi: %q has no unit cost in units.go; price it before calling it", call.ID)
@@ -379,7 +405,7 @@ func (c *Client) Do(ctx context.Context, call Call, out any) error {
 		}
 		charge(ctx, cost)
 		start := time.Now()
-		body, status, header, sendErr := c.attempt(ctx, call.Method, endpoint, payload, token)
+		body, status, header, sendErr := c.attempt(ctx, call.Method, endpoint, payload, token, consume)
 		v := decide(ctx, call, p, status, header, body, sendErr)
 		c.log.Debug("gmail_request", "id", call.ID, "attempt", attempt, "status", status,
 			"ms", time.Since(start).Milliseconds(), "units", cost, "outcome", v.outcome())
@@ -437,11 +463,25 @@ func fillPath(template string, args []string) (string, error) {
 
 // attempt makes one HTTP request. The allowlist is checked before the
 // token is attached, so no path attaches a credential and validates
-// after.
-func (c *Client) attempt(ctx context.Context, method, endpoint string, payload []byte, token string) ([]byte, int, http.Header, error) {
+// after. A successful answer goes to consume when it is set, unread
+// here; any other answer is read, bounded, for its error.
+func (c *Client) attempt(ctx context.Context, method, endpoint string, payload []byte, token string,
+	consume func(io.Reader) error,
+) ([]byte, int, http.Header, error) {
 	var reader io.Reader
 	if payload != nil {
 		reader = bytes.NewReader(payload)
+	}
+	hc := c.http
+	var progress func()
+	if consume != nil {
+		hc = c.streamHTTP
+		var cancel context.CancelFunc
+		ctx, cancel = context.WithCancel(ctx)
+		defer cancel()
+		idle := time.AfterFunc(c.idleTimeout, cancel)
+		defer idle.Stop()
+		progress = func() { idle.Reset(c.idleTimeout) }
 	}
 	req, err := http.NewRequestWithContext(ctx, method, endpoint, reader)
 	if err != nil {
@@ -457,11 +497,21 @@ func (c *Client) attempt(ctx context.Context, method, endpoint string, payload [
 	if payload != nil {
 		req.Header.Set("Content-Type", "application/json; charset=UTF-8")
 	}
-	resp, err := c.http.Do(req)
+	resp, err := hc.Do(req)
 	if err != nil {
 		return nil, 0, nil, withoutURL(err)
 	}
 	defer func() { _ = resp.Body.Close() }()
+	if consume != nil && resp.StatusCode/100 == 2 {
+		if err := consume(progressReader{r: resp.Body, progress: progress}); err != nil {
+			var classified *Error
+			if errors.As(err, &classified) {
+				return nil, resp.StatusCode, resp.Header, classified
+			}
+			return nil, resp.StatusCode, resp.Header, withoutURL(err)
+		}
+		return nil, resp.StatusCode, resp.Header, nil
+	}
 	body, err := io.ReadAll(io.LimitReader(resp.Body, maxResponseBytes+1))
 	if err != nil {
 		return nil, resp.StatusCode, resp.Header, withoutURL(err)
@@ -470,6 +520,20 @@ func (c *Client) attempt(ctx context.Context, method, endpoint string, payload [
 		return nil, resp.StatusCode, resp.Header, errTooLarge
 	}
 	return body, resp.StatusCode, resp.Header, nil
+}
+
+// progressReader reports each read that returned bytes.
+type progressReader struct {
+	r        io.Reader
+	progress func()
+}
+
+func (p progressReader) Read(b []byte) (int, error) {
+	n, err := p.r.Read(b)
+	if n > 0 {
+		p.progress()
+	}
+	return n, err
 }
 
 var errTooLarge = fmt.Errorf("the response is larger than %d bytes", maxResponseBytes)
@@ -530,7 +594,12 @@ type failure struct {
 
 // decide classifies one attempt and says whether it may be repeated.
 func decide(ctx context.Context, call Call, p policy, status int, header http.Header, body []byte, sendErr error) verdict {
+	var classified *Error
 	switch {
+	case errors.As(sendErr, &classified):
+		// Already judged by the consumer of a stream, which knows whether
+		// its own failure can clear.
+		return verdict{err: classified}
 	case sendErr != nil:
 		return p.settle(classifyTransport(ctx, call, p, sendErr))
 	case status >= 200 && status < 300:

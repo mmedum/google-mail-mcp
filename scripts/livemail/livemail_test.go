@@ -53,7 +53,11 @@ func (f *fakeMailbox) DeleteDraft(_ context.Context, id string) error {
 	return nil
 }
 
-func (f *fakeMailbox) Probe(context.Context, string, string, url.Values) int { return 403 }
+func (f *fakeMailbox) Probe(context.Context, string, string, url.Values, any) probeResult {
+	return probeResult{status: 403}
+}
+
+func (f *fakeMailbox) HistoryID(context.Context) (string, error) { return "1000", nil }
 
 func (f *fakeMailbox) InternalDate(context.Context, string) (int64, error) { return 0, nil }
 
@@ -83,7 +87,7 @@ func TestSeedingAndCleanUp(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(s.messages) != 3 || len(box.labels) != 1 || box.labels[0] != r.name {
+	if len(s.messages) != 3 || len(box.labels) != 1 || box.labels[0] != r.name || s.historyStart != "1000" {
 		t.Fatalf("seeded %+v, labels %v", s, box.labels)
 	}
 	if len(s.drafts) != runDrafts || len(box.drafts) != runDrafts {
@@ -100,10 +104,14 @@ func TestSeedingAndCleanUp(t *testing.T) {
 			}
 		}
 	}
+	if !strings.Contains(box.inserted[0], "filename=\""+syntheticAttachmentName+"\"") {
+		t.Error("the first synthetic message carries no attachment for download_attachment")
+	}
+	s.extraLabels = []string{"Label_9"}
 	if err := cleanUp(context.Background(), box, s); err != nil {
 		t.Fatal(err)
 	}
-	if len(box.trashed) != 3 || len(box.deleted) != 1 || len(box.deletedDrafts) != runDrafts {
+	if len(box.trashed) != 3 || len(box.deleted) != 2 || len(box.deletedDrafts) != runDrafts {
 		t.Errorf("trashed %v, deleted %v, drafts deleted %v", box.trashed, box.deleted, box.deletedDrafts)
 	}
 }
@@ -139,6 +147,11 @@ func TestTheGuardRefusesReadsOutsideTheRun(t *testing.T) {
 		{"list_drafts", map[string]any{}, false},
 		{"get_draft", map[string]any{"draft_id": "r0000000000000009"}, false},
 		{"get_profile", nil, true},
+		{"list_changes", map[string]any{"history_id": "1", "label": r.name}, true},
+		{"list_changes", map[string]any{"history_id": "1"}, false},
+		{"list_changes", map[string]any{"history_id": "1", "label": "INBOX"}, false},
+		{"download_attachment", map[string]any{"message_id": "0000000000000001", "part_id": "1"}, true},
+		{"download_attachment", map[string]any{"message_id": "0000000000000009", "part_id": "1"}, false},
 	} {
 		err := e.guard(tc.tool, tc.args)
 		if (err == nil) != tc.ok {
@@ -169,9 +182,9 @@ func TestProfileIsRequired(t *testing.T) {
 	}
 }
 
-func TestEveryPhase0ReadToolHasAStep(t *testing.T) {
+func TestEveryReadToolHasAStep(t *testing.T) {
 	want := []string{"get_profile", "search_threads", "search_messages", "get_thread", "get_message",
-		"list_labels", "list_drafts", "get_draft"}
+		"list_labels", "list_drafts", "get_draft", "list_changes", "get_settings", "list_filters", "download_attachment"}
 	have := map[string]bool{}
 	for _, s := range steps {
 		have[s.tool] = true

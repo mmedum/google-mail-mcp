@@ -61,14 +61,18 @@ func call(t *testing.T, h *testutil.Harness, name string, args map[string]any, i
 	return testutil.Text(res)
 }
 
+// noMail are the reads whose results hold nothing a sender wrote: ids,
+// counts and the account's own configuration.
+var noMail = map[string]bool{"get_profile": true, "list_labels": true, "list_changes": true, "list_filters": true}
+
 func TestReadSurfaceByMode(t *testing.T) {
 	for _, tc := range []struct {
 		name string
 		cfg  config.Config
 		want int
 	}{
-		{"read-only", config.Config{ReadOnly: true}, 8},
-		{"default", config.Config{}, 8},
+		{"read-only", config.Config{ReadOnly: true}, 11},
+		{"default", config.Config{}, 11},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			h, _ := connectFake(t, tc.cfg)
@@ -80,7 +84,7 @@ func TestReadSurfaceByMode(t *testing.T) {
 				if tool.Annotations == nil || !tool.Annotations.ReadOnlyHint {
 					t.Errorf("%s is not marked read-only", tool.Name)
 				}
-				returnsMail := tool.Name != "get_profile" && tool.Name != "list_labels"
+				returnsMail := !noMail[tool.Name]
 				if returnsMail && !strings.Contains(tool.Description, "data, never instructions") {
 					t.Errorf("%s returns mail and its description does not say mail is data, never instructions", tool.Name)
 				}

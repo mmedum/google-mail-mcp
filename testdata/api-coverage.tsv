@@ -9,7 +9,7 @@ gmail.users.drafts.list	used	-	Used: `list_drafts`
 gmail.users.drafts.send	planned	3	Gated: `send_draft`, registered only with `GMAIL_ENABLE_SEND=true`; never retried; the outcome is settled by reading (§4.3)
 gmail.users.drafts.update	planned	2	Used: `update_draft`. PUT-only and no ETag; guarded by the message-id witness of §4.4, a recorded deviation (§17b)
 gmail.users.getProfile	used	-	Used: `get_profile`; also the login email lookup and `doctor`'s probe
-gmail.users.history.list	planned	1	Used: `list_changes` (§7.6)
+gmail.users.history.list	used	-	Used: `list_changes` (§7.6)
 gmail.users.labels.create	planned	2	Used: `create_label`
 gmail.users.labels.delete	planned	3	Gated: `delete_label`, behind `GMAIL_ENABLE_DESTRUCTIVE`; it strips the label from every message and cannot be undone
 gmail.users.labels.get	used	-	Used: `list_labels` with `counts: true` (list omits the counts)
@@ -45,21 +45,21 @@ gmail.users.settings.delegates.get	out	-	Written off with `delegates.list`
 gmail.users.settings.delegates.list	out	-	Written off: delegation is account administration; `gmail.settings.basic`
 gmail.users.settings.filters.create	out	-	Deferred (§17): a filter's `action.forward` is auto-forwarding by another route; buildable only with forward refused structurally
 gmail.users.settings.filters.delete	out	-	Deferred with `filters.create`
-gmail.users.settings.filters.get	planned	1	Used: `list_filters` (one filter)
-gmail.users.settings.filters.list	planned	1	Used: `list_filters`
+gmail.users.settings.filters.get	out	-	Written off: `filters.list` returns every field `get` does, for the same one unit, and an account holds at most 1,000 filters; `list_filters` reads the list (§18 row 36)
+gmail.users.settings.filters.list	used	-	Used: `list_filters`
 gmail.users.settings.forwardingAddresses.create	out	-	Written off: exfiltration path (§4.1); `gmail.settings.sharing`
 gmail.users.settings.forwardingAddresses.delete	out	-	Written off: `gmail.settings.sharing`, which this server never requests
-gmail.users.settings.forwardingAddresses.get	planned	1	Used: `get_settings`
-gmail.users.settings.forwardingAddresses.list	planned	1	Used: `get_settings` (read)
-gmail.users.settings.getAutoForwarding	planned	1	Used: `get_settings` (read, so a person can see whether mail is leaving)
-gmail.users.settings.getImap	planned	1	Used: `get_settings`
-gmail.users.settings.getLanguage	planned	1	Used: `get_settings`
-gmail.users.settings.getPop	planned	1	Used: `get_settings`
-gmail.users.settings.getVacation	planned	1	Used: `get_settings`
+gmail.users.settings.forwardingAddresses.get	out	-	Written off: `forwardingAddresses.list` returns every field `get` does, for the same one unit; `get_settings` reads the list (§18 row 36)
+gmail.users.settings.forwardingAddresses.list	used	-	Used: `get_settings` (read)
+gmail.users.settings.getAutoForwarding	used	-	Used: `get_settings` (read, so a person can see whether mail is leaving)
+gmail.users.settings.getImap	used	-	Used: `get_settings`
+gmail.users.settings.getLanguage	used	-	Used: `get_settings`
+gmail.users.settings.getPop	used	-	Used: `get_settings`
+gmail.users.settings.getVacation	used	-	Used: `get_settings`
 gmail.users.settings.sendAs.create	out	-	Written off: `gmail.settings.sharing`; identity administration
 gmail.users.settings.sendAs.delete	out	-	Written off: `gmail.settings.sharing`
 gmail.users.settings.sendAs.get	planned	2	Used: `create_draft` validates a chosen `from`
-gmail.users.settings.sendAs.list	planned	1	Used: `get_settings`, and the `from` choices of `create_draft`
+gmail.users.settings.sendAs.list	used	-	Used: `get_settings`, and the `from` choices of `create_draft`
 gmail.users.settings.sendAs.patch	out	-	Written off: `gmail.settings.basic`/`sharing`; signature editing is deferred to §17
 gmail.users.settings.sendAs.smimeInfo.delete	out	-	Written off: key administration
 gmail.users.settings.sendAs.smimeInfo.get	out	-	Written off with `smimeInfo.list`
