@@ -92,12 +92,16 @@ What it does to the account, so nothing is a surprise:
   fails the build on any other print.
 
 `make evals` scores a model driving the tools against the in-memory
-mailbox. It needs an `ANTHROPIC_API_KEY` and is run by hand;
-`evals-check` exercises its scorers without one.
+mailbox. It runs the model through `claude -p`, signed in as you, and
+is run by hand because it spends money; `evals-check` exercises its
+scorers without a model.
 
-- The real server runs over an in-memory transport, so the model reads
-  the descriptions, schemas and refusals that ship, and the server's
-  instructions as its system prompt.
+- The real server is served on the loopback interface over streamable
+  HTTP, so the model reads the descriptions, schemas, instructions and
+  refusals that ship. Only the transport differs from the binary.
+- The CLI is fenced: `--tools ""` turns every built-in tool off, the
+  run ignores your settings, hooks and other MCP servers, and starts in
+  an empty directory. A call to any tool not this server's is an error.
 - Each trial gets its own generated mailbox. A task is scored on its
   calls, its answer and the mailbox afterwards, never on what the model
   says it did.
@@ -105,10 +109,15 @@ mailbox. It needs an `ANTHROPIC_API_KEY` and is run by hand;
   the tool it asks for or by its address in any argument, is reported
   apart from an ordinary failure.
 - `EVAL_ARGS='-trials 5 -v'` runs each task five times and prints every
-  call. A task passes only when every trial does. `-model` picks the
-  model and `-task` a subset.
-- A trial that hits the turn cap is `UNFINISHED`; one the API refused
-  or cut short is `ERROR`. Neither is a verdict on the tools.
+  call. A task passes only when every trial does. `-model` and `-effort`
+  default to `claude-opus-5-5` at `high`, `-budget` caps each trial in
+  dollars, and `-task` picks a subset.
+- `send_draft` asks the client for a person before each call, so the
+  CLI refuses it with nobody there. `send-draft` scores reaching the send
+  with the right witness, held or not.
+- A trial the CLI stopped, on turns or budget, is `UNFINISHED`; one that
+  never produced an answer is `ERROR`. Neither is a verdict on the
+  tools.
 
 ## Cutting a release
 

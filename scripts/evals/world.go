@@ -4,8 +4,9 @@ package main
 
 import (
 	"context"
-	"encoding/json"
 	"fmt"
+	"net/http"
+	"net/http/httptest"
 	"slices"
 	"strings"
 	"time"
@@ -17,7 +18,6 @@ import (
 	"github.com/mmedum/google-mail-mcp/internal/gapi"
 	"github.com/mmedum/google-mail-mcp/internal/gapi/gmailtest"
 	"github.com/mmedum/google-mail-mcp/internal/server"
-	"github.com/mmedum/google-mail-mcp/internal/server/testutil"
 	"github.com/mmedum/google-mail-mcp/internal/tools"
 )
 
@@ -26,45 +26,38 @@ import (
 type World struct {
 	Fake  *gmailtest.Server
 	Facts Facts
-	// Model is the session the model's calls go through.
-	Model *mcp.ClientSession
-	// Instructions are the server's, which a client puts before the
-	// model as it would with any MCP server.
-	Instructions string
+	// URL is where the server answers MCP over streamable HTTP, on the
+	// loopback interface, for the claude CLI to connect to.
+	URL string
 	// drafts are the draft ids the mailbox started with.
 	drafts []string
 	close  func()
 }
 
-// newWorld builds the mailbox, reads its facts and connects the real
-// server to it over an in-memory transport, so the model sees the
-// descriptions, schemas and refusals that ship.
-func newWorld(ctx context.Context, t Task) (*World, error) {
+// newWorld builds the mailbox, reads its facts and serves the real
+// server in front of it. The model sees the descriptions, schemas,
+// instructions and refusals that ship; only the transport differs from
+// the binary's stdio, so no credential is needed and the mailbox stays
+// in this process, where the end-state scorers read it.
+func newWorld(t Task) (*World, error) {
 	fake := gmailtest.New()
+	f, err := facts(fake, t)
+	if err != nil {
+		fake.Close()
+		return nil, err
+	}
 	client := gapi.New(gapi.Options{
 		BaseURL:     fake.URL(),
 		TokenSource: oauth2.StaticTokenSource(&oauth2.Token{AccessToken: "evals"}),
 		Sleep:       func(context.Context, time.Duration) error { return nil },
 	})
-	cfg := config.Config{EnableSend: t.Send}
-	srv := server.New(server.Deps{Deps: tools.Deps{Config: cfg, Client: client}, Version: "evals"})
-	h, err := testutil.ConnectTo(ctx, srv)
-	if err != nil {
-		fake.Close()
-		return nil, err
-	}
-	w := &World{Fake: fake, Model: h.Client, drafts: fake.DraftIDs(), close: func() { h.Close(); fake.Close() }}
-	if init := h.Client.InitializeResult(); init != nil {
-		w.Instructions = init.Instructions
-	}
-	if w.Facts, err = facts(fake, t); err != nil {
-		w.Close()
-		return nil, err
-	}
-	return w, nil
+	srv := server.New(server.Deps{Deps: tools.Deps{Config: config.Config{EnableSend: t.Send}, Client: client}, Version: "evals"})
+	ts := httptest.NewServer(mcp.NewStreamableHTTPHandler(func(*http.Request) *mcp.Server { return srv }, nil))
+	return &World{Fake: fake, Facts: f, URL: ts.URL, drafts: fake.DraftIDs(),
+		close: func() { ts.Close(); fake.Close() }}, nil
 }
 
-// Close shuts the session and the mailbox down.
+// Close shuts the server and the mailbox down.
 func (w *World) Close() { w.close() }
 
 // facts reads what the scorers compare with. A planted instruction that
@@ -75,7 +68,9 @@ func facts(fake *gmailtest.Server, t Task) (Facts, error) {
 	f := Facts{
 		"budget_thread": budget.ThreadID,
 		"budget_draft":  budget.DraftID,
-		"newsletter":    fake.Scenario(gmailtest.ScenarioNewsletter).MessageIDs[0],
+		// The scenario records the draft's message last.
+		"budget_draft_message": budget.MessageIDs[len(budget.MessageIDs)-1],
+		"newsletter":           fake.Scenario(gmailtest.ScenarioNewsletter).MessageIDs[0],
 	}
 	if inj := t.Injection; inj != nil {
 		raw, _ := fake.Raw(fake.Scenario(inj.Scenario).MessageIDs[0])
@@ -100,38 +95,25 @@ func (w *World) newDrafts() []string {
 // sends counts drafts.send calls the fake answered.
 func (w *World) sends() int { return len(w.Fake.CallsOf("gmail.users.drafts.send")) }
 
-// offered is the tool list as the model receives it.
-func (w *World) offered(ctx context.Context) ([]toolDef, error) {
-	var out []toolDef
-	for t, err := range w.Model.Tools(ctx, nil) {
-		if err != nil {
-			return nil, err
-		}
-		schema, err := json.Marshal(t.InputSchema)
-		if err != nil {
-			return nil, err
-		}
-		out = append(out, toolDef{Name: t.Name, Description: t.Description, InputSchema: schema})
-	}
-	if len(out) > 0 {
-		out[len(out)-1].CacheControl = &cacheControl{Type: "ephemeral"}
-	}
-	return out, nil
-}
-
-// call runs one tool call and returns what a client shows the model:
-// the text half. A refusal comes back with isError, as it would in a
-// client, because recovering from one is part of what a task measures.
-func (w *World) call(ctx context.Context, name string, input json.RawMessage) (map[string]any, string, bool) {
-	var args map[string]any
-	if len(input) > 0 {
-		if err := json.Unmarshal(input, &args); err != nil {
-			return nil, "the arguments are not a JSON object: " + err.Error(), true
-		}
-	}
-	res, err := w.Model.CallTool(ctx, &mcp.CallToolParams{Name: name, Arguments: args})
+// offered connects to the world as the CLI does, over HTTP, and returns
+// the tool names and the instructions a model would be given.
+func (w *World) offered(ctx context.Context) ([]string, string, error) {
+	cs, err := mcp.NewClient(&mcp.Implementation{Name: "evals", Version: "0"}, nil).
+		Connect(ctx, &mcp.StreamableClientTransport{Endpoint: w.URL}, nil)
 	if err != nil {
-		return args, err.Error(), true
+		return nil, "", err
 	}
-	return args, testutil.Text(res), res.IsError
+	defer func() { _ = cs.Close() }()
+	var names []string
+	for t, err := range cs.Tools(ctx, nil) {
+		if err != nil {
+			return nil, "", err
+		}
+		names = append(names, t.Name)
+	}
+	instructions := ""
+	if init := cs.InitializeResult(); init != nil {
+		instructions = init.Instructions
+	}
+	return names, instructions, nil
 }

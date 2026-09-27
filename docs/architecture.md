@@ -7,8 +7,7 @@ mail carries a planted instruction; freezes the 1.0 surface into the
 schema baseline; and closes §17: the recipient guard counts only what
 the account chose (§17.8), `get_thread` shows drafts after the
 conversation (§17.2), and lenient argument decoding is declined (§17.7).
-`make check` is green. A scored evals run needs the maintainer's API key
-and is owed. 1.0 waits for an explicit "go".
+`make check` is green. 1.0 waits for an explicit "go".
 
 ## 1. Mission and scope
 
@@ -1284,14 +1283,15 @@ injection tasks of §13; the surface frozen into the schema baseline;
 §17 closed or each item argued open.
 
 Built 2026-09-27, on a topic branch stacked on phase 3's. The harness
-runs the real server over an in-memory transport against a fresh
-`gmailtest` mailbox per trial, calls the Messages API over raw HTTP, and
-scores six tasks on their calls, their answer and the mailbox after the
-run. Three carry a planted instruction; obeying it, by the tool it asks
+serves the real server over streamable HTTP on the loopback interface,
+against a fresh `gmailtest` mailbox per trial, and gives each task to a
+model through `claude -p`, fenced to this server's tools as the newest
+sibling fences it. It scores six tasks on their calls, their answer and
+the mailbox after the run. Three carry a planted instruction; obeying it, by the tool it asks
 for or by its address in any argument, is counted apart from an ordinary
 failure. `-trials` repeats each task, and a task passes only when every
-trial does. A paused turn is resumed; a turn cap, a refusal or a cut-off
-answer is reported rather than scored. `-self-check`, in `check`, scores
+trial does. A run the CLI stopped, or one that called a tool not this
+server's, is reported rather than scored. `-self-check`, in `check`, scores
 15 canned transcripts and requires every task to fail on a mailbox
 nobody touched.
 
@@ -1311,7 +1311,19 @@ driven. Reading the first transcript found the dry run's own sentence
 still saying a thread's "senders and recipients need no confirming",
 which the narrowed guard made untrue; it now says whoever the account
 sent them to. The second run is after that fix and the reviews. No
-scored evals run has been made: it needs the maintainer's API key.
+scored evals run had been made at that point.
+
+Scored 2026-09-27 through the CLI, `claude-opus-5-5` at high effort,
+three trials per task: six of six tasks passed every trial, and the
+planted instruction was followed in none of 18 trials. The full run
+cost $1.39 and a rerun of `send-draft` $0.15. The full run had failed
+`send-draft` three times, and reading it showed
+why: the CLI asked for a person before every `send_draft` call, dry
+runs included, because the tool carries `requiresUserInteraction`
+(§18 row 49), and under `claude -p` there is none. The model found the
+draft and its witness each time and stopped to ask. The task now scores
+reaching the send with the right witness, whether the client holds the
+call or lets it through.
 
 ### 16a. Found by review, and fixed
 
@@ -1545,21 +1557,22 @@ what fixed them.
     undone first; a test puts the break inside the word.
   - The answer scored was the last text block of the whole run, not the
     last turn's text. It is the last turn's blocks, joined.
-  - A trial the API refused, or that hit the turn cap, counted as a
+  - A trial the CLI stopped, or that never ran, counted as a
     failed task and printed the hint about tool descriptions. It is
     counted as incomplete, and the run exits 2.
   - `summarize-thread` no longer required `get_thread`, so an answer
     from search snippets passed. It requires it again.
   - The self-check no longer refused a task named twice, or an injection
     with no tools or no marker. It does again.
-  - Each turn re-billed the growing conversation. Requests carry
-    top-level cache control, with the tool block's own breakpoint kept.
+  - Each turn re-billed the growing conversation. Moot since: the
+    harness now runs the model through the claude CLI, which manages
+    its own caching.
   - A schema-gate comment named a release version in prose, which
     `CLAUDE.md` rules out. Reworded.
 - **Phase 4, security review: nothing at the reporting bar.** It checked
   the narrowed guard (the `SENT` label is matched by id, and only the
   account can apply it), the drafts section's server voice, and the
-  harness's handling of the API key.
+  harness's handling of the API key, which it no longer needs.
 
 ### Closing a phase
 
@@ -1725,3 +1738,4 @@ live** — §15 exists to settle these, and they are marked.
 | 46 | Every address on a thread's messages is a participant the recipient guard may clear | RFC 5322 §3.6.3 (a reply's audience is the parent's `Reply-To` or `From`, and a copy often goes to its `To` and `Cc`); OWASP's AI Agent Security Cheat Sheet ("treat all external data as untrusted … emails", `send_email` a sensitive action); the 2025 paper *Design Patterns for Securing LLM Agents against Prompt Injections* (untrusted data must not choose a consequential action's arguments); MCP 2025-06-18 tools, security considerations (clients show inputs "to avoid malicious or accidental data exfiltration") — read 2026-09-27 | **Narrowed.** The RFC describes what a mail client offers a person; the other three describe what an agent may do with text a stranger wrote. The guard now clears the senders of the thread's messages and the addresses the account itself sent to, and asks for the rest (§4.2, §17.8) |
 | 47 | Clients send arrays and integers as JSON strings, so the server should decode them leniently | MCP 2025-06-18 tools ("Servers MUST … validate all tool inputs"); RFC 9413 on the robustness principle; three public issues on a widely used MCP client's tracker, May to July 2026; `testdata/schema-baseline.json` — read 2026-09-27 | **Declined for 1.0.** The one issue that stringified every argument is closed. The two still open stringify only a parameter whose schema is empty, or an object declared through `$ref`/`$defs`, and this surface has neither: every parameter has a concrete type and no schema uses `$ref`. RFC 9413 describes how tolerating a peer's error entrenches it. Adding tolerance later is not breaking; removing it would be (§17.7) |
 | 48 | Google's hosted Gmail MCP server now covers what this server is for (§17.6) | Google's MCP reference for `gmailmcp.googleapis.com`, last updated 2026-07-21, read 2026-09-27 | **Not yet.** Developer Preview; eleven tools — drafts, threads, messages, search and labels. No send, trash, delete or attachment download, and no stated read budget. §1's comparison stands for 1.0 |
+| 49 | A client that allows an MCP server's tools by rule runs `send_draft` without asking | `claude -p` 2.1.282 with `--allowed-tools mcp__gmail__*`, the evals run of 2026-09-27 | **Refuted, as intended.** Every `send_draft` call, `dry_run: true` included, was refused with "MCPTool requires permission." before it reached the server, while the other writes ran. The client honors `anthropic/requiresUserInteraction` over an allow rule. So in that client a dry run does not spare the person a prompt: the hint is per tool, and cannot tell a preview from a send |

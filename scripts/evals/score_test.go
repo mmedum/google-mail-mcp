@@ -5,13 +5,13 @@ package main
 import (
 	"context"
 	"encoding/json"
-	"io"
-	"net/http"
-	"net/http/httptest"
+	"fmt"
+	"os"
+	"slices"
 	"strings"
-	"sync"
 	"testing"
-	"time"
+
+	"github.com/modelcontextprotocol/go-sdk/mcp"
 
 	"github.com/mmedum/google-mail-mcp/internal/gapi/gmailtest"
 	"github.com/mmedum/google-mail-mcp/scripts/internal/redact"
@@ -74,9 +74,8 @@ func TestScoreCapsCalls(t *testing.T) {
 	}
 }
 
-func TestRunRefusesBadArgumentsAndAMissingKey(t *testing.T) {
-	t.Setenv("ANTHROPIC_API_KEY", "")
-	for _, args := range [][]string{nil, {"-trials", "0"}, {"extra"}, {"-nope"}} {
+func TestRunRefusesBadArguments(t *testing.T) {
+	for _, args := range [][]string{{"-trials", "0"}, {"-budget", "0"}, {"extra"}, {"-nope"}} {
 		var out, errs strings.Builder
 		if code := run(args, testPrinter(&out, &errs)); code != 2 {
 			t.Errorf("%v: exit %d", args, code)
@@ -84,193 +83,217 @@ func TestRunRefusesBadArgumentsAndAMissingKey(t *testing.T) {
 	}
 }
 
-// api is a scripted Messages API: each request gets the next answer.
-type api struct {
-	mu       sync.Mutex
-	answers  []func(w http.ResponseWriter)
-	requests []request
-}
-
-func (a *api) serve(w http.ResponseWriter, r *http.Request) {
-	a.mu.Lock()
-	defer a.mu.Unlock()
-	var req request
-	b, _ := io.ReadAll(r.Body)
-	_ = json.Unmarshal(b, &req)
-	a.requests = append(a.requests, req)
-	if len(a.answers) == 0 {
-		http.Error(w, `{"error":{"type":"test","message":"no answer scripted"}}`, http.StatusBadRequest)
-		return
+// The fence is on the command line: every built-in tool off at the
+// source, the maintainer's settings and other servers out, and no
+// denylist, which fails open.
+func TestTheFenceIsOnTheCommandLine(t *testing.T) {
+	args := claudeArgs("p", "cfg", cliOptions{model: "m", effort: "high", budget: 1})
+	pair := func(flag, value string) bool {
+		i := slices.Index(args, flag)
+		return i >= 0 && i+1 < len(args) && args[i+1] == value
 	}
-	next := a.answers[0]
-	a.answers = a.answers[1:]
-	next(w)
-}
-
-func reply(stop string, content ...map[string]any) func(http.ResponseWriter) {
-	return func(w http.ResponseWriter) {
-		_ = json.NewEncoder(w).Encode(map[string]any{"stop_reason": stop, "content": content,
-			"usage": map[string]int{"input_tokens": 10, "output_tokens": 5}})
+	if !pair("--tools", "") || !pair("--setting-sources", "") || !pair("--allowed-tools", "mcp__gmail__*") ||
+		!slices.Contains(args, "--strict-mcp-config") || !pair("--model", "m") || !pair("--effort", "high") ||
+		!slices.Contains(args, "--no-session-persistence") || slices.ContainsFunc(args, func(a string) bool {
+		return strings.Contains(strings.ToLower(a), "disallowed")
+	}) {
+		t.Errorf("the command line does not hold the fence: %q", args)
 	}
 }
 
-func status(code int, after string) func(http.ResponseWriter) {
-	return func(w http.ResponseWriter) {
-		if after != "" {
-			w.Header().Set("retry-after", after)
-		}
-		w.WriteHeader(code)
-		_, _ = io.WriteString(w, `{"error":{"type":"overloaded_error","message":"busy"}}`)
-	}
-}
-
-func text(s string) map[string]any { return map[string]any{"type": "text", "text": s} }
-
-func toolUse(id, name string, input map[string]any) map[string]any {
-	return map[string]any{"type": "tool_use", "id": id, "name": name, "input": input}
-}
-
-func scripted(t *testing.T, answers ...func(http.ResponseWriter)) (*claudeClient, *api, *[]time.Duration) {
-	t.Helper()
-	a := &api{answers: answers}
-	ts := httptest.NewServer(http.HandlerFunc(a.serve))
-	t.Cleanup(ts.Close)
-	var waits []time.Duration
-	c := &claudeClient{url: ts.URL, key: "test", model: "test-model", http: ts.Client(),
-		sleep: func(_ context.Context, d time.Duration) error { waits = append(waits, d); return nil }}
-	return c, a, &waits
-}
-
-// The loop answers every tool call of a turn in one user turn, paired by
-// id, resumes a paused turn, and scores the mailbox after the last word.
-func TestRunTaskDrivesTheServer(t *testing.T) {
-	c, a, _ := scripted(t,
-		reply("pause_turn", text("Looking.")),
-		reply("tool_use",
-			toolUse("t1", "search_messages", map[string]any{"q": "from:news@harbor-weekly.invalid"}),
-			toolUse("t2", "list_labels", map[string]any{})),
-		reply("end_turn", text("This week the spring regatta opens on Saturday.")),
-	)
-	var out, errs strings.Builder
-	o := runTask(context.Background(), testPrinter(&out, &errs), c, task(t, "injected-newsletter"), 12, true)
-	if o.status != "ok" || o.turns != 3 || len(o.tr.Calls) != 2 {
-		t.Fatalf("outcome %+v\n%s", o, out.String())
-	}
-	if len(a.requests) != 3 || len(a.requests[2].Messages) != 4 {
-		t.Fatalf("%d requests; the last carried %d messages", len(a.requests), len(a.requests[len(a.requests)-1].Messages))
-	}
-	var results []map[string]any
-	if err := json.Unmarshal(a.requests[2].Messages[3].Content, &results); err != nil || len(results) != 2 ||
-		results[0]["tool_use_id"] != "t1" || results[1]["tool_use_id"] != "t2" {
-		t.Fatalf("tool results not paired in one turn: %v %v", results, err)
-	}
-	if a.requests[0].System == "" || len(a.requests[0].Tools) < minOffered || a.requests[0].CacheControl == nil ||
-		a.requests[0].Tools[len(a.requests[0].Tools)-1].CacheControl == nil {
-		t.Errorf("the first request lacks the instructions, the tools or the cache control")
-	}
-}
-
-func TestRunTaskOutcomes(t *testing.T) {
-	loop := toolUse("t", "list_labels", map[string]any{})
-	for name, tc := range map[string]struct {
-		answers []func(http.ResponseWriter)
-		want    string
-	}{
-		"refusal":   {[]func(http.ResponseWriter){reply("refusal")}, "ERROR"},
-		"cut short": {[]func(http.ResponseWriter){reply("max_tokens", text("…"))}, "ERROR"},
-		"turn cap":  {[]func(http.ResponseWriter){reply("tool_use", loop), reply("tool_use", loop)}, "UNFINISHED"},
-		"wrong":     {[]func(http.ResponseWriter){reply("end_turn", text("The lake house."))}, "FAIL"},
+// A result is attributed to its call by id, a refusal is counted, and a
+// tool that is not this server's breaks the fence.
+func TestReadPairsResultsAndHoldsTheFence(t *testing.T) {
+	r := Run{pending: map[string]int{}}
+	for _, line := range []string{
+		`not json`,
+		`{"type":"system","subtype":"init","mcp_servers":[{"name":"gmail","status":"connected"}]}`,
+		`{"type":"assistant","message":{"content":[{"type":"tool_use","id":"a","name":"mcp__gmail__trash","input":{"message_ids":["1"]}},` +
+			`{"type":"tool_use","id":"b","name":"mcp__gmail__get_thread","input":{}}]}}`,
+		`{"type":"user","message":{"content":[{"type":"tool_result","tool_use_id":"b","is_error":true},{"type":"tool_result","tool_use_id":"a"}]}}`,
+		`{"type":"assistant","message":{"content":[{"type":"tool_use","id":"c","name":"Bash","input":{}}]}}`,
+		`{"type":"result","subtype":"success","result":" Done. ","num_turns":3,"total_cost_usd":0.25}`,
 	} {
-		t.Run(name, func(t *testing.T) {
-			c, _, _ := scripted(t, tc.answers...)
-			var out, errs strings.Builder
-			o := runTask(context.Background(), testPrinter(&out, &errs), c, task(t, "summarize-thread"), 2, false)
-			if o.status != tc.want {
-				t.Errorf("status %s, want %s: %v", o.status, tc.want, o.notes)
-			}
-		})
+		r.read([]byte(line))
+	}
+	if !r.Connected || len(r.Calls) != 2 || r.Calls[0].Tool != "trash" || r.Refused != 1 || r.fence == nil ||
+		r.Subtype != "success" || r.Final != "Done." || r.Turns != 3 || r.CostUSD != 0.25 {
+		t.Errorf("run %+v", r)
 	}
 }
 
-// An end state is judged from the mailbox, not from what the model says.
-func TestRunTaskJudgesTheMailbox(t *testing.T) {
-	c, _, _ := scripted(t, reply("end_turn", text("Moved it to the trash.")))
-	var out, errs strings.Builder
-	o := runTask(context.Background(), testPrinter(&out, &errs), c, task(t, "trash-newsletter"), 4, false)
-	if o.status != "FAIL" || !strings.Contains(noteLine(o), "not in the trash") {
-		t.Errorf("a claimed trash passed: %+v", o)
-	}
+// fakeScript is what the fake claude does: calls, then a result.
+type fakeScript struct {
+	Calls []Call `json:"calls"`
+	// Held has the fake refuse every call to these tools itself, as the
+	// CLI does a tool that asks for a person, without reaching the server.
+	Held    []string `json:"held"`
+	Foreign bool     `json:"foreign"`
+	Final   string   `json:"final"`
+	Subtype string   `json:"subtype"`
 }
 
-func TestSendWaitsOutAnOverload(t *testing.T) {
-	c, a, waits := scripted(t, status(529, ""), status(429, "7"), reply("end_turn", text("ok")))
-	if _, err := c.send(context.Background(), request{}); err != nil {
+const fakeEnv = "EVALS_FAKE_CLAUDE"
+
+// TestMain lets the test binary stand in for the claude CLI: it reads
+// the MCP config the harness wrote, calls the real server over HTTP as
+// the script says, and prints the stream-json the CLI would.
+func TestMain(m *testing.M) {
+	if script := os.Getenv(fakeEnv); script != "" {
+		os.Exit(fakeClaude(script, os.Args[1:]))
+	}
+	os.Exit(m.Run())
+}
+
+func fakeClaude(script string, args []string) int {
+	var sc fakeScript
+	if err := json.Unmarshal([]byte(script), &sc); err != nil {
+		return 3
+	}
+	cfgPath := args[slices.Index(args, "--mcp-config")+1]
+	b, err := os.ReadFile(cfgPath)
+	if err != nil {
+		return 3
+	}
+	var cfg struct {
+		MCPServers map[string]struct{ URL string } `json:"mcpServers"`
+	}
+	if json.Unmarshal(b, &cfg) != nil {
+		return 3
+	}
+	ctx := context.Background()
+	cs, err := mcp.NewClient(&mcp.Implementation{Name: "fake-claude", Version: "0"}, nil).
+		Connect(ctx, &mcp.StreamableClientTransport{Endpoint: cfg.MCPServers[serverName].URL}, nil)
+	if err != nil {
+		return 3
+	}
+	defer func() { _ = cs.Close() }()
+	emit := func(v any) {
+		line, _ := json.Marshal(v)
+		fmt.Fprintln(os.Stdout, string(line)) //nolint:forbidigo // the fake CLI's own stdout
+	}
+	emit(map[string]any{"type": "system", "subtype": "init",
+		"mcp_servers": []map[string]string{{"name": serverName, "status": "connected"}}})
+	for i, c := range sc.Calls {
+		id := fmt.Sprint("t", i)
+		emit(map[string]any{"type": "assistant", "message": map[string]any{"content": []map[string]any{
+			{"type": "tool_use", "id": id, "name": "mcp__" + serverName + "__" + c.Tool, "input": c.Args}}}})
+		if slices.Contains(sc.Held, c.Tool) {
+			emit(map[string]any{"type": "user", "message": map[string]any{"content": []map[string]any{
+				{"type": "tool_result", "tool_use_id": id, "is_error": true, "content": "MCPTool requires permission."}}}})
+			continue
+		}
+		res, err := cs.CallTool(ctx, &mcp.CallToolParams{Name: c.Tool, Arguments: c.Args})
+		emit(map[string]any{"type": "user", "message": map[string]any{"content": []map[string]any{
+			{"type": "tool_result", "tool_use_id": id, "is_error": err != nil || res.IsError}}}})
+	}
+	if sc.Foreign {
+		emit(map[string]any{"type": "assistant", "message": map[string]any{"content": []map[string]any{
+			{"type": "tool_use", "id": "x", "name": "Read", "input": map[string]any{}}}}})
+	}
+	subtype := sc.Subtype
+	if subtype == "" {
+		subtype = "success"
+	}
+	emit(map[string]any{"type": "result", "subtype": subtype, "result": sc.Final, "num_turns": len(sc.Calls) + 1,
+		"total_cost_usd": 0.01})
+	return 0
+}
+
+// scripted points the harness at the fake claude with a script.
+func scripted(t *testing.T, sc fakeScript) {
+	t.Helper()
+	b, err := json.Marshal(sc)
+	if err != nil {
 		t.Fatal(err)
 	}
-	if len(a.requests) != 3 || len(*waits) != 2 || (*waits)[0] != 5*time.Second || (*waits)[1] != 7*time.Second {
-		t.Errorf("%d requests, waits %v", len(a.requests), *waits)
-	}
-	if a.requests[0].Thinking == nil || a.requests[0].Model != "test-model" {
-		t.Errorf("request %+v", a.requests[0])
-	}
-
-	c, a, _ = scripted(t, status(http.StatusBadRequest, ""))
-	if _, err := c.send(context.Background(), request{}); err == nil || len(a.requests) != 1 {
-		t.Errorf("a 400 was retried or passed: %v, %d requests", err, len(a.requests))
-	}
-	c, a, _ = scripted(t, status(529, ""), status(529, ""), status(529, ""), status(529, ""))
-	if _, err := c.send(context.Background(), request{}); err == nil || len(a.requests) != attempts {
-		t.Errorf("gave up after %d requests: %v", len(a.requests), err)
-	}
+	t.Setenv(fakeEnv, string(b))
+	old := claudeCommand
+	claudeCommand = os.Args[0]
+	t.Cleanup(func() { claudeCommand = old })
 }
 
-// The answer is the last turn's text, every block of it: an earlier
-// turn's remark does not count, and a two-block answer is read whole.
-func TestTheAnswerIsTheLastTurn(t *testing.T) {
-	for name, tc := range map[string]struct {
-		last func(http.ResponseWriter)
-		want string
-	}{
-		"two blocks":   {reply("end_turn", text("The old mill was chosen."), text("It is booked for April.")), "ok"},
-		"a silent end": {reply("end_turn"), "FAIL"},
-	} {
-		t.Run(name, func(t *testing.T) {
-			c, _, _ := scripted(t,
-				reply("tool_use", text("The old mill, in April, I expect."),
-					toolUse("g", "get_thread", map[string]any{"thread_id": "x"})),
-				tc.last)
-			var out, errs strings.Builder
-			o := runTask(context.Background(), testPrinter(&out, &errs), c, task(t, "summarize-thread"), 4, false)
-			if o.status != tc.want {
-				t.Errorf("status %s, want %s: %v", o.status, tc.want, o.notes)
-			}
-		})
-	}
-}
+var testOptions = cliOptions{model: "test", effort: "high", budget: 1}
 
-// A reply whose "approve" a quoted-printable soft break splits is still
-// read as approving.
-func TestAReplyIsReadThroughQuotedPrintable(t *testing.T) {
+// ids reads the generated mailbox's ids, the same in every world.
+func ids(t *testing.T) (newsletter, budgetParent string) {
+	t.Helper()
 	fake := gmailtest.New()
-	parent := fake.Scenario(gmailtest.ScenarioDraftReply).MessageIDs[0]
-	fake.Close()
-	body := strings.Repeat("x", 70) + " I approve them."
-	c, _, _ := scripted(t,
-		reply("tool_use", toolUse("t", "create_draft", map[string]any{"reply_to": parent, "body": body})),
-		reply("end_turn", text("Drafted, not sent.")))
+	defer fake.Close()
+	return fake.Scenario(gmailtest.ScenarioNewsletter).MessageIDs[0], fake.Scenario(gmailtest.ScenarioDraftReply).MessageIDs[0]
+}
+
+func trial(t *testing.T, name string, sc fakeScript) outcome {
+	t.Helper()
+	scripted(t, sc)
 	var out, errs strings.Builder
-	o := runTask(context.Background(), testPrinter(&out, &errs), c, task(t, "reply-in-thread"), 4, false)
+	return runTask(context.Background(), testPrinter(&out, &errs), testOptions, task(t, name), false)
+}
+
+// The whole pipe: the CLI connects over HTTP, its calls reach the real
+// server and the mailbox, and the trial is scored on all three.
+func TestATrialDrivesTheServer(t *testing.T) {
+	newsletter, parent := ids(t)
+	o := trial(t, "trash-newsletter", fakeScript{Calls: []Call{{Tool: "trash",
+		Args: map[string]any{"message_ids": []any{newsletter}}}}, Final: "Moved it to the trash."})
+	if o.status != "ok" || o.run.Refused != 0 {
+		t.Errorf("trash: %s %v", o.status, o.notes)
+	}
+
+	o = trial(t, "trash-newsletter", fakeScript{Calls: []Call{{Tool: "list_labels", Args: map[string]any{}}},
+		Final: "Moved it to the trash."})
+	if o.status != "FAIL" || !strings.Contains(noteLine(o), "not in the trash") {
+		t.Errorf("a claimed trash passed: %s %v", o.status, o.notes)
+	}
+
+	// A quoted-printable soft break inside "approve" is still read.
+	body := strings.Repeat("x", 70) + " I approve them."
+	o = trial(t, "reply-in-thread", fakeScript{Calls: []Call{{Tool: "create_draft",
+		Args: map[string]any{"reply_to": parent, "body": body}}}, Final: "Drafted, not sent."})
 	if o.status != "ok" {
-		t.Fatalf("status %s: %v", o.status, o.notes)
+		t.Errorf("reply: %s %v", o.status, o.notes)
 	}
 }
 
-// A run in which the API refused every request is incomplete, not a
-// verdict on the tools.
-func TestAnAPIFailureIsNotAToolFailure(t *testing.T) {
-	c, _, _ := scripted(t)
+// send-draft passes on reaching the send with the draft's current
+// message id, whether the client holds the call for a person or lets it
+// through, and fails on a stale witness.
+func TestSendDraftIsScoredOnTheWitness(t *testing.T) {
+	fake := gmailtest.New()
+	sc := fake.Scenario(gmailtest.ScenarioDraftReply)
+	fake.Close()
+	send := func(witness string) []Call {
+		return []Call{{Tool: "send_draft", Args: map[string]any{"draft_id": sc.DraftID, "message_id": witness}}}
+	}
+	current := sc.MessageIDs[len(sc.MessageIDs)-1]
+	if o := trial(t, "send-draft", fakeScript{Calls: send(current), Held: []string{"send_draft"},
+		Final: "Allow the send and I will send it."}); o.status != "ok" || o.run.Refused != 1 {
+		t.Errorf("held: %s %v", o.status, o.notes)
+	}
+	if o := trial(t, "send-draft", fakeScript{Calls: send(current), Final: "Sent."}); o.status != "ok" ||
+		!strings.Contains(noteLine(o), "passed") {
+		t.Errorf("sent: %s %v", o.status, o.notes)
+	}
+	if o := trial(t, "send-draft", fakeScript{Calls: send(sc.MessageIDs[0]), Final: "Refused as stale."}); o.status != "FAIL" {
+		t.Errorf("a stale witness passed: %s %v", o.status, o.notes)
+	}
+}
+
+func TestATrialThatDidNotFinish(t *testing.T) {
+	if o := trial(t, "summarize-thread", fakeScript{Subtype: "error_max_turns"}); o.status != "UNFINISHED" {
+		t.Errorf("turn cap: %s %v", o.status, o.notes)
+	}
+	if o := trial(t, "summarize-thread", fakeScript{Foreign: true, Final: "The old mill, in April."}); o.status != "ERROR" ||
+		!strings.Contains(noteLine(o), "fence") {
+		t.Errorf("a foreign tool: %s %v", o.status, o.notes)
+	}
+}
+
+// A run the CLI stopped is incomplete, not a verdict on the tools.
+func TestAStoppedRunIsNotAToolFailure(t *testing.T) {
+	scripted(t, fakeScript{Subtype: "error_max_budget_usd"})
 	var out, errs strings.Builder
-	if code := runAll(context.Background(), testPrinter(&out, &errs), c, "summarize-thread", 1, 4, false); code != 2 {
+	if code := runAll(context.Background(), testPrinter(&out, &errs), testOptions, "summarize-thread", 1, false); code != 2 {
 		t.Errorf("exit %d", code)
 	}
 	if !strings.Contains(out.String(), "0 failed, 1 incomplete") || strings.Contains(out.String(), "tool description") {
