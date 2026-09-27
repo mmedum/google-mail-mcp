@@ -56,7 +56,7 @@ func TestSmokePassesAWellBehavedServer(t *testing.T) {
 	if err := smokeRun(&out, bin); err != nil {
 		t.Fatal(err)
 	}
-	out.mustSay(t, "tools registered: default 2, read-only 1, send 3, destructive 3, of 4 in the full surface")
+	out.mustSay(t, "tools registered: default 2, read-only 1, send 3, destructive 3, settings 4, settings and send 6, of 7 in the full surface")
 	out.mustSay(t, "frames read")
 }
 
@@ -74,6 +74,8 @@ func TestSmokeFailsEachWay(t *testing.T) {
 		"no-meta":             "send_draft is annotated",
 		"missing-destructive": "destructive mode lacks delete_message",
 		"undumped":            "which --dump-schemas does not",
+		"leaky-settings":      "default mode registers create_filter, a settings tool it must not",
+		"vacation-as-write":   "set_vacation is a settings tool annotated as a send tool",
 	}
 	for mode, want := range cases {
 		t.Run(mode, func(t *testing.T) {
@@ -195,7 +197,7 @@ func TestSmokeModesCoverEveryKind(t *testing.T) {
 			seen[k]++
 		}
 	}
-	for _, k := range []string{smokeKindRead, smokeKindWrite, smokeKindWriteForGood, smokeKindSend, smokeKindDestructive} {
+	for k := range smokeFamily {
 		if seen[k] == 0 {
 			t.Errorf("no mode registers %s tools", k)
 		}

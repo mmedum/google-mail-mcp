@@ -3,6 +3,7 @@ package main
 import (
 	"fmt"
 	"go/ast"
+	"go/parser"
 	"go/token"
 	"io"
 	"maps"
@@ -177,26 +178,58 @@ func apiFieldsRow(r tsvRow, published map[string][]string, judged map[string]boo
 func apiFieldsStructs(root string) (map[string]map[string]string, int, error) {
 	dir := filepath.Join(root, filepath.FromSlash(apiFieldsWireDir))
 	fset := token.NewFileSet()
-	files, err := parseGoDir(fset, dir)
+	files, err := parseGoDirMode(fset, dir, parser.ParseComments)
 	if err != nil {
 		return nil, 0, fmt.Errorf("read %s: %w", apiFieldsWireDir, err)
 	}
 	out := map[string]map[string]string{}
 	for _, file := range files {
-		ast.Inspect(file, func(n ast.Node) bool {
-			ts, ok := n.(*ast.TypeSpec)
-			if !ok || !ts.Name.IsExported() {
-				return true
+		for _, decl := range file.Decls {
+			gd, ok := decl.(*ast.GenDecl)
+			if !ok || gd.Tok != token.TYPE {
+				continue
 			}
-			st, ok := ts.Type.(*ast.StructType)
-			if !ok {
-				return true
+			for _, spec := range gd.Specs {
+				ts, ok := spec.(*ast.TypeSpec)
+				if !ok || !ts.Name.IsExported() {
+					continue
+				}
+				st, ok := ts.Type.(*ast.StructType)
+				if !ok {
+					continue
+				}
+				doc := ts.Doc
+				if doc == nil {
+					doc = gd.Doc
+				}
+				name := ts.Name.Name
+				if schema := apiFieldsView(doc); schema != "" {
+					name = schema
+				}
+				if out[name] == nil {
+					out[name] = map[string]string{}
+				}
+				maps.Copy(out[name], apiFieldsTags(fset, root, st))
 			}
-			out[ts.Name.Name] = apiFieldsTags(fset, root, st)
-			return false
-		})
+		}
 	}
 	return out, len(files), nil
+}
+
+// apiFieldsView reads a "Schema: <Name>" line from a struct's comment.
+// A struct that writes part of a schema — a filter without its forward
+// action, a patch with one field — declares the schema it is a view of,
+// and its fields are held to that schema's instead of to its own name.
+func apiFieldsView(doc *ast.CommentGroup) string {
+	if doc == nil {
+		return ""
+	}
+	for line := range strings.SplitSeq(doc.Text(), "\n") {
+		if v, ok := strings.CutPrefix(strings.TrimSpace(line), "Schema: "); ok {
+			return strings.TrimSpace(v)
+		}
+	}
+	return ""
 }
 
 // apiFieldsTags maps a struct's JSON field names to where each is declared.

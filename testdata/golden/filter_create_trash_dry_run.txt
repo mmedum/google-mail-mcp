@@ -1,0 +1,5 @@
+dry run: would create a filter; no filter does this already.
+  matches: from noise@example.org
+  adds labels: TRASH
+  moves matching mail to the trash, where Gmail deletes it after 30 days.
+It acts on mail that arrives from now on; mail already in the mailbox is untouched.

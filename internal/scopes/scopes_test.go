@@ -7,17 +7,19 @@ import (
 
 func TestForMode(t *testing.T) {
 	tests := []struct {
-		readOnly, destructive bool
-		want                  []string
+		readOnly, destructive, settings bool
+		want                            []string
 	}{
-		{true, false, []string{Readonly}},
-		{false, false, []string{Modify}},
-		{false, true, []string{Full}},
-		{true, true, []string{Full}},
+		{true, false, false, []string{Readonly}},
+		{false, false, false, []string{Modify}},
+		{false, true, false, []string{Full}},
+		{true, true, false, []string{Full}},
+		{false, false, true, []string{Modify, SettingsBasic}},
+		{false, true, true, []string{Full, SettingsBasic}},
 	}
 	for _, tt := range tests {
-		if got := ForMode(tt.readOnly, tt.destructive); !slices.Equal(got, tt.want) {
-			t.Errorf("ForMode(%t, %t) = %v, want %v", tt.readOnly, tt.destructive, got, tt.want)
+		if got := ForMode(tt.readOnly, tt.destructive, tt.settings); !slices.Equal(got, tt.want) {
+			t.Errorf("ForMode(%t, %t, %t) = %v, want %v", tt.readOnly, tt.destructive, tt.settings, got, tt.want)
 		}
 	}
 }
@@ -26,8 +28,8 @@ func TestForMode(t *testing.T) {
 // already sends.
 func TestModesSendChangesNothing(t *testing.T) {
 	modes := Modes()
-	if len(modes) != 4 {
-		t.Fatalf("got %d modes, want 4", len(modes))
+	if len(modes) != 5 {
+		t.Fatalf("got %d modes, want 5", len(modes))
 	}
 	byName := map[string]Mode{}
 	for _, m := range modes {
@@ -78,14 +80,24 @@ func TestMissingAndCovered(t *testing.T) {
 	if got := Missing([]string{Readonly}, []string{Modify, Readonly}); !slices.Equal(got, []string{Modify}) {
 		t.Errorf("Missing = %v", got)
 	}
-	if !Covered([]string{Full}, ForMode(false, false)) {
+	if !Covered([]string{Full}, ForMode(false, false, false)) {
 		t.Error("full scope does not cover the default set")
 	}
-	if Covered([]string{Modify}, ForMode(false, true)) {
+	if Covered([]string{Modify}, ForMode(false, true, false)) {
 		t.Error("modify covers the destructive set; a destructive login would skip consent")
 	}
-	if Covered(nil, ForMode(true, false)) {
+	if Covered(nil, ForMode(true, false, false)) {
 		t.Error("nothing granted covers something")
+	}
+	// No other scope covers the settings writes, not even the full one.
+	for _, destructive := range []bool{false, true} {
+		set := ForMode(false, destructive, true)
+		if !slices.Contains(set, SettingsBasic) || Covered(ForMode(false, destructive, false), set) {
+			t.Errorf("destructive=%v: settings set %v, or covered without gmail.settings.basic", destructive, set)
+		}
+	}
+	if Satisfied(SettingsBasic, []string{Full}) {
+		t.Error("the full scope satisfies gmail.settings.basic; Google says it does not")
 	}
 }
 

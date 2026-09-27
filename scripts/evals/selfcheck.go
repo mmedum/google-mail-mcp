@@ -123,6 +123,8 @@ func checkUntouched(ctx context.Context, t Task) error {
 		return fmt.Errorf("the model would be offered %d tools", len(names))
 	case slices.Contains(names, "send_draft") != t.Send:
 		return fmt.Errorf("send_draft offered=%v, but the task's Send is %v", !t.Send, t.Send)
+	case slices.Contains(names, "create_filter") != t.Settings:
+		return fmt.Errorf("create_filter offered=%v, but the task's Settings is %v", !t.Settings, t.Settings)
 	case slices.Contains(names, "delete_permanently"):
 		return fmt.Errorf("the destructive tools are registered; no task turns them on")
 	case instructions == "":

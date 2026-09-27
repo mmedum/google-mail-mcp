@@ -1,6 +1,7 @@
 package model
 
 import (
+	"slices"
 	"strconv"
 	"time"
 
@@ -67,7 +68,7 @@ func NewSettings(v gmail.VacationSettings, af gmail.AutoForwarding, fwd []gmail.
 	imap gmail.ImapSettings, pop gmail.PopSettings, lang gmail.LanguageSettings, sendAs []gmail.SendAs,
 ) Settings {
 	out := Settings{
-		Vacation: newVacation(v),
+		Vacation: NewVacation(v),
 		AutoForwarding: AutoForwarding{Enabled: af.Enabled, Address: af.EmailAddress,
 			Disposition: af.Disposition},
 		ForwardingAddresses: make([]ForwardingAddress, 0, len(fwd)),
@@ -82,13 +83,14 @@ func NewSettings(v gmail.VacationSettings, af gmail.AutoForwarding, fwd []gmail.
 		out.SendAs = append(out.SendAs, SendAs{
 			Address: s.SendAsEmail, DisplayName: s.DisplayName, ReplyTo: s.ReplyToAddress,
 			Primary: s.IsPrimary, Default: s.IsDefault, Alias: s.TreatAsAlias,
-			VerificationStatus: s.VerificationStatus, Signature: htmlText(s.Signature),
+			VerificationStatus: s.VerificationStatus, Signature: HTMLText(s.Signature),
 		})
 	}
 	return out
 }
 
-func newVacation(v gmail.VacationSettings) Vacation {
+// NewVacation converts the vacation responder.
+func NewVacation(v gmail.VacationSettings) Vacation {
 	out := Vacation{
 		Enabled: v.EnableAutoReply, Subject: Untrusted(v.ResponseSubject),
 		Body:               Untrusted(v.ResponseBodyPlainText),
@@ -96,14 +98,14 @@ func newVacation(v gmail.VacationSettings) Vacation {
 		Start: millis(v.StartTime), End: millis(v.EndTime),
 	}
 	if out.Body == "" && v.ResponseBodyHTML != "" {
-		out.Body, out.BodyFromHTML = htmlText(v.ResponseBodyHTML), true
+		out.Body, out.BodyFromHTML = HTMLText(v.ResponseBodyHTML), true
 	}
 	return out
 }
 
-// htmlText converts settings HTML to text the way a message body is
+// HTMLText converts settings HTML to text the way a message body is
 // converted: nothing fetched, hidden text dropped.
-func htmlText(s string) Untrusted {
+func HTMLText(s string) Untrusted {
 	if s == "" {
 		return ""
 	}
@@ -130,6 +132,11 @@ type Filter struct {
 	// the one action that sends mail out of the account, and every
 	// rendering flags it.
 	Forward string
+}
+
+// Trashes reports whether the filter moves matching mail to the trash.
+func (f Filter) Trashes() bool {
+	return slices.ContainsFunc(f.Add, func(l LabelRef) bool { return l.ID == "TRASH" })
 }
 
 // Forwarding counts the filters that forward mail out of the account.

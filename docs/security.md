@@ -17,6 +17,7 @@ check. Nothing a message links to or embeds is ever fetched.
 | default | `gmail.modify` |
 | `GMAIL_ENABLE_SEND=true` | `gmail.modify` — unchanged |
 | `GMAIL_ENABLE_DESTRUCTIVE=true` | `https://mail.google.com/` |
+| `GMAIL_ENABLE_SETTINGS=true` | adds `gmail.settings.basic` |
 
 `docs/gcp-setup.md` carries the same sets, generated from the code.
 
@@ -107,8 +108,9 @@ pasted — a debug log, `doctor` and `status` — are the ones that mask.
 ## What the server refuses to do
 
 - **Send** unless `GMAIL_ENABLE_SEND=true`, and then only a draft, never
-  retried on an ambiguous failure. Every recipient not already in the
-  thread being answered must be written out in `confirm_recipients`, so
+  retried on an ambiguous failure. Every recipient who has not written in
+  the thread being answered, and whom the account has not sent to in it,
+  must be written out in `confirm_recipients`, so
   an address a message talked into a draft is one the model has to type
   itself; over 50 recipients is refused outright. The draft is sent as it
   is stored, and refused as `[stale]` if it changed since it was read.
@@ -117,6 +119,14 @@ pasted — a debug log, `doctor` and `status` — are the ones that mask.
   Gmail keeps for 30 days. The one exception registered by default is
   `delete_draft`: Gmail deletes a draft for good, so it too takes
   `confirm: true`, and it can only ever remove an unsent draft.
+- **Change a setting** unless `GMAIL_ENABLE_SETTINGS=true`, and then only
+  a signature, a filter or the vacation reply. A filter cannot forward:
+  the type it is written as has no field for it. A filter that trashes
+  matching mail needs `confirm: true`, since it hides mail as it arrives.
+  The vacation reply answers other people, so it also needs
+  `GMAIL_ENABLE_SEND=true`; it answers only contacts or the account's
+  domain, never every sender, and turning it on needs `confirm: true`.
+  Forwarding, delegation and send-as identities are never written.
 - **Overwrite a draft it did not read.** `update_draft` takes the message
   id `get_draft` returned, reads the draft again, and refuses with
   `[stale]` if it changed. Gmail offers no lock, so a change landing

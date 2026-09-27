@@ -169,10 +169,22 @@ func registerAccount(s *mcp.Server, d Deps) {
 			return out, nil
 		})
 
+	// What this server can change depends on the flags, and the
+	// descriptions say so, since a model reads them as the truth.
+	settingsChange, filtersChange := " This server cannot change any of them.", " This server cannot create or change filters."
+	if d.Config.EnableSettings && !d.Config.ReadOnly {
+		settingsChange = " update_signature changes a signature; forwarding and the rest cannot be changed here."
+		if d.Config.EnableSend {
+			settingsChange = " update_signature and set_vacation change a signature and the vacation reply; forwarding " +
+				"and the rest cannot be changed here."
+		}
+		filtersChange = " create_filter and delete_filter make and remove filters."
+	}
+
 	register(s, d, Spec{Name: "get_settings", Kind: Read, Description: "The account's mail settings, read-only: " +
 		"whether incoming mail is forwarded and where, the forwarding addresses, the vacation reply, the addresses it " +
-		"sends as with their signatures, IMAP, POP and the display language. This server cannot change any of them. " +
-		"Seven units." + untrustedNote},
+		"sends as with their signatures, IMAP, POP and the display language." + settingsChange +
+		" Seven units." + untrustedNote},
 		func(ctx context.Context, _ GetSettingsIn) (SettingsOut, error) {
 			st, err := svc.Settings(ctx)
 			if err != nil {
@@ -182,8 +194,8 @@ func registerAccount(s *mcp.Server, d Deps) {
 		})
 
 	register(s, d, Spec{Name: "list_filters", Kind: Read, Description: "The account's filters: what each " +
-		"matches and what it does, with labels by name. A filter that forwards mail out of the account is flagged. " +
-		"This server cannot create or change filters. Two units."},
+		"matches and what it does, with labels by name. A filter that forwards mail out of the account is flagged." +
+		filtersChange + " Two units."},
 		func(ctx context.Context, _ ListFiltersIn) (FiltersOut, error) {
 			fs, err := svc.Filters(ctx)
 			if err != nil {
@@ -200,16 +212,13 @@ func change(c model.Change) Change {
 }
 
 func settingsOut(st model.Settings) SettingsOut {
-	v := st.Vacation
 	return SettingsOut{
 		AutoForwarding: AutoForwarding{Enabled: st.AutoForwarding.Enabled, Address: st.AutoForwarding.Address,
 			Disposition: st.AutoForwarding.Disposition},
 		ForwardingAddresses: mapSlice(st.ForwardingAddresses, func(f model.ForwardingAddress) ForwardingAddress {
 			return ForwardingAddress{Address: f.Address, VerificationStatus: f.VerificationStatus}
 		}),
-		Vacation: Vacation{Enabled: v.Enabled, UntrustedSubject: v.Subject, UntrustedBody: v.Body,
-			RestrictToContacts: v.RestrictToContacts, RestrictToDomain: v.RestrictToDomain,
-			Start: timePtr(v.Start), End: timePtr(v.End)},
+		Vacation: vacation(st.Vacation),
 		SendAs: mapSlice(st.SendAs, func(s model.SendAs) SendAs {
 			return SendAs{Address: s.Address, DisplayName: s.DisplayName, ReplyTo: s.ReplyTo, Primary: s.Primary,
 				Default: s.Default, Alias: s.Alias, VerificationStatus: s.VerificationStatus, UntrustedSignature: s.Signature}
