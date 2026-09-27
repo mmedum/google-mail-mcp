@@ -15,7 +15,7 @@ once rather than one per run.
 |---|---|---|---|
 | `GMAIL_PROFILE` | `--profile` | `default` | Named profile. Each keeps its own client secret, refresh token and account, so one machine can hold several Google accounts. Lower case, digits, `-` and `_`. |
 | `GMAIL_CLIENT_SECRET` | `--client-secret` | the profile's `client_secret.json` | Path to the Desktop-app OAuth client JSON from the Cloud console. |
-| `GMAIL_READ_ONLY` | `--read-only` | `false` | Register only the read tools, and ask for `gmail.readonly` at login. Refused together with either `ENABLE_` setting. |
+| `GMAIL_READ_ONLY` | `--read-only` | `false` | Register only the read tools, and ask for `gmail.readonly` at login. Refused together with any `ENABLE_` setting. |
 | `GMAIL_ENABLE_SEND` | `--enable-send` | `false` | Register `send_draft`. Scopes do not change: the default scope can already send, which is why the tool, not the scope, is the control. |
 | `GMAIL_ENABLE_DESTRUCTIVE` | `--enable-destructive` | `false` | Register `delete_permanently` and `delete_label`, and ask for `https://mail.google.com/` at login — the only scope Google accepts for permanent deletion. Each call still needs `confirm: true`. |
 | `GMAIL_ENABLE_SETTINGS` | `--enable-settings` | `false` | Register `update_signature`, `create_filter` and `delete_filter`, and ask for `gmail.settings.basic` at login — the only scope Google accepts for those writes. With `GMAIL_ENABLE_SEND` as well, also `set_vacation`. |
@@ -76,7 +76,7 @@ prints the URL instead of opening it, for SSH.
 change the scopes, so they need `google-mail-mcp login` again. The server compares the granted
 scopes with the ones it needs at startup and says so on stderr, and
 `doctor` names any that are missing. Going the other way — turning
-destructive off — needs no new login, but the stored token keeps the
+destructive or settings off — needs no new login, but the stored token keeps the
 wider scope until you `logout` and `login`.
 
 ## Reading the setup from a script

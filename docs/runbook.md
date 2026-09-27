@@ -30,7 +30,8 @@ organization (`gcp-setup.md` §2).
 ## `[auth]` naming a scope
 
 The token was granted with a different configuration. Changing
-`GMAIL_READ_ONLY` or `GMAIL_ENABLE_DESTRUCTIVE` changes the scopes, and
+`GMAIL_READ_ONLY`, `GMAIL_ENABLE_DESTRUCTIVE` or `GMAIL_ENABLE_SETTINGS`
+changes the scopes, and
 an existing token does not gain one. Run `login` again with the same
 setting, and accept every scope asked for. `doctor` lists granted against
 wanted, and the server warns at startup.
@@ -39,8 +40,8 @@ wanted, and the server warns at startup.
 
 The login granted more than the configuration now uses — typically
 `https://mail.google.com/` left over after `GMAIL_ENABLE_DESTRUCTIVE` was
-turned off. Everything works; the tools that delete for good are simply
-not registered. To hold only what the configuration needs, run
+turned off, or `gmail.settings.basic` after `GMAIL_ENABLE_SETTINGS` was.
+Everything works; the tools that scope covered are simply not registered. To hold only what the configuration needs, run
 `google-mail-mcp logout`, which revokes the token at Google, then
 `google-mail-mcp login`.
 
@@ -68,8 +69,8 @@ google-mail-mcp logout
 ```
 
 This revokes the token at Google and deletes the local copy. Revoking at
-Google ends every token from that grant, on every machine, for that
-account and OAuth client.
+Google ends every token the account granted to the Cloud project, on
+every machine and for every OAuth client in that project.
 
 ## Suspected exposure
 
@@ -80,8 +81,9 @@ as you**, whatever this server's flags say: the default scope can send.
 1. `google-mail-mcp logout` on any machine that still has it; this
    revokes the grant everywhere.
 2. If you cannot, revoke at <https://myaccount.google.com/permissions>.
-3. Check Gmail's Sent folder, and **Settings → Forwarding and POP/IMAP**
-   and **Filters** for anything you did not set up.
+3. Check Gmail's Sent folder, **Settings → Forwarding and POP/IMAP**,
+   **Filters**, the vacation reply and signatures for anything you did not
+   set up.
 4. Rotate the OAuth client secret in the Cloud console if the client JSON
    was exposed too.
 
