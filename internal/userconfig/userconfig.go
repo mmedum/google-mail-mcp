@@ -37,7 +37,10 @@ var ErrOutsideHome = errors.New("userconfig: the config directory must be inside
 type Config struct {
 	ClientSecretPath string `json:"client_secret_path,omitempty"`
 	AccountEmail     string `json:"account_email,omitempty"`
-	TokenStore       string `json:"token_store,omitempty"`
+	// ClientProject is the Cloud project the client JSON named at the
+	// last login. A grant belongs to the account and the project.
+	ClientProject string `json:"client_project,omitempty"`
+	TokenStore    string `json:"token_store,omitempty"`
 	// Scopes is what Google granted at the last login, not what was
 	// requested. A scope requested and refused is the failure worth
 	// seeing, and storing the request would hide it.
@@ -231,21 +234,16 @@ func (d Dir) Profiles() ([]string, error) {
 }
 
 // SharingGrant returns the other profiles that may hold the same grant
-// as this one: the same account through the same Cloud project. Google
-// revokes the grant, not one token, and the grant spans every client in
-// the project, so revoking here signs those out too; logout says so
-// first. project names the Cloud project of a client secret path, or ""
-// when it cannot tell. Only a difference both sides know rules a
-// profile out, so an unknown account or project errs toward warning.
-func (d Dir) SharingGrant(profile string, project func(clientSecretPath string) string) ([]string, error) {
+// as this one: the same account through the same Cloud project, as each
+// login recorded them. Google revokes the grant, not one token, and the
+// grant spans every client in the project, so revoking here signs those
+// out too. Only a difference both profiles recorded rules one out, so a
+// profile that recorded no account or project errs toward being named.
+func (d Dir) SharingGrant(profile string) ([]string, error) {
 	mine, err := d.Load(profile)
 	if err != nil {
 		return nil, err
 	}
-	if strings.TrimSpace(mine.ClientSecretPath) == "" {
-		return nil, nil
-	}
-	myProject := project(mine.ClientSecretPath)
 	names, err := d.Profiles()
 	if err != nil {
 		return nil, err
@@ -256,22 +254,16 @@ func (d Dir) SharingGrant(profile string, project func(clientSecretPath string) 
 			continue
 		}
 		other, err := d.Load(name)
-		if err != nil || strings.TrimSpace(other.ClientSecretPath) == "" {
+		if err != nil {
 			continue
 		}
-		if knownDifferent(mine.AccountEmail, other.AccountEmail, strings.EqualFold) {
+		if mine.AccountEmail != "" && other.AccountEmail != "" && !strings.EqualFold(mine.AccountEmail, other.AccountEmail) {
 			continue
 		}
-		if other.ClientSecretPath != mine.ClientSecretPath &&
-			knownDifferent(myProject, project(other.ClientSecretPath), func(a, b string) bool { return a == b }) {
+		if mine.ClientProject != "" && other.ClientProject != "" && mine.ClientProject != other.ClientProject {
 			continue
 		}
 		out = append(out, name)
 	}
 	return out, nil
-}
-
-// knownDifferent reports whether a and b are both known and not equal.
-func knownDifferent(a, b string, equal func(a, b string) bool) bool {
-	return a != "" && b != "" && !equal(a, b)
 }

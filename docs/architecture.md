@@ -1,10 +1,9 @@
 # Architecture — google-mail-mcp
 
-**Status: 1.1.0 is released, 2026-09-27, from `main`, and verified from
-outside: checksums, the cosign signature and the provenance attestation,
-each also against a tampered copy, and the registry entry. Since 1.0.0
-it adds the settings writes behind `GMAIL_ENABLE_SETTINGS` (§7.9).**
-Still unproven: the bundle installed in Claude Desktop.
+**Status: 1.1.1 is prepared, 2026-09-27; since 1.1.0 `logout` names
+the profiles its revoke reaches, by account and Cloud project, and the
+bundle's descriptions name the settings flag.** Still unproven: the
+bundle installed in Claude Desktop.
 
 ## 1. Mission and scope
 
@@ -437,7 +436,7 @@ success.
 ## 5. Module layout
 
 As `CLAUDE.md` "Where things go"; the staleness gate holds that list
-against `go list ./...`, so this section does not repeat it.
+against `go list -tags live,evals ./...`, so this section does not repeat it.
 
 ### 5a. Shared machinery: what the current version must carry
 
@@ -893,8 +892,8 @@ Two structural rules, not matters of care:
    server), and every read it makes is constrained to that label. It
    never searches the mailbox unconstrained. Sending — the send spikes and
    the `send_draft` step — goes only to the address the maintainer
-   passes as `-send-to`, and the transcript records their redacted form only. At the
-   end of a run it trashes what it inserted and deletes its label,
+   passes as `-send-to`, and the transcript records its redacted form
+   only. At the end of a run it trashes what it inserted and deletes its label,
    unless `-keep` is set.
 
 The leak gate is an allow-list anchored on shapes the server's own
@@ -1127,11 +1126,11 @@ All have run; what is still owed is named under each.
 
   **Answered 2026-09-26.** Yes for listing and search: inserted messages
   appear in `threads.list`, in `q` search and in `rfc822msgid:` lookups
-  like delivered ones. `history.list` reports them as added, checked by phase 1's live runs.
-And
-  a date surprise: with `internalDateSource=receivedTime`, Gmail recorded
-  the message's own `Date` header as `internalDate`, while `after:` still
-  matched it by the time of the insert (§18 row 35).
+  like delivered ones. `history.list` reports them as added, checked by
+  phase 1's live runs. And a date surprise: with
+  `internalDateSource=receivedTime`, Gmail recorded the message's own
+  `Date` header as `internalDate`, while `after:` still matched it by
+  the time of the insert (§18 row 35).
 - **Spike G — scope refusals.** Under `gmail.modify`, `messages.delete`
   is refused 403 (the reason §4.6 gates by scope as well); under
   `gmail.readonly`, every write is refused. The error shape of each,
@@ -1709,6 +1708,19 @@ what fixed them.
   rather than clamped. Runs of spaces survive in a signature. A 404 on a
   filter delete says it may follow a lost answer. `set_vacation` reads
   the profile at once with the reply.
+- **1.1.1, code review: ten findings, nine fixed, one recorded.**
+  `logout` read each profile's Cloud project from its client file at
+  logout time, so a relative or replaced file could hide a profile the
+  revoke signs out; `login` now records the project, from the one
+  client-JSON parser, and `logout` compares what was recorded. A
+  profile with no client path was skipped rather than named. The note
+  printed before the revoke, and when none happened; it now follows a
+  revoke that succeeded. A command-level test holds the note. Three
+  doc slips from the sweep are fixed. Recorded: the rule that a revoke
+  ends the account's grant to the whole project rests on Google's page,
+  not a live probe (§18 row 53, tier 3). `logout` relied on it before
+  this release; the probe costs the maintainer's grant and a new login.
+- **1.1.1, security review: no findings.**
 
 ### Closing a phase
 

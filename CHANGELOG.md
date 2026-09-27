@@ -15,10 +15,12 @@ lifted verbatim.
 
 ## [Unreleased]
 
+## [1.1.1] - 2026-09-27
+
 ### Fixed
 
 - The Claude Desktop bundle's descriptions and the docs name the settings flag wherever they list what changes the scopes or what is off by default.
-- `logout` warns about the other profiles of the same account in the same Cloud project, which revoking signs out, instead of every profile that shares the client file.
+- `logout` names the other profiles of the same account in the same Cloud project, which its revoke signs out, instead of every profile sharing the client file; `login` records the project to match on.
 - The runbook says revoking at Google ends every token the account granted to the Cloud project, not only one client's.
 
 ## [1.1.0] - 2026-09-27
@@ -65,6 +67,7 @@ lifted verbatim.
 - Repository gates run by `make check` and CI: leaks, pins, error classes, API coverage, schema diff, smoke, staleness and more.
 - Signed release archives for six platforms with SBOMs, build provenance, a Claude Desktop bundle and an MCP registry entry.
 
-[Unreleased]: https://github.com/mmedum/google-mail-mcp/compare/v1.1.0...HEAD
+[Unreleased]: https://github.com/mmedum/google-mail-mcp/compare/v1.1.1...HEAD
+[1.1.1]: https://github.com/mmedum/google-mail-mcp/compare/v1.1.0...v1.1.1
 [1.1.0]: https://github.com/mmedum/google-mail-mcp/compare/v1.0.0...v1.1.0
 [1.0.0]: https://github.com/mmedum/google-mail-mcp/compare/dc26f63...v1.0.0

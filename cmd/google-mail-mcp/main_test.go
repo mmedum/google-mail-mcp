@@ -32,6 +32,9 @@ import (
 // for it.
 const fakeClientID = "123456789012-" + "abcdefghijklmnopqrstuvwxyz012345" + ".apps.googleusercontent.com"
 
+// fakeProject is the Cloud project the fake client JSON names.
+const fakeProject = "example-project"
+
 const (
 	account      = "someone.private@example.com"
 	refreshToken = "1//test-refresh-token-value"
@@ -129,7 +132,7 @@ func clientSecret(t *testing.T, env map[string]string, g *google) string {
 	}
 	p := filepath.Join(dir, "client_secret_"+fakeClientID+".json")
 	body := fmt.Sprintf(`{"installed":{"client_id":"`+fakeClientID+`",
-		"client_secret":"s","token_uri":%q}}`, g.srv.URL+"/token")
+		"client_secret":"s","token_uri":%q,"project_id":%q}}`, g.srv.URL+"/token", fakeProject)
 	if err := os.WriteFile(p, []byte(body), 0o600); err != nil {
 		t.Fatal(err)
 	}
@@ -327,7 +330,7 @@ func TestLoginStatusDoctorLogout(t *testing.T) {
 		t.Fatalf("keyring holds %q", got)
 	}
 	uc, err := userconfig.Dir(env["GMAIL_CONFIG_DIR"]).Load("default")
-	if err != nil || uc.AccountEmail != account || uc.TokenStore != "keyring" || len(uc.Scopes) != 1 {
+	if err != nil || uc.AccountEmail != account || uc.TokenStore != "keyring" || len(uc.Scopes) != 1 || uc.ClientProject != fakeProject {
 		t.Fatalf("profile = %+v, %v", uc, err)
 	}
 	if g.authURLs[len(g.authURLs)-1].Get("prompt") != "consent" {
@@ -410,9 +413,23 @@ func TestLoginStatusDoctorLogout(t *testing.T) {
 		t.Errorf("doctor with a wider token:\n%s", r.stdout)
 	}
 
+	// Another profile of the same account in the same project loses its
+	// grant with this one, and logout names it; another account's does not.
+	dir := userconfig.Dir(env["GMAIL_CONFIG_DIR"])
+	for name, c := range map[string]userconfig.Config{
+		"work":     {AccountEmail: account, ClientProject: fakeProject},
+		"personal": {AccountEmail: "other@example.com", ClientProject: fakeProject},
+	} {
+		if err := dir.Save(name, c); err != nil {
+			t.Fatal(err)
+		}
+	}
 	r = runWith(env, nil, "logout")
 	if r.code != 0 || !strings.Contains(r.stdout, "Revoked") {
 		t.Fatalf("logout: %+v", r)
+	}
+	if !strings.Contains(r.stdout, "signed out too: work\n") {
+		t.Errorf("logout did not name the profile sharing the grant, or named another:\n%s", r.stdout)
 	}
 	if len(g.revoked) != 1 || g.revoked[0] != refreshToken {
 		t.Errorf("revoked %v", g.revoked)
@@ -424,7 +441,7 @@ func TestLoginStatusDoctorLogout(t *testing.T) {
 		t.Errorf("profile after logout: %v", err)
 	}
 	r = runWith(env, nil, "logout")
-	if r.code != 0 || !strings.Contains(r.stdout, "No stored token") {
+	if r.code != 0 || !strings.Contains(r.stdout, "No stored token") || strings.Contains(r.stdout, "signed out too") {
 		t.Errorf("second logout: %+v", r)
 	}
 }
