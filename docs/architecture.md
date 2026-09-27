@@ -462,7 +462,7 @@ sibling.** Three siblings' newest pins already trailed upstream:
 | govulncheck | v1.8.0 |
 | go-licenses | §17.3 |
 | actionlint | v1.7.12, run through `go run`, not Docker |
-| codeql-action | v4.38.1 |
+| codeql-action | v4.38.2 |
 | mcpb manifest schema | v2.1.2 tag, `manifest_version` 0.3 |
 
 Every action pinned to a full SHA with the version in a trailing
