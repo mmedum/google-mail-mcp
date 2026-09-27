@@ -12,7 +12,7 @@ import (
 // evalsCheckFloor is the fewest canned transcripts the harness must
 // score. A self-check that scores nothing passes as easily as one that
 // scores everything right.
-const evalsCheckFloor = 6
+const evalsCheckFloor = 12
 
 // evalsCheckCommand runs the harness's self-check; a variable so a test
 // can replace it.

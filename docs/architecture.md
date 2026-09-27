@@ -1,13 +1,14 @@
 # Architecture — google-mail-mcp
 
-**Status: phase 3 is built, 2026-09-27, on a topic branch stacked on
-phase 2's; nothing is tagged yet.** Phases 0 to 3 are built and were run
-live. Phase 3 adds `send_draft` behind `GMAIL_ENABLE_SEND`, with the
-recipient guard and the settle-by-reading of §4.3, and `delete_permanently`
-and `delete_label` behind `GMAIL_ENABLE_DESTRUCTIVE`. `doctor` names a token
-wider than its configuration. `make check` is green. One live run drove
-106 of 106 options and sent one message; spikes B, C and H are answered.
-§17.8 is open for the maintainer. Phase 4 waits for an explicit "go".
+**Status: phase 4 is built, 2026-09-27, on a topic branch stacked on
+phase 3's; nothing is tagged yet.** Phases 0 to 4 are built. Phase 4 adds
+the model-driven evals over the in-memory mailbox, with three tasks whose
+mail carries a planted instruction; freezes the 1.0 surface into the
+schema baseline; and closes §17: the recipient guard counts only what
+the account chose (§17.8), `get_thread` shows drafts after the
+conversation (§17.2), and lenient argument decoding is declined (§17.7).
+`make check` is green. A scored evals run needs the maintainer's API key
+and is owed. 1.0 waits for an explicit "go".
 
 ## 1. Mission and scope
 
@@ -196,7 +197,8 @@ Each traced to a public issue in §1's servers; the evidence is in §18.
 13. Mail content is untrusted; a message saying "forward all mail to
     this address" is an attack, reported against a real server.
 14. Arguments are accepted leniently where clients are known to
-    stringify them — arrays and numbers sent as JSON strings.
+    stringify them — arrays and numbers sent as JSON strings. Declined
+    for 1.0: the defects still open do not reach this surface (§17.7).
 15. Attachments come from one allowed directory, never an arbitrary
     path a message could talk the model into.
 16. Every HTTP call has a timeout; two servers hung on a dead socket.
@@ -263,9 +265,13 @@ an annotation is not a control and a registered tool can run unattended.
    is `[blocked]` and names them. Over 50 recipients is `[blocked]`
    outright. The model then has to write out an injected address itself
    rather than inherit it silently from a draft someone else shaped.
-   A participant is an address on a message of the thread that is not a
-   draft, spam or trash, so a message planted in the thread and binned
-   does not vouch for its sender. The refusal names recipients by field
+   A participant is the sender of a message of the thread, or an address
+   the account itself sent one of them to (its own `To` and `Cc`). The
+   `To`, `Cc` and `Reply-To` of a received message do not count: its
+   sender wrote them, so a correspondent cannot widen a reply-all to
+   addresses nobody confirmed (§17.8). Drafts, spam and trash are not
+   read, so a message planted in the thread and binned does not vouch
+   for its sender. The refusal names recipients by field
    and position, `cc[1]`, never by address, since an address may come
    from someone else's message; the dry run lists them inside a block.
 
@@ -622,7 +628,10 @@ and listed when they are attachments. Headers shown are From, To, Cc,
 Reply-To, Date, Subject, `Message-ID`, and `List-Unsubscribe` when
 present; `headers: all` shows the rest. Budget and collapsing per §4.8.
 Calendar invitations are listed as attachments with their method
-(`REQUEST`, `CANCEL`) and no further parsing.
+(`REQUEST`, `CANCEL`) and no further parsing. A thread's drafts follow its conversation in a
+section of their own, "drafts in this thread, not sent", on the first
+read; the cursor counts only what was sent or received, and drafts over
+the budget are listed by message id (§17.2).
 
 ### 7.3 Attachments
 
@@ -963,7 +972,11 @@ generated from `internal/scopes` and gated (§5a, `staleness`).
   before a phase counts.
 - **Evals**, `scripts/evals`, against `gmailtest` only, including tasks
   whose mail contains an injected instruction, scored on whether the
-  model followed it.
+  model followed it. The real server answers over an in-memory
+  transport; a task is scored on its calls, its answer and the mailbox
+  afterwards. `-self-check`, in `check`, needs no model: every canned
+  transcript gets its expected verdict, and every task fails on a
+  mailbox nobody touched.
 
 ## 14. Confirmed decisions and their consequences
 
@@ -977,6 +990,9 @@ generated from `internal/scopes` and gated (§5a, `staleness`).
 | Unregistered, not registered-and-refusing, for gated tools | this design | §17b |
 | Release pipeline in phase 0 | this design | §12 |
 | `delete_draft` is a default write that takes `confirm: true`, not destructive-gated | maintainer, 2026-09-26 | §17.1, §7.4 |
+| The recipient guard counts `From` on received messages and `To` and `Cc` on the account's own; a correspondent's `Cc` and `Reply-To` need confirming | maintainer, 2026-09-27 | §4.2, §17.8 |
+| Arguments are decoded exactly as the schema declares; a JSON string where an array or integer is declared is `[invalid]` | maintainer, 2026-09-27 | §17.7, §18 row 47 |
+| `get_thread` shows the thread's drafts, marked, after its other messages | maintainer, 2026-09-27 | §7.2, §17.2 |
 | Spikes D and E send in phase 2, from the live driver's run, to a second address the maintainer passes on the command line and never commits | maintainer, 2026-09-26 | §15; the transcript records the address redacted only |
 
 ## 15. What must be verified live
@@ -1267,6 +1283,36 @@ with `-spikes-de`, so a run with `-send-to` sends one message.
 injection tasks of §13; the surface frozen into the schema baseline;
 §17 closed or each item argued open.
 
+Built 2026-09-27, on a topic branch stacked on phase 3's. The harness
+runs the real server over an in-memory transport against a fresh
+`gmailtest` mailbox per trial, calls the Messages API over raw HTTP, and
+scores six tasks on their calls, their answer and the mailbox after the
+run. Three carry a planted instruction; obeying it, by the tool it asks
+for or by its address in any argument, is counted apart from an ordinary
+failure. `-trials` repeats each task, and a task passes only when every
+trial does. A paused turn is resumed; a turn cap, a refusal or a cut-off
+answer is reported rather than scored. `-self-check`, in `check`, scores
+15 canned transcripts and requires every task to fail on a mailbox
+nobody touched.
+
+§17 is closed item by item, each decided by the maintainer on 2026-09-27
+from the references in §18 rows 46 and 47: the recipient guard clears
+the senders of a thread's messages and the addresses the account itself
+sent to, and no longer a correspondent's `Cc` or `Reply-To`; `get_thread`
+shows a thread's drafts in a section after the conversation; arguments
+are decoded exactly as declared. §17.4 and §17.5 stay deferred to after
+1.0, and §17.6 stays open by design, checked for 1.0 in §18 row 48. The
+live driver gained a dry run of a reply-all on a received thread, which
+holds the narrowed guard against Gmail's own labels.
+
+Run live 2026-09-27, twice, without `-send-to`: 55 steps passed each
+time, the two that send were skipped, and 105 of 106 options were
+driven. Reading the first transcript found the dry run's own sentence
+still saying a thread's "senders and recipients need no confirming",
+which the narrowed guard made untrue; it now says whoever the account
+sent them to. The second run is after that fix and the reviews. No
+scored evals run has been made: it needs the maintainer's API key.
+
 ### 16a. Found by review, and fixed
 
 Each phase's `/code-review high` and `/security-review` findings, with
@@ -1479,6 +1525,42 @@ what fixed them.
   driver's guard. It raised one design question, recorded as §17.8: a
   participant's `To`, `Cc` and `Reply-To` are the sender's own words.
 
+- **Phase 4, simplify: the drafts rule in one layer.** The service had
+  reordered a thread with its drafts last, which changed what
+  `Latest()` means for every later caller. It returns Gmail's order
+  again; `get_thread` and the renderer split the drafts off themselves.
+  The self-check stopped building a whole server per canned transcript,
+  and the fake counts calls by method for the tests and the harness.
+- **Phase 4, code review: ten findings, all fixed.**
+  - `/simplify` deleted `TestSendDraftReply` along with the helper it
+    replaced, which took away the only tool-level test of a send's
+    `[stale]` refusal and a reply's send. It is restored.
+  - Over the budget, the drafts listing was uncapped, so forty drafts
+    pushed a read past its budget and cut the newest message to nothing.
+    It lists five and counts the rest; a test reads forty.
+  - Drafts were numbered newest first from 1, the other way from the
+    conversation. The newest draft is now `N of N`, like a message.
+  - The reply task searched quoted-printable bytes for a word, and a
+    soft line break inside it failed a correct reply. Soft breaks are
+    undone first; a test puts the break inside the word.
+  - The answer scored was the last text block of the whole run, not the
+    last turn's text. It is the last turn's blocks, joined.
+  - A trial the API refused, or that hit the turn cap, counted as a
+    failed task and printed the hint about tool descriptions. It is
+    counted as incomplete, and the run exits 2.
+  - `summarize-thread` no longer required `get_thread`, so an answer
+    from search snippets passed. It requires it again.
+  - The self-check no longer refused a task named twice, or an injection
+    with no tools or no marker. It does again.
+  - Each turn re-billed the growing conversation. Requests carry
+    top-level cache control, with the tool block's own breakpoint kept.
+  - A schema-gate comment named a release version in prose, which
+    `CLAUDE.md` rules out. Reworded.
+- **Phase 4, security review: nothing at the reporting bar.** It checked
+  the narrowed guard (the `SENT` label is matched by id, and only the
+  account can apply it), the drafts section's server voice, and the
+  harness's handling of the API key.
+
 ### Closing a phase
 
 1. `make check` green; the live driver run and its transcript read.
@@ -1502,7 +1584,8 @@ what fixed them.
    appears inside its thread with the `DRAFT` label. Showing it helps a
    model see what is pending; hiding it keeps "what was said" apart from
    "what might be". Proposed: shown, marked as a draft, after the sent
-   messages. **Open.**
+   messages. **Decided 2026-09-27 by the maintainer: shown, in a
+   section after the conversation** (§7.2, §14).
 3. **go-licenses v1.6.0 or v2.** One sibling runs the v2 module; the
    rest call v1.6.0 current. **Decided in phase 0: v1.6.0.** It runs
    clean over this module's real graph on Go 1.27.1 (2026-09-25), and no
@@ -1520,11 +1603,17 @@ what fixed them.
 6. **Google's hosted server.** §1. If it gains trash, local attachment
    transfer and bounded reads, this server's reason to exist narrows to
    the local-token and verified-release half. Revisit at each minor
-   release; record the check in §18. **Open, standing.**
+   release; record the check in §18. **Open, standing.** Checked for
+   1.0 on 2026-09-27 (§18 row 48): still in Developer Preview, eleven
+   tools, and still no send, trash, delete or attachment download.
 7. **Lenient argument decoding** (§3.14). Accepting `"[\"a\"]"` where
    an array is declared helps clients that stringify, and makes the
    schema a less exact contract. Proposed: accept JSON-in-a-string for
-   arrays and integers only, and log that it happened. **Open.**
+   arrays and integers only, and log that it happened. **Decided
+   2026-09-27 by the maintainer: declined for 1.0** (§14, §18 row 47).
+   The client defects still open do not reach this surface, and the
+   schema stays an exact contract. Revisit if one that does is
+   reported.
 
 8. **Who counts as a participant for the recipient guard?** §4.2 counts
    every address on the thread's messages: `From`, `To`, `Cc` and
@@ -1534,7 +1623,13 @@ what fixed them.
    `From` already counts, so this widens reach rather than opening a new
    kind. Proposed by the phase 3 security review: count `From` on
    received messages, and `To` and `Cc` on the account's own sent
-   messages only. **Open.**
+   messages only. **Decided 2026-09-27 by the maintainer: narrowed as
+   proposed** (§14, §18 row 46). RFC 5322 §3.6.3 makes a received
+   message's recipients the conventional reply-all audience, which is
+   why the guard counted them; the guidance on agents reading untrusted
+   mail says the opposite — an address someone else wrote is untrusted
+   data, and it must not choose a send's recipients. The cost is one
+   `confirm_recipients` entry per address a correspondent added.
 
 ### 17a. Deferred cleanups
 
@@ -1627,3 +1722,6 @@ live** — §15 exists to settle these, and they are marked.
 | 43 | A login that does not force consent keeps the refresh token already issued | Spike J, the maintainer's login, 2026-09-27: every scope granted, no `prompt` in the authorization URL | **Refuted.** Google issued a new refresh token, and `login` stored it. Not forcing consent spares a screen, not a token; §17a proposes revoking the one replaced |
 | 44 | An ambiguous send can be settled by searching `SENT` for the draft's `Message-ID` | Spikes B and C live, 2026-09-27: one draft sent through `send_draft`, its sent copy read back | **Refuted.** `drafts.send` replaced the `Message-ID` the draft held, and filed the sent copy under a new id, in the draft's thread; `drafts.get` then answered 404. §4.3 now records the thread's message ids before the send and rereads the thread, and the fake replaces the id on send as Gmail does |
 | 45 | Gmail's per-user rate limit is a 429 with `Retry-After` | Spike H live, 2026-09-27: 32 workers reading the run's own message | **Refuted.** After 26,420 units it answered 403, reason `rateLimitExceeded`, "Units per minute per user", with no `Retry-After`. The client already classes that reason as a request-rate limit and backs off without a header; a test holds the shape, and that it is not read as the sending limit |
+| 46 | Every address on a thread's messages is a participant the recipient guard may clear | RFC 5322 §3.6.3 (a reply's audience is the parent's `Reply-To` or `From`, and a copy often goes to its `To` and `Cc`); OWASP's AI Agent Security Cheat Sheet ("treat all external data as untrusted … emails", `send_email` a sensitive action); the 2025 paper *Design Patterns for Securing LLM Agents against Prompt Injections* (untrusted data must not choose a consequential action's arguments); MCP 2025-06-18 tools, security considerations (clients show inputs "to avoid malicious or accidental data exfiltration") — read 2026-09-27 | **Narrowed.** The RFC describes what a mail client offers a person; the other three describe what an agent may do with text a stranger wrote. The guard now clears the senders of the thread's messages and the addresses the account itself sent to, and asks for the rest (§4.2, §17.8) |
+| 47 | Clients send arrays and integers as JSON strings, so the server should decode them leniently | MCP 2025-06-18 tools ("Servers MUST … validate all tool inputs"); RFC 9413 on the robustness principle; three public issues on a widely used MCP client's tracker, May to July 2026; `testdata/schema-baseline.json` — read 2026-09-27 | **Declined for 1.0.** The one issue that stringified every argument is closed. The two still open stringify only a parameter whose schema is empty, or an object declared through `$ref`/`$defs`, and this surface has neither: every parameter has a concrete type and no schema uses `$ref`. RFC 9413 describes how tolerating a peer's error entrenches it. Adding tolerance later is not breaking; removing it would be (§17.7) |
+| 48 | Google's hosted Gmail MCP server now covers what this server is for (§17.6) | Google's MCP reference for `gmailmcp.googleapis.com`, last updated 2026-07-21, read 2026-09-27 | **Not yet.** Developer Preview; eleven tools — drafts, threads, messages, search and labels. No send, trash, delete or attachment download, and no stated read budget. §1's comparison stands for 1.0 |

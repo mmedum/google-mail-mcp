@@ -265,6 +265,9 @@ type env struct {
 	draftID, draftMessage, staleMessage string
 	// replyDraft is the reply the delete steps delete.
 	replyDraft string
+	// replyAll and replyAllMessage are the reply-all draft the recipient
+	// guard's dry run reads.
+	replyAll, replyAllMessage string
 	// spikeE is the draft side of spike E, from reading a draft back.
 	spikeE string
 	// sendTo is -send-to, the one address a step may send to; full is

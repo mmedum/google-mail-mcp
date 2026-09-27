@@ -427,3 +427,23 @@ func (s *Server) AddAttachmentMessage(filename string, content []byte) (messageI
 		text: text})
 	return m.id, "1"
 }
+
+// AddWidenedThread adds a thread in which a correspondent widened the
+// conversation: the reader wrote to Freya with Bruno in Cc, and Freya
+// answered with Ada added to Cc and Reply-To set to Chiara. It returns
+// the thread id and Freya's message id. The recipient guard tests use
+// it (§17.8).
+func (s *Server) AddWidenedThread() (threadID, messageID string) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.clock = s.clock.Add(time.Minute)
+	b1 := "Freya,\n\nCan we move the review to Monday?\n\nRae\n"
+	m1 := s.add(spec{from: Reader, to: []Person{Freya}, cc: []Person{Bruno}, subject: "Review date", at: s.clock,
+		labels: []string{"SENT"}, body: utf8Text(b1), text: b1})
+	s.clock = s.clock.Add(time.Minute)
+	b2 := "Monday works.\n\nFreya\n"
+	m2 := s.add(spec{from: Freya, to: []Person{Reader}, cc: []Person{Bruno, Ada}, subject: "Re: Review date", at: s.clock,
+		labels: []string{"INBOX"}, body: utf8Text(b2), text: b2, thread: m1.threadID, inReplyTo: m1,
+		extra: []gmail.MessagePartHeader{{Name: "Reply-To", Value: Chiara.addr()}}})
+	return m1.threadID, m2.id
+}

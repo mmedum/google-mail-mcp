@@ -10,33 +10,48 @@ import (
 // o.Cursor messages from the newest. Messages that do not fit are
 // listed by id and date with the cursor that reads them, and their
 // senders in a block. When even the first message does not fit, its
-// body is cut and the result says where to continue.
+// body is cut and the result says where to continue. The thread's
+// drafts follow the conversation in a section of their own, on the
+// first read only, and the cursor counts only what was said (§17.2).
 func Thread(t model.Thread, o Options) Result {
+	said, drafts := t.SplitDrafts()
+	if o.Cursor > 0 {
+		drafts = nil
+	}
 	return render(o, func(w *writer) Result {
 		res := Result{Budget: o.budget()}
-		n := len(t.Messages)
+		n := len(said)
 		skip := min(max(o.Cursor, 0), n)
+		count := plural(n, "message", "messages")
+		if len(drafts) > 0 {
+			count = fill("%s and %s", count, plural(len(drafts), "draft", "drafts"))
+		}
 		w.say("budget: %s characters", num(res.Budget))
 		if skip > 0 {
 			w.say("thread %s · %s · newest first · starting after the newest %s · labels: %s",
-				gmailID(t.ID), plural(n, "message", "messages"), num(skip), labelList(t.Labels()))
+				gmailID(t.ID), count, num(skip), labelList(t.Labels()))
 		} else {
 			w.say("thread %s · %s · newest first · labels: %s",
-				gmailID(t.ID), plural(n, "message", "messages"), labelList(t.Labels()))
+				gmailID(t.ID), count, labelList(t.Labels()))
 		}
+
+		// The drafts' own lines are kept room for; their bodies are
+		// shown if they fit after the conversation.
+		brief := w.sub(func(s *writer) { s.drafts(drafts, o, false) })
+		end := res.Budget - brief.len()
 
 		shown := 0
 		for i := n - 1 - skip; i >= 0; i-- {
-			m := t.Messages[i]
+			m := said[i]
 			// Showing message i leaves 0..i-1 for the "not shown" list,
 			// which keeps room for its first few rows.
-			reserve := w.sub(func(s *writer) { s.omittedList(t, i-1, skip+shown+1, min(i, minListed)) })
+			reserve := w.sub(func(s *writer) { s.omittedList(said, i-1, skip+shown+1, min(i, minListed)) })
 			whole := w.sub(func(s *writer) {
 				s.blank()
 				s.messageLine(m, i+1, n)
 				s.messageBody(m, o, 0, 1<<30)
 			})
-			if w.len()+whole.len()+reserve.len() <= res.Budget {
+			if w.len()+whole.len()+reserve.len() <= end {
 				w.add(whole)
 				shown++
 				continue
@@ -48,7 +63,7 @@ func Thread(t model.Thread, o Options) Result {
 				})
 				w.blank()
 				w.messageLine(m, i+1, n)
-				if off := w.messageBody(m, o, 0, res.Budget-reserve.len()-tail.len()); off > 0 {
+				if off := w.messageBody(m, o, 0, end-reserve.len()-tail.len()); off > 0 {
 					w.add(tail)
 					res.Truncated = true
 					res.NextOffset = off
@@ -56,42 +71,75 @@ func Thread(t model.Thread, o Options) Result {
 				shown++
 				continue
 			}
-			w.omitted(t, i, skip+shown, res.Budget, &res)
-			return res
+			w.omitted(said, i, skip+shown, end, &res)
+			break
+		}
+		if full := w.sub(func(s *writer) { s.drafts(drafts, o, true) }); w.len()+full.len() <= res.Budget {
+			w.add(full)
+		} else {
+			w.add(brief)
 		}
 		return res
 	})
+}
+
+// drafts writes the section that follows a conversation: its drafts,
+// which were never sent. With bodies false it lists them by id and date
+// only, and says how to read them.
+func (w *writer) drafts(ds []model.Message, o Options, bodies bool) {
+	if len(ds) == 0 {
+		return
+	}
+	w.blank()
+	w.say("drafts in this thread, not sent: %s", plural(len(ds), "draft", "drafts"))
+	if !bodies {
+		// Newest first, and few enough that the room kept for them never
+		// crowds out the conversation.
+		for i := len(ds) - 1; i >= max(len(ds)-minListed, 0); i-- {
+			w.say("  message %s · %s", gmailID(ds[i].ID), w.when(ds[i].Date))
+		}
+		if rest := len(ds) - minListed; rest > 0 {
+			w.say("  … and %s more; list_drafts lists them", num(rest))
+		}
+		w.say("(over the budget; get_message reads each draft by its message id)")
+		return
+	}
+	for i := len(ds) - 1; i >= 0; i-- {
+		w.blank()
+		w.draftLine(ds[i], i+1, len(ds))
+		w.messageBody(ds[i], o, 0, 1<<30)
+	}
 }
 
 // minListed is how many rows of the "not shown" list a thread keeps
 // room for when deciding whether one more message fits.
 const minListed = 5
 
-// omitted lists messages t.Messages[0..last] as not shown, as many
+// omitted lists messages ms[0..last] as not shown, as many
 // rows as fit before the writer position end, up to maxListed. Every
 // id is in res.Omitted either way.
-func (w *writer) omitted(t model.Thread, last, next, end int, res *Result) {
+func (w *writer) omitted(ms []model.Message, last, next, end int, res *Result) {
 	if last < 0 {
 		return
 	}
 	res.Truncated = true
 	res.NextCursor = next
 	for i := last; i >= 0; i-- {
-		res.Omitted = append(res.Omitted, t.Messages[i].ID)
+		res.Omitted = append(res.Omitted, ms[i].ID)
 	}
 	rows := 0
 	for rows < min(last+1, maxListed) {
-		if w.len()+w.sub(func(s *writer) { s.omittedList(t, last, next, rows+1) }).len() > end {
+		if w.len()+w.sub(func(s *writer) { s.omittedList(ms, last, next, rows+1) }).len() > end {
 			break
 		}
 		rows++
 	}
-	w.omittedList(t, last, next, rows)
+	w.omittedList(ms, last, next, rows)
 }
 
 // omittedList writes the "not shown" list with its first rows messages:
 // ids and dates in the server's voice, senders in a block of their own.
-func (w *writer) omittedList(t model.Thread, last, next, rows int) {
+func (w *writer) omittedList(ms []model.Message, last, next, rows int) {
 	if last < 0 {
 		return
 	}
@@ -99,7 +147,7 @@ func (w *writer) omittedList(t model.Thread, last, next, rows int) {
 	w.say("not shown (older, over the budget): %s; cursor=%s reads them.", plural(last+1, "message", "messages"), num(next))
 	var senders strings.Builder
 	for k := range rows {
-		m := t.Messages[last-k]
+		m := ms[last-k]
 		w.say("  %s · %s", gmailID(m.ID), w.when(m.Date))
 		senders.WriteString(m.ID + ": " + originText(m.Sender().Email) + "\n")
 	}

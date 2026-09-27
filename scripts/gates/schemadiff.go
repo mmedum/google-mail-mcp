@@ -18,9 +18,9 @@ import (
 const schemaDiffBaseline = "testdata/schema-baseline.json"
 
 // schemaDiffMinTools is the floor on the built surface: every tool of
-// phase 3, which the dump registers whatever the flags say. Raise it
-// when a phase adds tools; the baseline's own count is held too, so it
-// can only rise.
+// the released surface, which the dump registers whatever the flags say. Raise it when a
+// release adds tools; the baseline's own count is held too, so it can
+// only rise.
 const schemaDiffMinTools = 23
 
 // schemaDiff compares the built binary's whole surface — every tool as

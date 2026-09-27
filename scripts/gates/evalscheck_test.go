@@ -8,19 +8,19 @@ import (
 
 func TestEvalsCheckJudge(t *testing.T) {
 	var out sink
-	if err := evalsCheckJudge(&out, []byte("ok a\nself-check: 7 transcripts scored, 3 tasks, 0 wrong\n"), nil); err != nil {
+	if err := evalsCheckJudge(&out, []byte("ok a\nself-check: 15 transcripts scored, 6 tasks, 0 wrong\n"), nil); err != nil {
 		t.Fatal(err)
 	}
-	out.mustSay(t, "7 transcripts over 3 tasks")
+	out.mustSay(t, "15 transcripts over 6 tasks")
 
 	cases := map[string]struct {
 		output string
 		err    error
 		want   string
 	}{
-		"non-zero exit":  {"self-check: 7 transcripts scored, 3 tasks, 1 wrong\n", errors.New("exit status 1"), "failed"},
-		"wrong verdicts": {"self-check: 7 transcripts scored, 3 tasks, 2 wrong\n", nil, "2 canned transcript(s)"},
-		"below floor":    {"self-check: 2 transcripts scored, 1 tasks, 0 wrong\n", nil, "below the floor"},
+		"non-zero exit":  {"self-check: 15 transcripts scored, 6 tasks, 1 wrong\n", errors.New("exit status 1"), "failed"},
+		"wrong verdicts": {"self-check: 15 transcripts scored, 6 tasks, 2 wrong\n", nil, "2 canned transcript(s)"},
+		"below floor":    {"self-check: 11 transcripts scored, 6 tasks, 0 wrong\n", nil, "below the floor"},
 		"no summary":     {"all fine\n", nil, "no summary line"},
 	}
 	for name, tc := range cases {

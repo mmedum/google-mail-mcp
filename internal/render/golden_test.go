@@ -2,9 +2,13 @@ package render_test
 
 import (
 	"flag"
+	"fmt"
 	"os"
 	"path/filepath"
+	"slices"
+	"strings"
 	"testing"
+	"unicode/utf8"
 
 	"github.com/mmedum/google-mail-mcp/internal/gapi/gmailtest"
 	"github.com/mmedum/google-mail-mcp/internal/gmail"
@@ -156,6 +160,48 @@ func TestGoldenThreads(t *testing.T) {
 
 	golden(t, "thread_international", render.Thread(b.thread(gmailtest.ScenarioInternational, "full"), opts()).Text)
 	golden(t, "thread_draft_reply", render.Thread(b.thread(gmailtest.ScenarioDraftReply, "full"), opts()).Text)
+}
+
+// A thread's drafts follow the conversation; over the budget they are
+// listed by id, and a continued read does not repeat them (§17.2).
+func TestThreadDraftsFollowTheConversation(t *testing.T) {
+	b := newBox(t)
+	th := b.thread(gmailtest.ScenarioDraftReply, "full")
+	sc := b.s.Scenario(gmailtest.ScenarioDraftReply)
+	draft := sc.MessageIDs[2]
+
+	o := opts()
+	o.Budget = render.MinBudget
+	res := render.Thread(th, o)
+	if n := utf8.RuneCountInString(res.Text); n > res.Budget || slices.Contains(res.Omitted, draft) {
+		t.Fatalf("over budget or a draft offered to the cursor: %d characters, omitted %v", n, res.Omitted)
+	}
+	if !strings.Contains(res.Text, "drafts in this thread, not sent: 1 draft\n  message "+draft) ||
+		strings.Contains(res.Text, "I will confirm") || !strings.Contains(res.Text, "get_message reads each draft") {
+		t.Errorf("drafts over the budget are not listed by id:\n%s", res.Text)
+	}
+
+	// Forty drafts: the list is cut, and the read stays in its budget.
+	many := th
+	many.Messages = slices.Clone(th.Messages)
+	for i := range 40 {
+		d := th.Messages[2]
+		d.ID = fmt.Sprintf("%016x", 0xd0+i)
+		many.Messages = append(many.Messages, d)
+	}
+	o = opts()
+	o.Budget = render.MinBudget
+	res = render.Thread(many, o)
+	if n := utf8.RuneCountInString(res.Text); n > res.Budget || !strings.Contains(res.Text, "and 36 more") ||
+		!strings.Contains(res.Text, "── 2 of 2") {
+		t.Errorf("forty drafts: %d characters of %d, or the list or the newest message is missing:\n%s", n, res.Budget, res.Text)
+	}
+
+	o = opts()
+	o.Cursor = 1
+	if text := render.Thread(th, o).Text; strings.Contains(text, "drafts in this thread") {
+		t.Errorf("a continued read repeats the drafts:\n%s", text)
+	}
 }
 
 func TestGoldenMessages(t *testing.T) {

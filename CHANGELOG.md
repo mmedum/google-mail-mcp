@@ -26,6 +26,7 @@ lifted verbatim.
 - `list_filters` shows the account's filters and flags any that forward mail.
 - `download_attachment` saves an attachment into `GMAIL_LOCAL_DIR`, streamed, never overwriting a file.
 - `get_message` and `get_thread` list each attachment's `part_id`.
+- `get_thread` shows a thread's unsent drafts after the conversation, in a section of their own.
 - Resources `gmail://threads/{id}`, `gmail://messages/{id}` and `gmail://labels` carry the same text as the matching tools.
 - `create_draft` saves a draft, or a reply the server threads from its parent with `reply_to` or `reply_to_thread`.
 - `update_draft` changes only the fields given and refuses with `[stale]` a draft that changed since it was read.
@@ -34,13 +35,14 @@ lifted verbatim.
 - `trash` and `restore` move up to 100 messages or threads in and out of the trash, item by item.
 - `create_label` and `update_label` create and change user labels, checking names the way Gmail does.
 - Every write takes `dry_run`, and drafts over 5 MB are sent as a media upload.
-- `send_draft` sends a draft, only with `GMAIL_ENABLE_SEND=true`; every recipient not already in the thread must be named in `confirm_recipients`.
+- `send_draft` sends a draft, only with `GMAIL_ENABLE_SEND=true`; every recipient who has not written in the thread, and whom the account has not sent to in it, must be named in `confirm_recipients`.
 - A send Gmail does not confirm is never retried; `send_draft` reads the mailbox and says whether it was sent.
 - `delete_permanently` deletes up to 100 messages or threads for good, and `delete_label` deletes a user label, only with `GMAIL_ENABLE_DESTRUCTIVE=true` and `confirm: true`.
 - `doctor` says when the token holds more access than the configuration needs, and how to narrow it.
 - `login`, `logout`, `status` and `doctor` manage and diagnose the OAuth login, with `--no-browser` for remote machines.
 - `login` says whether Google issued a new refresh token or kept the stored one.
 - Read-only mode (`GMAIL_READ_ONLY`) registers only the read tools and requests only `gmail.readonly`.
+- `make evals` scores a model driving the tools over an in-memory mailbox, including mail written to steer it.
 - Repository gates run by `make check` and CI: leaks, pins, error classes, API coverage, schema diff, smoke, staleness and more.
 - Signed release archives for six platforms with SBOMs, build provenance, a Claude Desktop bundle and an MCP registry entry.
 

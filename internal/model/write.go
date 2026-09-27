@@ -228,8 +228,9 @@ type SendRecipient struct {
 	// the guard names it Field[Position].
 	Field    string
 	Position int
-	// Participant is set when the address is on a message of the thread
-	// the draft answers, so it needs no confirmation.
+	// Participant is set when the address sent a message of the thread
+	// the draft answers, or the account sent one to it, so it needs no
+	// confirmation (§4.2).
 	Participant bool
 	// Confirmed is set when confirm_recipients names it.
 	Confirmed bool

@@ -32,8 +32,9 @@ const settleDelay = 5 * time.Second
 var recipientHeaders = []string{"To", "Cc", "Bcc"}
 
 // participantHeaders are the headers a thread's participants are read
-// from.
-var participantHeaders = []string{"From", "To", "Cc", "Reply-To"}
+// from: From on the messages the account received, To and Cc on the
+// ones it sent (§4.2).
+var participantHeaders = []string{"From", "To", "Cc"}
 
 // Dispatch is what send_draft was asked for.
 type Dispatch struct {
@@ -182,8 +183,12 @@ type threadRead struct {
 	ids map[string]bool
 }
 
-// participants reads the addresses on the messages of the thread the
-// draft answers, and how many such messages there are. A draft is not a
+// participants reads who is already in the thread the draft answers,
+// and how many messages it holds. A participant wrote one of its
+// messages, or the account itself sent one of them to that address. The
+// To, Cc and Reply-To of a received message are not read: its sender
+// wrote them, and counting them would let a correspondent widen a
+// reply-all to addresses nobody confirmed (§17.8). A draft is not a
 // participant's message, and neither is spam or trash: a message planted
 // in a thread and then binned must not vouch for its sender.
 func (s *Service) participants(ctx context.Context, draft model.Message) (threadRead, error) {
@@ -205,7 +210,11 @@ func (s *Service) participants(ctx context.Context, draft model.Message) (thread
 			continue
 		}
 		out.answers++
-		for _, list := range [][]mime.Address{m.From, m.To, m.Cc, m.ReplyTo} {
+		lists := [][]mime.Address{m.From}
+		if m.HasLabel("SENT") {
+			lists = append(lists, m.To, m.Cc)
+		}
+		for _, list := range lists {
 			for _, a := range list {
 				out.seen[strings.ToLower(a.Email)] = true
 			}
@@ -255,7 +264,7 @@ func unconfirmed(out model.SendWrite) error {
 	if len(stopped) == 0 {
 		return nil
 	}
-	where := "are not in the thread this draft answers"
+	where := "are not participants in the thread this draft answers"
 	if out.Answers == 0 {
 		where = "start a new conversation"
 	}
