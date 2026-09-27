@@ -1,10 +1,9 @@
 # Architecture — google-mail-mcp
 
-**Status: 1.0.0 is released, 2026-09-27, from `main`, and verified from
-outside. Phase 5 is built and run live on a topic branch: the settings
-writes behind `GMAIL_ENABLE_SETTINGS` (§7.9), ready for 1.1.0.** Still
-unproven: the bundle installed in Claude Desktop, and the evals scored
-with the settings tools in the injection task.
+**Status: 1.1.0 is prepared, 2026-09-27; since 1.0.0 it adds the
+settings writes behind `GMAIL_ENABLE_SETTINGS` (§7.9), run live twice.**
+Still unproven: the bundle installed in Claude Desktop, and the evals
+scored with the settings tools in the injection task.
 
 ## 1. Mission and scope
 
