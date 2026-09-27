@@ -77,6 +77,8 @@ var leaksRules = []leaksRule{
 				"the Co-Authored-By trailer on commits; a vendor's no-reply address that identifies nobody"},
 			{regexp.MustCompile(`@users\.noreply\.github\.com$`),
 				"GitHub's no-reply addresses, which exist so a commit carries no real address"},
+			{regexp.MustCompile(`^support@github\.com$`),
+				"the Signed-off-by trailer on Dependabot's commits; a vendor's support address that identifies nobody"},
 		},
 	},
 	{
