@@ -227,7 +227,7 @@ live: build ## Drive the built binary against a real account (docs/development.m
 # Not in `check`: it spends money and is not deterministic. Its
 # transcript is read like the live driver's.
 .PHONY: evals
-evals: ## Score a model against the tool surface (needs ANTHROPIC_API_KEY; manual)
+evals: ## Score a model against the tool surface through the claude CLI (spends money; manual)
 	$(GO) run -tags=evals ./scripts/evals $(EVAL_ARGS)
 
 # The deterministic half of the evals: each task's mailbox is built, and
