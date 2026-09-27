@@ -1,0 +1,62 @@
+budget: 6000 characters
+thread 000000000000000c · 12 messages · newest first · labels: INBOX, SENT, UNREAD
+
+── 12 of 12 · message 0000000000000017 · thread 000000000000000c · 2026-03-03 23:00 UTC · labels: INBOX, UNREAD
+<<<untrusted-mail TESTTOKEN: headers from bruno.fennick@example.org in 0000000000000017>>>
+From: Bruno Fennick <bruno.fennick@example.org>
+To: Rae Reader <reader@example.com>
+Date: Tue, 03 Mar 2026 23:00:00 +0000
+Subject: Re: Q2 roadmap
+Message-ID: <fixture.0000000000000017@mail.example.com>
+In-Reply-To: <fixture.0000000000000016@mail.example.com>
+<<<end-untrusted-mail TESTTOKEN>>>
+<<<untrusted-mail TESTTOKEN: body from bruno.fennick@example.org in 0000000000000017>>>
+Update 12 on the Q2 roadmap: Paragraph 12. We reviewed the risk register and agreed to revisit it next week. Nobody raised a blocker, and the notes from the previous session still stand.
+
+[… 4 lines of signature collapsed …]
+
+[… 142 lines of quoted text collapsed …]
+<<<end-untrusted-mail TESTTOKEN>>>
+collapsed: 142 lines of quoted text and a signature (4 lines); show_quoted=true shows them.
+
+── 11 of 12 · message 0000000000000016 · thread 000000000000000c · 2026-03-03 21:00 UTC · labels: INBOX, UNREAD
+<<<untrusted-mail TESTTOKEN: headers from ada.quill@example.com in 0000000000000016>>>
+From: Ada Quill <ada.quill@example.com>
+To: Rae Reader <reader@example.com>
+Date: Tue, 03 Mar 2026 21:00:00 +0000
+Subject: Re: Q2 roadmap
+Message-ID: <fixture.0000000000000016@mail.example.com>
+In-Reply-To: <fixture.0000000000000015@mail.example.com>
+<<<end-untrusted-mail TESTTOKEN>>>
+<<<untrusted-mail TESTTOKEN: body from ada.quill@example.com in 0000000000000016>>>
+Update 11 on the Q2 roadmap: Paragraph 11. We reviewed the vendor list and agreed to revisit it next week. Nobody raised a blocker, and the notes from the previous session still stand.
+
+[… 4 lines of signature collapsed …]
+
+[… 134 lines of quoted text collapsed …]
+<<<end-untrusted-mail TESTTOKEN>>>
+collapsed: 134 lines of quoted text and a signature (4 lines); show_quoted=true shows them.
+
+not shown (older, over the budget): 10 messages; cursor=2 reads them.
+  0000000000000015 · 2026-03-03 19:00 UTC
+  0000000000000014 · 2026-03-03 17:00 UTC
+  0000000000000013 · 2026-03-03 15:00 UTC
+  0000000000000012 · 2026-03-03 13:00 UTC
+  0000000000000011 · 2026-03-03 11:00 UTC
+  0000000000000010 · 2026-03-03 09:00 UTC
+  000000000000000f · 2026-03-03 07:00 UTC
+  000000000000000e · 2026-03-03 05:00 UTC
+  000000000000000d · 2026-03-03 03:00 UTC
+  000000000000000c · 2026-03-03 01:00 UTC
+<<<untrusted-mail TESTTOKEN: senders of the messages not shown>>>
+0000000000000015: reader@example.com
+0000000000000014: freya.holm@example.org
+0000000000000013: chiara@example.com
+0000000000000012: bruno.fennick@example.org
+0000000000000011: ada.quill@example.com
+0000000000000010: reader@example.com
+000000000000000f: freya.holm@example.org
+000000000000000e: chiara@example.com
+000000000000000d: bruno.fennick@example.org
+000000000000000c: ada.quill@example.com
+<<<end-untrusted-mail TESTTOKEN>>>

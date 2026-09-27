@@ -1,0 +1,566 @@
+package mime
+
+import (
+	"bytes"
+	"crypto/rand"
+	"encoding/base64"
+	"encoding/hex"
+	"errors"
+	"fmt"
+	"mime/quotedprintable"
+	"path"
+	"strconv"
+	"strings"
+	"time"
+	"unicode/utf8"
+
+	netmail "net/mail"
+)
+
+// MaxRawBytes is the largest message drafts.create and drafts.update
+// accept: the discovery document's mediaUpload.maxSize, 35 MB (§2.6).
+const MaxRawBytes = 36700160
+
+// Line lengths of RFC 5322 §2.1.1: a header line should stay within 78
+// characters and must stay within 998. An encoded-word is at most 75
+// (RFC 2047 §2).
+const (
+	foldAt       = 78
+	maxLine      = 998
+	maxWordChars = 75
+)
+
+// Outgoing is a message this server writes (§7.4). Addresses and text
+// are as the caller gave them; Build does the encoding.
+type Outgoing struct {
+	// From is the sender, or nil to let Gmail fill in the default.
+	From        *Address
+	To, Cc, Bcc []Address
+	Subject     string
+	// Text is the plain-text body. It is sent exactly as given, with its
+	// line endings written as CRLF, which RFC 5322 requires.
+	Text string
+	// HTML, when set, is sent beside Text as multipart/alternative.
+	HTML        string
+	Attachments []OutAttachment
+	// MessageID is the Message-ID header, with its brackets. Required:
+	// it is what a send is settled by (§4.3).
+	MessageID string
+	// InReplyTo and References thread a reply (§4.5).
+	InReplyTo  string
+	References []string
+	// Date is the Date header; zero means now.
+	Date time.Time
+}
+
+// OutAttachment is a file sent with a message.
+type OutAttachment struct {
+	// Filename is the name the recipient sees.
+	Filename string
+	// MediaType is its Content-Type; "" is application/octet-stream.
+	MediaType string
+	Content   []byte
+}
+
+// ErrControl is text that would break a header: a line break or another
+// control character in a subject or a display name.
+var ErrControl = errors.New("a header value may not contain line breaks or control characters")
+
+// Build writes an outgoing message as RFC 5322 bytes: headers encoded
+// per RFC 2047, filenames per RFC 2231, text as quoted-printable UTF-8,
+// attachments as base64, every line ending CRLF. What it writes, Parse
+// reads back to the same fields (§4.10); the fuzz test holds that.
+func Build(o Outgoing) ([]byte, error) {
+	if !ValidMessageID(o.MessageID) {
+		return nil, fmt.Errorf("message id %q is not <local@domain>", o.MessageID)
+	}
+	var hs []rawHeader
+	add := func(name, value string) {
+		if value != "" {
+			hs = append(hs, rawHeader{name: name, text: fold(name + ": " + value)})
+		}
+	}
+	if o.From != nil {
+		v, err := FormatAddresses([]Address{*o.From})
+		if err != nil {
+			return nil, fmt.Errorf("from: %w", err)
+		}
+		add("From", v)
+	}
+	for _, f := range []struct {
+		name string
+		list []Address
+	}{{"To", o.To}, {"Cc", o.Cc}, {"Bcc", o.Bcc}} {
+		v, err := FormatAddresses(f.list)
+		if err != nil {
+			return nil, fmt.Errorf("%s: %w", strings.ToLower(f.name), err)
+		}
+		add(f.name, v)
+	}
+	subject, err := FormatText(o.Subject)
+	if err != nil {
+		return nil, fmt.Errorf("subject: %w", err)
+	}
+	add("Subject", subject)
+	date := o.Date
+	if date.IsZero() {
+		date = time.Now()
+	}
+	add("Date", date.Format(time.RFC1123Z))
+	add("Message-ID", o.MessageID)
+	if o.InReplyTo != "" {
+		if !ValidMessageID(o.InReplyTo) {
+			return nil, fmt.Errorf("in-reply-to %q is not <local@domain>", o.InReplyTo)
+		}
+		add("In-Reply-To", o.InReplyTo)
+	}
+	for _, r := range o.References {
+		if !ValidMessageID(r) {
+			return nil, fmt.Errorf("references: %q is not <local@domain>", r)
+		}
+	}
+	add("References", strings.Join(o.References, " "))
+	add("MIME-Version", "1.0")
+
+	root := bodyEntity(o.Text, o.HTML)
+	if len(o.Attachments) > 0 {
+		kids := []*entity{root}
+		for _, a := range o.Attachments {
+			att, err := attachmentEntity(a)
+			if err != nil {
+				return nil, err
+			}
+			kids = append(kids, att)
+		}
+		root = multipartEntity("mixed", kids...)
+	}
+	root.headers = append(hs, root.headers...)
+	var b bytes.Buffer
+	b.Grow(root.size())
+	root.write(&b)
+	if err := checkLines(b.Bytes()); err != nil {
+		return nil, err
+	}
+	return b.Bytes(), nil
+}
+
+// NewMessageID generates a Message-ID at the sender's domain, with its
+// brackets.
+func NewMessageID(sender string) string {
+	var b [16]byte
+	_, _ = rand.Read(b[:])
+	_, domain, _ := strings.Cut(sender, "@")
+	domain = strings.ToLower(strings.TrimSpace(domain))
+	if !dotAtom(domain) {
+		domain = "google-mail-mcp.invalid"
+	}
+	return "<" + hex.EncodeToString(b[:]) + "@" + domain + ">"
+}
+
+// FormatText encodes free text for a header: as written when it is
+// printable ASCII, otherwise as RFC 2047 encoded-words. Text holding
+// "=?" is encoded too, so a reader cannot take it for a word.
+func FormatText(s string) (string, error) {
+	if HasControl(s) {
+		return "", ErrControl
+	}
+	if !needsEncoding(s) {
+		return s, nil
+	}
+	return encodeWords(s), nil
+}
+
+// FormatAddresses writes an address list: "Name <a@b>" or a bare
+// address, names encoded or quoted as needed.
+func FormatAddresses(as []Address) (string, error) {
+	out := make([]string, 0, len(as))
+	for _, a := range as {
+		s, err := formatAddress(a)
+		if err != nil {
+			return "", err
+		}
+		out = append(out, s)
+	}
+	return strings.Join(out, ", "), nil
+}
+
+func formatAddress(a Address) (string, error) {
+	if !validEmail(a.Email) {
+		return "", fmt.Errorf("%q is not an email address this server can write: it must be ASCII local@domain", a.Email)
+	}
+	if HasControl(a.Name) {
+		return "", ErrControl
+	}
+	switch {
+	case a.Name == "":
+		return a.Email, nil
+	case needsEncoding(a.Name):
+		return encodeWords(a.Name) + " <" + a.Email + ">", nil
+	case isPhrase(a.Name):
+		return a.Name + " <" + a.Email + ">", nil
+	default:
+		r := strings.NewReplacer(`\`, `\\`, `"`, `\"`)
+		return `"` + r.Replace(a.Name) + `" <` + a.Email + ">", nil
+	}
+}
+
+// validEmail accepts what net/mail parses as exactly one bare ASCII
+// address. Internationalized addresses are refused rather than written
+// raw into a header that must be ASCII.
+func validEmail(s string) bool {
+	if s == "" || strings.ContainsAny(s, " <>\"(),;:\\[]") {
+		return false
+	}
+	for i := 0; i < len(s); i++ {
+		if s[i] < 0x21 || s[i] > 0x7e {
+			return false
+		}
+	}
+	a, err := netmail.ParseAddress(s)
+	return err == nil && a.Address == s
+}
+
+// isPhrase reports a display name made only of atoms and single spaces,
+// which needs no quoting and which net/mail reads back unchanged.
+func isPhrase(s string) bool {
+	if s != strings.TrimSpace(s) || strings.Contains(s, "  ") {
+		return false
+	}
+	for _, r := range s {
+		if r != ' ' && !isAtext(r) {
+			return false
+		}
+	}
+	return true
+}
+
+func isAtext(r rune) bool {
+	switch {
+	case r >= 'a' && r <= 'z', r >= 'A' && r <= 'Z', r >= '0' && r <= '9':
+		return true
+	}
+	return strings.ContainsRune("!#$%&'*+-/=?^_`{|}~", r)
+}
+
+// HasControl reports a character that would break a header or a line:
+// C0 and C1 controls and DEL, tab included.
+func HasControl(s string) bool {
+	return strings.IndexFunc(s, func(r rune) bool { return r < 0x20 || r == 0x7f || (r >= 0x80 && r <= 0x9f) }) >= 0
+}
+
+func needsEncoding(s string) bool {
+	for i := 0; i < len(s); i++ {
+		if s[i] > 0x7e {
+			return true
+		}
+	}
+	// A run with no space to fold at is encoded, since encoded-words can
+	// be split where the run cannot, and a line must stay under 998.
+	for w := range strings.FieldsSeq(s) {
+		if len(w) > maxWordChars {
+			return true
+		}
+	}
+	return strings.Contains(s, "=?")
+}
+
+// encodeWords writes s as B encoded-words of at most 75 characters,
+// split between characters and separated by a space, which a reader
+// drops between two words (RFC 2047 §6.2).
+func encodeWords(s string) string {
+	const open, close = "=?utf-8?b?", "?="
+	// Base64 of n bytes takes 4*ceil(n/3) characters.
+	maxBytes := (maxWordChars - len(open) - len(close)) / 4 * 3
+	var words []string
+	for s != "" {
+		n := 0
+		for n < len(s) {
+			_, size := utf8.DecodeRuneInString(s[n:])
+			if n+size > maxBytes {
+				break
+			}
+			n += size
+		}
+		words = append(words, open+base64.StdEncoding.EncodeToString([]byte(s[:n]))+close)
+		s = s[n:]
+	}
+	return strings.Join(words, " ")
+}
+
+// fold breaks a header line at spaces so no line exceeds 78 characters
+// where a space allows it. Folding inserts CRLF before a space, and
+// unfolding removes only the CRLF, so the value reads back unchanged.
+func fold(line string) string {
+	if len(line) <= foldAt {
+		return line
+	}
+	var b strings.Builder
+	start := 0
+	for len(line)-start > foldAt {
+		// The last space that ends a line of at most foldAt, after the
+		// line's first character (a continuation starts with its space).
+		cut := strings.LastIndexByte(line[start+1:start+foldAt+1], ' ')
+		if cut < 0 {
+			next := strings.IndexByte(line[start+1:], ' ')
+			if next < 0 {
+				break
+			}
+			cut = next
+		}
+		cut += start + 1
+		b.WriteString(line[start:cut] + "\r\n")
+		start = cut
+	}
+	b.WriteString(line[start:])
+	return b.String()
+}
+
+// checkLines refuses a message with a line over 998 characters, which
+// RFC 5322 forbids and a relay may break.
+func checkLines(b []byte) error {
+	for len(b) > 0 {
+		i := bytes.IndexByte(b, '\n')
+		if i < 0 {
+			i = len(b)
+		}
+		if n := len(bytes.TrimRight(b[:i], "\r")); n > maxLine {
+			return fmt.Errorf("a line of %d characters is over the %d RFC 5322 allows", n, maxLine)
+		}
+		b = b[min(i+1, len(b)):]
+	}
+	return nil
+}
+
+// msgIDChar is a character a Message-ID's local part or domain may hold
+// here: printable ASCII other than brackets, "@" and space.
+func msgIDChar(r rune) bool { return r > 0x20 && r < 0x7f && !strings.ContainsRune("<>@ ", r) }
+
+// ValidMessageID accepts "<local@domain>" with ASCII parts.
+func ValidMessageID(s string) bool {
+	inner, ok := strings.CutPrefix(s, "<")
+	if !ok {
+		return false
+	}
+	inner, ok = strings.CutSuffix(inner, ">")
+	if !ok {
+		return false
+	}
+	local, domain, ok := strings.Cut(inner, "@")
+	if !ok || local == "" || domain == "" || len(s) > maxLine/2 {
+		return false
+	}
+	bad := func(r rune) bool { return !msgIDChar(r) }
+	return strings.IndexFunc(local, bad) < 0 && strings.IndexFunc(domain, bad) < 0
+}
+
+func dotAtom(s string) bool {
+	if s == "" || strings.HasPrefix(s, ".") || strings.HasSuffix(s, ".") || strings.Contains(s, "..") {
+		return false
+	}
+	for _, r := range s {
+		if r != '.' && !isAtext(r) {
+			return false
+		}
+	}
+	return true
+}
+
+// ---------------------------------------------------------------- parts
+
+// textEntity is a text part: UTF-8, quoted-printable, line endings made
+// CRLF. Quoted-printable is used for every text part, ASCII or not, so
+// no body line can ever match a boundary (see newBoundary).
+func textEntity(subtype, text string) *entity {
+	text = normalizeNewlines(text)
+	var b bytes.Buffer
+	w := quotedprintable.NewWriter(&b)
+	_, _ = w.Write([]byte(text))
+	_ = w.Close()
+	return &entity{
+		mediaType: "text/" + subtype,
+		headers: []rawHeader{
+			{name: "Content-Type", text: "Content-Type: text/" + subtype + "; charset=\"utf-8\""},
+			{name: "Content-Transfer-Encoding", text: "Content-Transfer-Encoding: quoted-printable"},
+		},
+		body: b.Bytes(),
+	}
+}
+
+// bodyEntity is the plain part, or plain and HTML as alternatives.
+func bodyEntity(text, html string) *entity {
+	plain := textEntity("plain", text)
+	if html == "" {
+		return plain
+	}
+	return multipartEntity("alternative", plain, textEntity("html", html))
+}
+
+func multipartEntity(subtype string, children ...*entity) *entity {
+	boundary := newBoundary()
+	return &entity{
+		mediaType: "multipart/" + subtype,
+		boundary:  boundary,
+		headers: []rawHeader{{name: "Content-Type",
+			text: "Content-Type: multipart/" + subtype + "; boundary=\"" + boundary + "\""}},
+		children: children,
+		dirty:    true,
+	}
+}
+
+// attachmentEntity is a file: base64 in lines of 76, named in both
+// Content-Disposition (RFC 2231, the standard) and Content-Type (RFC
+// 2047 in quotes, which older clients read instead).
+func attachmentEntity(a OutAttachment) (*entity, error) {
+	name := a.Filename
+	if !ValidFilename(name) {
+		return nil, fmt.Errorf("attachment name %q is not a base name", name)
+	}
+	mt := a.MediaType
+	if mt == "" {
+		mt = "application/octet-stream"
+	}
+	if !mediaTypeShape(mt) {
+		return nil, fmt.Errorf("media type %q is not type/subtype", mt)
+	}
+	nameParam := `"` + name + `"`
+	if !quotable(name) {
+		nameParam = `"` + encodeWords(name) + `"`
+	}
+	return &entity{
+		mediaType:   mt,
+		disposition: "attachment",
+		named:       true,
+		headers: []rawHeader{
+			{name: "Content-Type", text: fold("Content-Type: " + mt + "; name=" + nameParam)},
+			{name: "Content-Disposition", text: fold("Content-Disposition: attachment; " + filenameParam(name))},
+			{name: "Content-Transfer-Encoding", text: "Content-Transfer-Encoding: base64"},
+		},
+		body: base64Lines(a.Content),
+	}, nil
+}
+
+// base64Lines encodes b as base64 in lines of 76, straight into a buffer
+// of the final size: an attachment can be most of 35 MB.
+func base64Lines(b []byte) []byte {
+	const perLine = 57 // input bytes per 76-character line
+	n := base64.StdEncoding.EncodedLen(len(b))
+	out := make([]byte, 0, n+n/76*2)
+	for len(b) > 0 {
+		chunk := b[:min(perLine, len(b))]
+		b = b[len(chunk):]
+		out = base64.StdEncoding.AppendEncode(out, chunk)
+		if len(b) > 0 {
+			out = append(out, '\r', '\n')
+		}
+	}
+	return out
+}
+
+// ValidFilename accepts a name an attachment can carry: a base name with
+// no separator, control character or surrounding space, and not "." or
+// "..".
+func ValidFilename(name string) bool {
+	return name != "" && name != "." && name != ".." && name == strings.TrimSpace(name) && !HasControl(name) &&
+		path.Base(name) == name && !strings.ContainsAny(name, `/\`)
+}
+
+// quotable is a name that can stand in a quoted-string as it is: short
+// printable ASCII without quotes, backslashes or "=?".
+func quotable(s string) bool {
+	if len(s) > 60 || strings.Contains(s, "=?") {
+		return false
+	}
+	for i := 0; i < len(s); i++ {
+		if s[i] < 0x20 || s[i] > 0x7e || s[i] == '"' || s[i] == '\\' {
+			return false
+		}
+	}
+	return true
+}
+
+// filenameParam is filename="…" for a quotable name, otherwise RFC 2231
+// filename*0*=utf-8”…; filename*1*=… in segments short enough to fold.
+func filenameParam(name string) string {
+	if quotable(name) {
+		return `filename="` + name + `"`
+	}
+	var enc strings.Builder
+	for i := 0; i < len(name); i++ {
+		c := name[i]
+		if isAttrChar(c) {
+			enc.WriteByte(c)
+			continue
+		}
+		fmt.Fprintf(&enc, "%%%02X", c)
+	}
+	s := enc.String()
+	var segs []string
+	for i := 0; s != ""; i++ {
+		n := min(len(s), 54)
+		// Never split a %XX escape.
+		if j := strings.LastIndexByte(s[max(n-2, 0):n], '%'); j >= 0 && n < len(s) {
+			n = max(n-2, 0) + j
+		}
+		prefix := "filename*" + strconv.Itoa(i) + "*="
+		if i == 0 {
+			prefix += "utf-8''"
+		}
+		segs = append(segs, prefix+s[:n])
+		s = s[n:]
+	}
+	return strings.Join(segs, "; ")
+}
+
+// isAttrChar is RFC 2231's attribute-char, which needs no escape.
+func isAttrChar(c byte) bool {
+	switch {
+	case c >= 'a' && c <= 'z', c >= 'A' && c <= 'Z', c >= '0' && c <= '9':
+		return true
+	}
+	return strings.IndexByte("!#$&+-.^_`|~", c) >= 0
+}
+
+func mediaTypeShape(s string) bool {
+	t, sub, ok := strings.Cut(s, "/")
+	token := func(x string) bool {
+		if x == "" {
+			return false
+		}
+		for i := 0; i < len(x); i++ {
+			if x[i] <= 0x20 || x[i] >= 0x7f || strings.IndexByte(`()<>@,;:\"/[]?=`, x[i]) >= 0 {
+				return false
+			}
+		}
+		return true
+	}
+	return ok && token(t) && token(sub)
+}
+
+// mediaTypes names a file's type by its extension. The table is fixed
+// rather than the system's, so a draft is built the same on every
+// machine.
+var mediaTypes = map[string]string{
+	".pdf": "application/pdf", ".zip": "application/zip", ".json": "application/json",
+	".ics": "text/calendar", ".txt": "text/plain", ".csv": "text/csv", ".md": "text/markdown",
+	".html": "text/html", ".htm": "text/html", ".xml": "application/xml",
+	".png": "image/png", ".jpg": "image/jpeg", ".jpeg": "image/jpeg", ".gif": "image/gif",
+	".webp": "image/webp", ".svg": "image/svg+xml", ".heic": "image/heic",
+	".mp3": "audio/mpeg", ".mp4": "video/mp4", ".mov": "video/quicktime",
+	".doc":  "application/msword",
+	".docx": "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+	".xls":  "application/vnd.ms-excel",
+	".xlsx": "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+	".ppt":  "application/vnd.ms-powerpoint",
+	".pptx": "application/vnd.openxmlformats-officedocument.presentationml.presentation",
+	".odt":  "application/vnd.oasis.opendocument.text",
+	".ods":  "application/vnd.oasis.opendocument.spreadsheet",
+}
+
+// MediaTypeFor is the media type of a file name, or
+// application/octet-stream.
+func MediaTypeFor(name string) string {
+	if t, ok := mediaTypes[strings.ToLower(path.Ext(name))]; ok {
+		return t
+	}
+	return "application/octet-stream"
+}

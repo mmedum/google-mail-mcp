@@ -1,0 +1,76 @@
+budget: 24000 characters
+thread 0000000000000006 · 4 messages · newest first · labels: INBOX, Projects, UNREAD
+
+── 4 of 4 · message 0000000000000009 · thread 0000000000000006 · 2026-03-02 21:00 UTC · labels: INBOX, UNREAD, Projects
+<<<untrusted-mail TESTTOKEN: headers from lilei@example.com in 0000000000000009>>>
+From: 李雷 <lilei@example.com>
+To: Rae Reader <reader@example.com>
+Cc: Ελένη Δοκιμή <eleni@example.org>
+Date: Tue, 03 Mar 2026 05:00:00 +0800
+Subject: Re: 项目概要
+Message-ID: <fixture.0000000000000009@mail.example.com>
+In-Reply-To: <fixture.0000000000000008@mail.example.com>
+<<<end-untrusted-mail TESTTOKEN>>>
+<<<untrusted-mail TESTTOKEN: body from lilei@example.com in 0000000000000009>>>
+你好，
+
+收到，谢谢。
+
+李雷
+<<<end-untrusted-mail TESTTOKEN>>>
+
+── 3 of 4 · message 0000000000000008 · thread 0000000000000006 · 2026-03-02 20:00 UTC · labels: INBOX, Projects
+<<<untrusted-mail TESTTOKEN: headers from ivan@example.org in 0000000000000008>>>
+From: Иван Петров <ivan@example.org>
+To: Rae Reader <reader@example.com>
+Date: Mon, 02 Mar 2026 23:00:00 +0300
+Subject: Re: Отчёт по проекту
+Message-ID: <fixture.0000000000000008@mail.example.com>
+In-Reply-To: <fixture.0000000000000007@mail.example.com>
+Attachment: invoicetxt.exe (application/octet-stream, 20 B, declared name "..\..\invoice\u{202E}txt.exe", part_id "1")
+<<<end-untrusted-mail TESTTOKEN>>>
+<<<untrusted-mail TESTTOKEN: body from ivan@example.org in 0000000000000008>>>
+Добрый день!
+
+Спасибо за отчёт. Всё получил.
+
+Иван
+<<<end-untrusted-mail TESTTOKEN>>>
+note: an attachment's declared name was unsafe as a file name; the header block shows it renamed.
+
+── 2 of 4 · message 0000000000000007 · thread 0000000000000006 · 2026-03-02 19:00 UTC · labels: INBOX, Projects
+<<<untrusted-mail TESTTOKEN: headers from hanako@example.com in 0000000000000007>>>
+From: 山田 花子 <hanako@example.com>
+To: Rae Reader <reader@example.com>
+Date: Tue, 03 Mar 2026 04:00:00 +0900
+Subject: Re: プロジェクト概要
+Message-ID: <fixture.0000000000000007@mail.example.com>
+In-Reply-To: <fixture.0000000000000006@mail.example.com>
+Attachment: 会議メモ.txt (text/plain, 15 B, part_id "1")
+<<<end-untrusted-mail TESTTOKEN>>>
+<<<untrusted-mail TESTTOKEN: body from hanako@example.com in 0000000000000007>>>
+レイさん、
+
+資料を確認しました。ありがとうございます。
+
+山田
+<<<end-untrusted-mail TESTTOKEN>>>
+
+── 1 of 4 · message 0000000000000006 · thread 0000000000000006 · 2026-03-02 18:00 UTC · labels: INBOX, Projects
+<<<untrusted-mail TESTTOKEN: headers from zoe@example.org in 0000000000000006>>>
+From: Zoë Ångström <zoe@example.org>
+To: Rae Reader <reader@example.com>
+Date: Mon, 02 Mar 2026 18:00:00 +0000
+Subject: Résumé du projet
+Message-ID: <fixture.0000000000000006@mail.example.com>
+Attachment: résumé.pdf (application/pdf, 27 B, part_id "1")
+Attachment: 年度報告.xlsx (application/vnd.openxmlformats-officedocument.spreadsheetml.sheet, 20 B, part_id "2")
+<<<end-untrusted-mail TESTTOKEN>>>
+<<<untrusted-mail TESTTOKEN: body from zoe@example.org in 0000000000000006>>>
+Bonjour Rae,
+
+Voici le résumé du projet, avec les pièces jointes.
+
+À bientôt,
+Zoë
+<<<end-untrusted-mail TESTTOKEN>>>

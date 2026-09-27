@@ -1,0 +1,13 @@
+sent draft r0000000000000021 · sent message 0000000000000030 · thread 0000000000000001 · labels: SENT
+the draft held message 0000000000000022.
+it answers a thread of 2 messages; their senders, and whoever this account sent them to, need no confirming.
+recipients: 2 · 1 in the thread · 1 confirmed
+attachments: 1, 2.0 KB
+<<<untrusted-mail TESTTOKEN: outgoing message in 0000000000000022>>>
+From: Rae Reader <reader@example.com>
+to[0]: Freya Holm <freya.holm@example.org>
+cc[0]: Ada Quill <ada.quill@example.com>
+Subject: Re: Budget sign-off
+Message-ID: <draft.22@mail.example.com>
+Attachment: totals.csv (text/csv, 2.0 KB)
+<<<end-untrusted-mail TESTTOKEN>>>

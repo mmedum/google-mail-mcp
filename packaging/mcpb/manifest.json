@@ -1,0 +1,92 @@
+{
+  "$schema": "https://raw.githubusercontent.com/anthropics/mcpb/v2.1.2/schemas/mcpb-manifest-v0.3.schema.json",
+  "manifest_version": "0.3",
+  "name": "google-mail-mcp",
+  "display_name": "Gmail",
+  "version": "0.0.0-dev",
+  "description": "Gmail over MCP from your own account: search, read threads and messages, labels and drafts.",
+  "long_description": "Search and read Gmail from your own account, with mail content marked as untrusted data rather than instructions. Drafts are the default write, removal is trash, and sending and permanent deletion are not offered unless you turn them on.\n\nTHIS BUNDLE DOES NOT LOG YOU IN, and cannot. Google requires each user to bring their own OAuth Desktop client, so before the tools work you need to create one in a Google Cloud project, enable the Gmail API, and run `google-mail-mcp login` once from a terminal. The setup is documented at https://github.com/mmedum/google-mail-mcp/blob/main/docs/gcp-setup.md. Without that step the server starts, lists its tools, and answers every call with \"not signed in\".",
+  "author": {
+    "name": "Mark Medum Bundgaard"
+  },
+  "homepage": "https://github.com/mmedum/google-mail-mcp",
+  "documentation": "https://github.com/mmedum/google-mail-mcp/blob/main/README.md",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/mmedum/google-mail-mcp"
+  },
+  "support": "https://github.com/mmedum/google-mail-mcp/issues",
+  "license": "Apache-2.0",
+  "keywords": [
+    "gmail",
+    "email",
+    "mail",
+    "google"
+  ],
+  "server": {
+    "type": "binary",
+    "entry_point": "server/google-mail-mcp-darwin",
+    "mcp_config": {
+      "command": "${__dirname}/server/google-mail-mcp-darwin",
+      "args": [],
+      "env": {
+        "GMAIL_CLIENT_SECRET": "${user_config.client_secret}",
+        "GMAIL_READ_ONLY": "${user_config.read_only}",
+        "GMAIL_ENABLE_SEND": "${user_config.enable_send}",
+        "GMAIL_ENABLE_DESTRUCTIVE": "${user_config.enable_destructive}",
+        "GMAIL_LOCAL_DIR": "${user_config.local_dir}"
+      },
+      "platform_overrides": {
+        "win32": {
+          "command": "${__dirname}/server/google-mail-mcp.exe"
+        },
+        "linux": {
+          "command": "${__dirname}/server/launch-linux.sh"
+        }
+      }
+    }
+  },
+  "user_config": {
+    "client_secret": {
+      "type": "file",
+      "title": "OAuth client JSON",
+      "description": "The OAuth Desktop client you created in your own Google Cloud project. You still need to run `google-mail-mcp login` once from a terminal.",
+      "required": false
+    },
+    "read_only": {
+      "type": "boolean",
+      "title": "Read-only",
+      "description": "Register only the read tools and ask Google for gmail.readonly, so the API itself refuses a write. Cannot be combined with sending or permanent deletion.",
+      "default": false,
+      "required": false
+    },
+    "enable_send": {
+      "type": "boolean",
+      "title": "Allow sending",
+      "description": "Register the tool that sends a draft. Off by default: without it this server cannot send mail. The token can send either way, so keep it in the keyring.",
+      "default": false,
+      "required": false
+    },
+    "enable_destructive": {
+      "type": "boolean",
+      "title": "Allow permanent deletion",
+      "description": "Register permanent deletion. It asks Google for full mail access, needs a new login, and every call still has to confirm. Off by default: removal is trash.",
+      "default": false,
+      "required": false
+    },
+    "local_dir": {
+      "type": "directory",
+      "title": "Attachment folder",
+      "description": "The one folder attachments are saved to and read from. Leave empty to turn file transfer off.",
+      "required": false
+    }
+  },
+  "compatibility": {
+    "claude_desktop": ">=0.10.0",
+    "platforms": [
+      "darwin",
+      "win32",
+      "linux"
+    ]
+  }
+}

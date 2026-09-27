@@ -1,0 +1,26 @@
+budget: 24000 characters
+automatic forwarding: off
+forwarding addresses (where forwarding or a filter may send mail):
+  backup@example.org · accepted
+  pending@example.invalid · pending
+
+vacation reply: off (one is set up: contacts only · from 2026-03-12 08:00 UTC until 2026-03-16 08:00 UTC)
+<<<untrusted-mail TESTTOKEN: vacation reply>>>
+Subject: Away until Monday
+
+I am away until Monday and will answer when I am back.
+
+Rae
+<<<end-untrusted-mail TESTTOKEN>>>
+
+send as:
+  reader@example.com · name Rae Reader · primary · default
+<<<untrusted-mail TESTTOKEN: signature>>>
+Rae Reader
+Example Org
+<<<end-untrusted-mail TESTTOKEN>>>
+  rae.alias@example.org · name Rae (projects) · accepted · alias · replies to reader@example.com
+
+IMAP: on, deleting a message in a client: archive
+POP: off
+display language: en-GB

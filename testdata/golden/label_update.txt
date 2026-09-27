@@ -1,0 +1,3 @@
+updated label Label_5 · changed name, in_message_list
+before: Travel · in label list: show_if_unread · in message list: show · color #ffffff on #16a766
+after:  Trips · in label list: show_if_unread · in message list: hide · color #ffffff on #16a766

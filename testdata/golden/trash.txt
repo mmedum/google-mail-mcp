@@ -1,0 +1,3 @@
+1 changed · 1 unchanged · 0 failed
+message 0000000000000001: changed · labels before: INBOX · after: INBOX, TRASH
+message 0000000000000031: unchanged, already in the trash · labels: TRASH

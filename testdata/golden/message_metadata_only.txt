@@ -1,0 +1,11 @@
+budget: 24000 characters
+message 0000000000000001 · thread 0000000000000001 · 2026-03-02 09:00 UTC · labels: INBOX, IMPORTANT, Projects/Offsite, STARRED
+<<<untrusted-mail TESTTOKEN: headers from ada.quill@example.com in 0000000000000001>>>
+From: Ada Quill <ada.quill@example.com>
+To: Rae Reader <reader@example.com>
+Cc: Bruno Fennick <bruno.fennick@example.org>
+Date: Mon, 02 Mar 2026 10:00:00 +0100
+Subject: Offsite venue
+Message-ID: <fixture.0000000000000001@mail.example.com>
+<<<end-untrusted-mail TESTTOKEN>>>
+(headers only: this read did not include the body)

@@ -1,0 +1,19 @@
+budget: 24000 characters
+message 0000000000000005 · thread 0000000000000005 · 2026-03-02 17:00 UTC · labels: INBOX, CATEGORY_UPDATES, Receipts
+<<<untrusted-mail TESTTOKEN: headers from chiara@example.com in 0000000000000005>>>
+From: Chiara Oddleaf <chiara@example.com>
+To: Rae Reader <reader@example.com>
+Date: Mon, 02 Mar 2026 17:00:00 +0000
+Subject: Your booking confirmation
+Message-ID: <fixture.0000000000000005@mail.example.com>
+<<<end-untrusted-mail TESTTOKEN>>>
+<<<untrusted-mail TESTTOKEN: body from chiara@example.com in 0000000000000005>>>
+Your booking is confirmed.
+
+Room Garden suite
+Nights 2
+
+Reference: BK-1024
+<<<end-untrusted-mail TESTTOKEN>>>
+note: the plain-text part only pointed to the HTML version, so the HTML was read.
+note: the body was converted from HTML; no image or link was fetched.

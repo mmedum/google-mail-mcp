@@ -1,0 +1,13 @@
+budget: 24000 characters
+4 changes on this page
+complete: yes
+since history 1000
+history_id=1004 continues from here next time.
+
+history 1001 · message 0000000000000001 added · thread 0000000000000001 · labels: INBOX, UNREAD, Projects/Offsite
+
+history 1002 · message 0000000000000001 · thread 0000000000000001 · labels removed: UNREAD
+
+history 1003 · message 0000000000000002 · thread 0000000000000001 · labels added: STARRED
+
+history 1004 · message 0000000000000003 deleted permanently · thread 0000000000000001

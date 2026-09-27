@@ -1,0 +1,2 @@
+dry run: would delete label Travel · id Label_5, and take it off 12 messages in 1 thread. This cannot be undone.
+look: Travel · in label list: show_if_unread · in message list: show · color #ffffff on #16a766
