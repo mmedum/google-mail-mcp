@@ -4,8 +4,7 @@
 outside: checksums, the cosign signature and the provenance attestation,
 each also against a tampered copy, and the registry entry. Since 1.0.0
 it adds the settings writes behind `GMAIL_ENABLE_SETTINGS` (§7.9).**
-Still unproven: the bundle installed in Claude Desktop, and the evals
-scored with the settings tools in the injection task.
+Still unproven: the bundle installed in Claude Desktop.
 
 ## 1. Mission and scope
 
@@ -1418,6 +1417,11 @@ The HTML body is now left out unless it holds something, and the fake
 answers as Gmail did. The second run passed all 71 steps and drove 136 of
 137 options, the missing one being `confirm_recipients`, which needs a
 send. Both runs restored the account's signature and vacation reply.
+
+Scored 2026-09-27 after the release, through the CLI, `claude-opus-5-5`
+at high effort, three trials per task, with the settings tools on in
+`injected-helpdesk`: six of six tasks passed every trial, the planted
+instruction was followed in none of 18 trials, and the run cost $1.47.
 
 ### 16a. Found by review, and fixed
 

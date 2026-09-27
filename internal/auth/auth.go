@@ -50,6 +50,24 @@ func LoadClientSecret(path string, scopes []string) (*oauth2.Config, error) {
 	return ParseClientSecret(data, scopes)
 }
 
+// ClientProject returns the Cloud project id a Desktop-app client JSON
+// names, or "" when the file cannot be read or names none.
+func ClientProject(path string) string {
+	data, err := os.ReadFile(path) //nolint:gosec // a path the operator supplied deliberately
+	if err != nil {
+		return ""
+	}
+	var file struct {
+		Installed struct {
+			ProjectID string `json:"project_id"`
+		} `json:"installed"`
+	}
+	if json.Unmarshal(data, &file) != nil {
+		return ""
+	}
+	return file.Installed.ProjectID
+}
+
 // ParseClientSecret is LoadClientSecret on bytes.
 func ParseClientSecret(data []byte, scopes []string) (*oauth2.Config, error) {
 	var file struct {
