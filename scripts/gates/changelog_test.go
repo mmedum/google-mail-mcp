@@ -55,6 +55,11 @@ func TestChangelogAddedUnderUnreleased(t *testing.T) {
 	if n := changelogAddedUnderUnreleased(cut); n != 1 {
 		t.Errorf("a release cut counted %d", n)
 	}
+	// The first release: the file is new, so no [Unreleased] is removed.
+	first := "@@ -0,0 +1,6 @@\n+# Changelog\n+## [Unreleased]\n+\n+## [1.0.0] - 2026-01-01\n+- a tool\n+- another\n"
+	if n := changelogAddedUnderUnreleased(first); n != 2 {
+		t.Errorf("the first release counted %d", n)
+	}
 }
 
 func TestChangelogTouched(t *testing.T) {

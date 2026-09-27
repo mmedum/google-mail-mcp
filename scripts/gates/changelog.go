@@ -82,11 +82,13 @@ func changelogTouched(files []string) []string {
 // changelogAddedUnderUnreleased counts added lines under [Unreleased].
 //
 // A release cut renames [Unreleased] to the version, so its entries no
-// longer sit under [Unreleased] and are still where they belong. When
-// the diff removes the [Unreleased] heading, the version heading it
-// added is read as the unreleased section.
+// longer sit under [Unreleased] and are still where they belong. A
+// version heading the diff adds is that cut, and is read as the
+// unreleased section. It need not remove an [Unreleased] heading: on
+// the first release the whole file is new, and there is none to remove.
+// A heading already released is context, never added, so an entry
+// slipped in under it still counts nothing.
 func changelogAddedUnderUnreleased(diff string) int {
-	cut := strings.Contains(diff, "\n-## [Unreleased]")
 	count, inHunk, inside := 0, false, false
 	for line := range strings.SplitSeq(diff, "\n") {
 		switch {
@@ -94,7 +96,7 @@ func changelogAddedUnderUnreleased(diff string) int {
 			inHunk = true
 		case !inHunk:
 		case strings.HasPrefix(line, "+## [") || strings.HasPrefix(line, " ## ["):
-			inside = strings.Contains(line, "[Unreleased]") || (cut && strings.HasPrefix(line, "+## ["))
+			inside = strings.Contains(line, "[Unreleased]") || strings.HasPrefix(line, "+## [")
 		case inside && strings.HasPrefix(line, "+") && strings.TrimSpace(line[1:]) != "":
 			count++
 		}

@@ -1,13 +1,15 @@
 # Architecture — google-mail-mcp
 
-**Status: phase 4 is built, 2026-09-27, on a topic branch stacked on
-phase 3's; nothing is tagged yet.** Phases 0 to 4 are built. Phase 4 adds
-the model-driven evals over the in-memory mailbox, with three tasks whose
-mail carries a planted instruction; freezes the 1.0 surface into the
-schema baseline; and closes §17: the recipient guard counts only what
-the account chose (§17.8), `get_thread` shows drafts after the
-conversation (§17.2), and lenient argument decoding is declined (§17.7).
-`make check` is green. 1.0 waits for an explicit "go".
+**Status: 1.0.0 is prepared, 2026-09-27; it is the first release, so
+everything in it is new since the last tag.** Phases 0 to 4 are built,
+run live with a real send and every spike, and scored by the evals.
+Phase 4 added the evals, froze the tool surface into the schema
+baseline, and closed §17: the recipient guard counts only what the
+account chose (§17.8), `get_thread` shows drafts after the conversation
+(§17.2), and lenient argument decoding is declined (§17.7). Still
+unproven by any run: the cosign signature, the provenance attestation
+and the registry publish, which only the release workflow reaches, and
+the bundle installed in Claude Desktop.
 
 ## 1. Mission and scope
 

@@ -15,6 +15,8 @@ lifted verbatim.
 
 ## [Unreleased]
 
+## [1.0.0] - 2026-09-27
+
 ### Added
 
 - `get_profile` reports which account is signed in and its mailbox totals.
@@ -46,4 +48,5 @@ lifted verbatim.
 - Repository gates run by `make check` and CI: leaks, pins, error classes, API coverage, schema diff, smoke, staleness and more.
 - Signed release archives for six platforms with SBOMs, build provenance, a Claude Desktop bundle and an MCP registry entry.
 
-[Unreleased]: https://github.com/mmedum/google-mail-mcp/compare/dc26f63...HEAD
+[Unreleased]: https://github.com/mmedum/google-mail-mcp/compare/v1.0.0...HEAD
+[1.0.0]: https://github.com/mmedum/google-mail-mcp/compare/dc26f63...v1.0.0

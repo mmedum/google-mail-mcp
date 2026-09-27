@@ -1,7 +1,7 @@
 {
   "note": "Written by `go run ./scripts/gates api-diff`; nobody edits this. Verdicts live in testdata/api-coverage.tsv (methods) and testdata/api-fields.tsv (fields).",
   "url": "https://gmail.googleapis.com/$discovery/rest?version=v1",
-  "fetched": "2026-09-25",
+  "fetched": "2026-09-27",
   "version": "v1",
   "revision": "20260921",
   "methods": [
@@ -873,7 +873,7 @@
     },
     {
       "name": "DisableCseKeyPairRequest",
-      "fields": null
+      "fields": []
     },
     {
       "name": "Draft",
@@ -884,7 +884,7 @@
     },
     {
       "name": "EnableCseKeyPairRequest",
-      "fields": null
+      "fields": []
     },
     {
       "name": "Filter",
@@ -1151,7 +1151,7 @@
     },
     {
       "name": "ObliterateCseKeyPairRequest",
-      "fields": null
+      "fields": []
     },
     {
       "name": "PopSettings",
