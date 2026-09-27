@@ -27,6 +27,8 @@ func TestLeaksRulesCatchPlantedShapes(t *testing.T) {
 		{"test TLD", "a@b.test", false},
 		{"co-author trailer", leaksPlant("noreply", "@", "anthropic.com"), false},
 		{"GitHub no-reply", leaksPlant("123+someone", "@", "users.noreply.github.com"), false},
+		{"Dependabot's trailer", leaksPlant("dependabot[bot] <support", "@", "github.com>"), false},
+		{"someone else at github.com", leaksPlant("alice", "@", "github.com"), true},
 		{"a module version is not an address", "golang.org/x/tools@v0.30.0", false},
 		{"Gmail web link", leaksPlant("https://mail.google.com/mail/u/", "0/#inbox/FMfcgz"), true},
 		{"the link shape in prose", "`mail.google.com/mail/u/` URLs", false},
@@ -88,8 +90,8 @@ func TestLeaksAllowListHasReasons(t *testing.T) {
 	}
 	// The count is stated, so a new exemption is a change to this test
 	// as well as to the list.
-	if entries != 4 {
-		t.Errorf("%d allow-list entries, want 4; a new one is an argued decision", entries)
+	if entries != 5 {
+		t.Errorf("%d allow-list entries, want 5; a new one is an argued decision", entries)
 	}
 	if len(leaksRules) < 8 {
 		t.Errorf("%d rules; the §9.1 shapes need at least 8", len(leaksRules))
