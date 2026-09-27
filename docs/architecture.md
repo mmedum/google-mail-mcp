@@ -1310,7 +1310,15 @@ time, the two that send were skipped, and 105 of 106 options were
 driven. Reading the first transcript found the dry run's own sentence
 still saying a thread's "senders and recipients need no confirming",
 which the narrowed guard made untrue; it now says whoever the account
-sent them to. The second run is after that fix and the reviews. No
+sent them to. The second run is after that fix and the reviews. Two
+more ran on the final code with `-send-to`, 57 steps and 106 of 106
+options each: the first sent one message through `send_draft`; the
+second also sent spikes D and E, seven messages in all, and flooded
+reads for spike H. Every spike reproduced its verdict of §15: B and C
+the replaced `Message-ID` and the draft's 404; D threading by
+`threadId` alone for the sender; E four scripts intact; H a 403
+`rateLimitExceeded` without `Retry-After`, this time after 22,800
+units. No
 scored evals run had been made at that point.
 
 Scored 2026-09-27 through the CLI, `claude-opus-5-5` at high effort,
