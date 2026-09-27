@@ -1005,8 +1005,11 @@ None has run.
   the `Message-ID` again: the sent copy carries neither the one the
   server wrote nor the one the draft held. So §4.3 cannot settle by any
   `Message-ID`, and settles by the draft's thread instead (§18 row 44).
-  The received copy is in the second mailbox, under the run's subject,
-  and is the maintainer's to read.
+  **Received copy read 2026-09-27 by the maintainer**, in the second
+  mailbox, a Gmail account. The message arrived in the inbox with the
+  subject and body exactly as the draft held them and nothing added — no
+  signature, footer or prefix — which is §4.2's verbatim send seen from
+  the receiver. The received copy's `Message-ID` was not read.
 - **Spike C — what does `drafts.send` leave behind?** Is the sent
   message's id the draft's message id? Does `drafts.get` answer 404
   afterwards? §4.3's verdict table is written from this.
