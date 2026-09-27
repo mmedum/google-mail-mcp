@@ -75,5 +75,5 @@ google-mail-mcp doctor
 `login` prints the scopes it is about to ask for before opening a
 browser, and warns if Google grants fewer. Over SSH, add `--no-browser`;
 the README's "Logging in over SSH" section has the port-forward line.
-Changing `GMAIL_READ_ONLY` or `GMAIL_ENABLE_DESTRUCTIVE` changes the
-scopes, so it needs `login` again; `doctor` says when.
+Changing `GMAIL_READ_ONLY`, `GMAIL_ENABLE_DESTRUCTIVE` or
+`GMAIL_ENABLE_SETTINGS` changes the scopes, so it needs `login` again; `doctor` says when.

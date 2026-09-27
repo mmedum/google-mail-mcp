@@ -15,6 +15,11 @@ lifted verbatim.
 
 ## [Unreleased]
 
+### Fixed
+
+- The Claude Desktop bundle's descriptions and the docs name the settings flag wherever they list what changes the scopes or what is off by default.
+- The runbook says revoking at Google ends every token the account granted to the Cloud project, not only one client's.
+
 ## [1.1.0] - 2026-09-27
 
 ### Added
