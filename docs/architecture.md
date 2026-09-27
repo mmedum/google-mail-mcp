@@ -1,15 +1,11 @@
 # Architecture — google-mail-mcp
 
-**Status: 1.0.0 is prepared, 2026-09-27; it is the first release, so
-everything in it is new since the last tag.** Phases 0 to 4 are built,
-run live with a real send and every spike, and scored by the evals.
-Phase 4 added the evals, froze the tool surface into the schema
-baseline, and closed §17: the recipient guard counts only what the
-account chose (§17.8), `get_thread` shows drafts after the conversation
-(§17.2), and lenient argument decoding is declined (§17.7). Still
-unproven by any run: the cosign signature, the provenance attestation
-and the registry publish, which only the release workflow reaches, and
-the bundle installed in Claude Desktop.
+**Status: 1.0.0 is released, 2026-09-27, from `main`.** The release
+workflow signed, attested and published it, and all three were verified
+from outside: the checksums, the cosign signature and the provenance
+attestation, each also against a corrupted copy, and the registry entry.
+Nothing has changed in shipped code since the tag. Still unproven: the
+bundle installed in Claude Desktop.
 
 ## 1. Mission and scope
 
