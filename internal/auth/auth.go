@@ -50,34 +50,37 @@ func LoadClientSecret(path string, scopes []string) (*oauth2.Config, error) {
 	return ParseClientSecret(data, scopes)
 }
 
-// ClientProject returns the Cloud project id a Desktop-app client JSON
-// names, or "" when the file cannot be read or names none.
+// ClientProject returns the Cloud project id the client JSON at path
+// names, or "" when it cannot be read or names none. login records it,
+// since the grant logout revokes belongs to the account and the project.
 func ClientProject(path string) string {
 	data, err := os.ReadFile(path) //nolint:gosec // a path the operator supplied deliberately
 	if err != nil {
 		return ""
 	}
-	var file struct {
-		Installed struct {
-			ProjectID string `json:"project_id"`
-		} `json:"installed"`
-	}
-	if json.Unmarshal(data, &file) != nil {
+	in, err := parseInstalled(data)
+	if err != nil {
 		return ""
 	}
-	return file.Installed.ProjectID
+	return in.ProjectID
 }
 
-// ParseClientSecret is LoadClientSecret on bytes.
-func ParseClientSecret(data []byte, scopes []string) (*oauth2.Config, error) {
+// installedClient is the "installed" section of a Desktop-app client
+// JSON.
+type installedClient struct {
+	ClientID     string `json:"client_id"`
+	ClientSecret string `json:"client_secret"`
+	AuthURI      string `json:"auth_uri"`
+	TokenURI     string `json:"token_uri"`
+	ProjectID    string `json:"project_id"`
+}
+
+// parseInstalled reads a Desktop-app client JSON, refusing any other
+// kind of client.
+func parseInstalled(data []byte) (*installedClient, error) {
 	var file struct {
-		Installed *struct {
-			ClientID     string `json:"client_id"`
-			ClientSecret string `json:"client_secret"`
-			AuthURI      string `json:"auth_uri"`
-			TokenURI     string `json:"token_uri"`
-		} `json:"installed"`
-		Web json.RawMessage `json:"web"`
+		Installed *installedClient `json:"installed"`
+		Web       json.RawMessage  `json:"web"`
 	}
 	if err := json.Unmarshal(data, &file); err != nil {
 		return nil, fmt.Errorf("auth: client secret is not valid JSON: %w", err)
@@ -88,7 +91,15 @@ func ParseClientSecret(data []byte, scopes []string) (*oauth2.Config, error) {
 		}
 		return nil, ErrNotDesktopClient
 	}
-	in := file.Installed
+	return file.Installed, nil
+}
+
+// ParseClientSecret is LoadClientSecret on bytes.
+func ParseClientSecret(data []byte, scopes []string) (*oauth2.Config, error) {
+	in, err := parseInstalled(data)
+	if err != nil {
+		return nil, err
+	}
 	if in.ClientID == "" {
 		return nil, errors.New("auth: client secret JSON has no client_id")
 	}
