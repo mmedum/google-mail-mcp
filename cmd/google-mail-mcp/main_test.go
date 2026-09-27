@@ -282,6 +282,9 @@ func TestReadWriteClosers(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	// Closed before the directory is removed: Windows cannot delete an
+	// open file.
+	t.Cleanup(func() { _ = f.Close() })
 	if readCloser(f) != io.ReadCloser(f) || writeCloser(f) != io.WriteCloser(f) {
 		t.Error("a real closer was wrapped")
 	}

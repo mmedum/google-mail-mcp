@@ -56,11 +56,31 @@ func TestMcpbPackWritesAndReadsBack(t *testing.T) {
 	}
 	out.mustSay(t, "6 entries, version 1.2.3, read back")
 
-	zr, err := zip.OpenReader(bundle)
-	if err != nil {
+	// The reader is closed before the second pack below: Windows refuses
+	// to rename over a file that is open.
+	func() {
+		zr, err := zip.OpenReader(bundle)
+		if err != nil {
+			t.Fatal(err)
+		}
+		defer func() { _ = zr.Close() }()
+		readBackBundle(t, zr)
+	}()
+	// Same inputs, same bytes.
+	first, _ := os.ReadFile(bundle)
+	if _, err := mcpbPackTo(&out, root, dist, "1.2.3", bundle, false); err != nil {
 		t.Fatal(err)
 	}
-	defer func() { _ = zr.Close() }()
+	second, _ := os.ReadFile(bundle)
+	if !bytes.Equal(first, second) {
+		t.Error("two packs of the same inputs differ")
+	}
+}
+
+// readBackBundle holds a packed bundle's entries to what the packer
+// promises: fixed times and modes, the version, and the launcher.
+func readBackBundle(t *testing.T, zr *zip.ReadCloser) {
+	t.Helper()
 	// Stated, not read from the packer.
 	fixed := time.Date(2026, time.January, 1, 0, 0, 0, 0, time.UTC)
 	for _, f := range zr.File {
@@ -97,16 +117,6 @@ func TestMcpbPackWritesAndReadsBack(t *testing.T) {
 				t.Error("the packed launcher is not the generated one")
 			}
 		}
-	}
-
-	// Same inputs, same bytes.
-	first, _ := os.ReadFile(bundle)
-	if _, err := mcpbPackTo(&out, root, dist, "1.2.3", bundle, false); err != nil {
-		t.Fatal(err)
-	}
-	second, _ := os.ReadFile(bundle)
-	if !bytes.Equal(first, second) {
-		t.Error("two packs of the same inputs differ")
 	}
 }
 

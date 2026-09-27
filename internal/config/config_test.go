@@ -25,6 +25,8 @@ func isolate(t *testing.T) string {
 	t.Setenv("HOME", home)
 	t.Setenv("USERPROFILE", home)
 	t.Setenv("XDG_CONFIG_HOME", filepath.Join(home, ".config"))
+	// os.UserConfigDir reads %AppData% on Windows, not the home.
+	t.Setenv("APPDATA", filepath.Join(home, "AppData", "Roaming"))
 	return home
 }
 
