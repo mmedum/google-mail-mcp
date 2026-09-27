@@ -43,8 +43,8 @@ gmail.users.settings.delegates.create	out	-	Written off: grants another person t
 gmail.users.settings.delegates.delete	out	-	Written off: `gmail.settings.sharing`
 gmail.users.settings.delegates.get	out	-	Written off with `delegates.list`
 gmail.users.settings.delegates.list	out	-	Written off: delegation is account administration; `gmail.settings.basic`
-gmail.users.settings.filters.create	out	-	Deferred (§17): a filter's `action.forward` is auto-forwarding by another route; buildable only with forward refused structurally
-gmail.users.settings.filters.delete	out	-	Deferred with `filters.create`
+gmail.users.settings.filters.create	used	-	Gated: `create_filter`, behind `GMAIL_ENABLE_SETTINGS`; its wire type has no forward field, so a filter cannot forward (§17.5)
+gmail.users.settings.filters.delete	used	-	Gated: `delete_filter`, behind `GMAIL_ENABLE_SETTINGS`, with `confirm: true`
 gmail.users.settings.filters.get	out	-	Written off: `filters.list` returns every field `get` does, for the same one unit, and an account holds at most 1,000 filters; `list_filters` reads the list (§18 row 36)
 gmail.users.settings.filters.list	used	-	Used: `list_filters`
 gmail.users.settings.forwardingAddresses.create	out	-	Written off: exfiltration path (§4.1); `gmail.settings.sharing`
@@ -60,7 +60,7 @@ gmail.users.settings.sendAs.create	out	-	Written off: `gmail.settings.sharing`; 
 gmail.users.settings.sendAs.delete	out	-	Written off: `gmail.settings.sharing`
 gmail.users.settings.sendAs.get	out	-	Written off: `sendAs.list` returns every field `get` does for the same one unit, and `create_draft` reads the list anyway for the default sender and the account's own addresses (§18 row 39)
 gmail.users.settings.sendAs.list	used	-	Used: `get_settings`, and the `from` choices of `create_draft`
-gmail.users.settings.sendAs.patch	out	-	Written off: `gmail.settings.basic`/`sharing`; signature editing is deferred to §17
+gmail.users.settings.sendAs.patch	used	-	Gated: `update_signature`, behind `GMAIL_ENABLE_SETTINGS`; the signature only, of one of the account's own addresses
 gmail.users.settings.sendAs.smimeInfo.delete	out	-	Written off: key administration
 gmail.users.settings.sendAs.smimeInfo.get	out	-	Written off with `smimeInfo.list`
 gmail.users.settings.sendAs.smimeInfo.insert	out	-	Written off: uploads a private key
@@ -72,7 +72,7 @@ gmail.users.settings.updateAutoForwarding	out	-	Written off: turning forwarding 
 gmail.users.settings.updateImap	out	-	Written off: client-protocol configuration, not an assistant task
 gmail.users.settings.updateLanguage	out	-	Written off: display preference, no assistant task
 gmail.users.settings.updatePop	out	-	Written off: as IMAP
-gmail.users.settings.updateVacation	out	-	Deferred (§17): an auto-reply writes to every sender, so it is sending by another name and needs its own argument
+gmail.users.settings.updateVacation	used	-	Gated: `set_vacation`, behind both `GMAIL_ENABLE_SETTINGS` and `GMAIL_ENABLE_SEND`, with an audience and `confirm: true` (§17.4)
 gmail.users.stop	out	-	Written off with `watch`
 gmail.users.threads.delete	used	-	Gated: `delete_permanently` on a thread, as `messages.delete`
 gmail.users.threads.get	used	-	Used: `get_thread`

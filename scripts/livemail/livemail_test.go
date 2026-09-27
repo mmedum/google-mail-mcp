@@ -81,6 +81,16 @@ func (f *fakeMailbox) Account(context.Context) (string, error) { return "reader@
 
 func (f *fakeMailbox) FullScope() bool { return false }
 
+func (f *fakeMailbox) SettingsScope() bool { return false }
+
+func (f *fakeMailbox) SaveSettings(context.Context) (savedSettings, error) {
+	return savedSettings{}, nil
+}
+
+func (f *fakeMailbox) RestoreSettings(context.Context, savedSettings) error { return nil }
+
+func (f *fakeMailbox) DeleteFiltersFrom(context.Context, string) (int, error) { return 0, nil }
+
 func (f *fakeMailbox) DeleteLabel(_ context.Context, id string) error {
 	f.deleted = append(f.deleted, id)
 	return nil
@@ -410,6 +420,57 @@ func TestCleanTakesOnlyARunName(t *testing.T) {
 	for _, name := range []string{"invoice", "livemail-", "livemail-20260926-234553-62dca1 OR is:inbox", "*"} {
 		if _, _, err := parseOptions([]string{"-profile", "p", "-clean", name}); err == nil {
 			t.Errorf("-clean %q was accepted", name)
+		}
+	}
+}
+
+// The settings steps change only what the run owns: a signature it wrote
+// on the account's own address, filters matching its own sender and
+// deleted only when it made them, and a vacation reply months ahead.
+// Every one of them runs only with the settings scope, and every step
+// passes the guard with the arguments it builds.
+func TestTheGuardHoldsTheSettingsSteps(t *testing.T) {
+	r := newRunLabel(time.Now())
+	e := &env{seed: &seeded{label: r}, account: "reader@example.com", signatureAddress: "alias@example.com",
+		settings: true, filters: []string{"ANe1Bmg1"}}
+	soon := time.Now().Add(24 * time.Hour).Format(time.RFC3339)
+	ahead := time.Now().Add(250 * 24 * time.Hour).Format(time.RFC3339)
+	for _, tc := range []struct {
+		tool string
+		args map[string]any
+		ok   bool
+	}{
+		{"update_signature", map[string]any{"signature": "Synthetic signature for " + r.name}, true},
+		{"update_signature", map[string]any{"signature": "Somebody else's words"}, false},
+		{"update_signature", map[string]any{"send_as": "boss@example.com", "signature": ""}, false},
+		// The account's own address is not the one saved when it is not the default.
+		{"update_signature", map[string]any{"send_as": "reader@example.com", "signature": ""}, false},
+		{"create_filter", map[string]any{"from": r.name + "@filters.invalid", "trash": true, "confirm": true}, true},
+		{"create_filter", map[string]any{"from": "bank@example.com", "trash": true, "confirm": true}, false},
+		{"create_filter", map[string]any{"from": r.name + "@filters.invalid", "add_labels": []any{"Receipts"}}, false},
+		{"create_filter", map[string]any{"from": r.name + "@filters.invalid", "forward": "x@example.com"}, false},
+		{"delete_filter", map[string]any{"filter_id": "ANe1Bmg1", "confirm": true}, true},
+		{"delete_filter", map[string]any{"filter_id": "someone-elses", "confirm": true}, false},
+		{"set_vacation", map[string]any{"enable": true, "body": "Synthetic reply for " + r.name, "start": ahead}, true},
+		{"set_vacation", map[string]any{"enable": true, "body": "Synthetic reply for " + r.name, "start": soon}, false},
+		{"set_vacation", map[string]any{"enable": true, "body": "Synthetic reply for " + r.name}, false},
+		{"set_vacation", map[string]any{"enable": false}, true},
+	} {
+		if err := e.guard(tc.tool, tc.args); (err == nil) != tc.ok {
+			t.Errorf("guard(%s, %v) = %v, want ok=%v", tc.tool, tc.args, err, tc.ok)
+		}
+	}
+	e.seed.messages = []string{"0000000000000001"}
+	for _, s := range settingsSteps {
+		if s.needs == nil || s.needs(&env{}) == "" {
+			t.Errorf("%s runs without the settings scope", s.name)
+		}
+		if s.tool == "delete_filter" && s.needs(&env{settings: true}) == "" {
+			t.Errorf("%s runs with no filter to delete", s.name)
+		}
+		args := s.args(e)
+		if err := e.guard(s.tool, args); err != nil {
+			t.Errorf("%s: its own arguments fail the guard: %v", s.name, err)
 		}
 	}
 }

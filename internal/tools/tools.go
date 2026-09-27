@@ -25,12 +25,14 @@ type Deps struct {
 	registered *[]string
 	// namesOnly makes register collect names and add nothing, for Names.
 	namesOnly bool
+	// kinds collects each registered tool's kind, when set.
+	kinds map[string]string
 }
 
 // registrations is every group of tools, in the order they appear in
 // tools/list. Each entry calls register once per tool, and register
 // decides whether the configuration keeps it.
-var registrations = []func(*mcp.Server, Deps){registerRead, registerAccount, registerAttachment, registerWrite, registerGated}
+var registrations = []func(*mcp.Server, Deps){registerRead, registerAccount, registerAttachment, registerWrite, registerGated, registerSettings}
 
 // Register adds every tool the configuration allows and returns their
 // names, in tools/list order. s may be nil only under Names.
@@ -55,6 +57,16 @@ func Names(d Deps) []string {
 	return Register(nil, d)
 }
 
+// Kinds maps each tool registered under d's configuration to its kind's
+// name, for the schema dump: the gates read which switch a tool sits
+// behind from it, since two kinds can carry the same annotations.
+func Kinds(d Deps) map[string]string {
+	d.namesOnly = true
+	d.kinds = map[string]string{}
+	Register(nil, d)
+	return d.kinds
+}
+
 // FullSurface is the configuration under which every tool registers,
 // for the schema dump. It sits beside Kind.allowed because it must
 // clear every gate allowed reads, and the dump cannot know when a new
@@ -63,6 +75,7 @@ func FullSurface(cfg config.Config) config.Config {
 	cfg.ReadOnly = false
 	cfg.EnableSend = true
 	cfg.EnableDestructive = true
+	cfg.EnableSettings = true
 	if cfg.LocalDir == "" {
 		// Never written to: the dump lists tools and calls none.
 		cfg.LocalDir = "schema-dump"

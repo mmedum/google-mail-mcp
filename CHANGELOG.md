@@ -15,6 +15,15 @@ lifted verbatim.
 
 ## [Unreleased]
 
+### Added
+
+- `GMAIL_ENABLE_SETTINGS` registers `update_signature`, `create_filter` and `delete_filter`, and asks for `gmail.settings.basic` at login.
+- `update_signature` sets the signature of one of the account's addresses, as plain text.
+- `create_filter` makes a filter for mail that arrives from now on; it cannot forward, and one that trashes needs `confirm: true`.
+- `delete_filter` deletes a filter, with `confirm: true`.
+- `set_vacation` turns the vacation reply on for contacts or the account's domain, or off; it also needs `GMAIL_ENABLE_SEND`.
+- The Claude Desktop bundle has a switch for settings changes.
+
 ## [1.0.0] - 2026-09-27
 
 ### Added

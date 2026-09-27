@@ -14,8 +14,12 @@ import (
 // The handlers run with s.mu held.
 
 func (s *Server) getProfile(w http.ResponseWriter, _ *http.Request, _ []string) {
+	address := Account
+	if s.ProfileAddress != "" {
+		address = s.ProfileAddress
+	}
 	writeJSON(w, gmail.Profile{
-		EmailAddress:  Account,
+		EmailAddress:  address,
 		MessagesTotal: int32(len(s.messages)), //nolint:gosec // small
 		ThreadsTotal:  int32(len(s.threads)),  //nolint:gosec // small
 		HistoryID:     strconv.FormatUint(s.historyID, 10),

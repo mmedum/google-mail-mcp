@@ -485,8 +485,12 @@ func (s *Server) sendDraft(w http.ResponseWriter, r *http.Request, _ []string) {
 // needsFull refuses a permanent delete when the fake's token does not
 // hold https://mail.google.com/, as Gmail answers under gmail.modify
 // (spike G).
-func (s *Server) needsFull(w http.ResponseWriter) bool {
-	if s.FullScope {
+func (s *Server) needsFull(w http.ResponseWriter) bool { return needsScope(w, s.FullScope) }
+
+// needsScope refuses a call 403 when the token lacks the scope it needs,
+// as Gmail answers.
+func needsScope(w http.ResponseWriter, held bool) bool {
+	if held {
 		return false
 	}
 	writeError(w, http.StatusForbidden, "insufficientPermissions", "Request had insufficient authentication scopes.")

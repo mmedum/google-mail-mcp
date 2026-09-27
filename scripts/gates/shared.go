@@ -101,6 +101,8 @@ type schemaDump struct {
 	Tools             []dumpTool        `json:"tools"`
 	Resources         []json.RawMessage `json:"resources"`
 	ResourceTemplates []json.RawMessage `json:"resource_templates"`
+	// Kinds names each tool's kind, as internal/tools registered it.
+	Kinds map[string]string `json:"kinds"`
 }
 
 // dumpTool is one mcp.Tool as the dump carries it.
@@ -208,6 +210,12 @@ func problemsError(out interface{ Write([]byte) (int, error) }, what string, pro
 // excluded by a build constraint or a GOOS/GOARCH suffix is skipped, as
 // `go build` skips it.
 func parseGoDir(fset *token.FileSet, dir string, tags ...string) ([]*ast.File, error) {
+	return parseGoDirMode(fset, dir, 0, tags...)
+}
+
+// parseGoDirMode is parseGoDir with the parser's mode, for a gate that
+// reads comments.
+func parseGoDirMode(fset *token.FileSet, dir string, mode parser.Mode, tags ...string) ([]*ast.File, error) {
 	entries, err := os.ReadDir(dir)
 	if err != nil {
 		return nil, err
@@ -225,7 +233,7 @@ func parseGoDir(fset *token.FileSet, dir string, tags ...string) ([]*ast.File, e
 		} else if !ok {
 			continue
 		}
-		file, err := parser.ParseFile(fset, filepath.Join(dir, name), nil, 0)
+		file, err := parser.ParseFile(fset, filepath.Join(dir, name), nil, mode)
 		if err != nil {
 			return nil, err
 		}

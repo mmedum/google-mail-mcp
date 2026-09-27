@@ -7,6 +7,7 @@ import (
 	"context"
 	"encoding/base64"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"net/http"
@@ -34,9 +35,9 @@ const gmailBase = "https://gmail.googleapis.com/gmail/v1/users/me/"
 type restMailbox struct {
 	http *http.Client
 	base string
-	// full is whether the profile's last login granted
-	// https://mail.google.com/.
-	full bool
+	// full and settings are whether the profile's last login granted
+	// https://mail.google.com/ and gmail.settings.basic.
+	full, settings bool
 }
 
 // openMailbox signs in as profile the way the binary does, through the
@@ -62,10 +63,76 @@ func openMailbox(ctx context.Context, profile string) (*restMailbox, error) {
 	}
 	hc := oauth2.NewClient(ctx, ts)
 	hc.Timeout = time.Minute
-	return &restMailbox{http: hc, base: gmailBase, full: scopes.Satisfied(scopes.Full, p.User.Scopes)}, nil
+	return &restMailbox{http: hc, base: gmailBase, full: scopes.Satisfied(scopes.Full, p.User.Scopes),
+		settings: scopes.Satisfied(scopes.SettingsBasic, p.User.Scopes)}, nil
 }
 
 func (m *restMailbox) FullScope() bool { return m.full }
+
+func (m *restMailbox) SettingsScope() bool { return m.settings }
+
+func (m *restMailbox) SaveSettings(ctx context.Context) (savedSettings, error) {
+	var out savedSettings
+	var list struct {
+		SendAs []struct {
+			SendAsEmail string `json:"sendAsEmail"`
+			Signature   string `json:"signature"`
+			IsDefault   bool   `json:"isDefault"`
+		} `json:"sendAs"`
+	}
+	if err := m.call(ctx, http.MethodGet, "settings/sendAs", nil, nil, &list); err != nil {
+		return out, fmt.Errorf("read the send-as addresses: %w", err)
+	}
+	for _, a := range list.SendAs {
+		if a.IsDefault {
+			out.address, out.signature = a.SendAsEmail, a.Signature
+		}
+	}
+	if out.address == "" {
+		return out, errors.New("the account has no default send-as address")
+	}
+	if err := m.call(ctx, http.MethodGet, "settings/vacation", nil, nil, &out.vacation); err != nil {
+		return out, fmt.Errorf("read the vacation reply: %w", err)
+	}
+	return out, nil
+}
+
+func (m *restMailbox) RestoreSettings(ctx context.Context, s savedSettings) error {
+	sig := m.call(ctx, http.MethodPatch, "settings/sendAs/"+url.PathEscape(s.address), nil,
+		map[string]string{"signature": s.signature}, nil)
+	var vacation map[string]any
+	if err := json.Unmarshal(s.vacation, &vacation); err != nil {
+		return errors.Join(sig, err)
+	}
+	return errors.Join(sig, m.call(ctx, http.MethodPut, "settings/vacation", nil, vacation, nil))
+}
+
+func (m *restMailbox) DeleteFiltersFrom(ctx context.Context, from string) (int, error) {
+	var list struct {
+		Filter []struct {
+			ID       string `json:"id"`
+			Criteria struct {
+				From string `json:"from"`
+			} `json:"criteria"`
+		} `json:"filter"`
+	}
+	if err := m.call(ctx, http.MethodGet, "settings/filters", nil, nil, &list); err != nil {
+		return 0, err
+	}
+	n := 0
+	var errs []error
+	for _, f := range list.Filter {
+		if f.Criteria.From != from {
+			continue
+		}
+		if err := m.call(ctx, http.MethodDelete, "settings/filters/"+url.PathEscape(f.ID), nil, nil, nil); err != nil {
+			errs = append(errs, err)
+			continue
+		}
+		n++
+	}
+	return n, errors.Join(errs...)
+}
 
 // call sends one request and decodes a successful reply into out.
 // A rate-limit refusal is waited out and the call made again, up to

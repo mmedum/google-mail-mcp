@@ -150,16 +150,20 @@ be saved to; `GMAIL_PROFILE` lets one machine hold several accounts.
 | `restore` | Take messages or threads out of the trash |
 | `create_label` | Create a user label |
 | `update_label` | Rename a user label or change how it shows |
-| `send_draft` | Send a draft, naming every recipient not already in the thread; only with `GMAIL_ENABLE_SEND=true` |
+| `send_draft` | Send a draft, naming every recipient who has not written in the thread; only with `GMAIL_ENABLE_SEND=true` |
 | `delete_permanently` | Delete up to 100 messages or threads for good, with `confirm: true`; only with `GMAIL_ENABLE_DESTRUCTIVE=true` |
 | `delete_label` | Delete a user label, with `confirm: true`; only with `GMAIL_ENABLE_DESTRUCTIVE=true` |
+| `update_signature` | Set the signature of one of the account's addresses; only with `GMAIL_ENABLE_SETTINGS=true` |
+| `create_filter` | Create a filter for mail that arrives from now on; it cannot forward; only with `GMAIL_ENABLE_SETTINGS=true` |
+| `delete_filter` | Delete a filter, with `confirm: true`; only with `GMAIL_ENABLE_SETTINGS=true` |
+| `set_vacation` | Turn the vacation reply on for contacts or the domain, or off; only with `GMAIL_ENABLE_SETTINGS=true` and `GMAIL_ENABLE_SEND=true` |
 
 Searches take Gmail's own search language in `q`, plus `after` and
 `before` as real instants — Gmail reads a date written inside `q` as
 midnight Pacific time. Every result states the quota it spent. Every
 write takes `dry_run`, names what it touches by id, and says what it
 changed, read from Gmail's answer. `GMAIL_READ_ONLY=true` leaves the
-writes out. The last three tools are not registered at all unless their
+writes out. The last seven tools are not registered at all unless their
 setting is on.
 
 For clients that attach rather than call, `gmail://threads/{id}`,
@@ -171,8 +175,14 @@ For clients that attach rather than call, `gmail://threads/{id}`,
 - **Mail is data.** It arrives marked, with what was hidden removed and
   counted, and no tool description tells a model to act on it.
 - **Nothing reaches another person by default.** Drafts wait in Gmail
-  to be sent, and none of the tools changes a setting. Forwarding and
-  filters are shown, never set.
+  to be sent, and by default no tool changes a setting. Forwarding is
+  shown, never set.
+- **Settings are opt-in.** With `GMAIL_ENABLE_SETTINGS=true` the server
+  can set a signature and create or delete filters. A filter cannot
+  forward, and one that trashes mail needs `confirm: true`. The vacation
+  reply answers other people, so it also needs `GMAIL_ENABLE_SEND=true`,
+  it only ever answers contacts or the account's domain, and turning it
+  on needs `confirm: true`.
 - **Sending is opt-in and goes through a draft.** With
   `GMAIL_ENABLE_SEND=true`, `send_draft` sends a draft exactly as it is
   stored. Every recipient not already in the thread must be written out

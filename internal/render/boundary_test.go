@@ -270,6 +270,12 @@ func TestSenderTextNeverReachesTheServersVoice(t *testing.T) {
 			"reply written":   DraftWrite(hostileDraftWrite(h, msgs[1], "create"), small),
 			"send":            SendDraft(hostileSendWrite(h, msgs[2], false), o),
 			"send dry run":    SendDraft(hostileSendWrite(h, msgs[3], true), small),
+			"signature": SignatureWrite(model.SignatureWrite{Address: "reader@example.com",
+				Before: model.Untrusted(h.mark()), After: model.Untrusted(h.mark())}, o),
+			"vacation": VacationWrite(model.VacationWrite{
+				Before: model.Vacation{Enabled: true, Subject: model.Untrusted(h.mark()), Body: model.Untrusted(h.mark())},
+				After: model.Vacation{Enabled: true, RestrictToContacts: true, Subject: model.Untrusted(h.mark()),
+					Body: model.Untrusted(h.mark())}}, small),
 		}
 		for name, res := range results {
 			if name == "thread omitted" && len(res.Omitted) == 0 {

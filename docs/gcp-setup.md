@@ -36,6 +36,7 @@ Add the scopes for how you run the server:
 | default | nothing (the default) | `https://www.googleapis.com/auth/gmail.modify` |
 | send | `GMAIL_ENABLE_SEND=true` | `https://www.googleapis.com/auth/gmail.modify` |
 | destructive | `GMAIL_ENABLE_DESTRUCTIVE=true` | `https://mail.google.com/` |
+| settings | `GMAIL_ENABLE_SETTINGS=true` | `https://www.googleapis.com/auth/gmail.modify`, `https://www.googleapis.com/auth/gmail.settings.basic` |
 <!-- scopes:end -->
 
 ### Why these and not others
@@ -50,10 +51,12 @@ which is also what Google's own Gmail MCP server does.
 It is the only scope Google accepts for permanent deletion, and asking
 for it by default would make that flag a label rather than a limit.
 
-**No settings scopes.** Forwarding, filters, delegation and send-as
-identities are read under `gmail.readonly`/`gmail.modify` and never
-written, so `gmail.settings.basic` and `gmail.settings.sharing` are never
-requested.
+**`gmail.settings.basic` only with `GMAIL_ENABLE_SETTINGS=true`.** It is
+the only scope Google accepts for writing a signature, a filter or the
+vacation reply; not even `https://mail.google.com/` covers them. Add it
+to the consent screen only if you turn the flag on. Forwarding,
+delegation and send-as identities are never written, so
+`gmail.settings.sharing` is never requested.
 
 ## 3. OAuth client
 

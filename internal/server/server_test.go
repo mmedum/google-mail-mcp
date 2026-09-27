@@ -223,6 +223,15 @@ func TestDumpSchemas(t *testing.T) {
 	if dump.Tools == nil || dump.Resources == nil || dump.ResourceTemplates == nil {
 		t.Errorf("an empty list must be [], not null: %s", buf.String())
 	}
+	// Every tool dumped has its kind, and only those.
+	for _, tool := range dump.Tools {
+		if dump.Kinds[tool.Name] == "" {
+			t.Errorf("%s has no kind in the dump", tool.Name)
+		}
+	}
+	if len(dump.Kinds) != len(dump.Tools) || dump.Kinds["set_vacation"] != "auto-reply" || dump.Kinds["get_profile"] != "read" {
+		t.Errorf("kinds = %v", dump.Kinds)
+	}
 }
 
 // The dump carries each tool whole — _meta and output schema included —
@@ -239,7 +248,7 @@ func TestDumpCarriesTheWholeSurface(t *testing.T) {
 	s.AddResource(&mcp.Resource{Name: "labels", URI: "gmail://labels"}, noop)
 	s.AddResourceTemplate(&mcp.ResourceTemplate{Name: "thread", URITemplate: "gmail://threads/{id}"}, noop)
 	var buf bytes.Buffer
-	if err := dump(context.Background(), &buf, s); err != nil {
+	if err := dump(context.Background(), &buf, s, map[string]string{"alpha": "read", "zeta": "send"}); err != nil {
 		t.Fatal(err)
 	}
 	var got SchemaDump

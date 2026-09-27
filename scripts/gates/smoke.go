@@ -88,17 +88,26 @@ type smokeMode struct {
 // distinguishes. Each is driven through a whole session and must list
 // exactly the tools of its kinds from the dump.
 var smokeModes = []smokeMode{
-	{name: "default", localDir: true, registers: []string{smokeKindRead, smokeKindWrite, smokeKindWriteForGood}},
+	{name: "default", localDir: true, registers: smokeDefaultKinds},
 	{name: "read-only", env: []string{"GMAIL_READ_ONLY=true"}, registers: []string{smokeKindRead}},
 	{name: "send", env: []string{"GMAIL_ENABLE_SEND=true"}, localDir: true,
-		registers: []string{smokeKindRead, smokeKindWrite, smokeKindWriteForGood, smokeKindSend}},
+		registers: append(slices.Clone(smokeDefaultKinds), smokeKindSend)},
 	{name: "destructive", env: []string{"GMAIL_ENABLE_DESTRUCTIVE=true"}, localDir: true,
-		registers: []string{smokeKindRead, smokeKindWrite, smokeKindWriteForGood, smokeKindDestructive}},
+		registers: append(slices.Clone(smokeDefaultKinds), smokeKindDestructive)},
+	{name: "settings", env: []string{"GMAIL_ENABLE_SETTINGS=true"}, localDir: true,
+		registers: append(slices.Clone(smokeDefaultKinds), smokeKindSettings, smokeKindSettingsForGood)},
+	{name: "settings and send", env: []string{"GMAIL_ENABLE_SETTINGS=true", "GMAIL_ENABLE_SEND=true"}, localDir: true,
+		registers: append(slices.Clone(smokeDefaultKinds), smokeKindSend, smokeKindSettings, smokeKindSettingsForGood,
+			smokeKindAutoReply)},
 }
 
-// smokeMinModes is the floor on modes driven: default, read-only, send
-// and destructive.
-const smokeMinModes = 4
+// smokeDefaultKinds are the kinds the default mode registers, with
+// GMAIL_LOCAL_DIR set.
+var smokeDefaultKinds = []string{smokeKindRead, smokeKindReadLocal, smokeKindWrite, smokeKindWriteForGood}
+
+// smokeMinModes is the floor on modes driven: default, read-only, send,
+// destructive, settings, and settings with send.
+const smokeMinModes = 6
 
 // environ is the mode's environment on top of base.
 func (m smokeMode) environ(base []string, localDir string) []string {
@@ -168,7 +177,22 @@ const (
 	smokeKindWriteForGood = "write-for-good"
 	smokeKindSend         = "send"
 	smokeKindDestructive  = "destructive"
+	// The kinds that share another's annotations, and so are read from
+	// the dump's kinds rather than from what a client sees.
+	smokeKindReadLocal       = "read-writes-locally"
+	smokeKindSettings        = "settings"
+	smokeKindSettingsForGood = "settings-for-good"
+	smokeKindAutoReply       = "auto-reply"
 )
+
+// smokeFamily is the annotations each dumped kind must carry, as
+// smokeKind names them: a settings write looks like a write for good to
+// a client, and the vacation reply like a send.
+var smokeFamily = map[string]string{
+	smokeKindRead: smokeKindRead, smokeKindReadLocal: smokeKindWrite, smokeKindWrite: smokeKindWrite,
+	smokeKindWriteForGood: smokeKindWriteForGood, smokeKindSend: smokeKindSend, smokeKindDestructive: smokeKindDestructive,
+	smokeKindSettings: smokeKindWriteForGood, smokeKindSettingsForGood: smokeKindWriteForGood, smokeKindAutoReply: smokeKindSend,
+}
 
 // smokeUserInteraction is the _meta key a send or destructive tool
 // carries.
@@ -219,13 +243,23 @@ func smokeKind(name string, annotations, meta json.RawMessage) (string, error) {
 		"in internal/tools produces", name, ro, de, ow, smokeUserInteraction, ui)
 }
 
-// smokeDumpKinds is every dumped tool's kind, by name.
+// smokeDumpKinds is every dumped tool's kind, by name, as the dump
+// names it. Each tool's annotations must be the ones its kind carries.
 func smokeDumpKinds(surface *schemaDump) (map[string]string, error) {
 	kinds := map[string]string{}
 	for _, t := range surface.Tools {
-		k, err := smokeKind(t.Name, t.Annotations, t.Meta)
+		fam, err := smokeKind(t.Name, t.Annotations, t.Meta)
 		if err != nil {
 			return nil, fmt.Errorf("--dump-schemas: %w", err)
+		}
+		k := surface.Kinds[t.Name]
+		switch want, known := smokeFamily[k]; {
+		case k == "":
+			return nil, fmt.Errorf("--dump-schemas names no kind for %s", t.Name)
+		case !known:
+			return nil, fmt.Errorf("--dump-schemas names %s's kind %q, which this gate does not know", t.Name, k)
+		case want != fam:
+			return nil, fmt.Errorf("%s is a %s tool annotated as a %s tool; its kind carries %s annotations", t.Name, k, fam, want)
 		}
 		kinds[t.Name] = k
 	}
@@ -411,7 +445,7 @@ func smokeCheckTools(listed, dumped map[string]string, mode smokeMode) error {
 		switch {
 		case !ok:
 			return fmt.Errorf("tools/list names %s, which --dump-schemas does not", name)
-		case listed[name] != want:
+		case listed[name] != smokeFamily[want]:
 			return fmt.Errorf("tools/list shows %s as a %s tool, --dump-schemas as a %s tool", name, listed[name], want)
 		case !slices.Contains(mode.registers, want):
 			return fmt.Errorf("%s mode registers %s, a %s tool it must not", mode.name, name, want)

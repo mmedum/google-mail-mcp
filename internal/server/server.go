@@ -229,6 +229,9 @@ type SchemaDump struct {
 	Tools             []*mcp.Tool             `json:"tools"`
 	Resources         []*mcp.Resource         `json:"resources"`
 	ResourceTemplates []*mcp.ResourceTemplate `json:"resource_templates"`
+	// Kinds names each tool's kind, which decides the switch it sits
+	// behind; clients read annotations, and two kinds share them.
+	Kinds map[string]string `json:"kinds"`
 }
 
 // DumpSchemas writes the full surface — every tool whatever the flags,
@@ -240,11 +243,11 @@ func DumpSchemas(ctx context.Context, w io.Writer, d Deps) error {
 	if d.Client == nil {
 		d.Client = gapi.New(gapi.Options{})
 	}
-	return dump(ctx, w, New(d))
+	return dump(ctx, w, New(d), tools.Kinds(d.Deps))
 }
 
 // dump lists srv's surface through an in-memory client and writes it.
-func dump(ctx context.Context, w io.Writer, srv *mcp.Server) error {
+func dump(ctx context.Context, w io.Writer, srv *mcp.Server, kinds map[string]string) error {
 	ct, st := mcp.NewInMemoryTransports()
 	ss, err := srv.Connect(ctx, st, nil)
 	if err != nil {
@@ -260,6 +263,7 @@ func dump(ctx context.Context, w io.Writer, srv *mcp.Server) error {
 	out := SchemaDump{
 		Server: Name, SDKVersion: version.Module(sdkModule),
 		Tools: []*mcp.Tool{}, Resources: []*mcp.Resource{}, ResourceTemplates: []*mcp.ResourceTemplate{},
+		Kinds: kinds,
 	}
 	for t, err := range cs.Tools(ctx, nil) {
 		if err != nil {
