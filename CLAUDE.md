@@ -89,7 +89,9 @@ or missed. Siblings are never named in this repository (rule 1).
    `confirm: true`. §4.6.
 8. **Writes take ids, never a query.** A search is a read the caller has
    seen; a write names the messages it touches. No tool trashes,
-   relabels or deletes "everything matching". §4.7.
+   relabels or deletes "everything matching". A filter acts only on mail
+   that arrives after it, never on mail already there, and one that
+   trashes needs `confirm: true`. §4.7.
 9. **Threading is constructed, never hoped for.** A reply carries the
    parent's `threadId`, `In-Reply-To` and `References`, built from the
    parent's own `Message-ID`, and a subject Gmail will thread. §4.5.

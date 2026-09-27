@@ -38,7 +38,7 @@ func TestSelfCheckPasses(t *testing.T) {
 	if code := runSelfCheck(testPrinter(&out, &errs)); code != 0 {
 		t.Fatalf("self-check exited %d:\n%s", code, out.String())
 	}
-	if !strings.Contains(out.String(), "self-check: 15 transcripts scored, 6 tasks, 0 wrong") {
+	if !strings.Contains(out.String(), "self-check: 16 transcripts scored, 6 tasks, 0 wrong") {
 		t.Errorf("summary missing: %s", out.String())
 	}
 }

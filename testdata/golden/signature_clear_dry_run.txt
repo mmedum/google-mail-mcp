@@ -1,0 +1,4 @@
+dry run: would set the signature of rae.alias@example.org.
+Gmail adds it when a message is written in Gmail itself; drafts this server writes carry no signature.
+signature before: none
+signature after: none

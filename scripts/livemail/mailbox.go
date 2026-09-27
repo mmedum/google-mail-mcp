@@ -4,6 +4,7 @@ package main
 
 import (
 	"context"
+	"encoding/json"
 
 	"crypto/rand"
 	"encoding/base64"
@@ -84,6 +85,23 @@ type mailbox interface {
 	Header(ctx context.Context, messageID, name string) (string, error)
 	Account(ctx context.Context) (string, error)
 	FullScope() bool
+	// SettingsScope is whether the profile's login granted
+	// gmail.settings.basic, which the settings steps need.
+	SettingsScope() bool
+	// SaveSettings reads what the settings steps change — the default
+	// address's signature, exactly, and the vacation reply — so
+	// RestoreSettings can put it back. Neither is printed.
+	SaveSettings(ctx context.Context) (savedSettings, error)
+	RestoreSettings(ctx context.Context, s savedSettings) error
+	// DeleteFiltersFrom deletes the filters that match mail from from:
+	// the run's own, left by a step that failed.
+	DeleteFiltersFrom(ctx context.Context, from string) (int, error)
+}
+
+// savedSettings are the account's own settings as the run found them.
+type savedSettings struct {
+	address, signature string
+	vacation           json.RawMessage
 }
 
 // probeResult is how Gmail answered a probe. Reason and Message are

@@ -1,0 +1,3 @@
+deleted filter ANe1BmgFixture02; mail it already acted on stays as it is.
+  matches: search invoice; has an attachment
+  FORWARDS matching mail to backup@example.org

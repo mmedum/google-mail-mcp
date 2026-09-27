@@ -47,6 +47,29 @@ func TestGoldenSettingsAndFilters(t *testing.T) {
 	golden(t, "filters", render.Filters(model.NewFilters(st.Filters, b.labels), opts()).Text)
 }
 
+func TestGoldenSettingsWrites(t *testing.T) {
+	b := newBox(t)
+	st := b.s.Settings()
+	golden(t, "signature_update", render.SignatureWrite(model.SignatureWrite{Address: gmailtest.Account,
+		Before: model.HTMLText(st.SendAs[0].Signature), After: "Rae Reader\nOperations"}, opts()).Text)
+	golden(t, "signature_clear_dry_run", render.SignatureWrite(model.SignatureWrite{DryRun: true,
+		Address: gmailtest.AliasAddress}, opts()).Text)
+
+	filters := model.NewFilters(st.Filters, b.labels)
+	golden(t, "filter_create", render.FilterWrite(model.FilterWrite{Op: "create", Filter: filters[0]}))
+	golden(t, "filter_create_trash_dry_run", render.FilterWrite(model.FilterWrite{Op: "create", DryRun: true,
+		Filter: model.Filter{Criteria: gmail.FilterCriteria{From: "noise@example.org"},
+			Add: []model.LabelRef{{ID: "TRASH", Name: "TRASH"}}}}))
+	golden(t, "filter_delete", render.FilterWrite(model.FilterWrite{Op: "delete", Filter: filters[1]}))
+
+	before := model.NewVacation(st.Vacation)
+	on := before
+	on.Enabled, on.RestrictToDomain, on.RestrictToContacts = true, true, false
+	golden(t, "vacation_on", render.VacationWrite(model.VacationWrite{Before: before, After: on}, opts()).Text)
+	golden(t, "vacation_off_dry_run", render.VacationWrite(model.VacationWrite{DryRun: true, Before: on, After: before},
+		opts()).Text)
+}
+
 func TestGoldenDownload(t *testing.T) {
 	golden(t, "download", render.Download(render.Saved{MessageID: "0000000000000011", PartID: "1",
 		Path: "/home/reader/attachments/invoicetxt-1.exe", DeclaredName: `..\..\invoice\u{202E}txt.exe`, Suffixed: true,

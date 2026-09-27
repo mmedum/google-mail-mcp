@@ -288,3 +288,31 @@ const (
 	// SettledUnknown: anything else, including a read that failed.
 	SettledUnknown Settled = "unknown"
 )
+
+// SignatureWrite is update_signature's result.
+type SignatureWrite struct {
+	DryRun bool
+	// Address is the send-as address whose signature changed.
+	Address string
+	// Before and After are the signature as text; After is what Gmail
+	// answered with, or would hold.
+	Before, After Untrusted
+}
+
+// FilterWrite is create_filter's or delete_filter's result.
+type FilterWrite struct {
+	// Op is "create" or "delete".
+	Op     string
+	DryRun bool
+	// Filter is the filter made, or the one deleted as it was.
+	Filter Filter
+	// Gone is set when Gmail answered a delete that the filter was
+	// already gone.
+	Gone bool
+}
+
+// VacationWrite is set_vacation's result.
+type VacationWrite struct {
+	DryRun        bool
+	Before, After Vacation
+}

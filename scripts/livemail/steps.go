@@ -274,6 +274,14 @@ type env struct {
 	// whether the profile holds https://mail.google.com/.
 	sendTo string
 	full   bool
+	// settings is whether the profile holds gmail.settings.basic, which
+	// the settings steps need; filters are the ones they created.
+	settings   bool
+	filters    []string
+	filterArgs map[string]any
+	// signatureAddress is the default send-as address, whose signature
+	// the run saved and changes; no other one is touched.
+	signatureAddress string
 	// sent is what the send step read, for spikes B and C.
 	sent sentDraft
 }
@@ -333,6 +341,9 @@ func (e *env) guard(tool string, args map[string]any) error {
 		}
 	}
 	if err := e.guardWrite(tool, args); err != nil {
+		return err
+	}
+	if err := e.guardSettings(tool, args); err != nil {
 		return err
 	}
 	for _, key := range []string{"thread_id", "message_id", "draft_id", "reply_to", "reply_to_thread"} {

@@ -64,6 +64,10 @@ var unitCost = map[string]int{
 	"gmail.users.settings.getLanguage":              1,
 	"gmail.users.settings.sendAs.list":              1,
 	"gmail.users.settings.filters.list":             1,
+	"gmail.users.settings.filters.create":           5,
+	"gmail.users.settings.filters.delete":           5,
+	"gmail.users.settings.sendAs.patch":             100,
+	"gmail.users.settings.updateVacation":           5,
 
 	"gmail.users.drafts.create":    10,
 	"gmail.users.drafts.update":    15,
@@ -141,6 +145,15 @@ type Server struct {
 	// Without it, a permanent delete is refused 403, as Gmail refuses it
 	// under gmail.modify (spike G).
 	FullScope bool
+
+	// ProfileAddress, when set, is the address getProfile answers in
+	// place of Account: a personal account's, say.
+	ProfileAddress string
+
+	// SettingsScope is whether the token holds gmail.settings.basic.
+	// Without it, a settings write is refused 403: no other scope covers
+	// those methods, https://mail.google.com/ included.
+	SettingsScope bool
 
 	// settings are the account's settings and filters, generated like
 	// the mail. UpdateSettings changes them.
@@ -307,6 +320,10 @@ var routes = []route{
 	{"GET", false, []string{"settings", "language"}, "gmail.users.settings.getLanguage", (*Server).getLanguage},
 	{"GET", false, []string{"settings", "sendAs"}, "gmail.users.settings.sendAs.list", (*Server).listSendAs},
 	{"GET", false, []string{"settings", "filters"}, "gmail.users.settings.filters.list", (*Server).listFilters},
+	{"POST", false, []string{"settings", "filters"}, "gmail.users.settings.filters.create", (*Server).createFilter},
+	{"DELETE", false, []string{"settings", "filters", "{}"}, "gmail.users.settings.filters.delete", (*Server).deleteFilter},
+	{"PATCH", false, []string{"settings", "sendAs", "{}"}, "gmail.users.settings.sendAs.patch", (*Server).patchSendAs},
+	{"PUT", false, []string{"settings", "vacation"}, "gmail.users.settings.updateVacation", (*Server).updateVacation},
 
 	{"POST", true, []string{"drafts"}, "gmail.users.drafts.create", (*Server).createDraft},
 	{"PUT", true, []string{"drafts", "{}"}, "gmail.users.drafts.update", (*Server).updateDraft},

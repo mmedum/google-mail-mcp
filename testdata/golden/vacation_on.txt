@@ -1,0 +1,9 @@
+vacation reply is ON · to the account's domain only · from 2026-03-12 08:00 UTC until 2026-03-16 08:00 UTC
+before: off
+<<<untrusted-mail TESTTOKEN: vacation reply>>>
+Subject: Away until Monday
+
+I am away until Monday and will answer when I am back.
+
+Rae
+<<<end-untrusted-mail TESTTOKEN>>>

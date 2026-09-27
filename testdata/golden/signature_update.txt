@@ -1,0 +1,10 @@
+set the signature of reader@example.com.
+Gmail adds it when a message is written in Gmail itself; drafts this server writes carry no signature.
+<<<untrusted-mail TESTTOKEN: signature before>>>
+Rae Reader
+Example Org
+<<<end-untrusted-mail TESTTOKEN>>>
+<<<untrusted-mail TESTTOKEN: signature after>>>
+Rae Reader
+Operations
+<<<end-untrusted-mail TESTTOKEN>>>

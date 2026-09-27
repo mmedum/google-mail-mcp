@@ -324,6 +324,61 @@ type FilterAction struct {
 	Forward        string   `json:"forward,omitempty"`
 }
 
+// FilterWrite is a filter as create_filter writes it. Its action has no
+// forward field, so a forward cannot be sent however the tool is called
+// (§4.1, §17.5).
+//
+// Schema: Filter
+type FilterWrite struct {
+	Criteria *FilterCriteria    `json:"criteria,omitempty"`
+	Action   *FilterWriteAction `json:"action,omitempty"`
+}
+
+// FilterWriteAction is the part of FilterAction a filter may be created
+// with: labels added and removed, nothing else.
+//
+// Schema: FilterAction
+type FilterWriteAction struct {
+	AddLabelIDs    []string `json:"addLabelIds,omitempty"`
+	RemoveLabelIDs []string `json:"removeLabelIds,omitempty"`
+}
+
+// SignaturePatch is sendAs.patch with the signature only. The field is
+// not omitempty: an empty signature clears it, and must be sent.
+//
+// Schema: SendAs
+type SignaturePatch struct {
+	Signature string `json:"signature"`
+}
+
+// VacationWrite is the vacation responder as updateVacation replaces it.
+// Every flag, the subject and the plain body are written, empty
+// included, so a PUT leaves none to Gmail's default. The HTML body is
+// written only when it holds something: Gmail answers with no body at
+// all when it is sent empty beside a plain one (§18 row 52).
+//
+// Schema: VacationSettings
+type VacationWrite struct {
+	EnableAutoReply       bool   `json:"enableAutoReply"`
+	ResponseSubject       string `json:"responseSubject"`
+	ResponseBodyPlainText string `json:"responseBodyPlainText"`
+	// ResponseBodyHTML is left out when a reply is turned on, and
+	// carried over when it is turned off, so one set up in Gmail keeps
+	// its body.
+	ResponseBodyHTML   string `json:"responseBodyHtml,omitempty"`
+	RestrictToContacts bool   `json:"restrictToContacts"`
+	RestrictToDomain   bool   `json:"restrictToDomain"`
+	StartTime          string `json:"startTime,omitempty"`
+	EndTime            string `json:"endTime,omitempty"`
+}
+
+// Write is the vacation responder as updateVacation would replace it
+// with the same settings.
+func (v VacationSettings) Write() VacationWrite { return VacationWrite(v) }
+
+// Settings is the responder as Gmail would answer after w is written.
+func (w VacationWrite) Settings() VacationSettings { return VacationSettings(w) }
+
 // ListFiltersResponse is filters.list. The array's name is singular in
 // the discovery document.
 type ListFiltersResponse struct {

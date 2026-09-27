@@ -34,6 +34,7 @@
         "GMAIL_READ_ONLY": "${user_config.read_only}",
         "GMAIL_ENABLE_SEND": "${user_config.enable_send}",
         "GMAIL_ENABLE_DESTRUCTIVE": "${user_config.enable_destructive}",
+        "GMAIL_ENABLE_SETTINGS": "${user_config.enable_settings}",
         "GMAIL_LOCAL_DIR": "${user_config.local_dir}"
       },
       "platform_overrides": {
@@ -71,6 +72,13 @@
       "type": "boolean",
       "title": "Allow permanent deletion",
       "description": "Register permanent deletion. It asks Google for full mail access, needs a new login, and every call still has to confirm. Off by default: removal is trash.",
+      "default": false,
+      "required": false
+    },
+    "enable_settings": {
+      "type": "boolean",
+      "title": "Allow settings changes",
+      "description": "Register setting a signature and creating or deleting filters, which cannot forward. With sending allowed too, also the vacation reply, for contacts or your domain only. It asks Google for gmail.settings.basic and needs a new login. Off by default.",
       "default": false,
       "required": false
     },
