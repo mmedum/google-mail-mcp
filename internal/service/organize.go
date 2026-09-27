@@ -109,11 +109,21 @@ func relabelIDs(all []gmail.Label, addNames, removeNames []string) (add, remove 
 		case "TRASH":
 			return nil, nil, gapi.Errf(gapi.ClassInvalid, "use trash and restore to move mail in and out of the trash")
 		}
-		if slices.Contains(add, id) && slices.Contains(remove, id) {
-			return nil, nil, gapi.Errf(gapi.ClassInvalid, "label %s is in both add and remove", id)
-		}
+	}
+	if err := addedAndRemoved(add, remove); err != nil {
+		return nil, nil, err
 	}
 	return add, remove, nil
+}
+
+// addedAndRemoved refuses a label both added and removed in one change.
+func addedAndRemoved(add, remove []string) error {
+	for _, id := range add {
+		if slices.Contains(remove, id) {
+			return gapi.Errf(gapi.ClassInvalid, "label %s is in both add and remove", id)
+		}
+	}
+	return nil
 }
 
 // needs is the part of a change a message's labels do not already show.

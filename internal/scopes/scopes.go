@@ -7,6 +7,8 @@
 // what the configuration registers: read-only asks for gmail.readonly,
 // the default for gmail.modify, and only the destructive flag asks for
 // https://mail.google.com/, the one scope permanent deletion accepts.
+// The settings flag adds gmail.settings.basic, which the settings writes
+// accept and https://mail.google.com/ does not cover.
 // The send flag changes nothing here: gmail.modify can already send,
 // which is why registration, not scope, is the control (§4.2).
 //
@@ -34,6 +36,10 @@ const (
 	Compose = "https://www.googleapis.com/auth/gmail.compose"
 	// Labels manages labels only. Never requested.
 	Labels = "https://www.googleapis.com/auth/gmail.labels"
+	// SettingsBasic writes signatures, filters and the vacation reply.
+	// The discovery document lists no other scope for those methods, so
+	// even Full does not cover it.
+	SettingsBasic = "https://www.googleapis.com/auth/gmail.settings.basic"
 )
 
 // implies maps a scope to the narrower scopes it covers. A token holding
@@ -45,19 +51,24 @@ var implies = map[string][]string{
 	Modify: {Readonly, Compose, Labels},
 }
 
-// ForMode is the set login requests for a configuration. readOnly and
-// destructive together are refused by internal/config; here destructive
-// wins, because the wider scope is the one that makes the registered
-// tools work.
-func ForMode(readOnly, destructive bool) []string {
+// ForMode is the set login requests for a configuration. readOnly with
+// either write flag is refused by internal/config; here the write flags
+// win, because the wider set is the one that makes the registered tools
+// work.
+func ForMode(readOnly, destructive, settings bool) []string {
+	var out []string
 	switch {
 	case destructive:
-		return []string{Full}
+		out = []string{Full}
 	case readOnly:
-		return []string{Readonly}
+		out = []string{Readonly}
 	default:
-		return []string{Modify}
+		out = []string{Modify}
 	}
+	if settings {
+		out = append(out, SettingsBasic)
+	}
+	return out
 }
 
 // Mode is one row of the scope table: a configuration and what login
@@ -76,10 +87,11 @@ type Mode struct {
 // so the table cannot say one thing while login does another.
 func Modes() []Mode {
 	return []Mode{
-		{Name: "read-only", Flags: []string{"GMAIL_READ_ONLY=true"}, Scopes: ForMode(true, false)},
-		{Name: "default", Flags: nil, Scopes: ForMode(false, false)},
-		{Name: "send", Flags: []string{"GMAIL_ENABLE_SEND=true"}, Scopes: ForMode(false, false)},
-		{Name: "destructive", Flags: []string{"GMAIL_ENABLE_DESTRUCTIVE=true"}, Scopes: ForMode(false, true)},
+		{Name: "read-only", Flags: []string{"GMAIL_READ_ONLY=true"}, Scopes: ForMode(true, false, false)},
+		{Name: "default", Flags: nil, Scopes: ForMode(false, false, false)},
+		{Name: "send", Flags: []string{"GMAIL_ENABLE_SEND=true"}, Scopes: ForMode(false, false, false)},
+		{Name: "destructive", Flags: []string{"GMAIL_ENABLE_DESTRUCTIVE=true"}, Scopes: ForMode(false, true, false)},
+		{Name: "settings", Flags: []string{"GMAIL_ENABLE_SETTINGS=true"}, Scopes: ForMode(false, false, true)},
 	}
 }
 

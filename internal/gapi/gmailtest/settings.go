@@ -1,9 +1,12 @@
 package gmailtest
 
 import (
+	"encoding/json"
+	"io"
 	"net/http"
 	"slices"
 	"strconv"
+	"strings"
 
 	"github.com/mmedum/google-mail-mcp/internal/gmail"
 )
@@ -131,4 +134,114 @@ func (s *Server) Settings() Settings {
 	c.SendAs = slices.Clone(c.SendAs)
 	c.Filters = slices.Clone(c.Filters)
 	return c
+}
+
+// needsSettings refuses a settings write when the fake's token does not
+// hold gmail.settings.basic.
+func (s *Server) needsSettings(w http.ResponseWriter) bool { return needsScope(w, s.SettingsScope) }
+
+// createFilter models filters.create: a criterion and an action are
+// required, every label must exist, and an identical filter is refused.
+func (s *Server) createFilter(w http.ResponseWriter, r *http.Request, _ []string) {
+	if s.needsSettings(w) {
+		return
+	}
+	var in gmail.Filter
+	if err := json.NewDecoder(r.Body).Decode(&in); err != nil || in.Criteria == nil || *in.Criteria == (gmail.FilterCriteria{}) {
+		writeError(w, http.StatusBadRequest, "invalidArgument", "Filter doesn't have any criteria")
+		return
+	}
+	if in.Action == nil || (len(in.Action.AddLabelIDs) == 0 && len(in.Action.RemoveLabelIDs) == 0 && in.Action.Forward == "") {
+		writeError(w, http.StatusBadRequest, "invalidArgument", "Filter doesn't have any actions")
+		return
+	}
+	for _, id := range slices.Concat(in.Action.AddLabelIDs, in.Action.RemoveLabelIDs) {
+		if _, ok := s.labels[id]; !ok {
+			writeError(w, http.StatusBadRequest, "invalidArgument", "Invalid label: "+id)
+			return
+		}
+	}
+	for _, f := range s.settings.Filters {
+		if sameFilter(f, in) {
+			writeError(w, http.StatusBadRequest, "failedPrecondition", "Filter already exists")
+			return
+		}
+	}
+	in.ID = "ANe1Bmg" + s.nextID()
+	s.settings.Filters = append(s.settings.Filters, in)
+	writeJSON(w, in)
+}
+
+// sameFilter compares two filters' criteria and actions, labels in any
+// order.
+func sameFilter(a, b gmail.Filter) bool {
+	norm := func(f gmail.Filter) string {
+		act := gmail.FilterAction{}
+		if f.Action != nil {
+			act = *f.Action
+			act.AddLabelIDs, act.RemoveLabelIDs = slices.Sorted(slices.Values(act.AddLabelIDs)),
+				slices.Sorted(slices.Values(act.RemoveLabelIDs))
+		}
+		j, _ := json.Marshal(gmail.Filter{Criteria: f.Criteria, Action: &act})
+		return string(j)
+	}
+	return norm(a) == norm(b)
+}
+
+func (s *Server) deleteFilter(w http.ResponseWriter, _ *http.Request, args []string) {
+	if s.needsSettings(w) {
+		return
+	}
+	i := slices.IndexFunc(s.settings.Filters, func(f gmail.Filter) bool { return f.ID == args[0] })
+	if i < 0 {
+		writeError(w, http.StatusNotFound, "notFound", "Requested entity was not found.")
+		return
+	}
+	s.settings.Filters = slices.Delete(s.settings.Filters, i, i+1)
+	w.WriteHeader(http.StatusNoContent)
+}
+
+// patchSendAs models sendAs.patch for the signature, the one field the
+// server writes.
+func (s *Server) patchSendAs(w http.ResponseWriter, r *http.Request, args []string) {
+	if s.needsSettings(w) {
+		return
+	}
+	i := slices.IndexFunc(s.settings.SendAs, func(a gmail.SendAs) bool { return strings.EqualFold(a.SendAsEmail, args[0]) })
+	if i < 0 {
+		writeError(w, http.StatusNotFound, "notFound", "Requested entity was not found.")
+		return
+	}
+	var in struct {
+		Signature *string `json:"signature"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&in); err != nil {
+		writeError(w, http.StatusBadRequest, "invalidArgument", "Invalid JSON")
+		return
+	}
+	if in.Signature != nil {
+		s.settings.SendAs[i].Signature = *in.Signature
+	}
+	writeJSON(w, s.settings.SendAs[i])
+}
+
+// updateVacation models settings.updateVacation, a full replacement.
+func (s *Server) updateVacation(w http.ResponseWriter, r *http.Request, _ []string) {
+	if s.needsSettings(w) {
+		return
+	}
+	raw, err := io.ReadAll(r.Body)
+	var in gmail.VacationSettings
+	var fields map[string]json.RawMessage
+	if err != nil || json.Unmarshal(raw, &in) != nil || json.Unmarshal(raw, &fields) != nil {
+		writeError(w, http.StatusBadRequest, "invalidArgument", "Invalid JSON")
+		return
+	}
+	// An HTML body sent empty beside a plain one leaves the reply with no
+	// body at all, as Gmail answered live (§18 row 52).
+	if html, ok := fields["responseBodyHtml"]; ok && string(html) == `""` {
+		in.ResponseBodyPlainText = ""
+	}
+	s.settings.Vacation = in
+	writeJSON(w, in)
 }

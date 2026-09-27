@@ -241,6 +241,39 @@ func (c *Client) SendAs(ctx context.Context) (*gmail.ListSendAsResponse, error) 
 	return &out, err
 }
 
+// CreateFilter creates a filter. A POST, so it is not repeated after an
+// ambiguous failure: Gmail refuses an identical second filter, and the
+// refusal would hide that the first was made.
+func (c *Client) CreateFilter(ctx context.Context, f gmail.FilterWrite) (*gmail.Filter, error) {
+	var out gmail.Filter
+	err := c.Do(ctx, Call{ID: "gmail.users.settings.filters.create", Method: http.MethodPost,
+		Path: "settings/filters", Body: f}, &out)
+	return &out, err
+}
+
+// DeleteFilter deletes a filter. Mail it already acted on stays as it is.
+func (c *Client) DeleteFilter(ctx context.Context, id string) error {
+	return c.Do(ctx, Call{ID: "gmail.users.settings.filters.delete", Method: http.MethodDelete,
+		Path: "settings/filters/{}", Args: []string{id}}, nil)
+}
+
+// PatchSignature sets the signature of one of the account's send-as
+// addresses, and nothing else about it.
+func (c *Client) PatchSignature(ctx context.Context, sendAs, signature string) (*gmail.SendAs, error) {
+	var out gmail.SendAs
+	err := c.Do(ctx, Call{ID: "gmail.users.settings.sendAs.patch", Method: http.MethodPatch,
+		Path: "settings/sendAs/{}", Args: []string{sendAs}, Body: gmail.SignaturePatch{Signature: signature}}, &out)
+	return &out, err
+}
+
+// UpdateVacation replaces the vacation responder.
+func (c *Client) UpdateVacation(ctx context.Context, v gmail.VacationWrite) (*gmail.VacationSettings, error) {
+	var out gmail.VacationSettings
+	err := c.Do(ctx, Call{ID: "gmail.users.settings.updateVacation", Method: http.MethodPut,
+		Path: "settings/vacation", Body: v}, &out)
+	return &out, err
+}
+
 // Filters lists the account's filters.
 func (c *Client) Filters(ctx context.Context) (*gmail.ListFiltersResponse, error) {
 	var out gmail.ListFiltersResponse

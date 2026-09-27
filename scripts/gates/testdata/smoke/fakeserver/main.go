@@ -6,6 +6,7 @@ import (
 	"bufio"
 	"encoding/json"
 	"fmt"
+	"maps"
 	"os"
 )
 
@@ -22,7 +23,19 @@ var (
 	destructiveTool = map[string]any{"name": "delete_message", "inputSchema": map[string]any{"type": "object"},
 		"annotations": map[string]any{"destructiveHint": true, "idempotentHint": true, "openWorldHint": false},
 		"_meta":       map[string]any{"anthropic/requiresUserInteraction": true}}
+	settingsTool = map[string]any{"name": "create_filter", "inputSchema": map[string]any{"type": "object"},
+		"annotations": map[string]any{"destructiveHint": true, "idempotentHint": true, "openWorldHint": false}}
+	settingsForGoodTool = map[string]any{"name": "delete_filter", "inputSchema": map[string]any{"type": "object"},
+		"annotations": map[string]any{"destructiveHint": true, "idempotentHint": true, "openWorldHint": false}}
+	autoReplyTool = map[string]any{"name": "set_vacation", "inputSchema": map[string]any{"type": "object"},
+		"annotations": map[string]any{"destructiveHint": false, "openWorldHint": true},
+		"_meta":       map[string]any{"anthropic/requiresUserInteraction": true}}
 )
+
+// kinds is the dump's kind of each tool, as internal/tools names them.
+var kinds = map[string]string{"get_profile": "read", "create_draft": "write", "send_draft": "send",
+	"delete_message": "destructive", "create_filter": "settings", "delete_filter": "settings-for-good",
+	"set_vacation": "auto-reply"}
 
 // registered is what the fake lists under the environment's settings,
 // with mode's one misbehavior applied.
@@ -30,6 +43,7 @@ func registered(mode string) []any {
 	readOnly := os.Getenv("GMAIL_READ_ONLY") == "true"
 	send := os.Getenv("GMAIL_ENABLE_SEND") == "true"
 	destructive := os.Getenv("GMAIL_ENABLE_DESTRUCTIVE") == "true"
+	settings := os.Getenv("GMAIL_ENABLE_SETTINGS") == "true"
 	tools := []any{readTool}
 	if !readOnly || mode == "leaky-readonly" {
 		tools = append(tools, writeTool)
@@ -45,6 +59,12 @@ func registered(mode string) []any {
 	if destructive && !readOnly && mode != "missing-destructive" {
 		tools = append(tools, destructiveTool)
 	}
+	if (settings && !readOnly) || mode == "leaky-settings" {
+		tools = append(tools, settingsTool, settingsForGoodTool)
+	}
+	if settings && send && !readOnly {
+		tools = append(tools, autoReplyTool)
+	}
 	if mode == "undumped" {
 		tools = append(tools, map[string]any{"name": "secret_tool",
 			"annotations": map[string]any{"readOnlyHint": true}})
@@ -55,9 +75,14 @@ func registered(mode string) []any {
 func main() {
 	mode := os.Getenv("SMOKE_FAKE_MODE")
 	if len(os.Args) > 1 && os.Args[1] == "--dump-schemas" {
+		k := kinds
+		if mode == "vacation-as-write" {
+			k = maps.Clone(kinds)
+			k["set_vacation"] = "settings"
+		}
 		out(map[string]any{"server": "fake", "sdk_version": "v0",
-			"tools":     []any{readTool, writeTool, sendTool, destructiveTool},
-			"resources": []any{}, "resource_templates": []any{}})
+			"tools":     []any{readTool, writeTool, sendTool, destructiveTool, settingsTool, settingsForGoodTool, autoReplyTool},
+			"resources": []any{}, "resource_templates": []any{}, "kinds": k})
 		return
 	}
 	if mode == "crash" {

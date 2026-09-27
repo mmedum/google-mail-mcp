@@ -95,6 +95,10 @@ type Config struct {
 	// EnableDestructive registers the permanent deletes and requests
 	// https://mail.google.com/.
 	EnableDestructive bool
+	// EnableSettings registers the settings writes — signatures and
+	// filters, and the vacation reply with EnableSend too — and requests
+	// gmail.settings.basic, which no other scope covers (§9.4).
+	EnableSettings bool
 	// LocalDir is the one directory attachments are written to. Empty
 	// means no file transfer, and download_attachment is not registered.
 	LocalDir    string
@@ -108,7 +112,9 @@ type Config struct {
 }
 
 // Scopes is what login requests under this configuration.
-func (c Config) Scopes() []string { return scopes.ForMode(c.ReadOnly, c.EnableDestructive) }
+func (c Config) Scopes() []string {
+	return scopes.ForMode(c.ReadOnly, c.EnableDestructive, c.EnableSettings)
+}
 
 // Settings holds the raw values before validation.
 type Settings struct {
@@ -117,6 +123,7 @@ type Settings struct {
 	ReadOnly          string
 	EnableSend        string
 	EnableDestructive string
+	EnableSettings    string
 	LocalDir          string
 	LogLevel          string
 	LogFormat         string
@@ -156,6 +163,8 @@ func Define(fs *flag.FlagSet, env func(string) string) *Settings {
 	defBool(&s.EnableSend, "enable-send", "ENABLE_SEND", "register send_draft")
 	defBool(&s.EnableDestructive, "enable-destructive", "ENABLE_DESTRUCTIVE",
 		"register the permanent deletes and request https://mail.google.com/")
+	defBool(&s.EnableSettings, "enable-settings", "ENABLE_SETTINGS",
+		"register the signature, filter and vacation writes and request gmail.settings.basic")
 	def(&s.LocalDir, "local-dir", "LOCAL_DIR", "", "the one directory attachments are written to (unset turns file transfer off)")
 	def(&s.LogLevel, "log-level", "LOG_LEVEL", string(LogInfo), "log level: debug, info, warn, error")
 	def(&s.LogFormat, "log-format", "LOG_FORMAT", string(LogText), "log format: text, json")
@@ -228,12 +237,14 @@ func (s *Settings) Build() (Config, error) {
 	add(err)
 	c.EnableDestructive, err = parseBool("ENABLE_DESTRUCTIVE", s.EnableDestructive)
 	add(err)
+	c.EnableSettings, err = parseBool("ENABLE_SETTINGS", s.EnableSettings)
+	add(err)
 	// Read-only with a write flag has no coherent meaning, and guessing
 	// which one was meant would either drop a guard or a tool.
 	for _, on := range []struct {
 		set  bool
 		name string
-	}{{c.EnableSend, "ENABLE_SEND"}, {c.EnableDestructive, "ENABLE_DESTRUCTIVE"}} {
+	}{{c.EnableSend, "ENABLE_SEND"}, {c.EnableDestructive, "ENABLE_DESTRUCTIVE"}, {c.EnableSettings, "ENABLE_SETTINGS"}} {
 		if c.ReadOnly && on.set {
 			add(fmt.Errorf("%w: %sREAD_ONLY and %s%s are both set; choose one", ErrInvalid, EnvPrefix, EnvPrefix, on.name))
 		}

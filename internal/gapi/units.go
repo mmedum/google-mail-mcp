@@ -10,9 +10,11 @@ package gapi
 // missing here is refused before it is sent: an unpriced call would
 // spend quota the budget cannot see.
 //
-// The quota page prices neither labels.patch nor settings.getLanguage.
-// They take the price of their nearest listed sibling — labels.update
-// and the other settings reads — until a live run says otherwise.
+// The quota page prices neither labels.patch, settings.getLanguage nor
+// settings.sendAs.patch. They take the price of their nearest listed
+// sibling — labels.update, the other settings reads and sendAs.update —
+// until a live run says otherwise. The settings writes were read from
+// the page on 2026-09-27.
 var unitCost = map[string]int{
 	"gmail.users.drafts.create":                     10,
 	"gmail.users.drafts.delete":                     10,
@@ -40,6 +42,8 @@ var unitCost = map[string]int{
 	"gmail.users.messages.send":                     100,
 	"gmail.users.messages.trash":                    20,
 	"gmail.users.messages.untrash":                  5,
+	"gmail.users.settings.filters.create":           5,
+	"gmail.users.settings.filters.delete":           5,
 	"gmail.users.settings.filters.get":              1,
 	"gmail.users.settings.filters.list":             1,
 	"gmail.users.settings.forwardingAddresses.get":  1,
@@ -51,6 +55,8 @@ var unitCost = map[string]int{
 	"gmail.users.settings.getVacation":              1,
 	"gmail.users.settings.sendAs.get":               1,
 	"gmail.users.settings.sendAs.list":              1,
+	"gmail.users.settings.sendAs.patch":             100,
+	"gmail.users.settings.updateVacation":           5,
 	"gmail.users.threads.delete":                    20,
 	"gmail.users.threads.get":                       40,
 	"gmail.users.threads.list":                      10,

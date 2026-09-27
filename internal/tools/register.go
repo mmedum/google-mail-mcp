@@ -44,6 +44,20 @@ const (
 	// GMAIL_ENABLE_DESTRUCTIVE (§4.6), and each call still takes
 	// confirm: true.
 	Destructive
+	// Settings changes how the account behaves from now on — a
+	// signature, a filter — and reaches nobody else. Registered only
+	// with GMAIL_ENABLE_SETTINGS (§7.9), which also requests the one
+	// scope these methods accept. Annotated destructive: a signature
+	// overwritten or mail a filter trashed is not put back by this
+	// server.
+	Settings
+	// SettingsForGood is a Settings write that cannot be undone:
+	// delete_filter. Its call takes confirm: true.
+	SettingsForGood
+	// AutoReply answers other people's mail automatically: the vacation
+	// reply. It is sending by another name, so it needs both
+	// GMAIL_ENABLE_SETTINGS and GMAIL_ENABLE_SEND (§17.4).
+	AutoReply
 )
 
 // String names the kind, for tests and the logging harness.
@@ -61,6 +75,12 @@ func (k Kind) String() string {
 		return "send"
 	case Destructive:
 		return "destructive"
+	case Settings:
+		return "settings"
+	case SettingsForGood:
+		return "settings-for-good"
+	case AutoReply:
+		return "auto-reply"
 	}
 	return fmt.Sprintf("kind(%d)", int(k))
 }
@@ -79,13 +99,17 @@ func (k Kind) allowed(cfg config.Config) bool {
 		return cfg.EnableSend && !cfg.ReadOnly
 	case Destructive:
 		return cfg.EnableDestructive && !cfg.ReadOnly
+	case Settings, SettingsForGood:
+		return cfg.EnableSettings && !cfg.ReadOnly
+	case AutoReply:
+		return cfg.EnableSettings && cfg.EnableSend && !cfg.ReadOnly
 	}
 	return false
 }
 
 // annotations says what a client shows for this kind. openWorldHint is
-// true only for Send: it is the one kind whose effect reaches another
-// person.
+// true only for Send and AutoReply: the kinds whose effect reaches
+// another person.
 func (k Kind) annotations() *mcp.ToolAnnotations {
 	no, yes := ptr(false), ptr(true)
 	switch k {
@@ -95,9 +119,9 @@ func (k Kind) annotations() *mcp.ToolAnnotations {
 		// Not read-only: it creates a file. Not destructive: it never
 		// overwrites one.
 		return &mcp.ToolAnnotations{DestructiveHint: no, OpenWorldHint: no}
-	case Send:
+	case Send, AutoReply:
 		return &mcp.ToolAnnotations{DestructiveHint: no, OpenWorldHint: yes}
-	case Destructive, WriteForGood:
+	case Destructive, WriteForGood, Settings, SettingsForGood:
 		// Deleting what is already gone changes nothing more.
 		return &mcp.ToolAnnotations{DestructiveHint: yes, IdempotentHint: true, OpenWorldHint: no}
 	default:
@@ -109,7 +133,7 @@ func (k Kind) annotations() *mcp.ToolAnnotations {
 // call. A signal, not a control: a host in an auto-approve mode runs the
 // tool anyway, which is why Send and Destructive are unregistered by
 // default rather than relying on this.
-func (k Kind) requiresUserInteraction() bool { return k == Send || k == Destructive }
+func (k Kind) requiresUserInteraction() bool { return k == Send || k == Destructive || k == AutoReply }
 
 // Renderer is the readable half of a reply. Every output type has one,
 // so a tool cannot be added without it: a client may show only content
@@ -138,6 +162,9 @@ func register[In any, Out Renderer](s *mcp.Server, d Deps, sp Spec, h Handler[In
 	}
 	if d.registered != nil {
 		*d.registered = append(*d.registered, sp.Name)
+	}
+	if d.kinds != nil {
+		d.kinds[sp.Name] = sp.Kind.String()
 	}
 	if d.namesOnly {
 		return

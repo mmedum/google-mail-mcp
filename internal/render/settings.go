@@ -48,12 +48,7 @@ func Settings(st model.Settings, o Options) Result {
 		default:
 			w.say("vacation reply: off")
 		}
-		if v.Subject != "" || v.Body != "" {
-			w.settingText("vacation reply", "Subject: "+string(v.Subject)+"\n\n"+string(v.Body))
-			if v.BodyFromHTML {
-				w.say("note: the vacation reply was converted from HTML; nothing was fetched.")
-			}
-		}
+		w.vacationText(v)
 
 		w.blank()
 		w.say("send as:")
@@ -169,20 +164,41 @@ func Filters(fs []model.Filter, o Options) Result {
 		func(f model.Filter) string { return f.ID },
 		func(w *writer, f model.Filter) {
 			w.say("filter %s", gmailID(f.ID))
-			w.say("  matches: %s", criteria(f))
-			if len(f.Add) > 0 {
-				w.say("  adds labels: %s", labelList(f.Add))
-			}
-			if len(f.Remove) > 0 {
-				w.say("  removes labels: %s", labelList(f.Remove))
-			}
-			if f.Forward != "" {
-				w.say("  FORWARDS matching mail to %s", setting(f.Forward))
-			}
+			w.filterBody(f)
 		},
 		func(w *writer) {
 			w.say("forwarding mail out of the account: %s", plural(model.Forwarding(fs), "filter", "filters"))
 		})
+}
+
+// filterBody is what a filter matches and does, as list_filters and the
+// filter writes show it.
+func (w *writer) filterBody(f model.Filter) {
+	w.say("  matches: %s", criteria(f))
+	if len(f.Add) > 0 {
+		w.say("  adds labels: %s", labelList(f.Add))
+	}
+	if len(f.Remove) > 0 {
+		w.say("  removes labels: %s", labelList(f.Remove))
+	}
+	if f.Forward != "" {
+		w.say("  FORWARDS matching mail to %s", setting(f.Forward))
+	}
+	if f.Trashes() {
+		w.say("  moves matching mail to the trash, where Gmail deletes it after 30 days.")
+	}
+}
+
+// vacationText is the reply's subject and body in a block, as
+// get_settings and set_vacation show it.
+func (w *writer) vacationText(v model.Vacation) {
+	if v.Subject == "" && v.Body == "" {
+		return
+	}
+	w.settingText("vacation reply", "Subject: "+string(v.Subject)+"\n\n"+string(v.Body))
+	if v.BodyFromHTML {
+		w.say("note: the vacation reply was converted from HTML; nothing was fetched.")
+	}
 }
 
 func criteria(f model.Filter) part {

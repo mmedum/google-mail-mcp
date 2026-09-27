@@ -226,6 +226,16 @@ func pickFrom(senders []gmail.SendAs, want string) (mime.Address, error) {
 		return mime.Address{}, gapi.Errf(gapi.ClassInvalid,
 			"from must be one of the addresses this account sends as; get_settings lists them")
 	}
+	pick, err := defaultSender(senders)
+	if err != nil {
+		return mime.Address{}, err
+	}
+	return mime.Address{Name: senders[pick].DisplayName, Email: senders[pick].SendAsEmail}, nil
+}
+
+// defaultSender is the index of the account's default send-as address,
+// or of its primary one when Gmail marks none default.
+func defaultSender(senders []gmail.SendAs) (int, error) {
 	pick := -1
 	for i, s := range senders {
 		if s.IsDefault || (pick < 0 && s.IsPrimary) {
@@ -236,9 +246,9 @@ func pickFrom(senders []gmail.SendAs, want string) (mime.Address, error) {
 		}
 	}
 	if pick < 0 {
-		return mime.Address{}, gapi.Errf(gapi.ClassUnavailable, "Gmail listed no address this account sends as")
+		return 0, gapi.Errf(gapi.ClassUnavailable, "Gmail listed no address this account sends as")
 	}
-	return mime.Address{Name: senders[pick].DisplayName, Email: senders[pick].SendAsEmail}, nil
+	return pick, nil
 }
 
 // replyParent reads the message a reply answers. A thread id is answered

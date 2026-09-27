@@ -18,6 +18,7 @@ once rather than one per run.
 | `GMAIL_READ_ONLY` | `--read-only` | `false` | Register only the read tools, and ask for `gmail.readonly` at login. Refused together with either `ENABLE_` setting. |
 | `GMAIL_ENABLE_SEND` | `--enable-send` | `false` | Register `send_draft`. Scopes do not change: the default scope can already send, which is why the tool, not the scope, is the control. |
 | `GMAIL_ENABLE_DESTRUCTIVE` | `--enable-destructive` | `false` | Register `delete_permanently` and `delete_label`, and ask for `https://mail.google.com/` at login — the only scope Google accepts for permanent deletion. Each call still needs `confirm: true`. |
+| `GMAIL_ENABLE_SETTINGS` | `--enable-settings` | `false` | Register `update_signature`, `create_filter` and `delete_filter`, and ask for `gmail.settings.basic` at login — the only scope Google accepts for those writes. With `GMAIL_ENABLE_SEND` as well, also `set_vacation`. |
 | `GMAIL_LOCAL_DIR` | `--local-dir` | unset | The one directory attachments are written to, and read from to attach to a draft. An absolute path to a directory that exists. **Unset means no file transfer**: `download_attachment` is not registered, and `create_draft` and `update_draft` refuse attachments. |
 | `GMAIL_LOG_LEVEL` | `--log-level` | `info` | `debug`, `info`, `warn` or `error`. Logs go to stderr. |
 | `GMAIL_LOG_FORMAT` | `--log-format` | `text` | `text` or `json`. |
@@ -56,6 +57,7 @@ ACL on Windows — and the server warns on stderr every time it uses it.
 | default | `https://www.googleapis.com/auth/gmail.modify` |
 | `GMAIL_ENABLE_SEND=true` | unchanged |
 | `GMAIL_ENABLE_DESTRUCTIVE=true` | `https://mail.google.com/` |
+| `GMAIL_ENABLE_SETTINGS=true` | adds `https://www.googleapis.com/auth/gmail.settings.basic` to the above |
 
 All are restricted scopes; `docs/gcp-setup.md` says what that means for
 your consent screen.
@@ -70,8 +72,8 @@ prints the URL instead of opening it, for SSH.
 
 ## Changing a setting that affects scopes
 
-`GMAIL_READ_ONLY` and `GMAIL_ENABLE_DESTRUCTIVE` change the scopes, so
-they need `google-mail-mcp login` again. The server compares the granted
+`GMAIL_READ_ONLY`, `GMAIL_ENABLE_DESTRUCTIVE` and `GMAIL_ENABLE_SETTINGS`
+change the scopes, so they need `google-mail-mcp login` again. The server compares the granted
 scopes with the ones it needs at startup and says so on stderr, and
 `doctor` names any that are missing. Going the other way — turning
 destructive off — needs no new login, but the stored token keeps the

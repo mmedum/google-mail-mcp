@@ -51,7 +51,9 @@ func newWorld(t Task) (*World, error) {
 		TokenSource: oauth2.StaticTokenSource(&oauth2.Token{AccessToken: "evals"}),
 		Sleep:       func(context.Context, time.Duration) error { return nil },
 	})
-	srv := server.New(server.Deps{Deps: tools.Deps{Config: config.Config{EnableSend: t.Send}, Client: client}, Version: "evals"})
+	fake.SettingsScope = t.Settings
+	cfg := config.Config{EnableSend: t.Send, EnableSettings: t.Settings}
+	srv := server.New(server.Deps{Deps: tools.Deps{Config: cfg, Client: client}, Version: "evals"})
 	ts := httptest.NewServer(mcp.NewStreamableHTTPHandler(func(*http.Request) *mcp.Server { return srv }, nil))
 	return &World{Fake: fake, Facts: f, URL: ts.URL, drafts: fake.DraftIDs(),
 		close: func() { ts.Close(); fake.Close() }}, nil

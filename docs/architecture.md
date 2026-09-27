@@ -1,11 +1,9 @@
 # Architecture — google-mail-mcp
 
-**Status: 1.0.0 is released, 2026-09-27, from `main`.** The release
-workflow signed, attested and published it, and all three were verified
-from outside: the checksums, the cosign signature and the provenance
-attestation, each also against a corrupted copy, and the registry entry.
-Nothing has changed in shipped code since the tag. Still unproven: the
-bundle installed in Claude Desktop.
+**Status: 1.1.0 is prepared, 2026-09-27; since 1.0.0 it adds the
+settings writes behind `GMAIL_ENABLE_SETTINGS` (§7.9), run live twice.**
+Still unproven: the bundle installed in Claude Desktop, and the evals
+scored with the settings tools in the injection task.
 
 ## 1. Mission and scope
 
@@ -373,6 +371,12 @@ Google's 1,000 — and every one takes `dry_run`. There is no
 "apply to all results" parameter, because that is how a single injected
 instruction empties a mailbox.
 
+A filter (§7.9) does match a query, and is not an exception: Gmail
+applies it only to mail that arrives after it exists, and the server
+never applies one to mail already in the mailbox. What it can hide is
+mail nobody has seen yet, which is why one that trashes needs
+`confirm: true`, and why filters sit behind their own flag.
+
 Per-item outcomes are reported per item. A call that trashed 97 of 100
 says which three failed and why; it never reports the batch as one
 success. So each item is its own pair of calls: a read of its labels,
@@ -732,7 +736,7 @@ so they sit inside blocks and in `untrusted_*` fields.
 `confirm_recipients` and `dry_run`. It reads the draft (`format=full`, for
 the attachments), checks what needs no thread — a recipient at all, at
 most 50, no confirmation of an address the draft does not send to — and
-then reads its thread's `From`, `To`, `Cc` and `Reply-To`. A dry run
+then reads its thread's `From`, `To` and `Cc` (§4.2). A dry run
 reports the recipients the guard would stop instead of refusing, since
 that is how the caller learns whom to confirm. A draft with no recipient
 is `[invalid]`. The send is one `drafts.send`; the result names the sent
@@ -749,16 +753,53 @@ is `[blocked]`: the server reads the first of a repeated header and drops
 what a lenient read cannot parse, while Gmail sends to every address it
 finds, so the guard would clear a shorter list than the send reaches.
 
+### 7.9 Settings writes
+
+Registered only with `GMAIL_ENABLE_SETTINGS=true`, which also requests
+`gmail.settings.basic`: the discovery document lists no other scope for
+these methods, `https://mail.google.com/` included. Each reads what it
+changes first, so its result shows before and after, and a dry run stops
+after that read.
+
+- `update_signature` sets the signature of one of the account's own
+  send-as addresses, the default unless `send_as` names another. The
+  text is plain: it is escaped and its line breaks become `<br>`, so no
+  markup a caller passes is applied. Empty clears it. Gmail adds the
+  signature to mail written in Gmail itself; drafts this server writes
+  carry none (§4.2). It patches the signature and nothing else.
+- `create_filter` takes Gmail's criteria and actions as labels added or
+  removed, with `archive`, `mark_read`, `star` and `trash` as flags. It
+  cannot forward: `gmail.FilterWrite` has no such field (§17.5). `trash`
+  needs `confirm: true`. `SENT`, `DRAFT` and `SPAM` cannot be added,
+  `TRASH` only through the flag. An identical filter is `[conflict]`,
+  found by reading the list first; Gmail itself keeps duplicates. Gmail
+  rounds a size (§18 row 52), so a filter with one may escape the check. A filter acts on mail that arrives
+  from now on, never on mail already there, so it is not a write that
+  takes a query (§4.7).
+- `delete_filter` takes a filter id and `confirm: true`, and reports what
+  the filter did. A 404 on the delete is reported as gone.
+- `set_vacation` also needs `GMAIL_ENABLE_SEND=true`: an auto-reply
+  writes to other people (§17.4). Turning it on needs a body, an
+  `audience` of `contacts` or `domain` — every sender is not offered —
+  and `confirm: true`; `start` and `end` bound it. The body is sent
+  exactly as given. Turning it off keeps its text for next time.
+  `domain` is refused on a personal account (`gmail.com`,
+  `googlemail.com`), found by one profile read: whether Gmail refuses it
+  there or answers every sender is unchecked (§18 row 51).
+
 ## 8. Tool surface
 
-Twenty-three tools: twenty by default, twelve in read-only mode, one
+Twenty-seven tools: twenty by default, twelve in read-only mode, one
 fewer in each when `GMAIL_LOCAL_DIR` is unset.
 Annotations come from `Kind` in one place (`CLAUDE.md` rule 11);
 `openWorldHint` is true only where the call reaches another person.
 "Write, for good" is registered as a Write is and annotated destructive,
 because Gmail deletes a draft rather than trashing it.
-`_meta["anthropic/requiresUserInteraction"]` is set on Send and
-Destructive kinds, as a signal and not a control.
+`_meta["anthropic/requiresUserInteraction"]` is set on the Send,
+Auto-reply and Destructive kinds, as a signal and not a control. The
+schema dump names each tool's kind, since Settings looks like Write to a
+client and Auto-reply like Send, and the smoke gate reads which switch a
+tool sits behind from it.
 
 | Tool | Kind | Registered | Scope needed | Units |
 |---|---|---|---|---|
@@ -785,6 +826,10 @@ Destructive kinds, as a signal and not a control.
 | `send_draft` | Send | `GMAIL_ENABLE_SEND` | `gmail.modify` | 20 + 40 + 100 |
 | `delete_permanently` | Destructive | `GMAIL_ENABLE_DESTRUCTIVE` | `https://mail.google.com/` | 1 + 30/message, 60/thread |
 | `delete_label` | Destructive | `GMAIL_ENABLE_DESTRUCTIVE` | `gmail.modify` | 1 + 1 + 5 |
+| `update_signature` | Settings | `GMAIL_ENABLE_SETTINGS` | `gmail.settings.basic` | 1 + 100 |
+| `create_filter` | Settings | `GMAIL_ENABLE_SETTINGS` | `gmail.settings.basic` | 1 + 1 + 5 |
+| `delete_filter` | Settings, for good | `GMAIL_ENABLE_SETTINGS` | `gmail.settings.basic` | 1 + 1 + 5 |
+| `set_vacation` | Auto-reply | `GMAIL_ENABLE_SETTINGS` and `GMAIL_ENABLE_SEND` | `gmail.settings.basic` | 1 + 5 |
 
 The staleness gate holds those counts against the table.
 
@@ -799,12 +844,14 @@ All 79 methods of the discovery document have a verdict in
 `testdata/api-coverage.tsv` — used, planned for a named phase, or
 written off with a reason — and the `api-coverage` gate holds it. The
 table that stood here during design moved there in phase 0, so there is
-one copy. It holds thirty used, four gated, three deferred to §17,
-forty-two written off. Phase 1 wrote off `filters.get` and
+one copy. It holds thirty used, eight gated, zero deferred to §17,
+forty-one written off. Phase 1 wrote off `filters.get` and
 `forwardingAddresses.get`, whose lists return the same fields (§18
 row 36). Phase 2 wrote off `messages.batchModify`, which reports nothing
 per item, and `sendAs.get`, whose list `create_draft` reads anyway (§18
-row 39).
+row 39). Phase 5 gated the four settings writes §17 had deferred or
+written off: `filters.create` and `filters.delete`, `sendAs.patch` for
+the signature, and `updateVacation`.
 
 ### 8b. Field coverage
 
@@ -878,8 +925,9 @@ nothing the server adds is phrased as something to do.
 | default | Read and Write | `gmail.modify` |
 | `GMAIL_ENABLE_SEND=true` | adds `send_draft` | `gmail.modify` (no change: §2.10) |
 | `GMAIL_ENABLE_DESTRUCTIVE=true` | adds `delete_permanently`, `delete_label` | `https://mail.google.com/` |
+| `GMAIL_ENABLE_SETTINGS=true` | adds `update_signature`, `create_filter`, `delete_filter`; with `GMAIL_ENABLE_SEND`, also `set_vacation` | adds `gmail.settings.basic` |
 
-`READ_ONLY` with either enable flag is refused at startup, naming both.
+`READ_ONLY` with any enable flag is refused at startup, naming both.
 `docs/security.md` says plainly what the table implies: **the default
 token can send**. Leaving `send_draft` unregistered stops this server
 sending; it does not stop anything else that holds the token. That is
@@ -990,6 +1038,9 @@ generated from `internal/scopes` and gated (§5a, `staleness`).
 | The recipient guard counts `From` on received messages and `To` and `Cc` on the account's own; a correspondent's `Cc` and `Reply-To` need confirming | maintainer, 2026-09-27 | §4.2, §17.8 |
 | Arguments are decoded exactly as the schema declares; a JSON string where an array or integer is declared is `[invalid]` | maintainer, 2026-09-27 | §17.7, §18 row 47 |
 | `get_thread` shows the thread's drafts, marked, after its other messages | maintainer, 2026-09-27 | §7.2, §17.2 |
+| Settings writes behind a new opt-in flag, `GMAIL_ENABLE_SETTINGS`, which alone requests `gmail.settings.basic` | maintainer, 2026-09-27 | §7.9, §9.4 |
+| A filter may trash matching mail, with `confirm: true`; it can never forward | maintainer, 2026-09-27 | §7.9, §17.5 |
+| The vacation reply needs both the settings and the send flags, an audience of contacts or domain, and `confirm: true` | maintainer, 2026-09-27 | §7.9, §17.4 |
 | Spikes D and E send in phase 2, from the live driver's run, to a second address the maintainer passes on the command line and never commits | maintainer, 2026-09-26 | §15; the transcript records the address redacted only |
 
 ## 15. What must be verified live
@@ -1333,6 +1384,34 @@ draft and its witness each time and stopped to ask. The task now scores
 reaching the send with the right witness, whether the client holds the
 call or lets it through.
 
+**Phase 5 — settings writes (v1.1.0).** Asked for by the maintainer
+after 1.0, 2026-09-27: `update_signature`, `create_filter`,
+`delete_filter` and `set_vacation` behind a new `GMAIL_ENABLE_SETTINGS`,
+which requests `gmail.settings.basic`; the vacation reply also behind
+`GMAIL_ENABLE_SEND` (§7.9, §14, §17.4, §17.5).
+
+Built 2026-09-27, on a topic branch from `main`. A filter cannot forward:
+the type it is written as has no such field. The schema dump now names
+each tool's kind, since a settings write looks like a write for good to a
+client and the vacation reply like a send, and the smoke gate drives two
+more modes from it. The `api-fields` gate learned a declared view, a
+`Schema: <Name>` line, so a write type narrower than its schema is still
+held to that schema's fields. The live driver saves the default
+address's signature and the vacation reply before its settings steps
+and restores both exactly after; its filters match only the run's own
+sender at a domain that never resolves, and its vacation reply starts
+300 days ahead. `injected-helpdesk` now runs with the settings tools on.
+
+Run live 2026-09-27, twice, on a Workspace account after a login that
+granted `gmail.settings.basic`, without `-send-to`. The first run found
+three things the unit tests could not (§18 row 52): Gmail keeps a second
+identical filter, it stores a filter's size rounded, and a vacation reply
+sent with an empty HTML body beside a plain one came back with no body.
+The HTML body is now left out unless it holds something, and the fake
+answers as Gmail did. The second run passed all 71 steps and drove 136 of
+137 options, the missing one being `confirm_recipients`, which needs a
+send. Both runs restored the account's signature and vacation reply.
+
 ### 16a. Found by review, and fixed
 
 Each phase's `/code-review high` and `/security-review` findings, with
@@ -1592,6 +1671,33 @@ what fixed them.
   regex. It is unanchored on purpose: it finds a link anywhere in
   committed text and decides nothing about fetching one. The alert is
   dismissed as a false positive, with that reason.
+- **Phase 5, simplify.** `get_settings` and `list_filters` still said
+  this server could change neither settings nor filters; their
+  descriptions now follow the flags, with a test. `update_signature`
+  had its own default-address rule, which dropped the primary fallback
+  `create_draft` has; they share one. The fake compared filters with
+  label order mattering and the service without; both ignore it. Render,
+  label checks, time parsing and the vacation field copies now share
+  one helper each, and `create_filter` reads labels and filters at once.
+  Kept: `Kind` stays one value per switch and effect rather than an
+  effect with a flag set, a design question for a later phase.
+- **Phase 5, security review: one medium finding, fixed; one question,
+  refused until checked.** A driver step run alone with `-run` could print
+  the account's own signature or vacation text; every such step is quiet.
+  `audience: domain` on a personal account is unchecked, so it is refused
+  there (§18 row 51). An HTML-only vacation reply lost its text when
+  turned off; the write type carries it.
+- **Phase 5, code review: nine findings, all fixed.** Turning the reply
+  on now writes every text field, empty included, so an old HTML body
+  cannot go out in place of the caller's. The driver saved the default
+  address's signature but changed the account's own, which differ when
+  the default is an alias; it changes the one it saved. Settings tools
+  are annotated destructive, since this server does not put back a
+  signature or trashed mail. Filter criteria are trimmed, and
+  `exclude_chats` alone is refused. A size out of range is refused
+  rather than clamped. Runs of spaces survive in a signature. A 404 on a
+  filter delete says it may follow a lost answer. `set_vacation` reads
+  the profile at once with the reply.
 
 ### Closing a phase
 
@@ -1627,11 +1733,15 @@ what fixed them.
    auto-reply writes to every sender, which is sending by another name.
    If built, it belongs behind `GMAIL_ENABLE_SEND` with the recipient
    scope (`restrictToContacts`, `restrictToDomain`) required, never
-   defaulted. **Deferred to after 1.0.**
+   defaulted. **Built in phase 5, decided 2026-09-27 by the maintainer**:
+   `set_vacation` needs both flags, answers only contacts or the domain,
+   and takes `confirm: true` (§7.9, §14).
 5. **Filters.** `filters.create` could be built with `action.forward`
    refused structurally — the wire type would have no such field. The
-   case for it is weak and the risk is §4.1's worst one. **Deferred to
-   after 1.0.**
+   case for it is weak and the risk is §4.1's worst one. **Built in phase
+   5, decided 2026-09-27 by the maintainer**: `create_filter` and
+   `delete_filter` behind `GMAIL_ENABLE_SETTINGS`, with forward absent
+   from the wire type and trash behind `confirm: true` (§7.9, §14).
 6. **Google's hosted server.** §1. If it gains trash, local attachment
    transfer and bounded reads, this server's reason to exist narrows to
    the local-token and verified-release half. Revisit at each minor
@@ -1758,3 +1868,6 @@ live** — §15 exists to settle these, and they are marked.
 | 47 | Clients send arrays and integers as JSON strings, so the server should decode them leniently | MCP 2025-06-18 tools ("Servers MUST … validate all tool inputs"); RFC 9413 on the robustness principle; three public issues on a widely used MCP client's tracker, May to July 2026; `testdata/schema-baseline.json` — read 2026-09-27 | **Declined for 1.0.** The one issue that stringified every argument is closed. The two still open stringify only a parameter whose schema is empty, or an object declared through `$ref`/`$defs`, and this surface has neither: every parameter has a concrete type and no schema uses `$ref`. RFC 9413 describes how tolerating a peer's error entrenches it. Adding tolerance later is not breaking; removing it would be (§17.7) |
 | 48 | Google's hosted Gmail MCP server now covers what this server is for (§17.6) | Google's MCP reference for `gmailmcp.googleapis.com`, last updated 2026-07-21, read 2026-09-27 | **Not yet.** Developer Preview; eleven tools — drafts, threads, messages, search and labels. No send, trash, delete or attachment download, and no stated read budget. §1's comparison stands for 1.0 |
 | 49 | A client that allows an MCP server's tools by rule runs `send_draft` without asking | `claude -p` 2.1.282 with `--allowed-tools mcp__gmail__*`, the evals run of 2026-09-27 | **Refuted, as intended.** Every `send_draft` call, `dry_run: true` included, was refused with "MCPTool requires permission." before it reached the server, while the other writes ran. The client honors `anthropic/requiresUserInteraction` over an allow rule. So in that client a dry run does not spare the person a prompt: the hint is per tool, and cannot tell a preview from a send |
+| 50 | `https://mail.google.com/` covers every Gmail method, the settings writes included | Discovery document revision 20260921, the `scopes` of `settings.filters.create`, `settings.filters.delete`, `settings.updateVacation` and `settings.sendAs.patch`, read 2026-09-27 | **Refuted.** Each lists only `gmail.settings.basic` (and `sendAs.patch` also `gmail.settings.sharing`). So `GMAIL_ENABLE_SETTINGS` adds that scope in every mode, the destructive one included, and the implication table does not let the full scope satisfy it; a test holds both. The quota page, read the same day, prices the filter and vacation writes at 5 units and does not list `sendAs.patch`, which takes `sendAs.update`'s 100 |
+| 51 | `restrictToDomain` limits a personal Gmail account's vacation reply | Not checked: raised by the phase 5 security review, 2026-09-27. No reference page says what a personal account does with it, and the live driver runs on one account | **Refused until checked.** If Gmail accepted it and answered every sender, that is the audience §17.4 rules out, so `set_vacation` refuses `domain` for `gmail.com` and `googlemail.com` addresses. A live probe on a personal profile would settle it |
+| 52 | Gmail refuses an identical filter, keeps a filter's size as given, and reads an empty HTML vacation body as absent | Phase 5's first live run, 2026-09-27 | **Refuted, all three.** A second filter identical to the first was created, not refused, so `create_filter`'s own check is the only guard against a duplicate. A size of 1,048,576 bytes was stored as 1,000,000, so a filter with a size may not match its own request and a duplicate of it can get through; the rounding rule is unknown and the check does not guess at it. A vacation reply sent with `responseBodyHtml: ""` beside a plain body came back with no body at all; the HTML body is now left out unless it holds something. The run restored the account's own reply after |

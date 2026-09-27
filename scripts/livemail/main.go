@@ -172,8 +172,35 @@ func drive(ctx context.Context, o options, tr *transcript.Transcript, box mailbo
 		return err
 	}
 
-	session, err := mcpstdio.Start(o.binary, "GMAIL_PROFILE="+o.profile, "GMAIL_LOCAL_DIR="+localDir,
-		"GMAIL_ENABLE_SEND=true", "GMAIL_ENABLE_DESTRUCTIVE=true")
+	// The settings steps change the account's own signature and vacation
+	// reply. They run only when the login granted their scope, and what
+	// they change is saved first and put back after, before the run's
+	// label goes: a filter the run left names it.
+	serverEnv := []string{"GMAIL_PROFILE=" + o.profile, "GMAIL_LOCAL_DIR=" + localDir,
+		"GMAIL_ENABLE_SEND=true", "GMAIL_ENABLE_DESTRUCTIVE=true"}
+	var saved savedSettings
+	if box.SettingsScope() {
+		var saveErr error
+		if saved, saveErr = box.SaveSettings(ctx); saveErr != nil {
+			return saveErr
+		}
+		serverEnv = append(serverEnv, "GMAIL_ENABLE_SETTINGS=true")
+		defer func() {
+			n, filtersErr := box.DeleteFiltersFrom(ctx, filterSender(seed.label))
+			if n > 0 {
+				tr.Sayf("cleanup: deleted %d filter(s) a step left", n)
+			}
+			if restoreErr := errors.Join(filtersErr, box.RestoreSettings(ctx, saved)); restoreErr != nil {
+				tr.Fail("restore the signature and the vacation reply: %v", restoreErr)
+				if err == nil {
+					err = restoreErr
+				}
+			} else {
+				tr.Sayf("restored the signature and the vacation reply as the run found them")
+			}
+		}()
+	}
+	session, err := mcpstdio.Start(o.binary, serverEnv...)
 	if err != nil {
 		return err
 	}
@@ -186,10 +213,11 @@ func drive(ctx context.Context, o options, tr *transcript.Transcript, box mailbo
 
 	rec := livecover.NewRecorder()
 	session.OnCall(rec.Sent)
-	e := &env{session: session, tr: tr, seed: seed, localDir: localDir, sendTo: o.sendTo, full: box.FullScope()}
+	e := &env{session: session, tr: tr, seed: seed, localDir: localDir, sendTo: o.sendTo, full: box.FullScope(),
+		settings: box.SettingsScope(), signatureAddress: saved.address}
 
 	failed := 0
-	for _, s := range slices.Concat(steps, writeSteps, gatedSteps) {
+	for _, s := range slices.Concat(steps, writeSteps, gatedSteps, settingsSteps) {
 		if !o.run.MatchString(s.name) {
 			continue
 		}

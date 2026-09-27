@@ -105,3 +105,22 @@ func TestAPIFieldsFloors(t *testing.T) {
 	out.mustSay(t, "4 published fields judged, below the floor of 5")
 	out.mustSay(t, "2 fields modeled, below the floor of 3")
 }
+
+// A struct that declares itself a view of a schema is held to that
+// schema's fields: a view of Label may model id, and not a field Label
+// does not publish.
+func TestAPIFieldsViews(t *testing.T) {
+	view := func(field string) func(map[string]string) {
+		return apiFieldsEdit("internal/gmail/gmail.go", "type unexported",
+			"// LabelPatch is a narrower write.\n//\n// Schema: Label\ntype LabelPatch struct {\n\tX string `json:\""+field+"\"`\n}\n\ntype unexported")
+	}
+	var out sink
+	if err := apiFieldsCheck(apiFieldsFixture(t, view("id")), apiFieldsTestFloor, &out); err != nil {
+		t.Fatalf("a view of published fields failed: %v\n%s", err, out.String())
+	}
+	out = sink{}
+	err := apiFieldsCheck(apiFieldsFixture(t, view("notPublished")), apiFieldsTestFloor, &out)
+	if err == nil || !strings.Contains(out.String(), "Label.notPublished") {
+		t.Errorf("a view modeling an unpublished field passed: %v\n%s", err, out.String())
+	}
+}
