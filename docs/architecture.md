@@ -1,7 +1,9 @@
 # Architecture — google-mail-mcp
 
-**Status: 1.1.0 is prepared, 2026-09-27; since 1.0.0 it adds the
-settings writes behind `GMAIL_ENABLE_SETTINGS` (§7.9), run live twice.**
+**Status: 1.1.0 is released, 2026-09-27, from `main`, and verified from
+outside: checksums, the cosign signature and the provenance attestation,
+each also against a tampered copy, and the registry entry. Since 1.0.0
+it adds the settings writes behind `GMAIL_ENABLE_SETTINGS` (§7.9).**
 Still unproven: the bundle installed in Claude Desktop, and the evals
 scored with the settings tools in the injection task.
 
