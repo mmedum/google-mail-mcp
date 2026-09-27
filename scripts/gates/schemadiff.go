@@ -21,7 +21,7 @@ const schemaDiffBaseline = "testdata/schema-baseline.json"
 // the released surface, which the dump registers whatever the flags say. Raise it when a
 // release adds tools; the baseline's own count is held too, so it can
 // only rise.
-const schemaDiffMinTools = 23
+const schemaDiffMinTools = 27
 
 // schemaDiff compares the built binary's whole surface — every tool as
 // the SDK lists it, resources and templates — with the baseline.

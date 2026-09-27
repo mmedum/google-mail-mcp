@@ -15,6 +15,8 @@ lifted verbatim.
 
 ## [Unreleased]
 
+## [1.1.0] - 2026-09-27
+
 ### Added
 
 - `GMAIL_ENABLE_SETTINGS` registers `update_signature`, `create_filter` and `delete_filter`, and asks for `gmail.settings.basic` at login.
@@ -57,5 +59,6 @@ lifted verbatim.
 - Repository gates run by `make check` and CI: leaks, pins, error classes, API coverage, schema diff, smoke, staleness and more.
 - Signed release archives for six platforms with SBOMs, build provenance, a Claude Desktop bundle and an MCP registry entry.
 
-[Unreleased]: https://github.com/mmedum/google-mail-mcp/compare/v1.0.0...HEAD
+[Unreleased]: https://github.com/mmedum/google-mail-mcp/compare/v1.1.0...HEAD
+[1.1.0]: https://github.com/mmedum/google-mail-mcp/compare/v1.0.0...v1.1.0
 [1.0.0]: https://github.com/mmedum/google-mail-mcp/compare/dc26f63...v1.0.0
