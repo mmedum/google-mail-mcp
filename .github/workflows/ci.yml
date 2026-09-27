@@ -1,0 +1,163 @@
+name: ci
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+# Every `run` step, on every platform. Without it the Windows runner uses
+# PowerShell, which reads -coverprofile=cov.out as a file called `cov`.
+# Explicit bash also turns on pipefail.
+defaults:
+  run:
+    shell: bash
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+# Every step that checks something is a `make` target, so `make parity`
+# can hold this file against `make check` by reading recipes.
+jobs:
+  # The keyring, the config directory, file permissions and the .exe
+  # path differ per OS, and a Linux-only run exercises none of them.
+  test:
+    name: test (${{ matrix.os }})
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 25
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest, windows-latest]
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        with:
+          go-version-file: go.mod
+      # The floor is measured on one platform; the others run the suite.
+      - name: test
+        if: matrix.os != 'ubuntu-latest'
+        run: make test
+      - name: test and coverage floors
+        if: matrix.os == 'ubuntu-latest'
+        run: make cover
+      - name: stdio smoke
+        run: make smoke
+
+  lint:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        with:
+          go-version-file: go.mod
+      - name: gofmt
+        run: make fmt
+      - name: vet
+        run: make vet
+      - name: tidy
+        run: make tidy
+      - name: golangci-lint
+        run: make lint
+      - name: actionlint
+        run: make actionlint
+      # The release config is otherwise exercised only by a tag, when a
+      # mistake is already public.
+      - name: goreleaser check
+        run: make goreleaser-check
+
+  gates:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+          # schema-diff compares against the newest tag, and a shallow
+          # clone has none.
+          fetch-depth: 0
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        with:
+          go-version-file: go.mod
+      - name: vulnerabilities
+        run: make vuln
+      - name: licenses
+        run: make licenses
+      - name: leak scan
+        run: make leaks
+      - name: workflow and tool pins
+        run: make pins
+      - name: error classes
+        run: make classes
+      - name: API method coverage
+        run: make api-coverage
+      - name: API field coverage
+        run: make api-fields
+      - name: schema diff
+        run: make schema-diff
+      - name: docs match the code
+        run: make staleness
+      - name: definition of done
+        run: make checklist
+      - name: CHANGELOG links
+        run: make changelog-links
+      - name: transcript redaction
+        run: make transcript
+      - name: live driver coverage
+        run: make live-cover
+      - name: write outcomes
+        run: make outcomes
+      - name: eval scorers
+        run: make evals-check
+      - name: bundle manifest
+        run: make mcpb
+      - name: release wiring
+        run: make release
+      - name: registry entry
+        run: make server-json
+      - name: make and CI parity
+        run: make parity
+
+  # Credentials and identifiers that were committed and edited out later
+  # are invisible to a tree scan. This job reads the whole history.
+  history:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+          fetch-depth: 0
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        with:
+          go-version-file: go.mod
+      - name: gitleaks
+        run: make secrets
+      - name: leak scan over history
+        run: make leaks-history
+
+  changelog:
+    if: github.event_name == 'pull_request'
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+          fetch-depth: 0
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        with:
+          go-version-file: go.mod
+      - name: CHANGELOG entry
+        env:
+          BASE_REF: ${{ github.base_ref }}
+        run: make changelog CHANGELOG_BASE="origin/${BASE_REF}"

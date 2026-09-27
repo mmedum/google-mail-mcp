@@ -1,0 +1,6 @@
+draft r0000000000000021 is gone: it was read, and Gmail then answered the delete that no such draft exists. An earlier attempt of this call, or another client, deleted it.
+<<<untrusted-mail TESTTOKEN: draft headers in 0000000000000024>>>
+From: Rae Reader <reader@example.com>
+To: Bruno Fennick <bruno.fennick@example.org>
+Subject: Offsite, revised
+<<<end-untrusted-mail TESTTOKEN>>>

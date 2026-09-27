@@ -1,0 +1,90 @@
+budget: 24000 characters
+message 000000000000000a · thread 000000000000000a · 2026-03-02 22:00 UTC · labels: INBOX
+<<<untrusted-mail TESTTOKEN: headers from dmitri.vale@example.org in 000000000000000a>>>
+From: Dmitri Vale <dmitri.vale@example.org>
+To: Rae Reader <reader@example.com>
+Date: Mon, 02 Mar 2026 22:00:00 +0000
+Subject: Minutes from the planning meeting
+Message-ID: <fixture.000000000000000a@mail.example.com>
+<<<end-untrusted-mail TESTTOKEN>>>
+<<<untrusted-mail TESTTOKEN: body from dmitri.vale@example.org in 000000000000000a>>>
+Paragraph 1. We reviewed the budget and agreed to revisit it next week. Nobody raised a blocker, and the notes from the previous session still stand.
+
+Paragraph 2. We reviewed the schedule and agreed to revisit it next week. Nobody raised a blocker, and the notes from the previous session still stand.
+
+Paragraph 3. We reviewed the venue and agreed to revisit it next week. Nobody raised a blocker, and the notes from the previous session still stand.
+
+Paragraph 4. We reviewed the staffing plan and agreed to revisit it next week. Nobody raised a blocker, and the notes from the previous session still stand.
+
+Paragraph 5. We reviewed the vendor list and agreed to revisit it next week. Nobody raised a blocker, and the notes from the previous session still stand.
+
+Paragraph 6. We reviewed the risk register and agreed to revisit it next week. Nobody raised a blocker, and the notes from the previous session still stand.
+
+Paragraph 7. We reviewed the budget and agreed to revisit it next week. Nobody raised a blocker, and the notes from the previous session still stand.
+
+Paragraph 8. We reviewed the schedule and agreed to revisit it next week. Nobody raised a blocker, and the notes from the previous session still stand.
+
+Paragraph 9. We reviewed the venue and agreed to revisit it next week. Nobody raised a blocker, and the notes from the previous session still stand.
+
+Paragraph 10. We reviewed the staffing plan and agreed to revisit it next week. Nobody raised a blocker, and the notes from the previous session still stand.
+
+Paragraph 11. We reviewed the vendor list and agreed to revisit it next week. Nobody raised a blocker, and the notes from the previous session still stand.
+
+Paragraph 12. We reviewed the risk register and agreed to revisit it next week. Nobody raised a blocker, and the notes from the previous session still stand.
+
+Paragraph 13. We reviewed the budget and agreed to revisit it next week. Nobody raised a blocker, and the notes from the previous session still stand.
+
+Paragraph 14. We reviewed the schedule and agreed to revisit it next week. Nobody raised a blocker, and the notes from the previous session still stand.
+
+Paragraph 15. We reviewed the venue and agreed to revisit it next week. Nobody raised a blocker, and the notes from the previous session still stand.
+
+Paragraph 16. We reviewed the staffing plan and agreed to revisit it next week. Nobody raised a blocker, and the notes from the previous session still stand.
+
+Paragraph 17. We reviewed the vendor list and agreed to revisit it next week. Nobody raised a blocker, and the notes from the previous session still stand.
+
+Paragraph 18. We reviewed the risk register and agreed to revisit it next week. Nobody raised a blocker, and the notes from the previous session still stand.
+
+Paragraph 19. We reviewed the budget and agreed to revisit it next week. Nobody raised a blocker, and the notes from the previous session still stand.
+
+Paragraph 20. We reviewed the schedule and agreed to revisit it next week. Nobody raised a blocker, and the notes from the previous session still stand.
+
+Paragraph 21. We reviewed the venue and agreed to revisit it next week. Nobody raised a blocker, and the notes from the previous session still stand.
+
+Paragraph 22. We reviewed the staffing plan and agreed to revisit it next week. Nobody raised a blocker, and the notes from the previous session still stand.
+
+Paragraph 23. We reviewed the vendor list and agreed to revisit it next week. Nobody raised a blocker, and the notes from the previous session still stand.
+
+Paragraph 24. We reviewed the risk register and agreed to revisit it next week. Nobody raised a blocker, and the notes from the previous session still stand.
+
+Paragraph 25. We reviewed the budget and agreed to revisit it next week. Nobody raised a blocker, and the notes from the previous session still stand.
+
+Paragraph 26. We reviewed the schedule and agreed to revisit it next week. Nobody raised a blocker, and the notes from the previous session still stand.
+
+Paragraph 27. We reviewed the venue and agreed to revisit it next week. Nobody raised a blocker, and the notes from the previous session still stand.
+
+Paragraph 28. We reviewed the staffing plan and agreed to revisit it next week. Nobody raised a blocker, and the notes from the previous session still stand.
+
+Paragraph 29. We reviewed the vendor list and agreed to revisit it next week. Nobody raised a blocker, and the notes from the previous session still stand.
+
+Paragraph 30. We reviewed the risk register and agreed to revisit it next week. Nobody raised a blocker, and the notes from the previous session still stand.
+
+Paragraph 31. We reviewed the budget and agreed to revisit it next week. Nobody raised a blocker, and the notes from the previous session still stand.
+
+Paragraph 32. We reviewed the schedule and agreed to revisit it next week. Nobody raised a blocker, and the notes from the previous session still stand.
+
+Paragraph 33. We reviewed the venue and agreed to revisit it next week. Nobody raised a blocker, and the notes from the previous session still stand.
+
+Paragraph 34. We reviewed the staffing plan and agreed to revisit it next week. Nobody raised a blocker, and the notes from the previous session still stand.
+
+Paragraph 35. We reviewed the vendor list and agreed to revisit it next week. Nobody raised a blocker, and the notes from the previous session still stand.
+
+Paragraph 36. We reviewed the risk register and agreed to revisit it next week. Nobody raised a blocker, and the notes from the previous session still stand.
+
+Paragraph 37. We reviewed the budget and agreed to revisit it next week. Nobody raised a blocker, and the notes from the previous session still stand.
+
+Paragraph 38. We reviewed the schedule and agreed to revisit it next week. Nobody raised a blocker, and the notes from the previous session still stand.
+
+Paragraph 39. We reviewed the venue and agreed to revisit it next week. Nobody raised a blocker, and the notes from the previous session still stand.
+
+Paragraph 40. We reviewed the staffing plan and agreed to revisit it next week. Nobody raised a blocker, and the notes from the previous session still stand.
+<<<end-untrusted-mail TESTTOKEN>>>

@@ -1,0 +1,4 @@
+2 labels: 1 system, 1 user
+
+INBOX · id INBOX · system · 21 messages (5 unread), 8 threads (4 unread)
+Receipts · id Label_3 · user · 1 message (0 unread), 1 thread (0 unread) · color #ffffff on #16a766 · listed when unread

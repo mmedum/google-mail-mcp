@@ -1,0 +1,10 @@
+budget: 24000 characters
+1 draft on this page
+complete: yes
+
+draft r000000000000001b · message 000000000000001a · thread 0000000000000018 · 2026-03-04 02:00 UTC
+<<<untrusted-mail TESTTOKEN: draft summary in 000000000000001a>>>
+To: Freya Holm <freya.holm@example.org>
+Subject: Re: Budget sign-off
+Snippet: I will confirm the numbers by Friday.
+<<<end-untrusted-mail TESTTOKEN>>>

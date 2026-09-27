@@ -1,0 +1,34 @@
+# Build output
+/google-mail-mcp
+/google-mail-mcp.exe
+# `go build ./...` with no -o leaves these beside the module.
+/gates
+/gates.exe
+/livemail
+/livemail.exe
+/evals
+/evals.exe
+/dist/
+*.test
+
+# Test and gate artifacts
+cov.out
+*.coverprofile
+coverage.out
+coverage.html
+schemas.json
+
+# Never: an OAuth client, a token, or an environment file
+client_secret*.json
+token.json
+.env
+.env.*
+
+# Local agent and editor state
+/.claude/
+.claude/settings.local.json*
+.vscode/
+.idea/
+*.swp
+*~
+.DS_Store

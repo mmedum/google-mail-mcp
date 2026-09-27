@@ -1,0 +1,3 @@
+budget: 24000 characters
+cursor expired: Gmail no longer keeps history from 12, so the changes after it are gone and cannot be listed.
+history_id=1004 is the mailbox's current point; list_changes from it sees what changes next. To catch up on what was missed, search the mail instead.

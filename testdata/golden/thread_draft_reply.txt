@@ -1,0 +1,49 @@
+budget: 24000 characters
+thread 0000000000000018 · 2 messages and 1 draft · newest first · labels: INBOX, SENT, DRAFT
+
+── 2 of 2 · message 0000000000000019 · thread 0000000000000018 · 2026-03-04 01:00 UTC · labels: SENT
+<<<untrusted-mail TESTTOKEN: headers from reader@example.com in 0000000000000019>>>
+From: Rae Reader <reader@example.com>
+To: Freya Holm <freya.holm@example.org>
+Date: Wed, 04 Mar 2026 01:00:00 +0000
+Subject: Re: Budget sign-off
+Message-ID: <fixture.0000000000000019@mail.example.com>
+In-Reply-To: <fixture.0000000000000018@mail.example.com>
+<<<end-untrusted-mail TESTTOKEN>>>
+<<<untrusted-mail TESTTOKEN: body from reader@example.com in 0000000000000019>>>
+Looking at it now.
+
+[… 6 lines of quoted text collapsed …]
+<<<end-untrusted-mail TESTTOKEN>>>
+collapsed: 6 lines of quoted text; show_quoted=true shows them.
+
+── 1 of 2 · message 0000000000000018 · thread 0000000000000018 · 2026-03-04 00:00 UTC · labels: INBOX
+<<<untrusted-mail TESTTOKEN: headers from freya.holm@example.org in 0000000000000018>>>
+From: Freya Holm <freya.holm@example.org>
+To: Rae Reader <reader@example.com>
+Date: Wed, 04 Mar 2026 00:00:00 +0000
+Subject: Budget sign-off
+Message-ID: <fixture.0000000000000018@mail.example.com>
+<<<end-untrusted-mail TESTTOKEN>>>
+<<<untrusted-mail TESTTOKEN: body from freya.holm@example.org in 0000000000000018>>>
+Rae,
+
+Can you sign off the revised budget by Friday? The totals are in the shared sheet.
+
+Freya
+<<<end-untrusted-mail TESTTOKEN>>>
+
+drafts in this thread, not sent: 1 draft
+
+── draft 1 of 1 · message 000000000000001a · thread 0000000000000018 · 2026-03-04 02:00 UTC · labels: DRAFT
+<<<untrusted-mail TESTTOKEN: headers from reader@example.com in 000000000000001a>>>
+From: Rae Reader <reader@example.com>
+To: Freya Holm <freya.holm@example.org>
+Date: Wed, 04 Mar 2026 02:00:00 +0000
+Subject: Re: Budget sign-off
+Message-ID: <fixture.000000000000001a@mail.example.com>
+In-Reply-To: <fixture.0000000000000019@mail.example.com>
+<<<end-untrusted-mail TESTTOKEN>>>
+<<<untrusted-mail TESTTOKEN: body from reader@example.com in 000000000000001a>>>
+I will confirm the numbers by Friday.
+<<<end-untrusted-mail TESTTOKEN>>>

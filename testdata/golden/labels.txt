@@ -1,0 +1,20 @@
+18 labels: 14 system, 4 user
+
+CATEGORY_FORUMS · id CATEGORY_FORUMS · system
+CATEGORY_PERSONAL · id CATEGORY_PERSONAL · system
+CATEGORY_PROMOTIONS · id CATEGORY_PROMOTIONS · system
+CATEGORY_SOCIAL · id CATEGORY_SOCIAL · system
+CATEGORY_UPDATES · id CATEGORY_UPDATES · system
+CHAT · id CHAT · system
+DRAFT · id DRAFT · system
+IMPORTANT · id IMPORTANT · system
+INBOX · id INBOX · system
+SENT · id SENT · system
+SPAM · id SPAM · system
+STARRED · id STARRED · system
+TRASH · id TRASH · system
+UNREAD · id UNREAD · system
+Newsletters · id Label_4 · user · hidden from the label list · hidden in message lists
+Projects · id Label_1 · user
+Projects/Offsite · id Label_2 · user
+Receipts · id Label_3 · user · color #ffffff on #16a766 · listed when unread
