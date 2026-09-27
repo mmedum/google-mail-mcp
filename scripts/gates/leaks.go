@@ -80,6 +80,9 @@ var leaksRules = []leaksRule{
 		},
 	},
 	{
+		// Unanchored on purpose: this finds a link anywhere in committed
+		// text. It never decides whether a URL may be fetched, which is
+		// what an anchor would guard.
 		name: "a Gmail web link to a mailbox",
 		re:   regexp.MustCompile(`mail\.google\.com/mail/u/[0-9]+`),
 	},

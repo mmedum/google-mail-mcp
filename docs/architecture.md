@@ -1585,6 +1585,17 @@ what fixed them.
   the narrowed guard (the `SENT` label is matched by id, and only the
   account can apply it), the drafts section's server voice, and the
   harness's handling of the API key, which it no longer needs.
+- **1.0.0, the first CI run: three Windows tests and one CodeQL alert.**
+  CI had never run before the release pull request, so the Windows
+  runner met these for the first time. A test left its temporary file
+  open, which Windows cannot delete; `TestDefaults` did not redirect
+  `%AppData%`, which `os.UserConfigDir` reads on Windows; and the bundle
+  test held its own zip reader open while it packed again over the same
+  file. All three were in the tests, not the code they test. CodeQL
+  flagged the leak scanner's Gmail-link pattern as an unanchored URL
+  regex. It is unanchored on purpose: it finds a link anywhere in
+  committed text and decides nothing about fetching one. The alert is
+  dismissed as a false positive, with that reason.
 
 ### Closing a phase
 
