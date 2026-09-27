@@ -211,6 +211,12 @@ func (s *Server) Calls() []Call {
 	return append([]Call(nil), s.calls...)
 }
 
+// CallsOf returns the requests served for one method, such as
+// "gmail.users.drafts.send", in order.
+func (s *Server) CallsOf(method string) []Call {
+	return slices.DeleteFunc(s.Calls(), func(c Call) bool { return c.Method != method })
+}
+
 // ResetAccounting clears the calls and units.
 func (s *Server) ResetAccounting() {
 	s.mu.Lock()
@@ -460,6 +466,18 @@ func (s *Server) DraftIDs() []string {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	return s.draftIDs()
+}
+
+// DraftMessage returns the message a draft holds now, in the given
+// format. ok is false for an unknown draft.
+func (s *Server) DraftMessage(id, format string) (gmail.Message, bool) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	mid, ok := s.drafts[id]
+	if !ok {
+		return gmail.Message{}, false
+	}
+	return s.render(s.messages[mid], format, nil), true
 }
 
 // Raw returns a stored message's RFC 5322 bytes, as a draft write sent

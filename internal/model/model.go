@@ -312,6 +312,19 @@ func NewThread(g *gmail.Thread, labels LabelIndex, fetched map[string]map[string
 	return t, nil
 }
 
+// SplitDrafts parts the thread's messages into what was sent or received
+// and the drafts, each in the thread's order (§17.2).
+func (t Thread) SplitDrafts() (said, drafts []Message) {
+	for _, m := range t.Messages {
+		if m.HasLabel("DRAFT") {
+			drafts = append(drafts, m)
+		} else {
+			said = append(said, m)
+		}
+	}
+	return said, drafts
+}
+
 // Subject is the first message's subject.
 func (t Thread) Subject() Untrusted {
 	if len(t.Messages) == 0 {

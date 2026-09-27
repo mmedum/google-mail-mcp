@@ -2,6 +2,7 @@ package tools
 
 import (
 	"context"
+	"slices"
 	"time"
 
 	"github.com/modelcontextprotocol/go-sdk/mcp"
@@ -129,7 +130,7 @@ type GetThreadIn struct {
 }
 
 // ThreadOut is one thread: every message's headers, and as many bodies
-// as the budget allows, newest first.
+// as the budget allows, newest first. Drafts come last (§17.2).
 type ThreadOut struct {
 	ID       string        `json:"id"`
 	Messages []MessageMeta `json:"messages"`
@@ -266,7 +267,8 @@ func registerRead(s *mcp.Server, d Deps) {
 	register(s, d, Spec{Name: "get_thread", Kind: Read, Description: "Read a conversation, newest message first, " +
 		"within a character budget. Quoted replies and signatures are collapsed to a line saying how much was hidden " +
 		"(show_quoted keeps them); messages beyond the budget are listed by id and continued with cursor. Every " +
-		"message's headers are in the result even when its body is not." + untrustedNote},
+		"message's headers are in the result even when its body is not. The thread's unsent drafts follow the " +
+		"conversation in a section of their own, and come last in messages." + untrustedNote},
 		func(ctx context.Context, in GetThreadIn) (ThreadOut, error) {
 			o, err := in.options()
 			if err != nil {
@@ -277,7 +279,10 @@ func registerRead(s *mcp.Server, d Deps) {
 			if err != nil {
 				return ThreadOut{}, err
 			}
-			return ThreadOut{ID: t.ID, Messages: mapSlice(t.Messages, messageMeta), Rendered: readOf(render.Thread(t, o))}, nil
+			// Drafts follow what was said, as the rendering shows them (§17.2).
+			said, drafts := t.SplitDrafts()
+			return ThreadOut{ID: t.ID, Messages: mapSlice(slices.Concat(said, drafts), messageMeta),
+				Rendered: readOf(render.Thread(t, o))}, nil
 		})
 
 	register(s, d, Spec{Name: "get_message", Kind: Read, Description: "Read one message: headers, the body as text " +

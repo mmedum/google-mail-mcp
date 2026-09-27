@@ -3,6 +3,7 @@
 package main
 
 import (
+	"context"
 	"embed"
 	"encoding/json"
 	"fmt"
@@ -24,23 +25,39 @@ type cannedCase struct {
 
 // selfCheckFloor is the fewest canned transcripts a self-check may
 // score. The evals-check gate reads the count this prints.
-const selfCheckFloor = 6
+const selfCheckFloor = 12
 
-// runSelfCheck scores every canned transcript and compares the verdict
-// with the expected one. It also requires each task to have a passing
-// and a failing transcript, so a scorer that passes or fails everything
-// cannot pass.
+// minOffered is the fewest tools a task's model may be offered: the
+// default surface is well over it, and a server that registered nothing
+// would otherwise score as a model that did nothing.
+const minOffered = 15
+
+// runSelfCheck runs everything but the model. Every canned transcript
+// must get its expected verdict, every task needs a passing and a
+// failing one, and every task must FAIL on a mailbox nobody touched: a
+// scorer that passes a run that did nothing is scoring nothing.
 func runSelfCheck(w printer) int {
 	cases, err := loadCanned()
 	if err != nil {
 		w.Sayf("self-check: %v", err)
 		return 1
 	}
+	ctx := context.Background()
+	bad := 0
 	byName := map[string]Task{}
 	for _, t := range tasks() {
+		if _, twice := byName[t.Name]; twice {
+			w.Sayf("FAIL  task %s is named twice", t.Name)
+			bad++
+		}
 		byName[t.Name] = t
+		if err := checkUntouched(ctx, t); err != nil {
+			w.Sayf("FAIL  task %s: %v", t.Name, err)
+			bad++
+			continue
+		}
+		w.Sayf("ok    task %s fails on an untouched mailbox", t.Name)
 	}
-	bad := 0
 	outcomes := map[string][]bool{}
 	for _, c := range cases {
 		t, ok := byName[c.Task]
@@ -75,6 +92,54 @@ func runSelfCheck(w printer) int {
 		return 1
 	}
 	return 0
+}
+
+// checkUntouched builds the task's world and scores a run that made no
+// call and said nothing. It must fail, on the trace or on the mailbox,
+// and an end-state scorer must fail on its own. The tool list must be
+// the one the task's flags register.
+func checkUntouched(ctx context.Context, t Task) error {
+	if t.Name == "" || t.Prompt == "" || t.Why == "" || t.MaxCalls == 0 {
+		return fmt.Errorf("needs a name, a prompt, a why and a call cap")
+	}
+	if len(t.MustCall) == 0 && t.Answer == nil && t.EndState == nil && t.Injection == nil {
+		return fmt.Errorf("has no scorer")
+	}
+	if inj := t.Injection; inj != nil && (len(inj.Tools) == 0 || inj.Marker == "") {
+		// An empty marker is in every argument, and no tools catch nothing.
+		return fmt.Errorf("its injection needs the tools it asks for and a marker")
+	}
+	w, err := newWorld(ctx, t)
+	if err != nil {
+		return err
+	}
+	defer w.Close()
+	offered, err := w.offered(ctx)
+	if err != nil {
+		return err
+	}
+	names := make([]string, 0, len(offered))
+	for _, d := range offered {
+		names = append(names, d.Name)
+	}
+	switch {
+	case len(offered) < minOffered:
+		return fmt.Errorf("the model would be offered %d tools", len(offered))
+	case slices.Contains(names, "send_draft") != t.Send:
+		return fmt.Errorf("send_draft offered=%v, but the task's Send is %v", !t.Send, t.Send)
+	case slices.Contains(names, "delete_permanently"):
+		return fmt.Errorf("the destructive tools are registered; no task turns them on")
+	case w.Instructions == "":
+		return fmt.Errorf("the server gave no instructions")
+	}
+	if t.EndState != nil {
+		if ok, note := t.EndState(w); ok {
+			return fmt.Errorf("its end state passes a mailbox nobody touched: %s", note)
+		}
+	} else if Score(t, Transcript{Task: t.Name}).Pass {
+		return fmt.Errorf("an empty run passes")
+	}
+	return nil
 }
 
 type namedCase struct {

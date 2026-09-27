@@ -231,6 +231,12 @@ func (w *writer) messageLine(m model.Message, pos, n int) {
 	w.say("message %s · thread %s · %s · labels: %s", gmailID(m.ID), gmailID(m.ThreadID), w.when(m.Date), labelList(m.Labels))
 }
 
+// draftLine heads one draft in a thread's drafts section.
+func (w *writer) draftLine(m model.Message, pos, n int) {
+	w.say("── draft %s of %s · message %s · thread %s · %s · labels: %s", num(pos), num(n),
+		gmailID(m.ID), gmailID(m.ThreadID), w.when(m.Date), labelList(m.Labels))
+}
+
 // notes states, outside the blocks, what the server found and did. What
 // it found in the sender's words — a link's hosts, a charset's label —
 // goes in a block of its own after the note that counts it.

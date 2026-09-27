@@ -56,6 +56,19 @@ var gatedSteps = []step{
 			return want(text, "not confirmed: to[0], bcc[0]")
 		}},
 
+	// The parent was received: its sender is in the thread, and the To
+	// its sender wrote is not (§17.8).
+	{name: "a reply-all clears the sender only, dry run", tool: "send_draft",
+		args: func(e *env) map[string]any {
+			return map[string]any{"draft_id": e.replyAll, "message_id": e.replyAllMessage, "dry_run": true}
+		},
+		check: func(_ *env, text string) error {
+			if err := want(text, "recipients: 2 · 1 in the thread · 0 confirmed"); err != nil {
+				return err
+			}
+			return want(text, "not confirmed: to[1]")
+		}},
+
 	{name: "a send with unconfirmed recipients is refused", tool: "send_draft", refuses: "blocked",
 		args: func(e *env) map[string]any {
 			return map[string]any{"draft_id": e.draftID, "message_id": e.draftMessage}

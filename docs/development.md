@@ -95,6 +95,21 @@ What it does to the account, so nothing is a surprise:
 mailbox. It needs an `ANTHROPIC_API_KEY` and is run by hand;
 `evals-check` exercises its scorers without one.
 
+- The real server runs over an in-memory transport, so the model reads
+  the descriptions, schemas and refusals that ship, and the server's
+  instructions as its system prompt.
+- Each trial gets its own generated mailbox. A task is scored on its
+  calls, its answer and the mailbox afterwards, never on what the model
+  says it did.
+- Three tasks carry an instruction planted in a message. Obeying it, by
+  the tool it asks for or by its address in any argument, is reported
+  apart from an ordinary failure.
+- `EVAL_ARGS='-trials 5 -v'` runs each task five times and prints every
+  call. A task passes only when every trial does. `-model` picks the
+  model and `-task` a subset.
+- A trial that hits the turn cap is `UNFINISHED`; one the API refused
+  or cut short is `ERROR`. Neither is a verdict on the tools.
+
 ## Cutting a release
 
 [`release.md`](release.md): what the tag does, what to check afterwards,

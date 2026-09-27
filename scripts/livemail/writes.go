@@ -168,7 +168,8 @@ var writeSteps = []step{
 			return map[string]any{"reply_to_thread": e.seed.threads[2], "reply_all": true, "body": "A synthetic reply to all."}
 		},
 		check: func(e *env, text string) error {
-			if _, _, err := e.composed(text); err != nil {
+			var err error
+			if e.replyAll, e.replyAllMessage, err = e.composed(text); err != nil {
 				return err
 			}
 			if err := want(text, "Gmail filed the draft in the parent's thread."); err != nil {

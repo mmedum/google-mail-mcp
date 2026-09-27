@@ -2,6 +2,7 @@ package tools_test
 
 import (
 	"context"
+	"fmt"
 	"maps"
 	"slices"
 	"strings"
@@ -64,17 +65,7 @@ func TestGatedToolsRegisterOnlyWithTheirFlag(t *testing.T) {
 	}
 }
 
-func sends(fake *gmailtest.Server) int { return len(callsOf(fake, "gmail.users.drafts.send")) }
-
-func callsOf(fake *gmailtest.Server, method string) []gmailtest.Call {
-	var out []gmailtest.Call
-	for _, c := range fake.Calls() {
-		if c.Method == method {
-			out = append(out, c)
-		}
-	}
-	return out
-}
+func sends(fake *gmailtest.Server) int { return len(fake.CallsOf("gmail.users.drafts.send")) }
 
 // A reply to a thread goes to its participants without confirming them.
 func TestSendDraftReply(t *testing.T) {
@@ -107,6 +98,38 @@ func TestSendDraftReply(t *testing.T) {
 		t.Errorf("text:\n%s", text)
 	}
 	refused(t, h, "send_draft", args, gapi.ClassNotFound)
+}
+
+// A correspondent cannot widen a reply-all: the Cc and Reply-To a
+// received message carries were written by its sender, so they need
+// confirming. The From of a received message and the To and Cc of the
+// account's own sent one do not (§17.8).
+func TestSendDraftCountsOnlyWhatTheAccountChose(t *testing.T) {
+	h, fake := connectFake(t, sendOn)
+	_, parent := fake.AddWidenedThread()
+	var d tools.DraftWriteOut
+	call(t, h, "create_draft", map[string]any{"reply_to": parent, "reply_all": true,
+		"cc": []any{gmailtest.Freya.Email}, "body": "See you Monday."}, &d)
+	args := map[string]any{"draft_id": d.DraftID, "message_id": d.MessageID, "dry_run": true}
+
+	var dry tools.SendDraftOut
+	text := call(t, h, "send_draft", args, &dry)
+	participant := map[string]bool{}
+	for _, r := range dry.Recipients {
+		participant[fmt.Sprintf("%s[%d]", r.Field, r.Position)] = r.Participant
+	}
+	// to[0] is Chiara from the Reply-To, cc[0] Bruno, cc[1] Ada, cc[2] Freya.
+	want := map[string]bool{"to[0]": false, "cc[0]": true, "cc[1]": false, "cc[2]": true}
+	if !maps.Equal(participant, want) || dry.Unconfirmed != 2 || dry.Answers != 2 {
+		t.Fatalf("participants %v, %d unconfirmed, %d answers; want %v\n%s", participant, dry.Unconfirmed, dry.Answers, want, text)
+	}
+	delete(args, "dry_run")
+	refused(t, h, "send_draft", args, gapi.ClassBlocked)
+	call(t, h, "send_draft", with(args, "confirm_recipients",
+		[]any{gmailtest.Chiara.Email, gmailtest.Ada.Email}), &tools.SendDraftOut{})
+	if sends(fake) != 1 {
+		t.Fatalf("%d sends", sends(fake))
+	}
 }
 
 // A new conversation reaches nobody the caller did not write out (§4.2).
@@ -240,7 +263,7 @@ func TestDeletePermanently(t *testing.T) {
 	refused(t, h, "delete_permanently", args, gapi.ClassBlocked)
 	var dry tools.ItemsOut
 	text := call(t, h, "delete_permanently", with(args, "dry_run", true), &dry)
-	if dry.Items[0].Outcome != "would_change" || len(callsOf(fake, "gmail.users.messages.delete")) != 0 ||
+	if dry.Items[0].Outcome != "would_change" || len(fake.CallsOf("gmail.users.messages.delete")) != 0 ||
 		!strings.Contains(text, "2 would be deleted for good · 2 failed") {
 		t.Fatalf("dry run %+v\n%s", dry.Items, text)
 	}

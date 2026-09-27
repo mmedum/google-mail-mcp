@@ -367,7 +367,7 @@ func SendDraft(sw model.SendWrite, o Options) Result {
 			}
 		}
 		if sw.Answers > 0 {
-			w.say("it answers a thread of %s; their senders and recipients need no confirming.",
+			w.say("it answers a thread of %s; their senders, and whoever this account sent them to, need no confirming.",
 				plural(sw.Answers, "message", "messages"))
 		} else {
 			w.say("it starts a new conversation: every recipient needs confirming.")
