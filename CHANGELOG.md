@@ -18,6 +18,7 @@ lifted verbatim.
 ### Fixed
 
 - The Claude Desktop bundle's descriptions and the docs name the settings flag wherever they list what changes the scopes or what is off by default.
+- `logout` warns about the other profiles of the same account in the same Cloud project, which revoking signs out, instead of every profile that shares the client file.
 - The runbook says revoking at Google ends every token the account granted to the Cloud project, not only one client's.
 
 ## [1.1.0] - 2026-09-27

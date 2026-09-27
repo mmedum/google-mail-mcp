@@ -70,7 +70,8 @@ google-mail-mcp logout
 
 This revokes the token at Google and deletes the local copy. Revoking at
 Google ends every token the account granted to the Cloud project, on
-every machine and for every OAuth client in that project.
+every machine and for every OAuth client in that project. `logout`
+names any other profile of the same account in that project first.
 
 ## Suspected exposure
 

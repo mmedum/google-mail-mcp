@@ -151,10 +151,11 @@ func cmdLogout(args []string, stdout, stderr io.Writer, env func(string) string)
 	if err != nil {
 		return fail(stderr, "%v", err)
 	}
-	// Google revokes the grant, not one token, so every profile sharing
-	// this OAuth client is signed out too. Said before, not after.
-	if others, err := cfg.ConfigDir.SharingClient(cfg.Profile); err == nil && len(others) > 0 {
-		outf(stdout, "Note: these profiles use the same OAuth client and will also be signed out: %s\n",
+	// Google revokes the grant, not one token, and the grant covers every
+	// client in the Cloud project, so another profile of the same account
+	// in that project is signed out too (§18 row 53). Said before, not after.
+	if others, err := cfg.ConfigDir.SharingGrant(cfg.Profile, auth.ClientProject); err == nil && len(others) > 0 {
+		outf(stdout, "Note: these profiles may use the same account and Cloud project, and will also be signed out: %s\n",
 			strings.Join(others, ", "))
 	}
 
