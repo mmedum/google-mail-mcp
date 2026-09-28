@@ -49,8 +49,8 @@ type step struct {
 }
 
 // scriptedPerson answers the questions the server puts to the person,
-// for the maintainer running the driver (§4.13): accept with the box
-// ticked, unless a step declines. It prints each question.
+// for the maintainer running the driver (§4.13): accept, unless a step
+// declines. It prints each question.
 type scriptedPerson struct {
 	tr       *transcript.Transcript
 	declines bool
@@ -58,15 +58,15 @@ type scriptedPerson struct {
 	asked []string
 }
 
-func (p *scriptedPerson) answer(message string) (string, bool) {
+func (p *scriptedPerson) answer(message string) string {
 	p.asked = append(p.asked, message)
 	p.tr.Say("--- question put to the person ---\n" + strings.TrimRight(message, "\n"))
 	if p.declines {
 		p.tr.Say("--- answered: decline ---")
-		return "decline", false
+		return "decline"
 	}
-	p.tr.Say("--- answered: accept, confirmed ---")
-	return "accept", true
+	p.tr.Say("--- answered: accept ---")
+	return "accept"
 }
 
 // asked is the one question put during the step, or an error.

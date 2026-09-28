@@ -198,7 +198,7 @@ For clients that attach rather than call, `gmail://threads/{id}`,
   `confirm` or `confirm_recipients` is also put to you, when your MCP
   client supports elicitation: the question names the label, the draft,
   the filter, the reply or every recipient, and nothing is written
-  unless you tick the box and accept. A client that runs with nobody to
+  unless you accept. A client that runs with nobody to
   answer, such as `claude -p`, cannot make these writes. A client that
   cannot ask falls back to `confirm`; `GMAIL_REQUIRE_PROMPT=true` refuses
   instead. See [docs/configuration.md](docs/configuration.md#confirming-a-write).

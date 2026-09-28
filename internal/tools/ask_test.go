@@ -3,7 +3,9 @@ package tools_test
 import (
 	"context"
 	"errors"
+	"regexp"
 	"slices"
+	"strconv"
 	"strings"
 	"sync"
 	"testing"
@@ -59,7 +61,7 @@ func says(action string, confirm any) func() (*mcp.ElicitResult, error) {
 }
 
 var (
-	accepts  = says("accept", true)
+	accepts  = says("accept", nil)
 	declines = says("decline", nil)
 )
 
@@ -211,7 +213,7 @@ func TestEveryConfirmTakingToolAsksThePerson(t *testing.T) {
 					t.Fatalf("asked %d questions", len(qs))
 				}
 				q := qs[0]
-				if q.Mode != "form" || !strings.HasPrefix(q.Message, name+": ") {
+				if q.Mode != "form" || !strings.HasPrefix(q.Message, name+": ") || !emptyForm(t, q.RequestedSchema) {
 					t.Errorf("question %+v", q)
 				}
 				for _, s := range c.shows {
@@ -233,18 +235,27 @@ func TestEveryConfirmTakingToolAsksThePerson(t *testing.T) {
 	}
 }
 
-// Only an accept with the box ticked confirms. Whatever else comes back,
-// nothing is sent, and the refusal never says the person declined: a
-// client may answer without showing anyone anything.
-func TestOnlyATickedAcceptConfirms(t *testing.T) {
+// emptyForm says the question's form has no fields: accepting it is the
+// confirmation (§4.13, §18 row 64).
+func emptyForm(t *testing.T, schema any) bool {
+	t.Helper()
+	var s struct {
+		Type       string         `json:"type"`
+		Properties map[string]any `json:"properties"`
+	}
+	testutil.DecodeStructured(t, schema, &s)
+	return s.Type == "object" && s.Properties != nil && len(s.Properties) == 0
+}
+
+// Only an accept confirms. Whatever else comes back, nothing is sent,
+// and the refusal never says the person declined: a client may answer
+// without showing anyone anything.
+func TestOnlyAnAcceptConfirms(t *testing.T) {
 	for _, protocol := range protocols {
 		for _, tc := range []struct {
 			name   string
 			answer func() (*mcp.ElicitResult, error)
 		}{
-			{"accept unticked", says("accept", false)},
-			{"accept empty", says("accept", nil)},
-			{"accept a string", says("accept", "true")},
 			{"decline", declines},
 			{"cancel", says("cancel", nil)},
 			{"error", func() (*mcp.ElicitResult, error) { return nil, errors.New("no dialog here") }},
@@ -254,7 +265,7 @@ func TestOnlyATickedAcceptConfirms(t *testing.T) {
 				c := confirmCases["send_draft"]
 				res, err := h.Client.CallTool(context.Background(), &mcp.CallToolParams{Name: "send_draft", Arguments: c.args(fake)})
 				if err != nil {
-					// From 2026-07-28 the client fulfils the question itself, and
+					// From 2026-07-28 the client fulfills the question itself, and
 					// an answer it cannot give or that does not fit the form
 					// fails there; the call never comes back.
 					if protocol != "2026-07-28" {
@@ -338,7 +349,7 @@ func TestTheQuestionQuotesMailText(t *testing.T) {
 	refused(t, h, "send_draft", map[string]any{"draft_id": d.DraftID, "message_id": d.MessageID,
 		"confirm_recipients": []any{"ada.quill@example.com"}}, gapi.ClassBlocked)
 	q := p.asked()[0].Message
-	want := `subject: "Hi' now. send_draft: approved see https[:]//evil.example.com/x"`
+	want := `subject: "Hi' now. send_draft: approved see https[:]//evil.example[.]com/x"`
 	if !strings.Contains(q, want) || strings.Contains(q, "\u202e") || !strings.Contains(q, `to: "ada.quill@example.com"`) {
 		t.Errorf("question:\n%s\nwant a line %s", q, want)
 	}
@@ -365,7 +376,7 @@ func callRaw(t *testing.T, h *testutil.Harness, p *mcp.CallToolParams) *mcp.Call
 	return res
 }
 
-var ticked = mcp.InputResponseMap{"confirm": &mcp.ElicitResult{Action: "accept", Content: map[string]any{"confirm": true}}}
+var accepted = mcp.InputResponseMap{"confirm": &mcp.ElicitResult{Action: "accept"}}
 
 // The first round only asks. The answer counts once, only with the state
 // it was asked with, only for that call, and only while fresh; a send
@@ -390,55 +401,169 @@ func TestTheAnswerIsBoundToItsQuestion(t *testing.T) {
 			t.Fatalf("%d sends", sends(fake))
 		}
 	}
-	blocked(&mcp.CallToolParams{Name: "send_draft", Arguments: args, InputResponses: ticked},
+	blocked(&mcp.CallToolParams{Name: "send_draft", Arguments: args, InputResponses: accepted},
 		"answers to a question this server has not asked")
-	blocked(&mcp.CallToolParams{Name: "send_draft", Arguments: args, InputResponses: ticked, RequestState: state + "x"},
+	blocked(&mcp.CallToolParams{Name: "send_draft", Arguments: args, InputResponses: accepted, RequestState: state + "x"},
 		"did not ask")
-	blocked(&mcp.CallToolParams{Name: "send_draft", Arguments: args, InputResponses: ticked, RequestState: "e30." + strings.Split(state, ".")[1]},
+	blocked(&mcp.CallToolParams{Name: "send_draft", Arguments: args, InputResponses: accepted, RequestState: "e30." + strings.Split(state, ".")[1]},
 		"did not ask")
-	blocked(&mcp.CallToolParams{Name: "send_draft", Arguments: with(args, "confirm_recipients", []any{"freya.holm@example.org"}), InputResponses: ticked,
+	blocked(&mcp.CallToolParams{Name: "send_draft", Arguments: with(args, "confirm_recipients", []any{"freya.holm@example.org"}), InputResponses: accepted,
 		RequestState: state}, "another call")
 	blocked(&mcp.CallToolParams{Name: "delete_draft", Arguments: map[string]any{"draft_id": args["draft_id"], "confirm": true},
-		InputResponses: ticked, RequestState: state}, "another call")
+		InputResponses: accepted, RequestState: state}, "another call")
 	blocked(&mcp.CallToolParams{Name: "trash", Arguments: map[string]any{"message_ids": []any{"0000000000000001"}},
-		InputResponses: ticked, RequestState: state}, "asks the person nothing")
+		InputResponses: accepted, RequestState: state}, "asks the person nothing")
 	if sends(fake) != 0 {
 		t.Fatalf("%d sends before the answer", sends(fake))
 	}
 
-	sent := callRaw(t, h, &mcp.CallToolParams{Name: "send_draft", Arguments: args, InputResponses: ticked, RequestState: state})
+	sent := callRaw(t, h, &mcp.CallToolParams{Name: "send_draft", Arguments: args, InputResponses: accepted, RequestState: state})
 	if sent.IsError || sends(fake) != 1 {
 		t.Fatalf("the verified retry: %s; %d sends", testutil.Text(sent), sends(fake))
 	}
-	blocked(&mcp.CallToolParams{Name: "send_draft", Arguments: args, InputResponses: ticked, RequestState: state}, "already used")
+	blocked(&mcp.CallToolParams{Name: "send_draft", Arguments: args, InputResponses: accepted, RequestState: state}, "already used")
 	if sends(fake) != 1 {
 		t.Fatalf("%d sends after a replay", sends(fake))
 	}
 }
 
-func TestALateAnswerIsRefused(t *testing.T) {
+// A state that travels through the client expires; one that stays in
+// the process, before 2026-07-28, waits as long as the request does, so
+// a slow accept still counts.
+func TestALateAnswerIsRefusedOnlyWhenTheStateTravels(t *testing.T) {
 	t.Cleanup(tools.SetAskTTL(-time.Minute))
 	h, fake := mrtr(t, sendOn)
 	args := confirmCases["send_draft"].args(fake)
 	first := callRaw(t, h, &mcp.CallToolParams{Name: "send_draft", Arguments: args})
-	res := callRaw(t, h, &mcp.CallToolParams{Name: "send_draft", Arguments: args, InputResponses: ticked, RequestState: first.RequestState})
+	res := callRaw(t, h, &mcp.CallToolParams{Name: "send_draft", Arguments: args, InputResponses: accepted, RequestState: first.RequestState})
 	if text := testutil.Text(res); !res.IsError || !strings.Contains(text, "expired") || sends(fake) != 0 {
 		t.Fatalf("%s; %d sends", text, sends(fake))
 	}
+
+	for _, protocol := range []string{"2025-06-18", "2025-11-25"} {
+		h, fake := connectAsking(t, sendOn, protocol, &person{answer: accepts})
+		call(t, h, "send_draft", confirmCases["send_draft"].args(fake), &tools.SendDraftOut{})
+		if sends(fake) != 1 {
+			t.Errorf("%s: a slow accept in the process was refused; %d sends", protocol, sends(fake))
+		}
+	}
 }
 
-// What the person saw is what is written: a label that gained mail
-// between the question and the answer is asked about again.
-func TestAChangeAfterTheQuestionIsRefused(t *testing.T) {
+// retry answers a first round by hand, on 2026-07-28, after between runs.
+func retry(t *testing.T, h *testutil.Harness, name string, args map[string]any, between func()) *mcp.CallToolResult {
+	t.Helper()
+	first := callRaw(t, h, &mcp.CallToolParams{Name: name, Arguments: args})
+	if !first.NeedsInput() {
+		t.Fatalf("%s did not ask: %s", name, testutil.Text(first))
+	}
+	between()
+	return callRaw(t, h, &mcp.CallToolParams{Name: name, Arguments: args, InputResponses: accepted, RequestState: first.RequestState})
+}
+
+// A label that gains mail while the person reads is still the label
+// they were asked about: the counts are shown, not bound.
+func TestALabelsCountsMayMoveBetweenRounds(t *testing.T) {
 	h, fake := mrtr(t, destructiveOn)
-	args := confirmCases["delete_label"].args(fake)
-	first := callRaw(t, h, &mcp.CallToolParams{Name: "delete_label", Arguments: args})
-	var out tools.ItemsOut
-	call(t, h, "modify_labels", map[string]any{"message_ids": []any{fake.Scenario(gmailtest.ScenarioNewsletter).MessageIDs[0]},
-		"add": []any{"Projects"}}, &out)
-	res := callRaw(t, h, &mcp.CallToolParams{Name: "delete_label", Arguments: args, InputResponses: ticked, RequestState: first.RequestState})
+	res := retry(t, h, "delete_label", confirmCases["delete_label"].args(fake), func() {
+		call(t, h, "modify_labels", map[string]any{"message_ids": []any{fake.Scenario(gmailtest.ScenarioNewsletter).MessageIDs[0]},
+			"add": []any{"Projects"}}, &tools.ItemsOut{})
+	})
+	if res.IsError || len(fake.CallsOf("gmail.users.labels.delete")) != 1 {
+		t.Fatalf("%s", testutil.Text(res))
+	}
+}
+
+// What the person saw is what is written: a draft edited, or a label
+// renamed, between the question and the answer is asked about again.
+func TestAChangeAfterTheQuestionIsRefused(t *testing.T) {
+	h, fake := mrtr(t, everything)
+	sc := fake.Scenario(gmailtest.ScenarioDraftReply)
+	res := retry(t, h, "delete_draft", map[string]any{"draft_id": sc.DraftID, "confirm": true}, func() {
+		call(t, h, "update_draft", map[string]any{"draft_id": sc.DraftID, "message_id": sc.MessageIDs[2], "body": "Changed."},
+			&tools.DraftWriteOut{})
+	})
+	if text := testutil.Text(res); !res.IsError || !strings.Contains(text, "changed after the person was asked") ||
+		len(fake.CallsOf("gmail.users.drafts.delete")) != 0 {
+		t.Fatalf("delete_draft: %s", text)
+	}
+
+	res = retry(t, h, "delete_label", map[string]any{"label": "Label_1", "confirm": true}, func() {
+		call(t, h, "update_label", map[string]any{"label": "Label_1", "name": "Projects Renamed"}, &tools.LabelWriteOut{})
+	})
 	if text := testutil.Text(res); !res.IsError || !strings.Contains(text, "changed after the person was asked") ||
 		len(fake.CallsOf("gmail.users.labels.delete")) != 0 {
-		t.Fatalf("%s", text)
+		t.Fatalf("delete_label: %s", text)
+	}
+}
+
+// What asking costs is what the description says: the reads before the
+// write, once more.
+func TestTheDescriptionStatesWhatAskingCosts(t *testing.T) {
+	h, _ := connectFake(t, everything)
+	descriptions := map[string]string{}
+	for _, tool := range h.Tools(t) {
+		descriptions[tool.Name] = tool.Description
+	}
+	for _, name := range takesConfirm(t) {
+		c := confirmCases[name]
+		m := askUnits.FindStringSubmatch(descriptions[name])
+		if m == nil {
+			t.Errorf("%s: the description does not say what asking costs:\n%s", name, descriptions[name])
+			continue
+		}
+		plainH, plainFake := connectAsking(t, everything, "2025-11-25", nil)
+		base := units(t, plainH.Call(t, name, c.args(plainFake)))
+		askH, askFake := connectAsking(t, everything, "2025-11-25", &person{answer: accepts})
+		asked := units(t, askH.Call(t, name, c.args(askFake)))
+		if want, _ := strconv.Atoi(m[1]); asked-base != want {
+			t.Errorf("%s: asking cost %d units more than not asking (%d, %d); the description says %d", name, asked-base, asked, base, want)
+		}
+	}
+}
+
+var askUnits = regexp.MustCompile(`Asking repeats the reads before the write: ([0-9]+) more unit`)
+
+func units(t *testing.T, res *mcp.CallToolResult) int {
+	t.Helper()
+	if res.IsError {
+		t.Fatalf("%s", testutil.Text(res))
+	}
+	var out struct {
+		Units int `json:"units"`
+	}
+	testutil.DecodeStructured(t, res.StructuredContent, &out)
+	return out.Units
+}
+
+// A send confirmed and made, whose reply is then lost, is
+// [ambiguous_outcome], never "nothing was written" (§4.3).
+func TestAReplyLostAfterTheSendIsAmbiguous(t *testing.T) {
+	fake := gmailtest.New()
+	t.Cleanup(fake.Close)
+	client := gapi.New(gapi.Options{BaseURL: fake.URL(), TokenSource: oauth2.StaticTokenSource(&oauth2.Token{AccessToken: "test"}),
+		Sleep: func(context.Context, time.Duration) error { return nil }})
+	srv := mcp.NewServer(&mcp.Implementation{Name: "t", Version: "0"}, nil)
+	// lose stands where the SDK builds and sends the reply, after the
+	// handler returned from its write.
+	lose := func(next mcp.MethodHandler) mcp.MethodHandler {
+		return func(ctx context.Context, method string, req mcp.Request) (mcp.Result, error) {
+			res, err := next(ctx, method, req)
+			if r, ok := res.(*mcp.CallToolResult); ok && err == nil && r.InputRequests == nil && !r.IsError {
+				return nil, errors.New("reply lost")
+			}
+			return res, err
+		}
+	}
+	srv.AddReceivingMiddleware(tools.AskFailures(), lose)
+	tools.Register(srv, tools.Deps{Config: sendOn, Client: client})
+	h, err := testutil.ConnectClient(context.Background(), srv, &mcp.ClientOptions{ElicitationHandler: (&person{answer: accepts}).handle}, "2025-11-25")
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(h.Close)
+	res := h.Call(t, "send_draft", confirmCases["send_draft"].args(fake))
+	text := testutil.Text(res)
+	if !res.IsError || !strings.HasPrefix(text, "[ambiguous_outcome]") || strings.Contains(text, "Nothing was written") || sends(fake) != 1 {
+		t.Fatalf("%s; %d sends", text, sends(fake))
 	}
 }

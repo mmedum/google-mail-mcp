@@ -117,7 +117,7 @@ func registerSettings(s *mcp.Server, d Deps) {
 				UntrustedAfter: sw.After, Rendered: readOf(render.SignatureWrite(sw, render.Options{}))}, nil
 		})
 
-	register(s, d, Spec{Name: "create_filter", Kind: Settings, Description: "Create a filter: mail that arrives " +
+	register(s, d, Spec{Name: "create_filter", Kind: Settings, AskUnits: "2 more units, when it trashes", Description: "Create a filter: mail that arrives " +
 		"from now on and matches from, to, subject, query or the other criteria gets the actions given — labels " +
 		"added or removed, archive, mark_read, star, or trash. Mail already in the mailbox is untouched. A filter " +
 		"cannot forward. trash needs confirm: true, since it hides matching mail as it arrives. An identical " +
@@ -139,7 +139,7 @@ func registerSettings(s *mcp.Server, d Deps) {
 			return filterWriteOut(fw), nil
 		})
 
-	register(s, d, Spec{Name: "delete_filter", Kind: SettingsForGood, Description: "Delete a filter by the id " +
+	register(s, d, Spec{Name: "delete_filter", Kind: SettingsForGood, AskUnits: "2 more units", Description: "Delete a filter by the id " +
 		"list_filters gives. Mail it already acted on stays as it is. It cannot be restored, so confirm must be " +
 		"true. The result shows what the filter did. 7 units." + dryRunNote},
 		func(ctx context.Context, in DeleteFilterIn) (FilterWriteOut, error) {
@@ -150,7 +150,7 @@ func registerSettings(s *mcp.Server, d Deps) {
 			return filterWriteOut(fw), nil
 		})
 
-	register(s, d, Spec{Name: "set_vacation", Kind: AutoReply, Description: "Turn the vacation reply on or off. " +
+	register(s, d, Spec{Name: "set_vacation", Kind: AutoReply, AskUnits: "1 more unit, 2 with audience domain, when it turns the reply on", Description: "Turn the vacation reply on or off. " +
 		"On, it answers matching mail automatically, so it reaches other people: audience must say whether only " +
 		"contacts or only the account's domain are answered, body is sent exactly as given, and confirm must be " +
 		"true. start and end bound it. Off keeps its text for next time. The result shows the reply before and " +

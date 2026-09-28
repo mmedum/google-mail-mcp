@@ -257,6 +257,9 @@ type SendWrite struct {
 	Subject         Untrusted
 	RFC822MessageID Untrusted
 	Files           []File
+	// Body is the draft's text, which the question before the send
+	// shows the start of (§4.13).
+	Body Untrusted
 
 	// SentID, SentThreadID and SentLabels are Gmail's answer to the send.
 	SentID       string

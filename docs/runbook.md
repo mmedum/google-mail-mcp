@@ -135,8 +135,8 @@ with more than 50 recipients is refused outright: send it from Gmail.
 
 ## `[blocked]`: not confirmed by the person
 
-Your client asked you to confirm the write, and the answer was not a
-ticked accept: you declined or dismissed it, the question timed out,
+Your client asked you to confirm the write, and the answer was not an
+accept: you declined or dismissed it, the question timed out,
 or the client answered without showing it. `claude -p` and other runs
 with nobody at the keyboard cancel every such question, so they cannot
 make these writes. Nothing was written. Make the call again from a
