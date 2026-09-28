@@ -3,29 +3,39 @@ package tools_test
 import (
 	"context"
 	"encoding/json"
+	"fmt"
+	"strconv"
 	"strings"
 	"testing"
 	"time"
+	"unicode/utf8"
 
+	"github.com/modelcontextprotocol/go-sdk/mcp"
 	"golang.org/x/oauth2"
 
 	"github.com/mmedum/google-mail-mcp/internal/config"
 	"github.com/mmedum/google-mail-mcp/internal/gapi"
 	"github.com/mmedum/google-mail-mcp/internal/gapi/gmailtest"
+	"github.com/mmedum/google-mail-mcp/internal/gmail"
+	"github.com/mmedum/google-mail-mcp/internal/render"
 	"github.com/mmedum/google-mail-mcp/internal/server"
 	"github.com/mmedum/google-mail-mcp/internal/server/testutil"
 	"github.com/mmedum/google-mail-mcp/internal/tools"
 )
 
-func connectFake(t *testing.T, cfg config.Config) (*testutil.Harness, *gmailtest.Server) {
+func connectFake(t *testing.T, cfg config.Config, opts ...func(*gapi.Options)) (*testutil.Harness, *gmailtest.Server) {
 	t.Helper()
 	fake := gmailtest.New()
 	t.Cleanup(fake.Close)
-	client := gapi.New(gapi.Options{
+	o := gapi.Options{
 		BaseURL:     fake.URL(),
 		TokenSource: oauth2.StaticTokenSource(&oauth2.Token{AccessToken: "test"}),
 		Sleep:       func(context.Context, time.Duration) error { return nil },
-	})
+	}
+	for _, fn := range opts {
+		fn(&o)
+	}
+	client := gapi.New(o)
 	srv := server.New(server.Deps{Deps: tools.Deps{Config: cfg, Client: client}, Version: "test"})
 	return testutil.ConnectServer(t, srv), fake
 }
@@ -157,6 +167,152 @@ func TestSearchMessagesStatesItsQuery(t *testing.T) {
 			t.Errorf("message %s has no attachments", m.ID)
 		}
 	}
+}
+
+// replyEnvelope is what a listing's reply carries around its rows and
+// text: the query, the page token, the boundary, the counts and the
+// JSON-RPC result's own keys.
+const replyEnvelope = 1000
+
+// maxSlimRow is the most a slim row may take: ids, a date, labels and
+// flags, nothing a sender wrote.
+const maxSlimRow = 400
+
+// replySize is the serialized reply and its structured rows, each as
+// JSON.
+func replySize(t *testing.T, res *mcp.CallToolResult, field string) (int, []map[string]any) {
+	t.Helper()
+	raw, err := json.Marshal(res)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var out map[string]json.RawMessage
+	testutil.DecodeStructured(t, res.StructuredContent, &out)
+	var rows []map[string]any
+	if err := json.Unmarshal(out[field], &rows); err != nil {
+		t.Fatalf("%s: %v", field, err)
+	}
+	return utf8.RuneCount(raw), rows
+}
+
+// A full page of 100 results keeps a row for each, and stays within the
+// budget, the slim rows and a margin (§4.8). A row past the budget keeps
+// its ids and labels and loses what its sender wrote, and is named in
+// omitted_ids. A live run saw 70,000 to 106,000 characters for such a
+// page under a budget of 24,000.
+func TestSearchReplyStaysWithinItsBudget(t *testing.T) {
+	h, fake := connectFake(t, config.Config{}, func(o *gapi.Options) { o.UnitsPerMinute = 1 << 20 })
+	fake.AddBulkMail(120)
+	for _, tc := range []struct{ tool, field, content string }{
+		{"search_messages", "messages", "untrusted_subject"},
+		{"search_threads", "threads", "untrusted_subject"},
+	} {
+		t.Run(tc.tool, func(t *testing.T) {
+			res := h.Call(t, tc.tool, map[string]any{"max": 100})
+			if res.IsError {
+				t.Fatal(testutil.Text(res))
+			}
+			var out tools.Rendered
+			structured(t, res, testutil.Text(res), res.StructuredContent, &out)
+			n, rows := replySize(t, res, tc.field)
+			if len(rows) != 100 || len(out.Omitted) == 0 || len(out.Omitted) == 100 {
+				t.Fatalf("%d rows and %d omitted, want 100 rows and some omitted", len(rows), len(out.Omitted))
+			}
+			shown := len(rows) - len(out.Omitted)
+			slim := 0
+			for i, r := range rows {
+				id, _ := r["id"].(string)
+				if id == "" || r["labels"] == nil {
+					t.Errorf("row %d lost its id or labels: %v", i, r)
+				}
+				if i < shown {
+					if r[tc.content] == "" || !strings.Contains(testutil.Text(res), id) {
+						t.Errorf("row %d is shown but not whole: %v", i, r)
+					}
+					continue
+				}
+				if out.Omitted[i-shown] != id {
+					t.Errorf("row %d is %s; omitted_ids has %s there", i, id, out.Omitted[i-shown])
+				}
+				if r[tc.content] != "" || r["untrusted_snippet"] != nil && r["untrusted_snippet"] != "" {
+					t.Errorf("slim row %d carries what its sender wrote: %v", i, r)
+				}
+				size := render.JSONChars(r) + 1
+				if size > maxSlimRow {
+					t.Errorf("slim row %d is %d characters, over %d", i, size, maxSlimRow)
+				}
+				slim += size
+			}
+			if most := out.Budget + slim + replyEnvelope; n > most {
+				t.Errorf("the reply is %d characters, over %d: the budget of %d, %d of slim rows and %d around them",
+					n, most, out.Budget, slim, replyEnvelope)
+			}
+		})
+	}
+}
+
+// Changes and filters keep every row whole, and the text fits in what
+// is left of the budget. A change dropped could not be read again, and a
+// filter that forwards must never be out of sight.
+func TestListingsThatKeepEveryRow(t *testing.T) {
+	h, fake := connectFake(t, config.Config{}, func(o *gapi.Options) { o.UnitsPerMinute = 1 << 20 })
+	start := strconv.FormatUint(fake.HistoryID(), 10)
+	ids := fake.AddBulkMail(60)
+	// The first message changes again last, so one id is both early in
+	// the page and past the budget.
+	call(t, h, "modify_labels", map[string]any{"message_ids": []any{ids[0]}, "add": []any{"STARRED"}}, &tools.ItemsOut{})
+	fake.UpdateSettings(func(st *gmailtest.Settings) {
+		for i := range 80 {
+			st.Filters = append(st.Filters, gmail.Filter{ID: fmt.Sprintf("ANe1BmgBulk%03d", i),
+				Criteria: &gmail.FilterCriteria{From: fmt.Sprintf("list%d@example.org", i)},
+				Action:   &gmail.FilterAction{AddLabelIDs: []string{"STARRED"}}})
+		}
+		st.Filters = append(st.Filters, gmail.Filter{ID: "ANe1BmgBulkFwd", Criteria: &gmail.FilterCriteria{Query: "late"},
+			Action: &gmail.FilterAction{Forward: gmailtest.BackupAddress}})
+	})
+
+	t.Run("list_changes", func(t *testing.T) {
+		res := h.Call(t, "list_changes", map[string]any{"history_id": start})
+		var out tools.ChangesOut
+		structured(t, res, testutil.Text(res), res.StructuredContent, &out)
+		n, _ := replySize(t, res, "changes")
+		if len(out.Changes) != 61 || len(out.Omitted) == 0 {
+			t.Fatalf("%d changes and %d omitted, want 61 and some omitted", len(out.Changes), len(out.Omitted))
+		}
+		for _, c := range out.Changes {
+			if c.Kind == "" || c.MessageID == "" {
+				t.Errorf("a change lost its kind or message: %+v", c)
+			}
+		}
+		shownText, _, _ := strings.Cut(testutil.Text(res), "not shown (over the budget)")
+		for _, id := range out.Omitted {
+			if strings.Contains(shownText, "message "+id) {
+				t.Errorf("%s is shown and in omitted_ids", id)
+			}
+		}
+		if most := out.Budget + replyEnvelope; n > most {
+			t.Errorf("the reply is %d characters, over %d", n, most)
+		}
+	})
+
+	t.Run("list_filters", func(t *testing.T) {
+		res := h.Call(t, "list_filters", map[string]any{})
+		var out tools.FiltersOut
+		structured(t, res, testutil.Text(res), res.StructuredContent, &out)
+		n, _ := replySize(t, res, "filters")
+		if want := len(fake.Settings().Filters); len(out.Filters) != want || out.Forwarding != 2 {
+			t.Fatalf("%d filters, %d forwarding; want %d and 2", len(out.Filters), out.Forwarding, want)
+		}
+		if last := out.Filters[len(out.Filters)-1]; last.Forward == "" {
+			t.Errorf("the forwarding filter is not whole: %+v", last)
+		}
+		if !strings.Contains(testutil.Text(res), "forwarding mail out of the account: 2 filters") {
+			t.Errorf("the text does not count the forwarding filters:\n%s", testutil.Text(res)[:300])
+		}
+		if most := out.Budget + replyEnvelope; n > most {
+			t.Errorf("the reply is %d characters, over %d", n, most)
+		}
+	})
 }
 
 func TestEmptyPageWithTokenIsNotComplete(t *testing.T) {

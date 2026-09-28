@@ -1,7 +1,9 @@
 package render
 
 import (
+	"encoding/json"
 	"strings"
+	"unicode/utf8"
 
 	"github.com/mmedum/google-mail-mcp/internal/model"
 )
@@ -244,7 +246,9 @@ func Drafts(l DraftList, o Options) Result {
 
 // listing renders one page of a listing: what the page holds, then a
 // row per item while the row and the list of rows after it fit. head,
-// when set, adds lines after the page's own.
+// when set, adds lines after the page's own. The rows that do not fit
+// are named once each in Omitted, less any id a shown row already
+// carries, and Shown is how many were shown.
 func listing[T any](o Options, items []T, token string, one, many phrase,
 	id func(T) string, row func(w *writer, item T), head func(w *writer),
 ) Result {
@@ -259,22 +263,76 @@ func listing[T any](o Options, items []T, token string, one, many phrase,
 		for i, it := range items {
 			ids[i] = id(it)
 		}
+		// With RowChars, the budget covers the whole reply but for the
+		// slim rows (§4.8): the text twice, as JSON, each row shown in
+		// full, and the ids after it as omitted_ids. idsAfter[i] is what
+		// ids i onward add, kept as a running total.
+		whole := o.RowChars != nil
+		idsAfter := make([]int, len(items)+1)
+		for i := len(items) - 1; i >= 0; i-- {
+			idsAfter[i] = idsAfter[i+1] + JSONChars(ids[i]) + 1
+		}
+		cost := func(text string, n int) int {
+			if whole {
+				return 2 * (JSONChars(text) - 2)
+			}
+			return n
+		}
+		spent := cost(w.text(), w.len())
+		if whole {
+			spent += o.Fixed
+		}
 		for i, it := range items {
 			r := w.sub(func(s *writer) {
 				s.blank()
 				row(s, it)
 			})
 			rest := w.sub(func(s *writer) { s.rowsOmitted(ids[i+1:]) })
-			if w.len()+r.len()+rest.len() > res.Budget {
-				w.rowsOmitted(ids[i:])
+			rowCost, restCost := cost(r.s, r.len()), cost(rest.s, rest.len())
+			if whole {
+				if i < len(o.RowChars) {
+					rowCost += o.RowChars[i]
+				}
+				restCost += idsAfter[i+1]
+			}
+			if spent+rowCost+restCost > res.Budget {
 				res.Truncated = true
-				res.Omitted = ids[i:]
+				res.Omitted = unseen(ids[:i], ids[i:])
+				w.rowsOmitted(res.Omitted)
+				res.Shown = i
 				return res
 			}
 			w.add(r)
+			spent += rowCost
 		}
+		res.Shown = len(items)
 		return res
 	})
+}
+
+// unseen is rest without the ids shown already carries and without
+// repeats, in order: a listing of changes can name one message twice.
+func unseen(shown, rest []string) []string {
+	seen := make(map[string]bool, len(shown))
+	for _, id := range shown {
+		seen[id] = true
+	}
+	out := make([]string, 0, len(rest))
+	for _, id := range rest {
+		if !seen[id] {
+			seen[id] = true
+			out = append(out, id)
+		}
+	}
+	return out
+}
+
+// JSONChars is how many characters v takes as JSON, as encoding/json
+// writes it: a line break in a string is two, and each angle bracket of
+// a block's boundary six.
+func JSONChars(v any) int {
+	b, _ := json.Marshal(v)
+	return utf8.RuneCount(b)
 }
 
 // rowsOmitted names rows of this page that did not fit.

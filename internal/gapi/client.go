@@ -108,6 +108,8 @@ type Client struct {
 	// idleTimeout bounds each wait for progress instead.
 	streamHTTP  *http.Client
 	idleTimeout time.Duration
+	// settings is held by one settings change at a time (LockSettings).
+	settings chan struct{}
 }
 
 // googleOrigins are Google's own API origins an access token may go to,
@@ -128,6 +130,7 @@ func New(o Options) *Client {
 		log:        o.Logger,
 		userAgent:  o.UserAgent,
 		sleep:      o.Sleep,
+		settings:   make(chan struct{}, 1),
 	}
 	if c.base == "" {
 		c.base = DefaultBaseURL
@@ -336,6 +339,20 @@ func (c *Client) policyFor(call Call) (policy, error) {
 		whenTurnedAway: true,
 		whenAmbiguous:  call.Method != http.MethodPost || call.Repeatable != "",
 	}, nil
+}
+
+// LockSettings waits until no other settings change through this client
+// is in progress, or ctx ends, and returns the unlock. Gmail refuses a
+// filter write that overlaps another on the same account (§18 row 54);
+// the other settings writes are held too, and a change reads what it
+// replaces first, so the whole read and write is held.
+func (c *Client) LockSettings(ctx context.Context) (unlock func(), err error) {
+	select {
+	case c.settings <- struct{}{}:
+		return func() { <-c.settings }, nil
+	case <-ctx.Done():
+		return nil, Wrap(ClassUnavailable, ctx.Err(), "gave up waiting for another settings change to finish")
+	}
 }
 
 // Wait pauses for d, or until ctx ends, with the same sleep the client
@@ -742,6 +759,14 @@ func classifyStatus(call Call, p policy, status int, header http.Header, body []
 		return final(ClassStale, "this changed since it was read; read it again and retry. Google said: %s", detail)
 	case status == http.StatusServiceUnavailable:
 		return transient(ifTurnedAway, "retry shortly", ClassUnavailable, "Gmail is not serving right now (%s)", call.ID)
+	case status == http.StatusBadRequest && filterWriteIDs[call.ID] && isOverlap(env):
+		// Gmail refuses a filter write that overlaps another on the same
+		// account, or follows one too closely, and takes it seconds later
+		// (§18 row 54). So the next attempt waits at least overlapWait.
+		f := transient(ifTurnedAway, "make settings changes one at a time, a few seconds apart", ClassUnavailable,
+			"Gmail refused %s, most likely because another change to this account's settings was being saved at the same moment; nothing was changed", call.ID)
+		f.after = max(f.after, overlapWait)
+		return f
 	case status >= 500 && !p.whenAmbiguous:
 		return final(ClassAmbiguousOutcome, ambiguous+" Google said: %s", call.ID, detail)
 	case status >= 500:
@@ -790,6 +815,19 @@ func matches(reason string, want []string) bool {
 		}
 	}
 	return false
+}
+
+// overlapWait is the least wait before repeating a filter write Gmail
+// refused as overlapping. Live, a write sent right after another was
+// refused, and the same write 5 seconds later was taken.
+const overlapWait = 2 * time.Second
+
+// isOverlap is the refusal Gmail gave filter writes sent in parallel:
+// reason failedPrecondition, "Precondition check failed." Another
+// failedPrecondition, such as "A draft cannot be labeled.", is not one.
+func isOverlap(env envelope) bool {
+	return matches(env.reason, []string{"failedPrecondition"}) &&
+		strings.Contains(strings.ToLower(env.message), "precondition check failed")
 }
 
 func isMissingScope(env envelope) bool {

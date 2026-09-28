@@ -447,3 +447,25 @@ func (s *Server) AddWidenedThread() (threadID, messageID string) {
 		extra: []gmail.MessagePartHeader{{Name: "Reply-To", Value: Chiara.addr()}}})
 	return m1.threadID, m2.id
 }
+
+// AddBulkMail adds n single-message threads to the inbox, from the
+// generated people in turn, each with a subject, a Cc and a body long
+// enough to fill Gmail's snippet. It returns their ids, oldest first.
+// Tests use it for a full page of 100 results.
+func (s *Server) AddBulkMail(n int) []string {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	people := []Person{Ada, Bruno, Chiara, Dmitri, Emeka, Freya}
+	ids := make([]string, 0, n)
+	for i := range n {
+		s.clock = s.clock.Add(time.Minute)
+		from, cc := people[i%len(people)], people[(i+1)%len(people)]
+		b := fmt.Sprintf("Hi Rae,\n\nHere is note %d on the spring planning: the agenda, the room booking, "+
+			"the catering order and the travel list are all in the shared folder, and I will send the minutes "+
+			"after the meeting on Thursday.\n\n%s\n", i+1, from.Name)
+		m := s.add(spec{from: from, to: []Person{Reader}, cc: []Person{cc}, subject: fmt.Sprintf("Planning note %d", i+1),
+			at: s.clock, labels: []string{"INBOX", "UNREAD", userLabelProjects}, body: utf8Text(b), text: b})
+		ids = append(ids, m.id)
+	}
+	return ids
+}

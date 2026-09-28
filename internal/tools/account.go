@@ -134,6 +134,7 @@ type Filter struct {
 	AddLabels    []LabelRef     `json:"add_labels"`
 	RemoveLabels []LabelRef     `json:"remove_labels"`
 	Forward      string         `json:"forward,omitempty" jsonschema:"the address matching mail is forwarded to: mail leaving the account"`
+	NeverSpam    bool           `json:"never_spam,omitempty" jsonschema:"matching mail is never sent to spam: Gmail stores this as SPAM in remove_labels"`
 }
 
 // FiltersOut is every filter.
@@ -158,11 +159,13 @@ func registerAccount(s *mcp.Server, d Deps) {
 			if err != nil {
 				return ChangesOut{}, err
 			}
-			out := ChangesOut{Changes: mapSlice(c.Changes, change), Expired: c.Expired, HistoryID: c.HistoryID,
-				NextPageToken: c.NextPageToken, Complete: c.NextPageToken == "",
-				Rendered: readOf(render.Changes(render.ChangeList{Start: c.Start, Changes: c.Changes,
-					Expired: c.Expired, HistoryID: c.HistoryID, NextPageToken: c.NextPageToken, Label: c.Label},
-					render.Options{}))}
+			// Every change stays a row: a row holds nothing a sender wrote,
+			// and one dropped could not be read again.
+			rows := mapSlice(c.Changes, change)
+			r := render.Changes(render.ChangeList{Start: c.Start, Changes: c.Changes, Expired: c.Expired,
+				HistoryID: c.HistoryID, NextPageToken: c.NextPageToken, Label: c.Label}, keptWhole(rows))
+			out := ChangesOut{Changes: rows, Expired: c.Expired, HistoryID: c.HistoryID,
+				NextPageToken: c.NextPageToken, Complete: c.NextPageToken == "", Rendered: readOf(r)}
 			if c.Label != nil {
 				out.Label = &LabelRef{ID: c.Label.ID, Name: c.Label.Name}
 			}
@@ -201,8 +204,11 @@ func registerAccount(s *mcp.Server, d Deps) {
 			if err != nil {
 				return FiltersOut{}, err
 			}
-			return FiltersOut{Filters: mapSlice(fs, filter), Forwarding: model.Forwarding(fs),
-				Rendered: readOf(render.Filters(fs, render.Options{}))}, nil
+			rows := mapSlice(fs, filter)
+			// Every filter stays a row: they are the account's own settings,
+			// and one that forwards must never be out of sight.
+			r := render.Filters(fs, keptWhole(rows))
+			return FiltersOut{Filters: rows, Forwarding: model.Forwarding(fs), Rendered: readOf(r)}, nil
 		})
 }
 
@@ -233,7 +239,7 @@ func settingsOut(st model.Settings) SettingsOut {
 
 func filter(f model.Filter) Filter {
 	c := f.Criteria
-	return Filter{ID: f.ID, AddLabels: labelRefs(f.Add), RemoveLabels: labelRefs(f.Remove), Forward: f.Forward,
+	return Filter{ID: f.ID, AddLabels: labelRefs(f.Add), RemoveLabels: labelRefs(f.Remove), Forward: f.Forward, NeverSpam: f.NeverSpam(),
 		Criteria: FilterCriteria{From: c.From, To: c.To, Subject: c.Subject, Query: c.Query, NegatedQuery: c.NegatedQuery,
 			HasAttachment: c.HasAttachment, ExcludeChats: c.ExcludeChats, Size: int(c.Size), SizeComparison: c.SizeComparison}}
 }

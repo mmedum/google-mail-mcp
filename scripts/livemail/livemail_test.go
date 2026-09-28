@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"net/url"
 	"regexp"
+	"slices"
 	"strings"
 	"testing"
 	"time"
@@ -88,6 +89,8 @@ func (f *fakeMailbox) SaveSettings(context.Context) (savedSettings, error) {
 }
 
 func (f *fakeMailbox) RestoreSettings(context.Context, savedSettings) error { return nil }
+
+func (f *fakeMailbox) FiltersFrom(context.Context, string) ([]string, error) { return nil, nil }
 
 func (f *fakeMailbox) DeleteFiltersFrom(context.Context, string) (int, error) { return 0, nil }
 
@@ -373,8 +376,8 @@ func TestTheGuardHoldsSendsToSendTo(t *testing.T) {
 	}
 }
 
-// Spike G is not asked under a scope that deletes, and B, C and H do not
-// run without what they need.
+// Spike G is not asked under a scope that deletes, and B, C, H and L do
+// not run without what they need.
 func TestPhaseThreeSpikesNeedTheirInputs(t *testing.T) {
 	s := &seeded{label: newRunLabel(time.Now()), messages: []string{"0000000000000001"}}
 	x := spikeRun{box: &fakeMailbox{}, s: s, full: true}
@@ -385,7 +388,7 @@ func TestPhaseThreeSpikesNeedTheirInputs(t *testing.T) {
 			}
 		}
 	}
-	for _, sp := range sendSpikes {
+	for _, sp := range slices.Concat(sendSpikes, settingsSpikes) {
 		if got := sp.ask(context.Background(), x); !strings.HasPrefix(got, "not run") {
 			t.Errorf("spike %s: %s", sp.name, got)
 		}

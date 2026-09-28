@@ -107,7 +107,7 @@ func (m *restMailbox) RestoreSettings(ctx context.Context, s savedSettings) erro
 	return errors.Join(sig, m.call(ctx, http.MethodPut, "settings/vacation", nil, vacation, nil))
 }
 
-func (m *restMailbox) DeleteFiltersFrom(ctx context.Context, from string) (int, error) {
+func (m *restMailbox) FiltersFrom(ctx context.Context, from string) ([]string, error) {
 	var list struct {
 		Filter []struct {
 			ID       string `json:"id"`
@@ -117,15 +117,26 @@ func (m *restMailbox) DeleteFiltersFrom(ctx context.Context, from string) (int, 
 		} `json:"filter"`
 	}
 	if err := m.call(ctx, http.MethodGet, "settings/filters", nil, nil, &list); err != nil {
+		return nil, err
+	}
+	var ids []string
+	for _, f := range list.Filter {
+		if f.Criteria.From == from {
+			ids = append(ids, f.ID)
+		}
+	}
+	return ids, nil
+}
+
+func (m *restMailbox) DeleteFiltersFrom(ctx context.Context, from string) (int, error) {
+	ids, err := m.FiltersFrom(ctx, from)
+	if err != nil {
 		return 0, err
 	}
 	n := 0
 	var errs []error
-	for _, f := range list.Filter {
-		if f.Criteria.From != from {
-			continue
-		}
-		if err := m.call(ctx, http.MethodDelete, "settings/filters/"+url.PathEscape(f.ID), nil, nil, nil); err != nil {
+	for _, id := range ids {
+		if err := m.call(ctx, http.MethodDelete, "settings/filters/"+url.PathEscape(id), nil, nil, nil); err != nil {
 			errs = append(errs, err)
 			continue
 		}

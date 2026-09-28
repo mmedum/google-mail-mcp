@@ -2,4 +2,5 @@ created filter ANe1BmgFixture01
   matches: from news@harbor-weekly.invalid
   adds labels: Newsletters
   removes labels: INBOX
+  never sends matching mail to spam
 It acts on mail that arrives from now on; mail already in the mailbox is untouched.
