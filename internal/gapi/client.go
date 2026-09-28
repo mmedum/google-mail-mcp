@@ -763,7 +763,7 @@ func classifyStatus(call Call, p policy, status int, header http.Header, body []
 		// Gmail refuses a filter write that overlaps another on the same
 		// account, or follows one too closely, and takes it seconds later
 		// (§18 row 54). So the next attempt waits at least overlapWait.
-		f := transient(ifTurnedAway, "make settings changes one at a time, a few seconds apart", ClassUnavailable,
+		f := transient(ifTurnedAway, "make filter changes one at a time, 5 seconds or more apart", ClassUnavailable,
 			"Gmail refused %s, most likely because another change to this account's settings was being saved at the same moment; nothing was changed", call.ID)
 		f.after = max(f.after, overlapWait)
 		return f
@@ -819,8 +819,9 @@ func matches(reason string, want []string) bool {
 
 // overlapWait is the least wait before repeating a filter write Gmail
 // refused as overlapping. Live, a write sent right after another was
-// refused, and the same write 5 seconds later was taken.
-const overlapWait = 2 * time.Second
+// refused, and the same write 5 seconds later was taken; no shorter wait
+// was tried (§18 row 54).
+const overlapWait = 5 * time.Second
 
 // isOverlap is the refusal Gmail gave filter writes sent in parallel:
 // reason failedPrecondition, "Precondition check failed." Another

@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"regexp"
 	"strconv"
 	"strings"
 	"testing"
@@ -251,68 +252,88 @@ func TestSearchReplyStaysWithinItsBudget(t *testing.T) {
 	}
 }
 
-// Changes and filters keep every row whole, and the text fits in what
-// is left of the budget. A change dropped could not be read again, and a
-// filter that forwards must never be out of sight.
-func TestListingsThatKeepEveryRow(t *testing.T) {
+// Changes keep every row whole, and the text fits in what is left of
+// the budget: a change dropped could not be read again. Every change the
+// text leaves out is counted, even one whose message a shown row names.
+func TestChangesKeepEveryRow(t *testing.T) {
 	h, fake := connectFake(t, config.Config{}, func(o *gapi.Options) { o.UnitsPerMinute = 1 << 20 })
 	start := strconv.FormatUint(fake.HistoryID(), 10)
 	ids := fake.AddBulkMail(60)
-	// The first message changes again last, so one id is both early in
-	// the page and past the budget.
+	// The first message changes again last, so its id is on a shown row
+	// and on one past the budget.
 	call(t, h, "modify_labels", map[string]any{"message_ids": []any{ids[0]}, "add": []any{"STARRED"}}, &tools.ItemsOut{})
+
+	res := h.Call(t, "list_changes", map[string]any{"history_id": start})
+	var out tools.ChangesOut
+	structured(t, res, testutil.Text(res), res.StructuredContent, &out)
+	n, _ := replySize(t, res, "changes")
+	if len(out.Changes) != 61 || !out.Truncated {
+		t.Fatalf("%d changes, truncated %v; want 61, truncated", len(out.Changes), out.Truncated)
+	}
+	for _, c := range out.Changes {
+		if c.Kind == "" || c.MessageID == "" {
+			t.Errorf("a change lost its kind or message: %+v", c)
+		}
+	}
+	shownText, rest, _ := strings.Cut(testutil.Text(res), "not shown (over the budget)")
+	shown := strings.Count(shownText, "\nhistory ")
+	if want := fmt.Sprintf(", %d changes from this page: ", len(out.Changes)-shown); !strings.HasPrefix(rest, want) {
+		t.Errorf("%d changes shown of %d; the text does not count the rest as %q:%s", shown, len(out.Changes), want, rest)
+	}
+	if !strings.Contains(rest, ids[0]) {
+		t.Errorf("the last change's message is not named among those not shown:%s", rest)
+	}
+	for _, id := range out.Omitted {
+		if strings.Contains(shownText, "message "+id) {
+			t.Errorf("%s is shown and in omitted_ids", id)
+		}
+	}
+	if most := out.Budget + replyEnvelope; n > most {
+		t.Errorf("the reply is %d characters, over %d", n, most)
+	}
+}
+
+// Filters are exempt from the whole-reply budget: every row is whole,
+// and the text has a budget of its own and shows forwarding filters
+// first, so one that forwards is never out of sight.
+func TestListFiltersShowsForwardingFirst(t *testing.T) {
+	h, fake := connectFake(t, config.Config{})
+	var forwarding []string
 	fake.UpdateSettings(func(st *gmailtest.Settings) {
-		for i := range 80 {
-			st.Filters = append(st.Filters, gmail.Filter{ID: fmt.Sprintf("ANe1BmgBulk%03d", i),
-				Criteria: &gmail.FilterCriteria{From: fmt.Sprintf("list%d@example.org", i)},
-				Action:   &gmail.FilterAction{AddLabelIDs: []string{"STARRED"}}})
-		}
-		st.Filters = append(st.Filters, gmail.Filter{ID: "ANe1BmgBulkFwd", Criteria: &gmail.FilterCriteria{Query: "late"},
-			Action: &gmail.FilterAction{Forward: gmailtest.BackupAddress}})
-	})
-
-	t.Run("list_changes", func(t *testing.T) {
-		res := h.Call(t, "list_changes", map[string]any{"history_id": start})
-		var out tools.ChangesOut
-		structured(t, res, testutil.Text(res), res.StructuredContent, &out)
-		n, _ := replySize(t, res, "changes")
-		if len(out.Changes) != 61 || len(out.Omitted) == 0 {
-			t.Fatalf("%d changes and %d omitted, want 61 and some omitted", len(out.Changes), len(out.Omitted))
-		}
-		for _, c := range out.Changes {
-			if c.Kind == "" || c.MessageID == "" {
-				t.Errorf("a change lost its kind or message: %+v", c)
+		for i := range 150 {
+			f := gmail.Filter{ID: fmt.Sprintf("ANe1BmgBulk%03d", i),
+				Criteria: &gmail.FilterCriteria{From: fmt.Sprintf("list%d@example.org", i), Query: "a longer query to fill the text"},
+				Action:   &gmail.FilterAction{AddLabelIDs: []string{"STARRED"}, RemoveLabelIDs: []string{"INBOX", "UNREAD"}}}
+			if i%50 == 49 {
+				f.Action = &gmail.FilterAction{Forward: gmailtest.BackupAddress}
+				forwarding = append(forwarding, f.ID)
 			}
-		}
-		shownText, _, _ := strings.Cut(testutil.Text(res), "not shown (over the budget)")
-		for _, id := range out.Omitted {
-			if strings.Contains(shownText, "message "+id) {
-				t.Errorf("%s is shown and in omitted_ids", id)
-			}
-		}
-		if most := out.Budget + replyEnvelope; n > most {
-			t.Errorf("the reply is %d characters, over %d", n, most)
+			st.Filters = append(st.Filters, f)
 		}
 	})
-
-	t.Run("list_filters", func(t *testing.T) {
-		res := h.Call(t, "list_filters", map[string]any{})
-		var out tools.FiltersOut
-		structured(t, res, testutil.Text(res), res.StructuredContent, &out)
-		n, _ := replySize(t, res, "filters")
-		if want := len(fake.Settings().Filters); len(out.Filters) != want || out.Forwarding != 2 {
-			t.Fatalf("%d filters, %d forwarding; want %d and 2", len(out.Filters), out.Forwarding, want)
+	var out tools.FiltersOut
+	text := call(t, h, "list_filters", map[string]any{}, &out)
+	all := fake.Settings().Filters
+	if len(out.Filters) != len(all) || out.Forwarding != len(forwarding)+1 || !out.Truncated {
+		t.Fatalf("%d filters of %d, %d forwarding, truncated %v", len(out.Filters), len(all), out.Forwarding, out.Truncated)
+	}
+	for i, f := range out.Filters {
+		if f.ID != all[i].ID {
+			t.Fatalf("row %d is %s, want %s: every filter, in Gmail's order", i, f.ID, all[i].ID)
 		}
-		if last := out.Filters[len(out.Filters)-1]; last.Forward == "" {
-			t.Errorf("the forwarding filter is not whole: %+v", last)
+	}
+	shownText, _, _ := strings.Cut(text, "not shown (over the budget)")
+	if strings.Count(shownText, "\nfilter ") < 20 {
+		t.Errorf("the text shows too few filters:\n%s", shownText[:500])
+	}
+	for _, id := range append(forwarding, gmailtest.FilterForward) {
+		if !strings.Contains(shownText, "filter "+id+"\n") {
+			t.Errorf("forwarding filter %s is not shown", id)
 		}
-		if !strings.Contains(testutil.Text(res), "forwarding mail out of the account: 2 filters") {
-			t.Errorf("the text does not count the forwarding filters:\n%s", testutil.Text(res)[:300])
-		}
-		if most := out.Budget + replyEnvelope; n > most {
-			t.Errorf("the reply is %d characters, over %d", n, most)
-		}
-	})
+	}
+	if !regexp.MustCompile(`not shown \(over the budget\), \d+ filters? from this page: `).MatchString(text) {
+		t.Errorf("the filters left out are not counted:%s", text[max(0, len(text)-400):])
+	}
 }
 
 func TestEmptyPageWithTokenIsNotComplete(t *testing.T) {

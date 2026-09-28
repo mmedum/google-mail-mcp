@@ -216,7 +216,7 @@ func TestListingsOverBudget(t *testing.T) {
 		"messages": Messages(MessageList{Messages: ms}, o),
 		"drafts":   Drafts(DraftList{Drafts: ds}, o),
 	} {
-		if !res.Truncated || len(res.Omitted) == 0 || !strings.Contains(res.Text, "not shown (over the budget), from this page:") {
+		if !res.Truncated || len(res.Omitted) == 0 || !strings.Contains(res.Text, "not shown (over the budget), ") || !strings.Contains(res.Text, " from this page: ") {
 			t.Errorf("%s: %+v", name, res.Omitted)
 		}
 	}

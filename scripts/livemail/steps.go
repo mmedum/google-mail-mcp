@@ -384,9 +384,14 @@ func (e *env) runStep(s step) error {
 		return err
 	}
 	e.structured = structured
-	if s.quiet {
+	switch {
+	case s.quiet && isError:
+		// A refusal is the server's "[class] message", which carries no
+		// setting's text, and is what a failed quiet step needs read.
+		e.tr.Say(text)
+	case s.quiet:
 		e.tr.Sayf("(%d characters; not printed, since this result is the whole mailbox's rather than the run's)", len(text))
-	} else {
+	default:
 		e.tr.Say(text)
 	}
 	switch {
@@ -426,6 +431,9 @@ type spikeRun struct {
 	// spikeH floods the run's own message with reads for spike H, only
 	// when -spike-h is given.
 	spikeH bool
+	// spikeL sends filter writes at once for spike L, only when -spike-l
+	// is given.
+	spikeL bool
 	// spikesDE lets spikes D and E send again.
 	spikesDE bool
 }

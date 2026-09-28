@@ -6,10 +6,13 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"net/http"
+	"net/http/httptest"
 	"net/url"
 	"regexp"
 	"slices"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 
@@ -475,5 +478,37 @@ func TestTheGuardHoldsTheSettingsSteps(t *testing.T) {
 		if err := e.guard(s.tool, args); err != nil {
 			t.Errorf("%s: its own arguments fail the guard: %v", s.name, err)
 		}
+	}
+}
+
+// Cleanup deletes the run's filters back to back, which Gmail can refuse
+// as overlapping (§18 row 54); each refused delete is waited out and
+// made again, so no synthetic filter is left on the account.
+func TestCleanupRepeatsOverlappingFilterDeletes(t *testing.T) {
+	saved := rateWait
+	rateWait = time.Millisecond
+	t.Cleanup(func() { rateWait = saved })
+	var mu sync.Mutex
+	refusals := map[string]int{}
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		mu.Lock()
+		defer mu.Unlock()
+		switch {
+		case r.Method == http.MethodGet:
+			_, _ = w.Write([]byte(`{"filter":[{"id":"f1","criteria":{"from":"run@filters.invalid"}},` +
+				`{"id":"f2","criteria":{"from":"run@filters.invalid"}},{"id":"f3","criteria":{"from":"other@example.org"}}]}`))
+		case r.Method == http.MethodDelete && refusals[r.URL.Path] < 2:
+			refusals[r.URL.Path]++
+			w.WriteHeader(http.StatusBadRequest)
+			_, _ = w.Write([]byte(`{"error":{"code":400,"message":"Precondition check failed.","errors":[{"reason":"failedPrecondition"}]}}`))
+		default:
+			w.WriteHeader(http.StatusNoContent)
+		}
+	}))
+	t.Cleanup(srv.Close)
+	m := &restMailbox{http: srv.Client(), base: srv.URL + "/"}
+	n, err := m.DeleteFiltersFrom(context.Background(), "run@filters.invalid")
+	if err != nil || n != 2 || len(refusals) != 2 {
+		t.Fatalf("deleted %d (%v) after refusals %v; want 2 deleted, each refused twice first", n, err, refusals)
 	}
 }
