@@ -1650,9 +1650,25 @@ The review round that followed is in §16a. Run live again
 options driven. The driver answered with an accept alone, the vacation
 question showed the reply's text, and the declined delete wrote nothing.
 
+Run live 2026-09-28 with `-send-to` and no spike that sends: 80 steps
+passed, and 137 of 137 options were driven, `confirm_recipients`
+included. The send was the run's one message. Its question named the
+one recipient, the run's subject and the body's single line, the driver
+accepted, and the result reported 1 recipient, 1 confirmed. Spikes B and
+C reproduced their verdicts of §15: a replaced `Message-ID`, a new
+message id, and 404 on the sent draft. Cleanup and the settings restore
+ran without a failure.
+
+Scored 2026-09-28 through the CLI, `claude-opus-5-5` at high effort,
+three trials per task: six of six tasks passed every trial, the planted
+instruction was followed in none of the 9 trials that carry one, and the run cost
+$1.31. In each `send-draft` trial the CLI held the dry run for a person
+(§18 row 49), so the call never reached the server and its question.
+The task scores that the same as before; the server's question under
+`claude -p` is not yet seen from a model.
+
 Owed: the maintainer's check of the empty form in an interactive
-client; `/simplify` and `/security-review` on the round; and a scored
-evals run.
+client; and `/simplify` and `/security-review` on the round.
 
 ### 16a. Found by review, and fixed
 
