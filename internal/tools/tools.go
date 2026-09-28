@@ -9,8 +9,8 @@ import (
 
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 
-	"github.com/mmedum/google-mail-mcp/internal/config"
-	"github.com/mmedum/google-mail-mcp/internal/gapi"
+	"github.com/mmedum/google-mail-mcp/v2/internal/config"
+	"github.com/mmedum/google-mail-mcp/v2/internal/gapi"
 )
 
 // Deps are what the tools need.
@@ -27,6 +27,8 @@ type Deps struct {
 	namesOnly bool
 	// kinds collects each registered tool's kind, when set.
 	kinds map[string]string
+	// asking signs the questions put to the person; one per Register.
+	asking *asking
 }
 
 // registrations is every group of tools, in the order they appear in
@@ -42,6 +44,7 @@ func Register(s *mcp.Server, d Deps) []string {
 	}
 	names := []string{}
 	d.registered = &names
+	d.asking = newAsking(d.Logger)
 	for _, add := range registrations {
 		add(s, d)
 	}

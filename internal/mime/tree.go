@@ -7,7 +7,7 @@ import (
 	"strconv"
 	"strings"
 
-	"github.com/mmedum/google-mail-mcp/internal/gmail"
+	"github.com/mmedum/google-mail-mcp/v2/internal/gmail"
 )
 
 // node is one MIME entity, from either source: a Gmail payload or raw

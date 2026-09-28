@@ -127,6 +127,18 @@ pasted — a debug log, `doctor` and `status` — are the ones that mask.
   `GMAIL_ENABLE_SEND=true`; it answers only contacts or the account's
   domain, never every sender, and turning it on needs `confirm: true`.
   Forwarding, delegation and send-as identities are never written.
+- **Make a write that takes `confirm` without asking you, when it can.**
+  `confirm` and `confirm_recipients` are arguments the model writes, and
+  a model persuaded by a message writes them too. So when the client
+  supports MCP elicitation, the server asks you itself before each of
+  those writes, naming what it touches; text from the mailbox in the
+  question stands in double quotes, on one line, with no link drawn.
+  Only an accept writes. The answer is bound to the call it was
+  asked for, spent once, and void after 5 minutes, and a client cannot
+  answer before it is asked. A client that cannot ask gets no question,
+  and `GMAIL_REQUIRE_PROMPT=true` refuses those writes there instead.
+  An `accept` is still not proof that a person read the question: a
+  client hook you configured can answer for you.
 - **Overwrite a draft it did not read.** `update_draft` takes the message
   id `get_draft` returned, reads the draft again, and refuses with
   `[stale]` if it changed. Gmail offers no lock, so a change landing

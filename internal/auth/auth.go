@@ -23,7 +23,7 @@ import (
 
 	"golang.org/x/oauth2"
 
-	"github.com/mmedum/google-mail-mcp/internal/scopes"
+	"github.com/mmedum/google-mail-mcp/v2/internal/scopes"
 )
 
 // ErrNotDesktopClient means the JSON is not a "Desktop app" OAuth client.

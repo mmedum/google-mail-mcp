@@ -7,7 +7,7 @@ import (
 	"sort"
 	"strings"
 
-	"github.com/mmedum/google-mail-mcp/scripts/internal/livecover"
+	"github.com/mmedum/google-mail-mcp/v2/scripts/internal/livecover"
 )
 
 // liveCover holds the live driver to the whole tool surface, per option.

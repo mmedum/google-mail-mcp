@@ -12,7 +12,7 @@ import (
 	"slices"
 	"strings"
 
-	"github.com/mmedum/google-mail-mcp/internal/gmail"
+	"github.com/mmedum/google-mail-mcp/v2/internal/gmail"
 )
 
 // The fake reads the drafts it is sent with the standard library, not

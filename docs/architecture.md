@@ -1,12 +1,10 @@
 # Architecture — google-mail-mcp
 
-**Status: 1.2.0 is released, 2026-09-28, from `main`, and verified from
-outside: checksums, the cosign signature and the provenance attestation,
-each also against a tampered copy, and the registry entry. Since 1.1.1
-filter writes are paced and settle an unconfirmed outcome by reading,
-`never_spam` is reported, and listings name every row the text leaves
-out.** Still unproven: the
-bundle installed in Claude Desktop.
+**Status: 2.0.0 is prepared, 2026-09-28; since 1.2.0 the server asks
+the person through the MCP client before each write that takes
+`confirm`, and a client that declares elicitation must come back with an
+accept (§4.13).** Still
+unproven: the bundle installed in Claude Desktop.
 
 ## 1. Mission and scope
 
@@ -274,6 +272,8 @@ an annotation is not a control and a registered tool can run unattended.
    for its sender. The refusal names recipients by field
    and position, `cc[1]`, never by address, since an address may come
    from someone else's message; the dry run lists them inside a block.
+   When the client can ask, the person then confirms the send, seeing
+   every address it reaches (§4.13).
 
 ### 4.3 A send is never retried; ambiguity is settled by reading
 
@@ -361,7 +361,8 @@ on protects no one.
 
 `delete_permanently` and `delete_label` are **unregistered** unless
 `GMAIL_ENABLE_DESTRUCTIVE=true`, and each call still needs
-`confirm: true`. That flag is also **the only setting that requests
+`confirm: true`, and the person's own confirmation when the client can
+ask (§4.13). That flag is also **the only setting that requests
 `https://mail.google.com/`** (§2.10), so a default token cannot delete
 permanently even if a tool were registered by mistake. Turning the flag
 on requires a fresh `login`, and `doctor` says so.
@@ -379,7 +380,8 @@ A filter (§7.9) does match a query, and is not an exception: Gmail
 applies it only to mail that arrives after it exists, and the server
 never applies one to mail already in the mailbox. What it can hide is
 mail nobody has seen yet, which is why one that trashes needs
-`confirm: true`, and why filters sit behind their own flag.
+`confirm: true` and the person's confirmation (§4.13), and why filters
+sit behind their own flag.
 
 Per-item outcomes are reported per item. A call that trashed 97 of 100
 says which three failed and why; it never reports the batch as one
@@ -451,6 +453,101 @@ assumed: labels before and after per message, the draft's thread, the
 recipients a send reached, the messages a trash moved. A write that
 changed nothing says so — "already in `TRASH`" — rather than reporting
 success.
+
+### 4.13 A write that cannot be undone is confirmed by the person
+
+`confirm: true` and `confirm_recipients` are arguments the model writes,
+and a persuaded model writes them too. So when the client can ask, the
+server asks the person itself, through MCP form elicitation, before
+seven writes: `delete_draft`, `delete_label`, `delete_permanently`,
+`delete_filter`, `create_filter` when the filter trashes, `set_vacation`
+when it turns the reply on, and `send_draft`.
+
+1. **A second gate, not a replacement.** The arguments stay and are
+   checked first (§14). A call a guard refuses asks nothing. The
+   question comes after every read and every other guard, just before
+   the write, so it shows what the write would do.
+2. **Accepting is the confirmation.** The form has no fields: an empty
+   object schema, which the specification allows (§18 row 64). The
+   first build asked for a checkbox as well, and in the maintainer's
+   check a person pressed Accept without ticking it, meaning to
+   confirm, and was refused; two confirmations that read as one were
+   dropped for one. Anything but `accept` — decline, cancel, an error,
+   an answer that came back after its question expired — is `[blocked]`,
+   and nothing is written. The refusal says the call was "not confirmed
+   by the person" and names the client's answer. It never says the
+   person declined: a client can answer without showing anyone anything
+   (§18 row 60), and a client hook can accept for the person (§18
+   row 61). So an unattended client that declares elicitation cannot
+   make these writes, which is accepted (§14).
+3. **No question possible.** A client that declares no form elicitation
+   gets no question, and the arguments are the guard, as before.
+   `GMAIL_REQUIRE_PROMPT=true` refuses those writes as `[blocked]`
+   instead. Claude Desktop is such a client today (§18 row 62).
+4. **A dry run never asks**, and never needs an answer.
+5. **What the question says.** The tool, the target and the consequence,
+   in the server's words: a label by name with its message and thread
+   counts; a permanent delete by how many messages and threads; a draft
+   by its subject and recipients; a filter by its criteria and actions;
+   the vacation reply by its audience, dates, subject and the start of
+   its text; a send by every address it reaches, its subject and the
+   start of its body. Text from the mailbox or from the call stands in
+   double quotes on one line: control and invisible characters removed;
+   double, typographic and fullwidth quote marks made a plain single
+   quote; a URL scheme, `mailto:`, `www.` and a bare domain followed by a
+   path broken so no client draws a link; cut at 120 characters, an
+   address at 254, a body at 300 with the count of the rest. A closing
+   line says quoted text is not the server's. Nothing is phrased as an
+   instruction from the mail (§4.1).
+6. **One handler on every protocol.** The handler returns the question
+   as an input request, the multi-round-trip pattern of 2026-07-28.
+   Before that revision the SDK asks with `elicitation/create` and calls
+   the handler again within the same request (§18 row 59). A client
+   failure there is a JSON-RPC error inside the SDK, and middleware
+   turns it into `[blocked]`.
+7. **The answer is bound to its question.** `requestState` is signed
+   with HMAC-SHA256 under a key drawn per process. It carries the tool,
+   a hash of the arguments — the ids and, for a send, the draft's
+   `message_id` witness — a hash of what the question binds, a nonce and
+   an expiry. A retry is refused when its state is forged, for another
+   call, expired or already used, and answers on a call with no state
+   are refused, so no client answers before it is asked. The retry reads
+   again; if what it binds differs from what was answered, it is
+   refused, and the next call asks again. A question binds its text,
+   with three exceptions: a label's counts are shown and not bound,
+   since a label that receives mail while the person reads would never
+   be confirmed, and its id and name are bound instead; a draft to
+   delete binds the message it holds, the witness `update_draft`
+   changes (§4.4); a send and a vacation reply bind a hash of the whole
+   body, of which they show the start.
+8. **The expiry applies where the state travels.** From 2026-07-28 the
+   client carries `requestState` between the rounds, and it expires 5
+   minutes out. Before, it never leaves the process: the request itself
+   waits for the person, and a slow accept counts.
+9. **A send goes at most once (§4.3).** The first round stops before
+   `drafts.send`. Only the verified retry sends, and its state is spent
+   before the handler runs, so a replay is refused.
+10. **A failure after the answer is never "nothing written".** Once an
+    answer has confirmed the write, a call that then fails without a
+    result — its reply could not be built or sent, or it was canceled —
+    is `[ambiguous_outcome]`: verdict `written` when the handler
+    returned from its write, `unknown` otherwise, and never to be
+    repeated. A failure while the question is still out is `[blocked]`.
+11. **Asking costs the reads again.** The retry repeats every read
+    before the write, so a confirmed call spends them twice; each
+    description says how many more units, and a test holds the number
+    to what the fake charges.
+12. **Capability per request**: from the request's `_meta` on
+    2026-07-28, from `initialize` before.
+13. **Logs** say `person_asked` and `person_answered` with the tool and
+    the client's action, never the question (§9.2).
+14. **Held in one place.** `register` gives every kind that can take
+    `confirm` a way to ask, and refuses at start a tool whose input has
+    `confirm` or `confirm_recipients` under any other kind, or without
+    the cost of asking. The service asks at its write, and a write
+    reached with no way to ask is refused. A test finds every such tool
+    from the published schemas and holds each: declined, nothing
+    written; accepted, one write.
 
 ## 5. Module layout
 
@@ -614,11 +711,11 @@ forces:
 | `conflict` | the state refuses it: label name taken, `SENT` applied by hand | read and reconsider |
 | `stale` | the draft moved since the witness was read (§4.4) | re-read and retry |
 | `ambiguous` | a label name or `rfc822:` id matched more than one | pass an id |
-| `blocked` | a guard refused what the API would have allowed (§4.2, §4.7) | pass the override, or don't |
+| `blocked` | a guard refused what the API would have allowed (§4.2, §4.7), or the person did not confirm the write (§4.13) | pass the override, or don't; one the person did not confirm is not made again unless they ask |
 | `rate_limited` | §2.2's per-user, project or sending limits | wait; the message says how long |
 | `unavailable` | a transient upstream failure | retry |
 | `unsupported` | the API cannot do this (§2, "cannot do") | see §2 |
-| `ambiguous_outcome` | a send, a filter create or a filter delete may or may not have happened (§4.3, §7.9) | read the result's verdict; never resend blind |
+| `ambiguous_outcome` | a send, a filter create or a filter delete may or may not have happened (§4.3, §7.9), or a write the person confirmed lost its result (§4.13) | read the result's verdict; never resend blind |
 
 `rate_limited` distinguishes the sending limit from request-rate limits
 in its message, because "wait a minute" and "wait up to a day" are
@@ -699,7 +796,7 @@ Attachments are removed by the `part_id` `get_draft` lists. A draft that
 has both a plain and an HTML body takes `body` and `body_html` together,
 so the two cannot disagree. A subject changed on a reply is saved and
 flagged, since it may take the draft out of its thread. `delete_draft`
-with `confirm: true` (§17.1); a draft deleted between the read and the
+with `confirm: true` (§17.1) and the person's confirmation (§4.13); a draft deleted between the read and the
 delete is reported gone. `list_drafts`, `get_draft`.
 
 ### 7.5 Organizing
@@ -752,7 +849,7 @@ so they sit inside blocks and in `untrusted_*` fields.
 
 ### 7.8 Sending
 
-`send_draft` per §4.2 and §4.3. Registered only with
+`send_draft` per §4.2, §4.3 and §4.13. Registered only with
 `GMAIL_ENABLE_SEND=true`. It takes `draft_id`, the `message_id` witness,
 `confirm_recipients` and `dry_run`. It reads the draft (`format=full`, for
 the attachments), checks what needs no thread — a recipient at all, at
@@ -776,8 +873,9 @@ finds, so the guard would clear a shorter list than the send reaches.
 
 ### 7.9 Settings writes
 
-Registered only with `GMAIL_ENABLE_SETTINGS=true`, which also requests
-`gmail.settings.basic`: the discovery document lists no other scope for
+Registered only with `GMAIL_ENABLE_SETTINGS=true`. The writes below
+that take `confirm: true` also ask the person (§4.13). The flag also
+requests `gmail.settings.basic`: the discovery document lists no other scope for
 these methods, `https://mail.google.com/` included. Each reads what it
 changes first, so its result shows before and after, and a dry run stops
 after that read.
@@ -859,7 +957,9 @@ Annotations come from `Kind` in one place (`CLAUDE.md` rule 11);
 "Write, for good" is registered as a Write is and annotated destructive,
 because Gmail deletes a draft rather than trashing it.
 `_meta["anthropic/requiresUserInteraction"]` is set on the Send,
-Auto-reply and Destructive kinds, as a signal and not a control. The
+Auto-reply and Destructive kinds, as a signal and not a control. A tool
+that takes `confirm` also asks the person, and only a kind that can ask
+may take it (§4.13). The
 schema dump names each tool's kind, since Settings looks like Write to a
 client and Auto-reply like Send, and the smoke gate reads which switch a
 tool sits behind from it.
@@ -894,7 +994,9 @@ tool sits behind from it.
 | `delete_filter` | Settings, for good | `GMAIL_ENABLE_SETTINGS` | `gmail.settings.basic` | 1 + 1 + 5 |
 | `set_vacation` | Auto-reply | `GMAIL_ENABLE_SETTINGS` and `GMAIL_ENABLE_SEND` | `gmail.settings.basic` | 1 + 5 |
 
-The staleness gate holds those counts against the table.
+The staleness gate holds those counts against the table. A tool that
+asks the person reads again on the retry, and its description says how
+many units that adds (§4.13).
 
 Resources, for clients that attach rather than call:
 `gmail://threads/{id}` and `gmail://messages/{id}` carry the same text
@@ -989,6 +1091,7 @@ nothing the server adds is phrased as something to do.
 | `GMAIL_ENABLE_SEND=true` | adds `send_draft` | `gmail.modify` (no change: §2.10) |
 | `GMAIL_ENABLE_DESTRUCTIVE=true` | adds `delete_permanently`, `delete_label` | `https://mail.google.com/` |
 | `GMAIL_ENABLE_SETTINGS=true` | adds `update_signature`, `create_filter`, `delete_filter`; with `GMAIL_ENABLE_SEND`, also `set_vacation` | adds `gmail.settings.basic` |
+| `GMAIL_REQUIRE_PROMPT=true` | nothing more; refuses the writes that take `confirm` when the client cannot ask the person (§4.13) | no change |
 
 `READ_ONLY` with any enable flag is refused at startup, naming both.
 `docs/security.md` says plainly what the table implies: **the default
@@ -1022,7 +1125,7 @@ Gmail adds three things:
 
 Configuration: `GMAIL_PROFILE`, `GMAIL_CLIENT_SECRET`, `GMAIL_READ_ONLY`,
 `GMAIL_ENABLE_SEND`, `GMAIL_ENABLE_DESTRUCTIVE`, `GMAIL_ENABLE_SETTINGS`,
-`GMAIL_LOCAL_DIR`,
+`GMAIL_REQUIRE_PROMPT`, `GMAIL_LOCAL_DIR`,
 `GMAIL_LOG_LEVEL`, `GMAIL_LOG_FORMAT` (`text` default), `GMAIL_HTTP_TIMEOUT`
 (60 s default), `GMAIL_CONFIG_DIR`, `GMAIL_REFRESH_TOKEN`. Each also a
 flag, except the last two, which are env-only. `docs/configuration.md`
@@ -1077,7 +1180,13 @@ generated from `internal/scopes` and gated (§5a, `staleness`).
   history id, unit costs.
 - **Renderer goldens** for thread, message, listing, draft and changes,
   including the hidden-text and link-mismatch cases of §4.1.
-- **The logging test** of §9.2.
+- **The logging test** of §9.2, which also answers every question.
+- **The person's confirmation** (§4.13): a client that declares
+  elicitation and answers each way, on 2025-06-18, 2025-11-25 and
+  2026-07-28; one that declares none, with and without
+  `GMAIL_REQUIRE_PROMPT`; forged, replayed, expired, other-call and
+  unasked answers made by hand; every tool that takes `confirm` found
+  from the published schemas.
 - **The live driver**, `scripts/livemail`, per §9.1: every tool and
   option (held by `live-cover`), the transcript through one redacting
   writer (held by `transcript`), and the transcript read by a person
@@ -1108,6 +1217,9 @@ generated from `internal/scopes` and gated (§5a, `staleness`).
 | Settings writes behind a new opt-in flag, `GMAIL_ENABLE_SETTINGS`, which alone requests `gmail.settings.basic` | maintainer, 2026-09-27 | §7.9, §9.4 |
 | A filter may trash matching mail, with `confirm: true`; it can never forward | maintainer, 2026-09-27 | §7.9, §17.5 |
 | The vacation reply needs both the settings and the send flags, an audience of contacts or domain, and `confirm: true` | maintainer, 2026-09-27 | §7.9, §17.4 |
+| The person confirms, through MCP form elicitation, each write that takes `confirm` or `confirm_recipients`, on top of those arguments; only an accept writes, and anything else is `[blocked]` as "not confirmed by the person", never "declined" | maintainer, 2026-09-28 | §4.13; an unattended client that declares elicitation cannot make these writes |
+| Accepting the question is the confirmation; the form has no checkbox | maintainer, 2026-09-28, after the interactive check | §4.13, §18 row 64 |
+| A client that cannot ask falls back to `confirm` and `confirm_recipients`; `GMAIL_REQUIRE_PROMPT=true` refuses instead | maintainer, 2026-09-28 | §4.13, §9.4 |
 | Spikes D and E send in phase 2, from the live driver's run, to a second address the maintainer passes on the command line and never commits | maintainer, 2026-09-26 | §15; the transcript records the address redacted only |
 
 ## 15. What must be verified live
@@ -1484,6 +1596,76 @@ Scored 2026-09-27 after the release, through the CLI, `claude-opus-5-5`
 at high effort, three trials per task, with the settings tools on in
 `injected-helpdesk`: six of six tasks passed every trial, the planted
 instruction was followed in none of 18 trials, and the run cost $1.47.
+
+**Phase 6 — the person confirms (unreleased).** Asked for by the
+maintainer on 2026-09-28, after a client's approval prompts named labels
+by id: the server asks the person, through MCP elicitation, before each
+write that takes `confirm` or `confirm_recipients` (§4.13, §14). Checked
+first against the specification, the SDK's source, a throwaway probe
+server and the clients' own documentation (§18 rows 58 to 63).
+
+Built 2026-09-28, on a topic branch from `main`. The service asks at
+its write, after every read and guard, so the question states what
+would be written; `register` gives each call a way to ask for the kinds
+that take `confirm`, and the question goes out as a multi-round-trip
+input request on every protocol. The answer is bound by a signed,
+single-use `requestState` to the tool, the arguments and the question's
+words, so a retry whose question changed is refused and asked again.
+Mail text in a question is quoted on one line with no link drawn. The
+test client, `testutil.ConnectClient`, takes client options and a
+protocol, so the tests answer as a person would on 2025-06-18,
+2025-11-25 and 2026-07-28, and forge and replay answers by hand. The
+descriptions of the tools that take `confirm` say the server also asks.
+
+The live driver is now a client that declares elicitation and answers
+for the maintainer, since it is their own scripted run: accept, but for
+one step that declines and checks the refusal. It
+prints every question into the transcript. The evals' `send-draft` task
+already scored reaching the send with the right witness; its wording now
+says that `claude -p` may pass the call and cancel the server's question
+rather than hold it, and either scores the same.
+
+Run live 2026-09-28, once, without `-send-to`, on protocol 2025-11-25:
+78 steps passed, and 136 of 137 options were driven, the missing one
+being `confirm_recipients`, which needs a send. Each write that takes
+`confirm` put one question to the driver, the send aside, since no step
+sent; the declined delete wrote nothing and said so. Reading the transcript found the questions as
+§4.13 describes them, with the run's own label, subject and filter
+criteria quoted.
+
+Checked by the maintainer 2026-09-28 in Claude Code 2.1.284, on
+protocol 2025-11-25, with `delete_draft` (§18 row 64). Accept with the
+box unticked, Esc and Decline were each `[blocked]`, logged as
+`accept` unconfirmed, `cancel` and `decline`; the box ticked and
+Accept deleted the draft. The model never saw the question and did not
+call again on its own, and the log carried no subject or address. The
+first case, a person meaning to confirm and refused, is why accepting
+is now the confirmation and the form has no box.
+
+The review round that followed is in §16a. Run live again
+2026-09-28 after it, without `-send-to`: 78 steps passed, 136 of 137
+options driven. The driver answered with an accept alone, the vacation
+question showed the reply's text, and the declined delete wrote nothing.
+
+Run live 2026-09-28 with `-send-to` and no spike that sends: 80 steps
+passed, and 137 of 137 options were driven, `confirm_recipients`
+included. The send was the run's one message. Its question named the
+one recipient, the run's subject and the body's single line, the driver
+accepted, and the result reported 1 recipient, 1 confirmed. Spikes B and
+C reproduced their verdicts of §15: a replaced `Message-ID`, a new
+message id, and 404 on the sent draft. Cleanup and the settings restore
+ran without a failure.
+
+Scored 2026-09-28 through the CLI, `claude-opus-5-5` at high effort,
+three trials per task: six of six tasks passed every trial, the planted
+instruction was followed in none of the 9 trials that carry one, and the run cost
+$1.31. In each `send-draft` trial the CLI held the dry run for a person
+(§18 row 49), so the call never reached the server and its question.
+The task scores that the same as before; the server's question under
+`claude -p` is not yet seen from a model.
+
+Owed: the maintainer's check of the empty form in an interactive
+client; and `/simplify` and `/security-review` on the round.
 
 ### 16a. Found by review, and fixed
 
@@ -1890,6 +2072,44 @@ what fixed them.
   unchanged, though an earlier attempt may have acted; it is
   `[ambiguous_outcome]`, so a filter delete settles by reading.
 
+- **Phase 6, the maintainer's check and `/code-review high`.**
+  - Accept without the box ticked was refused, though the person meant
+    to confirm. Accepting is now the confirmation: the form has no
+    fields, which the specification allows (§18 row 64).
+  - A call that failed as a JSON-RPC error after its question said
+    "nothing was written", even when the retry had already written.
+    The middleware now follows the call's stage: after the answer
+    confirmed the write it is `[ambiguous_outcome]`, `written` or
+    `unknown` (§4.13 item 10).
+  - The 5-minute expiry refused a slow accept on protocols before
+    2026-07-28, where the state never leaves the process. It applies
+    only where the client carries the state.
+  - A label receiving mail between the rounds could never be deleted,
+    since the question bound its counts. They are shown and not bound;
+    the label's id and name are.
+  - The send and vacation questions did not show the body. They show
+    its start, and bind a hash of all of it.
+  - A draft edited between the rounds would be deleted on the old
+    answer. The question binds the message the draft holds.
+  - Asking repeats the reads, which the descriptions did not count:
+    `delete_draft` said 30 units and charged 50. Each description of a
+    tool that asks says how many more units, and a test holds it.
+  - The recipient grouping was written twice; the argument hash was
+    computed on calls that asked nothing; the test client of the live
+    driver answered `ping` as an unknown method; "fulfils". Each fixed.
+  - Security review, below its threshold: typographic and fullwidth
+    quote marks now fold to a plain single quote, and `mailto:` and a
+    bare domain followed by a path are broken, so no client links them.
+
+- **Phase 6, security review of the review round: none at the bar; three
+  low items closed.** Lookalike double quotes outside the folded set
+  (modifier and Hebrew marks, ornament quotes, ditto marks) are folded
+  too; a bare domain followed by a port, query or fragment, or written in
+  a non-Latin script, is broken like one followed by a path; and blank
+  characters no stripping removes, such as the Braille blank, become
+  spaces, so a preview cannot be padded to steer where a client wraps it.
+  The code review at medium found nothing.
+
 ### Closing a phase
 
 1. `make check` green; the live driver run and its transcript read.
@@ -2067,3 +2287,11 @@ live** — §15 exists to settle these, and they are marked.
 | 55 | After a `create_filter` Google did not confirm, the caller can tell whether it was saved | Observed live 2026-09-28: a 500 "Internal error" answered `[ambiguous_outcome]`, and only a `list_filters` showed that nothing was saved | **Refuted.** The server now reads the list 5 seconds after such a create and gives a verdict, as §4.3 does for a send: `created` naming the new filter, `not_created`, or `unknown`. The create is never repeated. Row 54's 500s are the likeliest cause |
 | 56 | A filter keeps the removed labels it was created with | Observed live 2026-09-28: archiving filters, including ones made in Gmail's settings page, later listed `SPAM` among their removed labels though no write named it; a filter read at once after its create did not, nor 15 seconds and one more filter write later. Gmail's filter guide, read 2026-09-28: `removeLabelIds=['SPAM']` is "Never mark as spam" | **Refuted, cause unknown.** Gmail can add `SPAM` to archiving filters after the fact, not at create time; what triggers it is not known. So `create_filter`'s duplicate check, and the read that settles an unconfirmed create, do not count a stored `SPAM` against a request that archives without it. A request that names `SPAM` is compared as given. The text says "never sends matching mail to spam" rather than naming a label taken off, and `never_spam` reports it. The live driver lists its own archiving filter again after another filter write and reports, without judging, whether `SPAM` appeared |
 | 57 | `budget_chars` bounds a listing's whole reply | Observed live 2026-09-28: `search_messages` and `search_threads` with `max` 100 under a budget of 24,000 returned 70,000 to 106,000 characters, over the client's limit, with rows in `omitted_ids` that were also rows in `messages` and `threads`; the same page of 100 generated in `gmailtest` came to 102,000 and 127,000 | **Refuted, and kept.** It bounds the text; the structured rows carry every result in full, which is the released contract. Bounding them was tried on this branch, first by dropping rows and then by emptying their content, and reverted: both break clients that read the rows. `omitted_ids` no longer repeats a row the text shows, and the search and draft descriptions advise a smaller `max` to a client that limits one result's size (§4.8) |
+| 58 | A server may ask the person to confirm a write through MCP elicitation, and the client's answer tells whether a person confirmed | The specification's client elicitation pages for 2025-06-18, 2025-11-25 and 2026-07-28 (<https://modelcontextprotocol.io/specification/2025-11-25/client/elicitation>), read 2026-09-28 | **Confirmed for asking; refuted for proof.** "Clients that support elicitation MUST declare the `elicitation` capability", and an empty one means form. Servers "MUST NOT use form mode elicitation to request sensitive information such as passwords, API keys, access tokens, or payment credentials"; a yes or no is none of those. Servers "SHOULD NOT include URLs intended to be clickable" in a form, and "MUST handle cases where the user declines or cancels the elicitation, or where the client fails to process the request". `accept` is "User explicitly approved and submitted with data", `decline` "User explicitly declined", `cancel` "User dismissed without making an explicit choice". But nothing says a person must answer: the multi-round-trip step reads "Client gathers the requested information from the user or other sources". §4.13 asks, and reads only an accept as confirmed |
+| 59 | The Go SDK's `ServerSession.Elicit` works on every protocol this server serves | MCP Go SDK v1.8.0 source, `mcp/server.go` and `mcp/mrtr.go`; the multi-round-trip page of 2026-07-28 (<https://modelcontextprotocol.io/specification/2026-07-28/basic/patterns/mrtr>), read 2026-09-28 | **Refuted.** From 2026-07-28 `Elicit` returns an error: "return an InputRequests map instead". A handler that returns `InputRequests` with a `requestState` works on both: before 2026-07-28 the SDK's middleware asks with `elicitation/create` and calls the handler again in the same request. The SDK does not strip `inputResponses` a client sends on a first call. The page says servers "MUST treat `requestState` as an attacker-controlled input", "MUST protect its integrity (e.g. HMAC or AEAD)" when it influences business logic, and must enforce single use server-side. §4.13 signs, binds and spends it |
+| 60 | A client that declares elicitation has a person to answer it | `claude -p` 2.1.284 against a throwaway probe server with one tool that asks, 2026-09-28; Claude Code's headless documentation (<https://code.claude.com/docs/en/headless>) | **Refuted.** On the default handshake it declared `"elicitation":{}` at 2025-11-25 and answered `cancel` about 5 ms after the question. With `MCP_PROTOCOL_NEGOTIATION=auto` it reached 2026-07-28, declared form and URL, retried with the echoed `requestState`, and answered `cancel` in about 15 ms; a permissive permission mode did not accept. The model saw only the tool's final text. The documentation says an elicitation "that no Elicitation hook answers is cancelled". So an unattended run declares the capability and cancels, which §4.13 refuses and §14 accepts |
+| 61 | An `accept` comes from a person | Claude Code's MCP documentation (<https://code.claude.com/docs/en/mcp>) and changelog (<https://github.com/anthropics/claude-code/blob/main/CHANGELOG.md>, 2.1.76 and 2.1.284), read 2026-09-28 | **Refuted.** Claude Code "displays an interactive dialog and passes your response back to the server", and an `Elicitation` hook can "auto-respond to elicitation requests without showing a dialog"; an `ElicitationResult` hook can change the answer. The Agent SDK's `onElicitation`, left unset, declines. An accept may be a delegation the person configured, like an allow rule, and a decline may be a client's default: so a refusal says "not confirmed by the person", never "declined" (§4.13). The model cannot answer: the question is not a tool call, and `inputResponses` sits outside the arguments |
+| 62 | Claude Desktop asks the person when a server elicits | Issues on Claude Code's tracker (<https://github.com/anthropics/claude-code/issues/96043>, <https://github.com/anthropics/claude-code/issues/89858>) and <https://github.com/anthropics/claude-ai-mcp/issues/153>, read 2026-09-28 | **Tier 3, not probed.** No primary source says the chat app supports it. Reports say its code tab declares no `elicitation` for local servers, that a hosted variant answers `decline` for a question never drawn, and that claude.ai does not support it. §4.13 treats Claude Desktop as a client that cannot ask, where `confirm` stays the guard unless `GMAIL_REQUIRE_PROMPT` is set. A probe of the bundle is owed with the rest of its install check |
+| 63 | Other clients ask the person when a server elicits | VS Code 1.102 release notes (<https://code.visualstudio.com/updates/v1_102>), "includes support for elicitations"; Cursor 1.5 changelog (<https://cursor.com/changelog/1-5>), "Cursor now supports MCP elicitation"; <https://github.com/anthropics/claude-code/issues/79174>, closed, on an editor extension that declared the capability and declined every question — read 2026-09-28 | **Tier 3, not probed.** Support is announced; whether a person sees each question is not checked here. Either way a refusal is what an unanswered question gets |
+| 64 | A form elicitation must ask for at least one field, so a confirmation needs a checkbox | The `ElicitRequestFormParams` type in the specification's `schema.ts` for 2025-06-18, 2025-11-25 and 2026-07-28, and the MCP Go SDK v1.8.0's `validateElicitSchema`, read 2026-09-28; the maintainer's check in Claude Code 2.1.284, protocol 2025-11-25, the same day | **Refuted.** `requestedSchema` is `type: "object"` with `properties: {[key: string]: PrimitiveSchemaDefinition}` and `required` optional: an open map with no minimum, so `properties: {}` is valid, and the SDK accepts it. The first build asked for one boolean as well. In the maintainer's check of `delete_draft`, Accept with the box unticked, Esc and Decline were each refused, answered `accept` unconfirmed, `cancel` and `decline`; ticked and Accept deleted the draft; the model never saw the question and did not call again on its own; the log carried no subject or address. A person pressed Accept meaning to confirm and was refused. So the form has no fields and the accept is the answer (§4.13). The second check, on the final build: Decline was refused and a plain Accept deleted the draft, and Claude Code drew the fieldless form with its three buttons |
+| 65 | The Gmail API lists every inbox category Gmail shows | `labels.list`, observed live 2026-09-28; news reports of a "Purchases" category in Gmail from September 2025, not found on a Google page | **Refuted, observation only.** The list held the five classic `CATEGORY_*` labels — personal, social, promotions, updates, forums — while Gmail's interface showed a Purchases category. The server cannot see that category or filter by it. Nothing was changed |

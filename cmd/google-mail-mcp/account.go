@@ -12,13 +12,13 @@ import (
 
 	"golang.org/x/oauth2"
 
-	"github.com/mmedum/google-mail-mcp/internal/app"
-	"github.com/mmedum/google-mail-mcp/internal/auth"
-	"github.com/mmedum/google-mail-mcp/internal/config"
-	"github.com/mmedum/google-mail-mcp/internal/credentials"
-	"github.com/mmedum/google-mail-mcp/internal/gapi"
-	"github.com/mmedum/google-mail-mcp/internal/scopes"
-	"github.com/mmedum/google-mail-mcp/internal/version"
+	"github.com/mmedum/google-mail-mcp/v2/internal/app"
+	"github.com/mmedum/google-mail-mcp/v2/internal/auth"
+	"github.com/mmedum/google-mail-mcp/v2/internal/config"
+	"github.com/mmedum/google-mail-mcp/v2/internal/credentials"
+	"github.com/mmedum/google-mail-mcp/v2/internal/gapi"
+	"github.com/mmedum/google-mail-mcp/v2/internal/scopes"
+	"github.com/mmedum/google-mail-mcp/v2/internal/version"
 )
 
 // keyringBackend is the credential store's keyring. A var so the tests

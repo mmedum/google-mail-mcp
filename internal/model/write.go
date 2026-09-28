@@ -1,6 +1,6 @@
 package model
 
-import "github.com/mmedum/google-mail-mcp/internal/mime"
+import "github.com/mmedum/google-mail-mcp/v2/internal/mime"
 
 // The results of writes. Each says the state the write produced, read
 // from Gmail's answer rather than assumed from the request (§4.12), and
@@ -257,6 +257,9 @@ type SendWrite struct {
 	Subject         Untrusted
 	RFC822MessageID Untrusted
 	Files           []File
+	// Body is the draft's text, which the question before the send
+	// shows the start of (§4.13).
+	Body Untrusted
 
 	// SentID, SentThreadID and SentLabels are Gmail's answer to the send.
 	SentID       string

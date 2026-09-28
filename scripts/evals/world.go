@@ -14,11 +14,11 @@ import (
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 	"golang.org/x/oauth2"
 
-	"github.com/mmedum/google-mail-mcp/internal/config"
-	"github.com/mmedum/google-mail-mcp/internal/gapi"
-	"github.com/mmedum/google-mail-mcp/internal/gapi/gmailtest"
-	"github.com/mmedum/google-mail-mcp/internal/server"
-	"github.com/mmedum/google-mail-mcp/internal/tools"
+	"github.com/mmedum/google-mail-mcp/v2/internal/config"
+	"github.com/mmedum/google-mail-mcp/v2/internal/gapi"
+	"github.com/mmedum/google-mail-mcp/v2/internal/gapi/gmailtest"
+	"github.com/mmedum/google-mail-mcp/v2/internal/server"
+	"github.com/mmedum/google-mail-mcp/v2/internal/tools"
 )
 
 // World is one task's mailbox and the server in front of it. Every task

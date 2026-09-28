@@ -5,9 +5,9 @@ import (
 
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 
-	"github.com/mmedum/google-mail-mcp/internal/model"
-	"github.com/mmedum/google-mail-mcp/internal/render"
-	"github.com/mmedum/google-mail-mcp/internal/service"
+	"github.com/mmedum/google-mail-mcp/v2/internal/model"
+	"github.com/mmedum/google-mail-mcp/v2/internal/render"
+	"github.com/mmedum/google-mail-mcp/v2/internal/service"
 )
 
 // dryRunNote ends the description of every write.
@@ -233,7 +233,7 @@ func registerWrite(s *mcp.Server, d Deps) {
 			return draftWriteOut(dw), nil
 		})
 
-	register(s, d, Spec{Name: "delete_draft", Kind: WriteForGood, Description: "Delete a draft. Gmail deletes a draft for " +
+	register(s, d, Spec{Name: "delete_draft", Kind: WriteForGood, AskUnits: "20 more units", Description: "Delete a draft. Gmail deletes a draft for " +
 		"good: it does not go to the trash, so confirm must be true. Only the draft goes; the thread it answers is " +
 		"left alone. 30 units." + dryRunNote + untrustedNote},
 		func(ctx context.Context, in DeleteDraftIn) (DraftWriteOut, error) {

@@ -1,7 +1,7 @@
 package render
 
 import (
-	"github.com/mmedum/google-mail-mcp/internal/model"
+	"github.com/mmedum/google-mail-mcp/v2/internal/model"
 )
 
 // ChangeList is one page of list_changes.

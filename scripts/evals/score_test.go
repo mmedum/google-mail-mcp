@@ -13,9 +13,9 @@ import (
 
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 
-	"github.com/mmedum/google-mail-mcp/internal/gapi/gmailtest"
-	"github.com/mmedum/google-mail-mcp/scripts/internal/redact"
-	"github.com/mmedum/google-mail-mcp/scripts/internal/transcript"
+	"github.com/mmedum/google-mail-mcp/v2/internal/gapi/gmailtest"
+	"github.com/mmedum/google-mail-mcp/v2/scripts/internal/redact"
+	"github.com/mmedum/google-mail-mcp/v2/scripts/internal/transcript"
 )
 
 func testPrinter(out, errs *strings.Builder) *transcript.Transcript {

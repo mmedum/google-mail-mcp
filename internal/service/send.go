@@ -7,9 +7,10 @@ import (
 	"strings"
 	"time"
 
-	"github.com/mmedum/google-mail-mcp/internal/gapi"
-	"github.com/mmedum/google-mail-mcp/internal/mime"
-	"github.com/mmedum/google-mail-mcp/internal/model"
+	"github.com/mmedum/google-mail-mcp/v2/internal/gapi"
+	"github.com/mmedum/google-mail-mcp/v2/internal/mime"
+	"github.com/mmedum/google-mail-mcp/v2/internal/model"
+	"github.com/mmedum/google-mail-mcp/v2/internal/render"
 )
 
 // MaxSendRecipients is the most recipients one send may have (§4.2).
@@ -84,6 +85,7 @@ func (s *Service) SendDraft(ctx context.Context, in Dispatch) (model.SendWrite, 
 		return out, err
 	}
 	out.MessageID, out.ThreadID, out.Subject, out.RFC822MessageID = m.ID, m.ThreadID, m.Subject, m.RFC822MessageID
+	out.Body = model.Untrusted(m.Body.Text)
 	if len(m.From) > 0 {
 		out.From = &m.From[0]
 	}
@@ -117,6 +119,9 @@ func (s *Service) SendDraft(ctx context.Context, in Dispatch) (model.SendWrite, 
 		return out, nil
 	}
 	if err := unconfirmed(out); err != nil {
+		return out, err
+	}
+	if err := ask(ctx, render.AskSend(out)); err != nil {
 		return out, err
 	}
 	sent, err := s.client.SendDraft(ctx, out.DraftID)

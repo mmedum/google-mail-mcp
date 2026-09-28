@@ -10,8 +10,8 @@ import (
 	"runtime"
 	"testing"
 
-	"github.com/mmedum/google-mail-mcp/internal/gapi"
-	"github.com/mmedum/google-mail-mcp/internal/gapi/gmailtest"
+	"github.com/mmedum/google-mail-mcp/v2/internal/gapi"
+	"github.com/mmedum/google-mail-mcp/v2/internal/gapi/gmailtest"
 )
 
 func TestDownloadAttachment(t *testing.T) {

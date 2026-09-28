@@ -18,8 +18,8 @@ import (
 	"strings"
 	"time"
 
-	"github.com/mmedum/google-mail-mcp/scripts/internal/mcpstdio"
-	"github.com/mmedum/google-mail-mcp/scripts/internal/transcript"
+	"github.com/mmedum/google-mail-mcp/v2/scripts/internal/mcpstdio"
+	"github.com/mmedum/google-mail-mcp/v2/scripts/internal/transcript"
 )
 
 // step is one tool call the driver makes and what it checks.
@@ -43,6 +43,38 @@ type step struct {
 	// needs says why the step cannot run in this run, or "": a send
 	// needs -send-to, a permanent delete a profile that can delete.
 	needs func(e *env) string
+	// declines answers the step's question to the person with decline
+	// rather than accept.
+	declines bool
+}
+
+// scriptedPerson answers the questions the server puts to the person,
+// for the maintainer running the driver (§4.13): accept, unless a step
+// declines. It prints each question.
+type scriptedPerson struct {
+	tr       *transcript.Transcript
+	declines bool
+	// asked is the questions put during the current step.
+	asked []string
+}
+
+func (p *scriptedPerson) answer(message string) string {
+	p.asked = append(p.asked, message)
+	p.tr.Say("--- question put to the person ---\n" + strings.TrimRight(message, "\n"))
+	if p.declines {
+		p.tr.Say("--- answered: decline ---")
+		return "decline"
+	}
+	p.tr.Say("--- answered: accept ---")
+	return "accept"
+}
+
+// asked is the one question put during the step, or an error.
+func (e *env) asked() (string, error) {
+	if e.person == nil || len(e.person.asked) != 1 {
+		return "", errors.New("the server did not put exactly one question to the person")
+	}
+	return e.person.asked[0], nil
 }
 
 // A thread or message id in a rendering, 16 hex digits after its noun.
@@ -292,6 +324,8 @@ type env struct {
 	signatureAddress string
 	// sent is what the send step read, for spikes B and C.
 	sent sentDraft
+	// person answers the server's questions to the person.
+	person *scriptedPerson
 }
 
 // sentDraft is a draft the run sent through send_draft: the draft, the
@@ -379,6 +413,9 @@ func (e *env) runStep(s step) error {
 		return err
 	}
 	e.tr.Sayf("=== %s %s ===", s.tool, mcpstdio.Encode(args))
+	if e.person != nil {
+		e.person.asked, e.person.declines = nil, s.declines
+	}
 	text, structured, isError, err := e.session.CallToolStructured(s.tool, args)
 	if err != nil {
 		return err

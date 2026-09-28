@@ -12,8 +12,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/mmedum/google-mail-mcp/internal/credentials"
-	"github.com/mmedum/google-mail-mcp/internal/scopes"
+	"github.com/mmedum/google-mail-mcp/v2/internal/credentials"
+	"github.com/mmedum/google-mail-mcp/v2/internal/scopes"
 )
 
 // isolate points the home directory at a temporary one, so the config
@@ -186,7 +186,7 @@ func TestEnvVars(t *testing.T) {
 	want := []string{
 		"GMAIL_API_BASE", "GMAIL_CLIENT_SECRET", "GMAIL_CONFIG_DIR", "GMAIL_ENABLE_DESTRUCTIVE",
 		"GMAIL_ENABLE_SEND", "GMAIL_ENABLE_SETTINGS", "GMAIL_HTTP_TIMEOUT", "GMAIL_LOCAL_DIR", "GMAIL_LOG_FORMAT",
-		"GMAIL_LOG_LEVEL", "GMAIL_PROFILE", "GMAIL_READ_ONLY", "GMAIL_REFRESH_TOKEN",
+		"GMAIL_LOG_LEVEL", "GMAIL_PROFILE", "GMAIL_READ_ONLY", "GMAIL_REFRESH_TOKEN", "GMAIL_REQUIRE_PROMPT",
 	}
 	if !slices.Equal(got, want) {
 		t.Errorf("EnvVars =\n%v\nwant\n%v", got, want)

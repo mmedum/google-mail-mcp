@@ -15,6 +15,19 @@ lifted verbatim.
 
 ## [Unreleased]
 
+## [2.0.0] - 2026-09-28
+
+### Added
+
+- Before `delete_draft`, `delete_label`, `delete_permanently`, `delete_filter`, a `create_filter` that trashes, a `set_vacation` that turns the reply on, and `send_draft`, the server asks you through the MCP client (form elicitation) when the client supports it, naming what the write touches, and showing the body before a send or a vacation reply; only an accept writes, on top of `confirm` and `confirm_recipients`.
+- `GMAIL_REQUIRE_PROMPT` (`--require-prompt`) refuses those writes as `[blocked]` when the client cannot ask you.
+
+### Changed
+
+- **Breaking:** the Go module path is now `github.com/mmedum/google-mail-mcp/v2`, as Go requires from v2 on; install with `go install github.com/mmedum/google-mail-mcp/v2/cmd/google-mail-mcp@latest`.
+- **Breaking:** those writes are now `[blocked]` ("not confirmed by the person") whenever a client that declares elicitation does not come back with an accept, so an unattended run such as `claude -p`, which cancels every question, can no longer make them; run them from a client you are watching, or from one that does not declare elicitation.
+- The descriptions of the tools that take `confirm` say the server also asks the person and how many units asking adds, and the server's instructions say a call the person did not confirm is not to be repeated.
+
 ## [1.2.0] - 2026-09-28
 
 ### Added
@@ -83,7 +96,8 @@ lifted verbatim.
 - Repository gates run by `make check` and CI: leaks, pins, error classes, API coverage, schema diff, smoke, staleness and more.
 - Signed release archives for six platforms with SBOMs, build provenance, a Claude Desktop bundle and an MCP registry entry.
 
-[Unreleased]: https://github.com/mmedum/google-mail-mcp/compare/v1.2.0...HEAD
+[Unreleased]: https://github.com/mmedum/google-mail-mcp/compare/v2.0.0...HEAD
+[2.0.0]: https://github.com/mmedum/google-mail-mcp/compare/v1.2.0...v2.0.0
 [1.2.0]: https://github.com/mmedum/google-mail-mcp/compare/v1.1.1...v1.2.0
 [1.1.1]: https://github.com/mmedum/google-mail-mcp/compare/v1.1.0...v1.1.1
 [1.1.0]: https://github.com/mmedum/google-mail-mcp/compare/v1.0.0...v1.1.0

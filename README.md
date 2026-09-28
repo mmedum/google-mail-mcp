@@ -40,7 +40,7 @@ subjects, names and filenames decode in any charset.
 ## Install
 
 ```bash
-go install github.com/mmedum/google-mail-mcp/cmd/google-mail-mcp@latest
+go install github.com/mmedum/google-mail-mcp/v2/cmd/google-mail-mcp@latest
 ```
 
 Or take an archive from the
@@ -194,6 +194,14 @@ For clients that attach rather than call, `gmail://threads/{id}`,
   `delete_label` exist only with `GMAIL_ENABLE_DESTRUCTIVE=true`, which
   also asks for the one scope that can delete; each call needs
   `confirm: true`.
+- **You confirm what cannot be undone.** Every write above that takes
+  `confirm` or `confirm_recipients` is also put to you, when your MCP
+  client supports elicitation: the question names the label, the draft,
+  the filter, the reply or every recipient, and nothing is written
+  unless you accept. A client that runs with nobody to
+  answer, such as `claude -p`, cannot make these writes. A client that
+  cannot ask falls back to `confirm`; `GMAIL_REQUIRE_PROMPT=true` refuses
+  instead. See [docs/configuration.md](docs/configuration.md#confirming-a-write).
 - **Files go to one directory.** `download_attachment` writes only into
   `GMAIL_LOCAL_DIR`, under a name made safe, and never over an existing
   file.
