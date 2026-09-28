@@ -15,6 +15,8 @@ lifted verbatim.
 
 ## [Unreleased]
 
+## [1.2.0] - 2026-09-28
+
 ### Added
 
 - `list_filters`, `create_filter` and `delete_filter` report `never_spam` on a filter that keeps matching mail out of spam.
@@ -81,7 +83,8 @@ lifted verbatim.
 - Repository gates run by `make check` and CI: leaks, pins, error classes, API coverage, schema diff, smoke, staleness and more.
 - Signed release archives for six platforms with SBOMs, build provenance, a Claude Desktop bundle and an MCP registry entry.
 
-[Unreleased]: https://github.com/mmedum/google-mail-mcp/compare/v1.1.1...HEAD
+[Unreleased]: https://github.com/mmedum/google-mail-mcp/compare/v1.2.0...HEAD
+[1.2.0]: https://github.com/mmedum/google-mail-mcp/compare/v1.1.1...v1.2.0
 [1.1.1]: https://github.com/mmedum/google-mail-mcp/compare/v1.1.0...v1.1.1
 [1.1.0]: https://github.com/mmedum/google-mail-mcp/compare/v1.0.0...v1.1.0
 [1.0.0]: https://github.com/mmedum/google-mail-mcp/compare/dc26f63...v1.0.0
