@@ -271,36 +271,50 @@ func listing[T any](o Options, items []T, token string, one, many phrase,
 			}
 			return n
 		}
-		// What naming the rows left out can take, at most: the line for
-		// every row, and with Reply, every id as omitted_ids. Reserved
-		// once rather than measured per row.
+		spent := cost(w.text(), w.len())
+		if whole {
+			spent += o.Reply.Fixed
+		}
+		rows := make([]fragment, len(items))
+		costs := make([]int, len(items))
+		total := spent
+		for i, it := range items {
+			rows[i] = w.sub(func(s *writer) {
+				s.blank()
+				row(s, it)
+			})
+			costs[i] = cost(rows[i].s, rows[i].len())
+			if whole && i < len(o.Reply.Rows) {
+				costs[i] += o.Reply.Rows[i]
+			}
+			total += costs[i]
+		}
+		// A page that fits whole needs no line naming what was left out,
+		// so nothing is reserved for one.
+		if total <= res.Budget {
+			for _, r := range rows {
+				w.add(r)
+			}
+			res.Shown = len(items)
+			return res
+		}
+		// Otherwise the line, at most: every row counted, and with Reply
+		// every id as omitted_ids. Reserved once, not measured per row.
 		all := w.sub(func(s *writer) { s.rowsOmitted(len(items), one, many, distinct(ids)) })
 		reserve := cost(all.s, all.len())
 		if whole {
 			reserve += JSONChars(ids)
 		}
-		spent := cost(w.text(), w.len())
-		if whole {
-			spent += o.Reply.Fixed
-		}
-		for i, it := range items {
-			r := w.sub(func(s *writer) {
-				s.blank()
-				row(s, it)
-			})
-			rowCost := cost(r.s, r.len())
-			if whole && i < len(o.Reply.Rows) {
-				rowCost += o.Reply.Rows[i]
-			}
-			if spent+rowCost+reserve > res.Budget {
+		for i := range items {
+			if spent+costs[i]+reserve > res.Budget {
 				res.Truncated = true
 				res.Shown = i
 				res.Omitted = unseen(ids[:i], ids[i:])
 				w.rowsOmitted(len(items)-i, one, many, distinct(ids[i:]))
 				return res
 			}
-			w.add(r)
-			spent += rowCost
+			w.add(rows[i])
+			spent += costs[i]
 		}
 		res.Shown = len(items)
 		return res

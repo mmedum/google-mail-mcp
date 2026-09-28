@@ -25,6 +25,7 @@ package gmailtest
 import (
 	"encoding/json"
 	"fmt"
+	"maps"
 	"net"
 	"net/http"
 	"net/http/httptest"
@@ -416,6 +417,11 @@ var filterWrites = map[string]bool{
 }
 
 const filterWriteTime = 5 * time.Millisecond
+
+// FilterWriteMethods are the methods the fake refuses when they overlap,
+// sorted. The client keeps its own list of the writes it paces; a test
+// holds the two equal.
+func FilterWriteMethods() []string { return slices.Sorted(maps.Keys(filterWrites)) }
 
 // Overlaps is how many filter writes the fake refused because another
 // was in progress.

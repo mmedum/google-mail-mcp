@@ -18,6 +18,7 @@ lifted verbatim.
 ### Added
 
 - `list_filters`, `create_filter` and `delete_filter` report `never_spam` on a filter that keeps matching mail out of spam.
+- Rows of `search_threads`, `search_messages` and `list_drafts` past the budget carry `content_omitted: true`.
 
 ### Changed
 
@@ -25,7 +26,7 @@ lifted verbatim.
 
 ### Fixed
 
-- Filter, signature and vacation changes sent in parallel run one at a time instead of failing with Gmail's "Precondition check failed"; on a filter write that refusal is retried 5 seconds or more apart, then reported as `[unavailable]`.
+- Filter, signature and vacation changes sent in parallel run one at a time, and filter writes are spaced 5 seconds apart, instead of failing with Gmail's "Precondition check failed"; on a filter write that refusal is retried once, then reported as `[unavailable]` in Google's words.
 - A `create_filter` that Google did not confirm reads the filters afterwards and says whether it was created, not created, or still unknown.
 - A filter that removes `SPAM` is shown as never sending matching mail to spam, rather than as removing a label.
 - `create_filter` refuses an archiving filter that already exists when Gmail has since added `SPAM` to the stored one.

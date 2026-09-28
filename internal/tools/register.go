@@ -148,6 +148,9 @@ type Spec struct {
 	Name        string
 	Description string
 	Kind        Kind
+	// OmittedIDs, when set, is what omitted_ids means for this tool, in
+	// place of Rendered's general description.
+	OmittedIDs string
 }
 
 // Handler is a tool's work: validated input in, a rendered result or a
@@ -169,17 +172,33 @@ func register[In any, Out Renderer](s *mcp.Server, d Deps, sp Spec, h Handler[In
 	if d.namesOnly {
 		return
 	}
+	out := outputSchema[Out]()
+	if sp.OmittedIDs != "" {
+		describeOmitted(out, sp.OmittedIDs)
+	}
 	tool := &mcp.Tool{
 		Name:         sp.Name,
 		Description:  sp.Description,
 		Annotations:  sp.Kind.annotations(),
 		InputSchema:  inputSchema[In](),
-		OutputSchema: outputSchema[Out](),
+		OutputSchema: out,
 	}
 	if sp.Kind.requiresUserInteraction() {
 		tool.Meta = mcp.Meta{"anthropic/requiresUserInteraction": true}
 	}
 	mcp.AddTool(s, tool, wrap(h, dryRunField[In]()))
+}
+
+// describeOmitted sets the description of s's omitted_ids, on a copy of
+// the property so no other schema shares the change.
+func describeOmitted(s *jsonschema.Schema, description string) {
+	p, ok := s.Properties["omitted_ids"]
+	if !ok {
+		panic("tools: OmittedIDs set on a tool whose output has no omitted_ids")
+	}
+	c := *p
+	c.Description = description
+	s.Properties["omitted_ids"] = &c
 }
 
 // costed is an output that reports the quota its call spent. An embedded

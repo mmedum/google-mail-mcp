@@ -148,7 +148,7 @@ type FiltersOut struct {
 func registerAccount(s *mcp.Server, d Deps) {
 	svc := service.New(d.Client)
 
-	register(s, d, Spec{Name: "list_changes", Kind: Read, Description: "What changed in the mailbox after a " +
+	register(s, d, Spec{Name: "list_changes", Kind: Read, OmittedIDs: omittedChanges, Description: "What changed in the mailbox after a " +
 		"history_id: messages added, deleted permanently, and labels added or removed, each by message id. Start " +
 		"from get_profile's history_id and pass the history_id each call returns to the next. If Gmail no longer " +
 		"keeps history that far back, the result says the cursor expired and gives a fresh history_id; the changes " +
@@ -196,7 +196,7 @@ func registerAccount(s *mcp.Server, d Deps) {
 			return settingsOut(st), nil
 		})
 
-	register(s, d, Spec{Name: "list_filters", Kind: Read, Description: "The account's filters: what each " +
+	register(s, d, Spec{Name: "list_filters", Kind: Read, OmittedIDs: omittedFilters, Description: "The account's filters: what each " +
 		"matches and what it does, with labels by name. A filter that forwards mail out of the account is flagged." +
 		filtersChange + " Two units."},
 		func(ctx context.Context, _ ListFiltersIn) (FiltersOut, error) {

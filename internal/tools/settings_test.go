@@ -183,6 +183,11 @@ func TestCreateFilter(t *testing.T) {
 	if !strings.Contains(conflict, out.Filter.ID) {
 		t.Errorf("the conflict does not name the filter: %s", conflict)
 	}
+	// Gmail's search ignores case and runs of spaces, so neither makes a
+	// filter different.
+	if text := refused(t, h, "create_filter", with(args, "from", strings.ToUpper(gmailtest.Ada.Email)), gapi.ClassConflict); !strings.Contains(text, out.Filter.ID) {
+		t.Errorf("a filter differing only in case is not the same one: %s", text)
+	}
 
 	// Gmail was seen adding SPAM to archiving filters after the fact
 	// (§18 row 56). The seeded newsletter filter carries it; asking for
@@ -266,6 +271,14 @@ func TestAmbiguousFilterCreateIsSettledByReading(t *testing.T) {
 				s.UpdateSettings(func(st *gmailtest.Settings) {
 					f := st.Filters[len(st.Filters)-1]
 					f.Action.RemoveLabelIDs = append(f.Action.RemoveLabelIDs, "SPAM")
+				})
+			}},
+			"verdict: created", true},
+		// Gmail may store the criteria normalized; case is no difference.
+		{"created, stored in another case", gmailtest.Failure{Method: create, Status: 500, Reason: "backendError",
+			Message: "Internal error", Served: true, Then: func(s *gmailtest.Server) {
+				s.UpdateSettings(func(st *gmailtest.Settings) {
+					st.Filters[len(st.Filters)-1].Criteria.From = strings.ToUpper(st.Filters[len(st.Filters)-1].Criteria.From)
 				})
 			}},
 			"verdict: created", true},
