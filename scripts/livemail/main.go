@@ -213,7 +213,7 @@ func drive(ctx context.Context, o options, tr *transcript.Transcript, box mailbo
 
 	rec := livecover.NewRecorder()
 	session.OnCall(rec.Sent)
-	e := &env{session: session, tr: tr, seed: seed, localDir: localDir, sendTo: o.sendTo, full: box.FullScope(),
+	e := &env{ctx: ctx, session: session, tr: tr, seed: seed, localDir: localDir, sendTo: o.sendTo, full: box.FullScope(),
 		settings: box.SettingsScope(), signatureAddress: saved.address}
 
 	failed := 0

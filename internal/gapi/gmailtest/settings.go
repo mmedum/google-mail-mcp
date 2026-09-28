@@ -67,7 +67,7 @@ func seedSettings(s *Server) {
 		},
 		Filters: []gmail.Filter{
 			{ID: FilterNewsletters, Criteria: &gmail.FilterCriteria{From: Harbor.Email},
-				Action: &gmail.FilterAction{AddLabelIDs: []string{userLabelNewsletters}, RemoveLabelIDs: []string{"INBOX"}}},
+				Action: &gmail.FilterAction{AddLabelIDs: []string{userLabelNewsletters}, RemoveLabelIDs: []string{"INBOX", "SPAM"}}},
 			{ID: FilterForward, Criteria: &gmail.FilterCriteria{Query: "invoice", HasAttachment: true},
 				Action: &gmail.FilterAction{Forward: BackupAddress}},
 			{ID: FilterReceipts, Criteria: &gmail.FilterCriteria{Subject: "receipt", NegatedQuery: "from:" + Prize.Email,
@@ -141,7 +141,10 @@ func (s *Server) Settings() Settings {
 func (s *Server) needsSettings(w http.ResponseWriter) bool { return needsScope(w, s.SettingsScope) }
 
 // createFilter models filters.create: a criterion and an action are
-// required, every label must exist, and an identical filter is refused.
+// required and every label must exist. An identical filter is kept, as
+// Gmail kept one live (§18 row 52), and the filter is stored with the
+// labels sent, as Gmail answers a create (§18 row 56). The seeded
+// newsletter filter carries the SPAM Gmail was seen adding later.
 func (s *Server) createFilter(w http.ResponseWriter, r *http.Request, _ []string) {
 	if s.needsSettings(w) {
 		return
@@ -161,31 +164,9 @@ func (s *Server) createFilter(w http.ResponseWriter, r *http.Request, _ []string
 			return
 		}
 	}
-	for _, f := range s.settings.Filters {
-		if sameFilter(f, in) {
-			writeError(w, http.StatusBadRequest, "failedPrecondition", "Filter already exists")
-			return
-		}
-	}
 	in.ID = "ANe1Bmg" + s.nextID()
 	s.settings.Filters = append(s.settings.Filters, in)
 	writeJSON(w, in)
-}
-
-// sameFilter compares two filters' criteria and actions, labels in any
-// order.
-func sameFilter(a, b gmail.Filter) bool {
-	norm := func(f gmail.Filter) string {
-		act := gmail.FilterAction{}
-		if f.Action != nil {
-			act = *f.Action
-			act.AddLabelIDs, act.RemoveLabelIDs = slices.Sorted(slices.Values(act.AddLabelIDs)),
-				slices.Sorted(slices.Values(act.RemoveLabelIDs))
-		}
-		j, _ := json.Marshal(gmail.Filter{Criteria: f.Criteria, Action: &act})
-		return string(j)
-	}
-	return norm(a) == norm(b)
 }
 
 func (s *Server) deleteFilter(w http.ResponseWriter, _ *http.Request, args []string) {

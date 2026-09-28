@@ -279,6 +279,14 @@ type env struct {
 	settings   bool
 	filters    []string
 	filterArgs map[string]any
+	// archiveFilter is the archiving filter a step made, which a later
+	// step looks for SPAM on (§18 row 56).
+	archiveFilter string
+	// structured is the last step's structuredContent, for a check that
+	// needs a row the text may have left out.
+	structured map[string]any
+	// ctx bounds the waits a step makes.
+	ctx context.Context
 	// signatureAddress is the default send-as address, whose signature
 	// the run saved and changes; no other one is touched.
 	signatureAddress string
@@ -371,10 +379,11 @@ func (e *env) runStep(s step) error {
 		return err
 	}
 	e.tr.Sayf("=== %s %s ===", s.tool, mcpstdio.Encode(args))
-	text, isError, err := e.session.CallTool(s.tool, args)
+	text, structured, isError, err := e.session.CallToolStructured(s.tool, args)
 	if err != nil {
 		return err
 	}
+	e.structured = structured
 	if s.quiet {
 		e.tr.Sayf("(%d characters; not printed, since this result is the whole mailbox's rather than the run's)", len(text))
 	} else {
@@ -489,7 +498,7 @@ var spikes = []spike{
 }
 
 func runSpikes(ctx context.Context, x spikeRun, tr *transcript.Transcript) {
-	for _, sp := range slices.Concat(spikes, writeSpikes, sendSpikes) {
+	for _, sp := range slices.Concat(spikes, writeSpikes, sendSpikes, settingsSpikes) {
 		tr.Sayf("spike %s — question: %s", sp.name, sp.question)
 		tr.Sayf("spike %s — observed: %s", sp.name, sp.ask(ctx, x))
 	}

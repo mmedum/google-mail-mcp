@@ -88,3 +88,13 @@ var sendIDs = map[string]bool{
 	"gmail.users.drafts.send":   true,
 	"gmail.users.messages.send": true,
 }
+
+// filterWriteIDs are the writes Gmail was seen refusing, with a 400
+// failedPrecondition before acting, when one overlapped another on the
+// same account (§18 row 54), so that refusal is repeated like a 503.
+// The other settings writes have no such evidence and are not repeated
+// on it.
+var filterWriteIDs = map[string]bool{
+	"gmail.users.settings.filters.create": true,
+	"gmail.users.settings.filters.delete": true,
+}

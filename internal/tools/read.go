@@ -48,6 +48,59 @@ func readOf(r render.Result) Rendered {
 		NextCursor: r.NextCursor, NextOffset: r.NextOffset, Omitted: omitted}
 }
 
+// rowChars is what each row of a listing adds to structuredContent in
+// full, as JSON with its comma, so the listing's budget can cover the
+// reply (§4.8).
+func rowChars[T any](rows []T) []int {
+	out := make([]int, len(rows))
+	for i, r := range rows {
+		out[i] = render.JSONChars(r) + 1
+	}
+	return out
+}
+
+// keptWhole is the options for a listing that keeps every row whole:
+// the rows are spent first, so a shown row costs its text alone, and
+// the text fits in what is left.
+func keptWhole[T any](rows []T) render.Options {
+	o := render.Options{RowChars: make([]int, len(rows))}
+	for _, r := range rows {
+		o.Fixed += render.JSONChars(r) + 1
+	}
+	return o
+}
+
+// fitted is a listing's rows as the reply carries them: every row of the
+// page, in full while the text shows it and slim after, so nothing on
+// the page is lost and paging stays whole.
+func fitted[T any](rows []T, slim func(T) T, r render.Result) []T {
+	out := slices.Clone(rows)
+	if slim != nil {
+		for i := r.Shown; i < len(out); i++ {
+			out[i] = slim(out[i])
+		}
+	}
+	return out
+}
+
+// slimMessage keeps a message's ids, date, labels and whether it has
+// attachments, and drops what its sender wrote.
+func slimMessage(m MessageMeta) MessageMeta {
+	return MessageMeta{ID: m.ID, ThreadID: m.ThreadID, Date: m.Date, Labels: m.Labels, HasAttachments: m.HasAttachments,
+		UntrustedFrom: []model.Untrusted{}}
+}
+
+// slimThread keeps a thread's id, counts, date, labels and whether it
+// has attachments, and drops what its senders wrote.
+func slimThread(t ThreadSummary) ThreadSummary {
+	return ThreadSummary{ID: t.ID, MessageCount: t.MessageCount, Unread: t.Unread, Latest: t.Latest, Labels: t.Labels,
+		HasAttachments: t.HasAttachments, UntrustedParticipants: []model.Untrusted{}}
+}
+
+func slimDraft(d DraftSummary) DraftSummary {
+	return DraftSummary{DraftID: d.DraftID, Message: slimMessage(d.Message)}
+}
+
 // GetProfileIn takes nothing.
 type GetProfileIn struct{}
 
@@ -233,8 +286,9 @@ func registerRead(s *mcp.Server, d Deps) {
 	register(s, d, Spec{Name: "search_threads", Kind: Read, Description: "Find conversations with a Gmail search. " +
 		"The usual starting point: threads are what a person reads. Each row gives the thread id, subject, participants, " +
 		"latest date, labels and Gmail's snippet; read one with get_thread. Use search_messages instead when single " +
-		"messages matter, e.g. which one carries an attachment. Costs about 40 units per result, so the default page is 20." +
-		untrustedNote},
+		"messages matter, e.g. which one carries an attachment. Costs about 40 units per result, so the default page is 20. " +
+		"Rows past the reply's budget keep their ids and labels but not their subject, participants or snippet, and " +
+		"are named in omitted_ids." + untrustedNote},
 		func(ctx context.Context, in SearchIn) (ThreadsOut, error) {
 			search, o, err := in.search()
 			if err != nil {
@@ -244,13 +298,17 @@ func registerRead(s *mcp.Server, d Deps) {
 			if err != nil {
 				return ThreadsOut{}, err
 			}
-			return ThreadsOut{Searched: searched(q), Threads: mapSlice(list.Threads, threadSummary),
-				Page: page(list.NextPageToken, list.ResultSizeEstimate), Rendered: readOf(render.Threads(list, o))}, nil
+			rows := mapSlice(list.Threads, threadSummary)
+			o.RowChars = rowChars(rows)
+			r := render.Threads(list, o)
+			return ThreadsOut{Searched: searched(q), Threads: fitted(rows, slimThread, r),
+				Page: page(list.NextPageToken, list.ResultSizeEstimate), Rendered: readOf(r)}, nil
 		})
 
 	register(s, d, Spec{Name: "search_messages", Kind: Read, Description: "Find single messages with a Gmail search. " +
 		"Prefer search_threads to find a conversation; use this when individual messages matter — their own labels, " +
-		"attachments or dates. Read one with get_message. Costs about 20 units per result." + untrustedNote},
+		"attachments or dates. Read one with get_message. Costs about 20 units per result. Rows past the reply's budget " +
+		"keep their ids, date and labels but not their senders, subject or snippet, and are named in omitted_ids." + untrustedNote},
 		func(ctx context.Context, in SearchIn) (MessagesOut, error) {
 			search, o, err := in.search()
 			if err != nil {
@@ -260,8 +318,11 @@ func registerRead(s *mcp.Server, d Deps) {
 			if err != nil {
 				return MessagesOut{}, err
 			}
-			return MessagesOut{Searched: searched(q), Messages: mapSlice(list.Messages, messageMeta),
-				Page: page(list.NextPageToken, list.ResultSizeEstimate), Rendered: readOf(render.Messages(list, o))}, nil
+			rows := mapSlice(list.Messages, messageMeta)
+			o.RowChars = rowChars(rows)
+			r := render.Messages(list, o)
+			return MessagesOut{Searched: searched(q), Messages: fitted(rows, slimMessage, r),
+				Page: page(list.NextPageToken, list.ResultSizeEstimate), Rendered: readOf(r)}, nil
 		})
 
 	register(s, d, Spec{Name: "get_thread", Kind: Read, Description: "Read a conversation, newest message first, " +
@@ -319,8 +380,10 @@ func registerRead(s *mcp.Server, d Deps) {
 			if err != nil {
 				return DraftsOut{}, err
 			}
-			return DraftsOut{Drafts: mapSlice(list.Drafts, draftSummary),
-				Page: page(list.NextPageToken, list.ResultSizeEstimate), Rendered: readOf(render.Drafts(list, render.Options{}))}, nil
+			rows := mapSlice(list.Drafts, draftSummary)
+			r := render.Drafts(list, render.Options{RowChars: rowChars(rows)})
+			return DraftsOut{Drafts: fitted(rows, slimDraft, r),
+				Page: page(list.NextPageToken, list.ResultSizeEstimate), Rendered: readOf(r)}, nil
 		})
 
 	register(s, d, Spec{Name: "get_draft", Kind: Read, Description: "Read one draft whole. message_id is the id of " +

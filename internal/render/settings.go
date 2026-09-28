@@ -1,6 +1,7 @@
 package render
 
 import (
+	"slices"
 	"strings"
 	"unicode/utf8"
 
@@ -178,8 +179,13 @@ func (w *writer) filterBody(f model.Filter) {
 	if len(f.Add) > 0 {
 		w.say("  adds labels: %s", labelList(f.Add))
 	}
-	if len(f.Remove) > 0 {
-		w.say("  removes labels: %s", labelList(f.Remove))
+	// SPAM removed is Gmail's "never send it to Spam", not a label taken
+	// off, so it is said as that.
+	if remove := slices.DeleteFunc(slices.Clone(f.Remove), func(l model.LabelRef) bool { return l.ID == "SPAM" }); len(remove) > 0 {
+		w.say("  removes labels: %s", labelList(remove))
+	}
+	if f.NeverSpam() {
+		w.say("  never sends matching mail to spam")
 	}
 	if f.Forward != "" {
 		w.say("  FORWARDS matching mail to %s", setting(f.Forward))

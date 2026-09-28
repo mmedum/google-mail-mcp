@@ -93,6 +93,9 @@ type mailbox interface {
 	// RestoreSettings can put it back. Neither is printed.
 	SaveSettings(ctx context.Context) (savedSettings, error)
 	RestoreSettings(ctx context.Context, s savedSettings) error
+	// FiltersFrom lists the ids of the filters that match mail from from:
+	// the run's own filters.
+	FiltersFrom(ctx context.Context, from string) ([]string, error)
 	// DeleteFiltersFrom deletes the filters that match mail from from:
 	// the run's own, left by a step that failed.
 	DeleteFiltersFrom(ctx context.Context, from string) (int, error)
