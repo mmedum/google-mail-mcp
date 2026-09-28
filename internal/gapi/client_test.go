@@ -395,6 +395,23 @@ func TestStoppedFilterWrites(t *testing.T) {
 			t.Errorf("stopped at sleep %d after a 500: %s after %d attempts: %v", failAt, got, f.count(), err)
 		}
 	}
+
+	// The last attempt failing on its own does not undo an earlier one
+	// that may have acted: a 500, then 503s to the end, or then a refusal
+	// that is not repeated.
+	unavailable := reply(503, googleErr(503, "backendError", "Service unavailable"))
+	for name, rest := range map[string][]func(http.ResponseWriter, *http.Request){
+		"503 to the end": {unavailable, unavailable, unavailable},
+		"then forbidden": {reply(403, googleErr(403, "forbidden", "Forbidden"))},
+	} {
+		clock := &fakeClock{now: time.Date(2026, 9, 28, 12, 0, 0, 0, time.UTC)}
+		f := newFake(t, append([]func(http.ResponseWriter, *http.Request){reply(500, googleErr(500, "backendError", "Internal error"))}, rest...)...)
+		c, _ := client(t, f, clock.options)
+		err := c.Do(context.Background(), deleteFilter, nil)
+		if got := classOf(t, err); got != ClassAmbiguousOutcome || !strings.Contains(err.Error(), "Read before") {
+			t.Errorf("%s after a 500: %s after %d attempts: %v", name, got, f.count(), err)
+		}
+	}
 }
 
 // Gmail's generic "Precondition check failed." on a filter write is

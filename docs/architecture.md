@@ -1884,6 +1884,10 @@ what fixed them.
   charges nothing. A filter delete Google did not confirm is settled by
   reading, as a create is. A conflict with a filter that also keeps
   mail out of spam says so, and how to get the filter without it.
+- **Filters and listings, code review at medium: one finding, fixed.**
+  A call whose last attempt failed on its own returned that failure
+  unchanged, though an earlier attempt may have acted; it is
+  `[ambiguous_outcome]`, so a filter delete settles by reading.
 
 ### Closing a phase
 
