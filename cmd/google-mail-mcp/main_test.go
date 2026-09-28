@@ -20,10 +20,10 @@ import (
 
 	"github.com/modelcontextprotocol/go-sdk/jsonrpc"
 
-	"github.com/mmedum/google-mail-mcp/internal/auth"
-	"github.com/mmedum/google-mail-mcp/internal/credentials"
-	"github.com/mmedum/google-mail-mcp/internal/scopes"
-	"github.com/mmedum/google-mail-mcp/internal/userconfig"
+	"github.com/mmedum/google-mail-mcp/v2/internal/auth"
+	"github.com/mmedum/google-mail-mcp/v2/internal/credentials"
+	"github.com/mmedum/google-mail-mcp/v2/internal/scopes"
+	"github.com/mmedum/google-mail-mcp/v2/internal/userconfig"
 )
 
 // fakeClientID is shaped like an OAuth client id so the masking bites.

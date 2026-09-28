@@ -5,7 +5,7 @@ import (
 	"sync"
 	"sync/atomic"
 
-	"github.com/mmedum/google-mail-mcp/internal/gapi"
+	"github.com/mmedum/google-mail-mcp/v2/internal/gapi"
 )
 
 // fanOutLimit is how many per-row reads one listing has in flight. It

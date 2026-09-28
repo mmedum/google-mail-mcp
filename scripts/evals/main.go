@@ -23,8 +23,8 @@ import (
 	"os"
 	"os/signal"
 
-	"github.com/mmedum/google-mail-mcp/scripts/internal/redact"
-	"github.com/mmedum/google-mail-mcp/scripts/internal/transcript"
+	"github.com/mmedum/google-mail-mcp/v2/scripts/internal/redact"
+	"github.com/mmedum/google-mail-mcp/v2/scripts/internal/transcript"
 )
 
 func main() { os.Exit(run(os.Args[1:], transcript.New(redact.NewRedactor(false)))) }

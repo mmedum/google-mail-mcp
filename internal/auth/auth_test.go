@@ -15,8 +15,8 @@ import (
 
 	"golang.org/x/oauth2"
 
-	"github.com/mmedum/google-mail-mcp/internal/auth"
-	"github.com/mmedum/google-mail-mcp/internal/scopes"
+	"github.com/mmedum/google-mail-mcp/v2/internal/auth"
+	"github.com/mmedum/google-mail-mcp/v2/internal/scopes"
 )
 
 func TestClientProject(t *testing.T) {

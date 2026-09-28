@@ -23,8 +23,8 @@ import (
 	"strings"
 	"time"
 
-	"github.com/mmedum/google-mail-mcp/internal/scopes"
-	"github.com/mmedum/google-mail-mcp/internal/userconfig"
+	"github.com/mmedum/google-mail-mcp/v2/internal/scopes"
+	"github.com/mmedum/google-mail-mcp/v2/internal/userconfig"
 )
 
 // EnvPrefix is prepended to every environment variable name.

@@ -3,8 +3,8 @@ package tools
 import (
 	"time"
 
-	"github.com/mmedum/google-mail-mcp/internal/mime"
-	"github.com/mmedum/google-mail-mcp/internal/model"
+	"github.com/mmedum/google-mail-mcp/v2/internal/mime"
+	"github.com/mmedum/google-mail-mcp/v2/internal/model"
 )
 
 // Every field whose value came from mail rather than from Gmail's own

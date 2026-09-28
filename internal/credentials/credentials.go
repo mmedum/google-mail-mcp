@@ -24,7 +24,7 @@ import (
 
 	"github.com/zalando/go-keyring"
 
-	"github.com/mmedum/google-mail-mcp/internal/fileperm"
+	"github.com/mmedum/google-mail-mcp/v2/internal/fileperm"
 )
 
 // ServiceName is the keyring service identifier.

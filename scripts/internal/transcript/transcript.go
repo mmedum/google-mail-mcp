@@ -13,7 +13,7 @@ import (
 	"os"
 	"strings"
 
-	"github.com/mmedum/google-mail-mcp/scripts/internal/redact"
+	"github.com/mmedum/google-mail-mcp/v2/scripts/internal/redact"
 )
 
 // A Transcript is the only way its program writes anything.

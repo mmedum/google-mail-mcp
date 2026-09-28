@@ -27,7 +27,7 @@ builds:
     # {{ .Version }} rather than {{ .Tag }}: in a --snapshot rehearsal
     # .Tag is v0.0.0 while everything else carries the snapshot version.
     ldflags:
-      - -s -w -X github.com/mmedum/google-mail-mcp/internal/version.Version={{ .Version }}
+      - -s -w -X github.com/mmedum/google-mail-mcp/v2/internal/version.Version={{ .Version }}
 
 # The macOS universal binary exists for the Claude Desktop bundle alone.
 # A manifest names one command per platform, not per architecture, so
