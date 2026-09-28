@@ -1,9 +1,10 @@
 # Architecture — google-mail-mcp
 
-**Status: 2.0.0 is prepared, 2026-09-28; since 1.2.0 the server asks
-the person through the MCP client before each write that takes
-`confirm`, and a client that declares elicitation must come back with an
-accept (§4.13).** Still
+**Status: 2.0.0 is released, 2026-09-29, from `main`, and verified from
+outside: checksums, the cosign signature and the provenance attestation,
+each also against a tampered copy, the registry entry, and the Go proxy
+resolving the `/v2` module path. Since 1.2.0 the server asks the person
+through the MCP client before each write that takes `confirm` (§4.13).** Still
 unproven: the bundle installed in Claude Desktop.
 
 ## 1. Mission and scope
