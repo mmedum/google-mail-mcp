@@ -21,6 +21,10 @@ func TestQuotedIsOneInertLine(t *testing.T) {
 		{"write to mailto:someone@example.com", `"write to mailto[:]someone@example.com"`},
 		{"\u201cclose\u201d \u2018it\u2019 \uff02now\uff02 \u00abhere\u00bb", `"'close' 'it' 'now' 'here'"`},
 		{"zero\u200bwidth \u202ereversed\u0007bell", `"zerowidth reversed bell"`},
+		{"\u275dclose\u275e \u02baa\u02ba \u3003b\u3003 \u05f4c\u05f4", `"'close' 'a' 'b' 'c'"`},
+		{"at evil.example:8080/x, evil.example?q=1 and evil.example#top", `"at evil[.]example:8080/x, evil[.]example?q=1 and evil[.]example#top"`},
+		{"see bücher.example/a", `"see bücher[.]example/a"`},
+		{"pad\u2800\u2800\u2800ded", `"pad ded"`},
 		{strings.Repeat("a", 200), `"` + strings.Repeat("a", 120) + `…"`},
 	} {
 		if got := quoted(tc.in, 120).s; got != tc.want {
