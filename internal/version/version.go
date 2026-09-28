@@ -1,5 +1,5 @@
 // Package version reports the binary's version. Releases set it with
-// -ldflags "-X github.com/mmedum/google-mail-mcp/internal/version.Version=1.2.3".
+// -ldflags "-X github.com/mmedum/google-mail-mcp/v2/internal/version.Version=1.2.3".
 package version
 
 import (

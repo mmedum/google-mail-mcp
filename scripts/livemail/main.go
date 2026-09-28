@@ -31,10 +31,10 @@ import (
 	"strconv"
 	"time"
 
-	"github.com/mmedum/google-mail-mcp/scripts/internal/livecover"
-	"github.com/mmedum/google-mail-mcp/scripts/internal/mcpstdio"
-	"github.com/mmedum/google-mail-mcp/scripts/internal/redact"
-	"github.com/mmedum/google-mail-mcp/scripts/internal/transcript"
+	"github.com/mmedum/google-mail-mcp/v2/scripts/internal/livecover"
+	"github.com/mmedum/google-mail-mcp/v2/scripts/internal/mcpstdio"
+	"github.com/mmedum/google-mail-mcp/v2/scripts/internal/redact"
+	"github.com/mmedum/google-mail-mcp/v2/scripts/internal/transcript"
 )
 
 // driverDir is where this source lives, read back at the end of a run to
@@ -209,6 +209,13 @@ func drive(ctx context.Context, o options, tr *transcript.Transcript, box mailbo
 		return err
 	}
 	defer session.Close()
+	// The driver is a client that can ask the person, so every write
+	// that takes confirm goes through the question (§4.13). It is the
+	// maintainer's own scripted run, so it answers for them: accept, but
+	// for the step that checks a refusal. Every question goes in the
+	// transcript.
+	asker := &scriptedPerson{tr: tr}
+	session.OnElicit(asker.answer)
 	protocol, tools, err := session.Initialize("livemail")
 	if err != nil {
 		return err
@@ -218,7 +225,7 @@ func drive(ctx context.Context, o options, tr *transcript.Transcript, box mailbo
 	rec := livecover.NewRecorder()
 	session.OnCall(rec.Sent)
 	e := &env{ctx: ctx, session: session, tr: tr, seed: seed, localDir: localDir, sendTo: o.sendTo, full: box.FullScope(),
-		settings: box.SettingsScope(), signatureAddress: saved.address}
+		settings: box.SettingsScope(), signatureAddress: saved.address, person: asker}
 
 	failed := 0
 	for _, s := range slices.Concat(steps, writeSteps, gatedSteps, settingsSteps) {

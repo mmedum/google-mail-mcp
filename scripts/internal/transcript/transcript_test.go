@@ -5,7 +5,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/mmedum/google-mail-mcp/scripts/internal/redact"
+	"github.com/mmedum/google-mail-mcp/v2/scripts/internal/redact"
 )
 
 // An address arrives three ways: a literal line, a format argument, and

@@ -17,7 +17,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/mmedum/google-mail-mcp/internal/fileperm"
+	"github.com/mmedum/google-mail-mcp/v2/internal/fileperm"
 )
 
 // AppDir is the directory name under the user's config directory.

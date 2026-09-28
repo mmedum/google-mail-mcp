@@ -133,6 +133,19 @@ conversation, every recipient — must be written out in
 `cc[1]`; `send_draft` with `dry_run: true` lists the addresses. A draft
 with more than 50 recipients is refused outright: send it from Gmail.
 
+## `[blocked]`: not confirmed by the person
+
+Your client asked you to confirm the write, and the answer was not an
+accept: you declined or dismissed it, the question timed out,
+or the client answered without showing it. `claude -p` and other runs
+with nobody at the keyboard cancel every such question, so they cannot
+make these writes. Nothing was written. Make the call again from a
+client you are watching; it asks again.
+
+"GMAIL_REQUIRE_PROMPT is set" means the client cannot ask at all, and
+the setting refuses these writes there. Use a client that supports MCP
+elicitation, or unset it to rely on `confirm` alone.
+
 ## `[ambiguous_outcome]` from `send_draft`
 
 The request left, and the answer did not come back. The server has

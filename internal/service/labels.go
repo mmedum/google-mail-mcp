@@ -6,10 +6,11 @@ import (
 	"strings"
 	"unicode/utf8"
 
-	"github.com/mmedum/google-mail-mcp/internal/gapi"
-	"github.com/mmedum/google-mail-mcp/internal/gmail"
-	"github.com/mmedum/google-mail-mcp/internal/mime"
-	"github.com/mmedum/google-mail-mcp/internal/model"
+	"github.com/mmedum/google-mail-mcp/v2/internal/gapi"
+	"github.com/mmedum/google-mail-mcp/v2/internal/gmail"
+	"github.com/mmedum/google-mail-mcp/v2/internal/mime"
+	"github.com/mmedum/google-mail-mcp/v2/internal/model"
+	"github.com/mmedum/google-mail-mcp/v2/internal/render"
 )
 
 // LabelSpec is a label's name and look, as create_label and update_label
@@ -200,6 +201,9 @@ func (s *Service) DeleteLabel(ctx context.Context, label string, confirm bool) (
 	out.Before = &before
 	if out.DryRun {
 		return out, nil
+	}
+	if err := ask(ctx, render.AskDeleteLabel(before)); err != nil {
+		return out, err
 	}
 	if err := s.client.DeleteLabel(ctx, id); err != nil {
 		if classOf(err) != gapi.ClassNotFound {

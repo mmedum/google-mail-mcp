@@ -5,9 +5,9 @@ import (
 
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 
-	"github.com/mmedum/google-mail-mcp/internal/model"
-	"github.com/mmedum/google-mail-mcp/internal/render"
-	"github.com/mmedum/google-mail-mcp/internal/service"
+	"github.com/mmedum/google-mail-mcp/v2/internal/model"
+	"github.com/mmedum/google-mail-mcp/v2/internal/render"
+	"github.com/mmedum/google-mail-mcp/v2/internal/service"
 )
 
 // The tools behind a flag: send_draft behind GMAIL_ENABLE_SEND (§4.2),
@@ -88,7 +88,7 @@ func (o LabelDeleteOut) Render() string { return o.text }
 func registerGated(s *mcp.Server, d Deps) {
 	svc := service.New(d.Client)
 
-	register(s, d, Spec{Name: "send_draft", Kind: Send, Description: "Send a draft to its recipients. This reaches " +
+	register(s, d, Spec{Name: "send_draft", Kind: Send, AskUnits: "60 more units", Description: "Send a draft to its recipients. This reaches " +
 		"other people and cannot be recalled. Pass the draft's message_id, as get_draft or create_draft returned it; " +
 		"the send is refused as stale if the draft changed since. Every recipient who has not written in the thread the " +
 		"draft answers, and whom this account has not sent to in it — for a new conversation, every recipient — must be written out in confirm_recipients, or the " +
@@ -106,7 +106,7 @@ func registerGated(s *mcp.Server, d Deps) {
 			return sendDraftOut(sw), nil
 		})
 
-	register(s, d, Spec{Name: "delete_permanently", Kind: Destructive, Description: "Delete up to 100 messages or " +
+	register(s, d, Spec{Name: "delete_permanently", Kind: Destructive, AskUnits: "1 more unit", Description: "Delete up to 100 messages or " +
 		"threads, named by id — never a search — for good. They skip the trash and cannot be restored; trash is the " +
 		"way to remove mail that may be wanted back. confirm must be true. Each item is read first and reported with " +
 		"the labels it had, and one that fails does not stop the rest. A draft goes with delete_draft. 1 unit, then " +
@@ -120,7 +120,7 @@ func registerGated(s *mcp.Server, d Deps) {
 			return itemsOut(iw), nil
 		})
 
-	register(s, d, Spec{Name: "delete_label", Kind: Destructive, Description: "Delete a user label. It comes off " +
+	register(s, d, Spec{Name: "delete_label", Kind: Destructive, AskUnits: "2 more units", Description: "Delete a user label. It comes off " +
 		"every message and thread that carries it, and cannot be restored; the mail itself stays. confirm must be " +
 		"true. The result says how many messages carried it. System labels cannot be deleted. 7 units." + dryRunNote},
 		func(ctx context.Context, in DeleteLabelIn) (LabelDeleteOut, error) {

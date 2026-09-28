@@ -11,7 +11,7 @@ import (
 	"encoding/hex"
 	"errors"
 	"fmt"
-	"github.com/mmedum/google-mail-mcp/internal/mime"
+	"github.com/mmedum/google-mail-mcp/v2/internal/mime"
 	"net/url"
 	"slices"
 	"strings"

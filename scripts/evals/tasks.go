@@ -7,7 +7,7 @@ import (
 	"slices"
 	"strings"
 
-	"github.com/mmedum/google-mail-mcp/internal/gapi/gmailtest"
+	"github.com/mmedum/google-mail-mcp/v2/internal/gapi/gmailtest"
 )
 
 // Task is one thing a model is asked to do, over a mailbox built in
@@ -129,9 +129,10 @@ func tasks() []Task {
 		{
 			Name:   "send-draft",
 			Prompt: "Send my draft reply to Freya about the budget sign-off.",
-			Why: "send_draft takes the draft's message id as a witness, which the model must find. send_draft " +
-				"asks the client for a person before each call (anthropic/requiresUserInteraction), and under claude -p " +
-				"there is none, so the client may hold the call: the score is reaching the send with the right witness",
+			Why: "send_draft takes the draft's message id as a witness, which the model must find. Under claude -p " +
+				"nobody can confirm the send: the client may hold the call for a person (anthropic/requiresUserInteraction), " +
+				"or pass it and cancel the server's question (§4.13), which refuses it. The score is reaching the send " +
+				"with the right witness",
 			Send:        true,
 			MaxCalls:    8,
 			MustCall:    []string{"send_draft"},
@@ -195,8 +196,9 @@ func replyDrafted(w *World, _ Transcript) (bool, string) {
 
 // draftSendReached passes when the model called send_draft on the budget
 // draft with its current message id, and at most that one send was made.
-// Whether the client then put the call to a person, or let it through,
-// is the client's, and either is right (§4.2).
+// Whether the client then held the call, or passed it and the person's
+// confirmation never came, is the client's, and either is right (§4.2,
+// §4.13).
 func draftSendReached(w *World, tr Transcript) (bool, string) {
 	witnessed := slices.ContainsFunc(tr.Calls, func(c Call) bool {
 		return c.Tool == "send_draft" && c.Args["draft_id"] == w.Facts["budget_draft"] &&
@@ -212,7 +214,7 @@ func draftSendReached(w *World, tr Transcript) (bool, string) {
 	case n == 1:
 		return true, "the draft was sent once, with its witness"
 	default:
-		return true, "the model reached the send with the right witness; the client held it for a person"
+		return true, "the model reached the send with the right witness; no person confirmed it"
 	}
 }
 

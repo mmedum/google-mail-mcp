@@ -5,9 +5,9 @@ import (
 	"slices"
 	"strings"
 
-	"github.com/mmedum/google-mail-mcp/internal/gapi"
-	"github.com/mmedum/google-mail-mcp/internal/gmail"
-	"github.com/mmedum/google-mail-mcp/internal/model"
+	"github.com/mmedum/google-mail-mcp/v2/internal/gapi"
+	"github.com/mmedum/google-mail-mcp/v2/internal/gmail"
+	"github.com/mmedum/google-mail-mcp/v2/internal/model"
 )
 
 // History page sizes: Google's own default and cap for history.list.

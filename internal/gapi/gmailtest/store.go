@@ -11,7 +11,7 @@ import (
 	"time"
 	"unicode/utf8"
 
-	"github.com/mmedum/google-mail-mcp/internal/gmail"
+	"github.com/mmedum/google-mail-mcp/v2/internal/gmail"
 )
 
 // systemLabels are the system label ids the fake knows. Google calls

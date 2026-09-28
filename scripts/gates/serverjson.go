@@ -74,9 +74,17 @@ func serverJSON(out io.Writer, args []string) error {
 	return fmt.Errorf("usage: server-json [TAG CHECKSUMS]; no arguments checks, two print the entry to publish")
 }
 
+// majorSuffix is the /vN element Go adds to a module path from v2 on.
+var majorSuffix = regexp.MustCompile(`^v[2-9][0-9]*$`)
+
 // serverJSONOwnerRepo splits the module path into owner and repository.
+// A major version from v2 on ends the path in /vN, which is Go's, not
+// GitHub's, and is dropped.
 func serverJSONOwnerRepo() (string, string, error) {
 	parts := strings.Split(modulePath, "/")
+	if n := len(parts); n == 4 && majorSuffix.MatchString(parts[3]) {
+		parts = parts[:3]
+	}
 	if len(parts) != 3 || parts[0] != "github.com" {
 		return "", "", fmt.Errorf("module path %q is not github.com/OWNER/REPO", modulePath)
 	}

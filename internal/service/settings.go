@@ -3,8 +3,8 @@ package service
 import (
 	"context"
 
-	"github.com/mmedum/google-mail-mcp/internal/gmail"
-	"github.com/mmedum/google-mail-mcp/internal/model"
+	"github.com/mmedum/google-mail-mcp/v2/internal/gmail"
+	"github.com/mmedum/google-mail-mcp/v2/internal/model"
 )
 
 // Settings reads the account's settings: seven one-unit reads, made at

@@ -14,13 +14,13 @@ import (
 
 	"golang.org/x/oauth2"
 
-	"github.com/mmedum/google-mail-mcp/internal/config"
-	"github.com/mmedum/google-mail-mcp/internal/gapi"
-	"github.com/mmedum/google-mail-mcp/internal/gapi/gmailtest"
-	"github.com/mmedum/google-mail-mcp/internal/gmail"
-	"github.com/mmedum/google-mail-mcp/internal/server"
-	"github.com/mmedum/google-mail-mcp/internal/server/testutil"
-	"github.com/mmedum/google-mail-mcp/internal/tools"
+	"github.com/mmedum/google-mail-mcp/v2/internal/config"
+	"github.com/mmedum/google-mail-mcp/v2/internal/gapi"
+	"github.com/mmedum/google-mail-mcp/v2/internal/gapi/gmailtest"
+	"github.com/mmedum/google-mail-mcp/v2/internal/gmail"
+	"github.com/mmedum/google-mail-mcp/v2/internal/server"
+	"github.com/mmedum/google-mail-mcp/v2/internal/server/testutil"
+	"github.com/mmedum/google-mail-mcp/v2/internal/tools"
 )
 
 func connectFake(t *testing.T, cfg config.Config, opts ...func(*gapi.Options)) (*testutil.Harness, *gmailtest.Server) {

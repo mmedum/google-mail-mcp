@@ -3,10 +3,10 @@ package render_test
 import (
 	"testing"
 
-	"github.com/mmedum/google-mail-mcp/internal/gapi/gmailtest"
-	"github.com/mmedum/google-mail-mcp/internal/mime"
-	"github.com/mmedum/google-mail-mcp/internal/model"
-	"github.com/mmedum/google-mail-mcp/internal/render"
+	"github.com/mmedum/google-mail-mcp/v2/internal/gapi/gmailtest"
+	"github.com/mmedum/google-mail-mcp/v2/internal/mime"
+	"github.com/mmedum/google-mail-mcp/v2/internal/model"
+	"github.com/mmedum/google-mail-mcp/v2/internal/render"
 )
 
 func addr(p gmailtest.Person) mime.Address { return mime.Address{Name: p.Name, Email: p.Email} }

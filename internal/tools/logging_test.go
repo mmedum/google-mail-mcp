@@ -15,11 +15,11 @@ import (
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 	"golang.org/x/oauth2"
 
-	"github.com/mmedum/google-mail-mcp/internal/config"
-	"github.com/mmedum/google-mail-mcp/internal/gapi"
-	"github.com/mmedum/google-mail-mcp/internal/server"
-	"github.com/mmedum/google-mail-mcp/internal/server/testutil"
-	"github.com/mmedum/google-mail-mcp/internal/tools"
+	"github.com/mmedum/google-mail-mcp/v2/internal/config"
+	"github.com/mmedum/google-mail-mcp/v2/internal/gapi"
+	"github.com/mmedum/google-mail-mcp/v2/internal/server"
+	"github.com/mmedum/google-mail-mcp/v2/internal/server/testutil"
+	"github.com/mmedum/google-mail-mcp/v2/internal/tools"
 )
 
 // minTools is the floor on how many tools this test drives: the whole
@@ -175,6 +175,40 @@ func TestLogsNeverCarryThePayload(t *testing.T) {
 	// A call to a tool that does not exist, named with a canary, must
 	// not echo the name either.
 	_, _ = h.Client.CallTool(context.Background(), &mcp.CallToolParams{Name: canaryText, Arguments: map[string]any{}})
+
+	// The questions put to the person carry mail, and so do the calls
+	// that answer them: every tool again, from a client that can be
+	// asked and accepts, with its guards set so the call reaches the
+	// question, on both ways a question goes out (§4.13).
+	var asked atomic.Int64
+	for _, protocol := range []string{"2025-11-25", "2026-07-28"} {
+		ah, err := testutil.ConnectClient(context.Background(), srv, &mcp.ClientOptions{
+			ElicitationHandler: func(context.Context, *mcp.ElicitRequest) (*mcp.ElicitResult, error) {
+				asked.Add(1)
+				return &mcp.ElicitResult{Action: "accept", Content: map[string]any{"confirm": true}}, nil
+			},
+		}, protocol)
+		if err != nil {
+			t.Fatal(err)
+		}
+		t.Cleanup(ah.Close)
+		for _, tool := range surface {
+			args := argsFor(tool)
+			for _, guard := range []string{"confirm", "trash", "enable"} {
+				if _, ok := args[guard]; ok {
+					args[guard] = true
+				}
+			}
+			// Every third request to the canary server fails, so a call is
+			// made three times to meet it at each point of that cycle.
+			for range 3 {
+				_, _ = ah.Client.CallTool(context.Background(), &mcp.CallToolParams{Name: tool.Name, Arguments: args})
+			}
+		}
+	}
+	if asked.Load() == 0 {
+		t.Fatal("no call reached a question; this test would pass on a server that asks nothing")
+	}
 
 	out := logs.String()
 	if strings.TrimSpace(out) == "" {

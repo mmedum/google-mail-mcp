@@ -5,7 +5,7 @@ import (
 	"testing"
 	"unicode/utf8"
 
-	"github.com/mmedum/google-mail-mcp/internal/gmail"
+	"github.com/mmedum/google-mail-mcp/v2/internal/gmail"
 )
 
 // checkMessage holds the invariants every parse keeps, whatever the

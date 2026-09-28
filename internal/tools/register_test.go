@@ -11,9 +11,9 @@ import (
 
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 
-	"github.com/mmedum/google-mail-mcp/internal/config"
-	"github.com/mmedum/google-mail-mcp/internal/gapi"
-	"github.com/mmedum/google-mail-mcp/internal/server/testutil"
+	"github.com/mmedum/google-mail-mcp/v2/internal/config"
+	"github.com/mmedum/google-mail-mcp/v2/internal/gapi"
+	"github.com/mmedum/google-mail-mcp/v2/internal/server/testutil"
 )
 
 type probeIn struct {
@@ -227,6 +227,29 @@ func TestNamesIsWhatToolsListReturns(t *testing.T) {
 		sorted := slices.Sorted(slices.Values(names))
 		if len(names) == 0 || !slices.Equal(sorted, listed) {
 			t.Errorf("%+v: Names = %v, tools/list = %v", cfg, names, listed)
+		}
+	}
+}
+
+type confirmIn struct {
+	Confirm bool `json:"confirm,omitempty"`
+}
+
+// A tool that takes confirm is registered only under a kind that also
+// asks the person (§4.13), so a new one cannot rest on the model alone.
+func TestATakingConfirmToolMustAskThePerson(t *testing.T) {
+	all := []Kind{Read, ReadWritesLocally, Write, WriteForGood, Send, Destructive, Settings, SettingsForGood, AutoReply}
+	cfg := FullSurface(config.Config{})
+	for _, k := range all {
+		panicked := func() (p bool) {
+			defer func() { p = recover() != nil }()
+			register(mcp.NewServer(&mcp.Implementation{Name: "t", Version: "0"}, nil), Deps{Config: cfg},
+				Spec{Name: "confirming", Description: "probe", Kind: k, AskUnits: "1 more unit"},
+				func(context.Context, confirmIn) (probeOut, error) { return probeOut{}, nil })
+			return false
+		}()
+		if panicked == k.asksPerson() {
+			t.Errorf("%s: panicked %v, asks the person %v", k, panicked, k.asksPerson())
 		}
 	}
 }

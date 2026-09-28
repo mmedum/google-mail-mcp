@@ -10,9 +10,10 @@ import (
 	"time"
 	"unicode/utf8"
 
-	"github.com/mmedum/google-mail-mcp/internal/gapi"
-	"github.com/mmedum/google-mail-mcp/internal/gmail"
-	"github.com/mmedum/google-mail-mcp/internal/model"
+	"github.com/mmedum/google-mail-mcp/v2/internal/gapi"
+	"github.com/mmedum/google-mail-mcp/v2/internal/gmail"
+	"github.com/mmedum/google-mail-mcp/v2/internal/model"
+	"github.com/mmedum/google-mail-mcp/v2/internal/render"
 )
 
 // The settings writes, registered only with GMAIL_ENABLE_SETTINGS
@@ -188,6 +189,9 @@ func (s *Service) CreateFilter(ctx context.Context, sp FilterSpec) (model.Filter
 	}
 	made := gmail.Filter{Criteria: w.Criteria, Action: &gmail.FilterAction{AddLabelIDs: add, RemoveLabelIDs: remove}}
 	if !out.DryRun {
+		if err := askTrashing(ctx, sp, made, ls.index); err != nil {
+			return out, err
+		}
 		created, err := s.client.CreateFilter(ctx, w)
 		if classOf(err) == gapi.ClassAmbiguousOutcome {
 			return out, s.settleFilter(ctx, w, existing.Filter, err)
@@ -295,6 +299,15 @@ func (s *Service) settleFilter(ctx context.Context, w gmail.FilterWrite, before 
 		"Google did not confirm that the filter was created, and the create was not repeated (verdict: %s). %s.", verdict, why)
 }
 
+// askTrashing asks the person before a filter that trashes is created;
+// one that does not trash needs no confirm, and asks nothing.
+func askTrashing(ctx context.Context, sp FilterSpec, made gmail.Filter, labels model.LabelIndex) error {
+	if !sp.Trash {
+		return nil
+	}
+	return ask(ctx, render.AskCreateFilter(model.NewFilters([]gmail.Filter{made}, labels)[0]))
+}
+
 // DeleteFilter deletes a filter. Mail it already acted on stays as it
 // is. The filter is read from the list first, so the result says what it
 // did; filters.get is written off, since the list returns the same.
@@ -323,6 +336,9 @@ func (s *Service) DeleteFilter(ctx context.Context, id string, confirm bool) (mo
 	out.Filter = model.NewFilters(res.Filter[i:i+1], ls.index)[0]
 	if out.DryRun {
 		return out, nil
+	}
+	if err := ask(ctx, render.AskDeleteFilter(out.Filter)); err != nil {
+		return out, err
 	}
 	if err := s.client.DeleteFilter(ctx, id); err != nil {
 		switch classOf(err) {
@@ -423,6 +439,11 @@ func (s *Service) SetVacation(ctx context.Context, sp VacationSpec) (model.Vacat
 	}
 	after := w.Settings()
 	if !out.DryRun {
+		if sp.Enable {
+			if err := ask(ctx, render.AskVacation(model.NewVacation(after))); err != nil {
+				return out, err
+			}
+		}
 		updated, err := s.client.UpdateVacation(ctx, w)
 		if err != nil {
 			return out, err

@@ -1,8 +1,8 @@
 package main
 
 import (
-	"github.com/mmedum/google-mail-mcp/internal/config"
-	"github.com/mmedum/google-mail-mcp/internal/scopes"
+	"github.com/mmedum/google-mail-mcp/v2/internal/config"
+	"github.com/mmedum/google-mail-mcp/v2/internal/scopes"
 )
 
 // The one file that imports the server's packages for staleness: the
