@@ -25,7 +25,7 @@ lifted verbatim.
 
 ### Fixed
 
-- Filter, signature and vacation changes sent in parallel run one at a time instead of failing with Gmail's "Precondition check failed"; on a filter write that refusal is retried a few seconds apart, then reported as `[unavailable]`.
+- Filter, signature and vacation changes sent in parallel run one at a time instead of failing with Gmail's "Precondition check failed"; on a filter write that refusal is retried 5 seconds or more apart, then reported as `[unavailable]`.
 - A `create_filter` that Google did not confirm reads the filters afterwards and says whether it was created, not created, or still unknown.
 - A filter that removes `SPAM` is shown as never sending matching mail to spam, rather than as removing a label.
 - `create_filter` refuses an archiving filter that already exists when Gmail has since added `SPAM` to the stored one.

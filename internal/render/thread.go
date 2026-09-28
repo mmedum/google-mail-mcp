@@ -245,10 +245,11 @@ func Drafts(l DraftList, o Options) Result {
 }
 
 // listing renders one page of a listing: what the page holds, then a
-// row per item while the row and the list of rows after it fit. head,
-// when set, adds lines after the page's own. The rows that do not fit
-// are named once each in Omitted, less any id a shown row already
-// carries, and Shown is how many were shown.
+// row per item while the row and the line naming the rows after it fit.
+// head, when set, adds lines after the page's own. The rows that do not
+// fit are counted and their ids named in the text; Omitted holds each
+// of those ids once, less any a shown row carries, and Shown is how
+// many rows were shown.
 func listing[T any](o Options, items []T, token string, one, many phrase,
 	id func(T) string, row func(w *writer, item T), head func(w *writer),
 ) Result {
@@ -263,43 +264,39 @@ func listing[T any](o Options, items []T, token string, one, many phrase,
 		for i, it := range items {
 			ids[i] = id(it)
 		}
-		// With RowChars, the budget covers the whole reply but for the
-		// slim rows (§4.8): the text twice, as JSON, each row shown in
-		// full, and the ids after it as omitted_ids. idsAfter[i] is what
-		// ids i onward add, kept as a running total.
-		whole := o.RowChars != nil
-		idsAfter := make([]int, len(items)+1)
-		for i := len(items) - 1; i >= 0; i-- {
-			idsAfter[i] = idsAfter[i+1] + JSONChars(ids[i]) + 1
-		}
+		whole := o.Reply != nil
 		cost := func(text string, n int) int {
 			if whole {
 				return 2 * (JSONChars(text) - 2)
 			}
 			return n
 		}
+		// What naming the rows left out can take, at most: the line for
+		// every row, and with Reply, every id as omitted_ids. Reserved
+		// once rather than measured per row.
+		all := w.sub(func(s *writer) { s.rowsOmitted(len(items), one, many, distinct(ids)) })
+		reserve := cost(all.s, all.len())
+		if whole {
+			reserve += JSONChars(ids)
+		}
 		spent := cost(w.text(), w.len())
 		if whole {
-			spent += o.Fixed
+			spent += o.Reply.Fixed
 		}
 		for i, it := range items {
 			r := w.sub(func(s *writer) {
 				s.blank()
 				row(s, it)
 			})
-			rest := w.sub(func(s *writer) { s.rowsOmitted(ids[i+1:]) })
-			rowCost, restCost := cost(r.s, r.len()), cost(rest.s, rest.len())
-			if whole {
-				if i < len(o.RowChars) {
-					rowCost += o.RowChars[i]
-				}
-				restCost += idsAfter[i+1]
+			rowCost := cost(r.s, r.len())
+			if whole && i < len(o.Reply.Rows) {
+				rowCost += o.Reply.Rows[i]
 			}
-			if spent+rowCost+restCost > res.Budget {
+			if spent+rowCost+reserve > res.Budget {
 				res.Truncated = true
-				res.Omitted = unseen(ids[:i], ids[i:])
-				w.rowsOmitted(res.Omitted)
 				res.Shown = i
+				res.Omitted = unseen(ids[:i], ids[i:])
+				w.rowsOmitted(len(items)-i, one, many, distinct(ids[i:]))
 				return res
 			}
 			w.add(r)
@@ -310,8 +307,12 @@ func listing[T any](o Options, items []T, token string, one, many phrase,
 	})
 }
 
+// distinct is ids without repeats, in order: a listing of changes can
+// name one message twice.
+func distinct(ids []string) []string { return unseen(nil, ids) }
+
 // unseen is rest without the ids shown already carries and without
-// repeats, in order: a listing of changes can name one message twice.
+// repeats, in order.
 func unseen(shown, rest []string) []string {
 	seen := make(map[string]bool, len(shown))
 	for _, id := range shown {
@@ -335,13 +336,14 @@ func JSONChars(v any) int {
 	return utf8.RuneCount(b)
 }
 
-// rowsOmitted names rows of this page that did not fit.
-func (w *writer) rowsOmitted(ids []string) {
-	if len(ids) == 0 {
+// rowsOmitted counts the rows of this page that did not fit and names
+// their ids, each once.
+func (w *writer) rowsOmitted(n int, one, many phrase, ids []string) {
+	if n == 0 {
 		return
 	}
 	w.blank()
-	w.say("not shown (over the budget), from this page: %s", idList(ids))
+	w.say("not shown (over the budget), %s from this page: %s", plural(n, one, many), idList(ids))
 }
 
 // listingHead states what the page holds and whether the listing is

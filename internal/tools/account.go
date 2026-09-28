@@ -163,7 +163,7 @@ func registerAccount(s *mcp.Server, d Deps) {
 			// and one dropped could not be read again.
 			rows := mapSlice(c.Changes, change)
 			r := render.Changes(render.ChangeList{Start: c.Start, Changes: c.Changes, Expired: c.Expired,
-				HistoryID: c.HistoryID, NextPageToken: c.NextPageToken, Label: c.Label}, keptWhole(rows))
+				HistoryID: c.HistoryID, NextPageToken: c.NextPageToken, Label: c.Label}, render.Options{Reply: wholeCost(rows)})
 			out := ChangesOut{Changes: rows, Expired: c.Expired, HistoryID: c.HistoryID,
 				NextPageToken: c.NextPageToken, Complete: c.NextPageToken == "", Rendered: readOf(r)}
 			if c.Label != nil {
@@ -204,11 +204,11 @@ func registerAccount(s *mcp.Server, d Deps) {
 			if err != nil {
 				return FiltersOut{}, err
 			}
-			rows := mapSlice(fs, filter)
-			// Every filter stays a row: they are the account's own settings,
-			// and one that forwards must never be out of sight.
-			r := render.Filters(fs, keptWhole(rows))
-			return FiltersOut{Filters: rows, Forwarding: model.Forwarding(fs), Rendered: readOf(r)}, nil
+			// Every filter stays a row, and the text has a budget of its own:
+			// filters are the account's own settings, and one that forwards
+			// must never be out of sight (§4.8).
+			r := render.Filters(fs, render.Options{})
+			return FiltersOut{Filters: mapSlice(fs, filter), Forwarding: model.Forwarding(fs), Rendered: readOf(r)}, nil
 		})
 }
 

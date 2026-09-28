@@ -1,6 +1,7 @@
 package render
 
 import (
+	"cmp"
 	"slices"
 	"strings"
 	"unicode/utf8"
@@ -161,6 +162,12 @@ func replyTo(addr string) part {
 // that forwards is flagged on its own line: it sends matching mail out
 // of the account.
 func Filters(fs []model.Filter, o Options) Result {
+	// Forwarding filters come first, so the budget reaches them before
+	// any other.
+	fs = slices.Clone(fs)
+	slices.SortStableFunc(fs, func(a, b model.Filter) int {
+		return cmp.Compare(btoi(a.Forward == ""), btoi(b.Forward == ""))
+	})
 	return listing(o, fs, "", "filter", "filters",
 		func(f model.Filter) string { return f.ID },
 		func(w *writer, f model.Filter) {
@@ -245,4 +252,11 @@ func criteria(f model.Filter) part {
 		return fill("everything")
 	}
 	return out
+}
+
+func btoi(b bool) int {
+	if b {
+		return 1
+	}
+	return 0
 }

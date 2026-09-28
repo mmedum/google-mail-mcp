@@ -48,26 +48,25 @@ func readOf(r render.Result) Rendered {
 		NextCursor: r.NextCursor, NextOffset: r.NextOffset, Omitted: omitted}
 }
 
-// rowChars is what each row of a listing adds to structuredContent in
-// full, as JSON with its comma, so the listing's budget can cover the
-// reply (§4.8).
-func rowChars[T any](rows []T) []int {
-	out := make([]int, len(rows))
+// fittedCost is the reply cost of a listing whose rows past the budget
+// go slim: what each row adds to structuredContent in full, as JSON with
+// its comma (§4.8).
+func fittedCost[T any](rows []T) *render.ReplyCost {
+	c := &render.ReplyCost{Rows: make([]int, len(rows))}
 	for i, r := range rows {
-		out[i] = render.JSONChars(r) + 1
+		c.Rows[i] = render.JSONChars(r) + 1
 	}
-	return out
+	return c
 }
 
-// keptWhole is the options for a listing that keeps every row whole:
-// the rows are spent first, so a shown row costs its text alone, and
-// the text fits in what is left.
-func keptWhole[T any](rows []T) render.Options {
-	o := render.Options{RowChars: make([]int, len(rows))}
+// wholeCost is the reply cost of a listing that keeps every row whole:
+// the rows are spent first, and the text fits in what is left.
+func wholeCost[T any](rows []T) *render.ReplyCost {
+	c := &render.ReplyCost{}
 	for _, r := range rows {
-		o.Fixed += render.JSONChars(r) + 1
+		c.Fixed += render.JSONChars(r) + 1
 	}
-	return o
+	return c
 }
 
 // fitted is a listing's rows as the reply carries them: every row of the
@@ -299,7 +298,7 @@ func registerRead(s *mcp.Server, d Deps) {
 				return ThreadsOut{}, err
 			}
 			rows := mapSlice(list.Threads, threadSummary)
-			o.RowChars = rowChars(rows)
+			o.Reply = fittedCost(rows)
 			r := render.Threads(list, o)
 			return ThreadsOut{Searched: searched(q), Threads: fitted(rows, slimThread, r),
 				Page: page(list.NextPageToken, list.ResultSizeEstimate), Rendered: readOf(r)}, nil
@@ -319,7 +318,7 @@ func registerRead(s *mcp.Server, d Deps) {
 				return MessagesOut{}, err
 			}
 			rows := mapSlice(list.Messages, messageMeta)
-			o.RowChars = rowChars(rows)
+			o.Reply = fittedCost(rows)
 			r := render.Messages(list, o)
 			return MessagesOut{Searched: searched(q), Messages: fitted(rows, slimMessage, r),
 				Page: page(list.NextPageToken, list.ResultSizeEstimate), Rendered: readOf(r)}, nil
@@ -381,7 +380,7 @@ func registerRead(s *mcp.Server, d Deps) {
 				return DraftsOut{}, err
 			}
 			rows := mapSlice(list.Drafts, draftSummary)
-			r := render.Drafts(list, render.Options{RowChars: rowChars(rows)})
+			r := render.Drafts(list, render.Options{Reply: fittedCost(rows)})
 			return DraftsOut{Drafts: fitted(rows, slimDraft, r),
 				Page: page(list.NextPageToken, list.ResultSizeEstimate), Rendered: readOf(r)}, nil
 		})

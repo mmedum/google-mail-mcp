@@ -63,16 +63,22 @@ type Options struct {
 	Cursor int
 	// Offset starts a message's body at this character.
 	Offset int
-	// RowChars, for a listing, is what each row adds to the reply outside
-	// the text when shown in full: its structured entry, as JSON with its
-	// comma, one per row in order. When set, the budget covers the whole
-	// reply but for the slim rows (§4.8): the text twice, since the reply
-	// carries it in content and again in untrusted_text, the rows the
-	// text shows, and the ids it leaves out.
-	RowChars []int
-	// Fixed, with RowChars, is what the reply carries whatever the text
-	// shows: rows kept whole, as a listing of filters or changes keeps
-	// every one. It is spent before the first row.
+	// Reply, when set on a listing, makes its budget cover the reply
+	// rather than the text alone (§4.8).
+	Reply *ReplyCost
+}
+
+// ReplyCost is what a listing's reply carries besides its text. The
+// budget then covers the text twice, since the reply carries it in
+// content and again in untrusted_text, both as JSON, the rows the text
+// shows, Fixed, and the ids it leaves out; a row past it is slim and
+// outside the budget.
+type ReplyCost struct {
+	// Rows is what each row adds to structuredContent when the text
+	// shows it in full, as JSON with its comma, one per row in order.
+	Rows []int
+	// Fixed is what the reply carries whatever the text shows: rows kept
+	// whole, as a listing of changes keeps every one.
 	Fixed int
 }
 

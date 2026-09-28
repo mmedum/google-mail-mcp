@@ -344,6 +344,9 @@ var settingsSpikes = []spike{
 // one again alone, then reads the list for the run's filters and
 // deletes every one, one at a time. It reports each phase's answers.
 func spikeL(ctx context.Context, x spikeRun) string {
+	if !x.spikeL {
+		return "not run: answered 2026-09-28 (§18 row 54); -spike-l sends the filter writes again"
+	}
 	if !x.box.SettingsScope() {
 		return "not run: the profile's login did not grant gmail.settings.basic"
 	}
@@ -448,5 +451,5 @@ func spamLater(e *env) string {
 		}
 		return "15 s and one filter write after its create, the run's archiving filter does not list SPAM"
 	}
-	return fmt.Sprintf("the run's archiving filter is not among the %d filters listed", len(filters))
+	return "the run's archiving filter is not among the filters listed"
 }

@@ -146,14 +146,15 @@ func (m *restMailbox) DeleteFiltersFrom(ctx context.Context, from string) (int, 
 }
 
 // call sends one request and decodes a successful reply into out.
-// A rate-limit refusal is waited out and the call made again, up to
-// rateTries times: spike H spends the minute's quota, and the cleanup
-// after it must still run. Gmail answered those refusals 403, so a 403
+// A rate-limit refusal, or a filter write refused as overlapping, is
+// waited out and the call made again, up to rateTries times: spike H
+// spends the minute's quota, and the cleanup after it must still run. Gmail answered those refusals 403, so a 403
 // is retried only when its body names a rate limit.
-const (
-	rateTries = 8
-	rateWait  = 15 * time.Second
-)
+const rateTries = 8
+
+// rateWait is the wait before each repeat. It is a variable so the
+// driver's own tests can shorten it.
+var rateWait = 15 * time.Second
 
 func (m *restMailbox) call(ctx context.Context, method, path string, q url.Values, body, out any) error {
 	var (
@@ -170,7 +171,7 @@ func (m *restMailbox) call(ctx context.Context, method, path string, q url.Value
 			}
 		}
 		status, _, data, err = m.callRaw(ctx, method, path, q, body)
-		if !rateLimited(status, data) {
+		if !rateLimited(status, data) && !filterOverlap(path, status, data) {
 			break
 		}
 	}
@@ -184,6 +185,14 @@ func (m *restMailbox) call(ctx context.Context, method, path string, q url.Value
 func rateLimited(status int, body []byte) bool {
 	return status == http.StatusTooManyRequests ||
 		status == http.StatusForbidden && bytes.Contains(bytes.ToLower(body), []byte("ratelimitexceeded"))
+}
+
+// filterOverlap reports a filter write Gmail refused because another
+// was saved too close to it, which it takes seconds later (§18 row 54).
+// Cleanup deletes the run's filters back to back, so it repeats these.
+func filterOverlap(path string, status int, body []byte) bool {
+	return strings.HasPrefix(path, "settings/filters") && status == http.StatusBadRequest &&
+		bytes.Contains(bytes.ToLower(body), []byte("precondition check failed"))
 }
 
 // callRaw sends one request and returns the reply's header and body

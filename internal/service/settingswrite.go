@@ -267,9 +267,14 @@ func (s *Service) settleFilter(ctx context.Context, w gmail.FilterWrite, before 
 				verdict, why = "created", fmt.Sprintf("Read afterwards: filter %s does this and was not there before. "+
 					"It was created; do not create it again", after.Filter[i].ID)
 			} else {
+				again := "create_filter refuses it as a conflict if it has appeared by then"
+				if w.Criteria.Size != 0 {
+					// Gmail rounds a size (§18 row 52), which the duplicate
+					// check compares exactly, so it could let a late one by.
+					again = "run list_filters first: Gmail rounds a size, so create_filter may not see a late one as a duplicate"
+				}
 				verdict, why = "not_created", fmt.Sprintf("Read %s afterwards: no new filter does this. It looks not created, "+
-					"though Gmail can save a write late; create it again if it is still wanted, and create_filter refuses "+
-					"it as a conflict if it has appeared by then", settleDelay)
+					"though Gmail can save a write late; create it again if it is still wanted, and %s", settleDelay, again)
 			}
 		}
 	}

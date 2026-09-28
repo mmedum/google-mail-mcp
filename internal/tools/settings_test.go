@@ -292,6 +292,16 @@ func TestAmbiguousFilterCreateIsSettledByReading(t *testing.T) {
 			}
 		})
 	}
+
+	// With a size, which Gmail rounds, the duplicate check may miss a
+	// late filter, so the verdict does not promise it will refuse one.
+	h, fake := connectSettings(t, settingsOn)
+	fake.Fail(gmailtest.Failure{Method: create, Status: 500, Reason: "backendError", Message: "Internal error"})
+	text := refused(t, h, "create_filter", with(with(args, "size", 1<<20), "size_comparison", "larger"), gapi.ClassAmbiguousOutcome)
+	if !strings.Contains(text, "verdict: not_created") || strings.Contains(text, "refuses it as a conflict") ||
+		!strings.Contains(text, "list_filters first") {
+		t.Errorf("a sized filter's verdict: %s", text)
+	}
 }
 
 func btoi(b bool) int {
