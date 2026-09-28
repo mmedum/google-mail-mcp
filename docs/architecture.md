@@ -1,8 +1,10 @@
 # Architecture — google-mail-mcp
 
-**Status: 1.1.1 is prepared, 2026-09-27; since 1.1.0 `logout` names
-the profiles its revoke reaches, by account and Cloud project, and the
-bundle's descriptions name the settings flag.** Still unproven: the
+**Status: 1.1.1 is released, 2026-09-28, from `main`, and verified from
+outside: checksums, the cosign signature and the provenance attestation,
+each also against a tampered copy, and the registry entry. Since 1.1.0
+`logout` names the profiles its revoke reaches, by account and Cloud
+project, and the bundle's descriptions name the settings flag.** Still unproven: the
 bundle installed in Claude Desktop.
 
 ## 1. Mission and scope
