@@ -19,6 +19,27 @@ import (
 	"github.com/mmedum/google-mail-mcp/internal/scopes"
 )
 
+func TestClientProject(t *testing.T) {
+	dir := t.TempDir()
+	write := func(name, body string) string {
+		path := filepath.Join(dir, name)
+		if err := os.WriteFile(path, []byte(body), 0o600); err != nil {
+			t.Fatal(err)
+		}
+		return path
+	}
+	for path, want := range map[string]string{
+		write("named.json", `{"installed":{"client_id":"x","project_id":"example-project"}}`): "example-project",
+		write("unnamed.json", `{"installed":{"client_id":"x"}}`):                              "",
+		write("bad.json", `not json`):                                                         "",
+		filepath.Join(dir, "missing.json"):                                                    "",
+	} {
+		if got := auth.ClientProject(path); got != want {
+			t.Errorf("ClientProject(%s) = %q, want %q", filepath.Base(path), got, want)
+		}
+	}
+}
+
 func TestParseClientSecret(t *testing.T) {
 	good := `{"installed":{"client_id":"id.apps.googleusercontent.com","client_secret":"s","auth_uri":"https://a","token_uri":"https://t"}}`
 	cfg, err := auth.ParseClientSecret([]byte(good), []string{"scope"})

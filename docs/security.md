@@ -135,8 +135,8 @@ pasted — a debug log, `doctor` and `status` — are the ones that mask.
 - **Act on a query.** Writes take explicit ids, at most 100 per call.
 - **Read or write files outside `GMAIL_LOCAL_DIR`.** Unset means no file
   transfer at all.
-- **Change where mail goes.** Forwarding, delegation, send-as identities
-  and filters are read-only or absent.
+- **Change where mail goes.** Forwarding, delegation and send-as identities
+  are read-only or absent, and a filter cannot forward.
 
 Tool annotations and `requiresUserInteraction` are set, and are hints: a
 host in an auto-approve mode runs an annotated tool without asking. Every

@@ -133,9 +133,9 @@ or missed. Siblings are never named in this repository (rule 1).
 
 ## Where things go
 
-Planned layout; `scripts/gates staleness` holds this list against
-`go list ./...` once the code exists, and the list is corrected rather
-than the gate loosened.
+The layout. `scripts/gates staleness` holds this list against
+`go list -tags live,evals ./...`, and the list is corrected rather than
+the gate loosened.
 
 - `cmd/google-mail-mcp/` — subcommands and process wiring.
 - `internal/app/` startup assembly, reachable without `main`.

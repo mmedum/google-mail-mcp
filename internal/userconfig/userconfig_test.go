@@ -152,13 +152,22 @@ func TestResolveClientSecretPath(t *testing.T) {
 	}
 }
 
-func TestProfilesAndSharingClient(t *testing.T) {
+func TestProfilesAndSharingGrant(t *testing.T) {
 	d := Dir(t.TempDir())
 	if got, err := d.Profiles(); err != nil || len(got) != 0 {
 		t.Fatalf("empty dir: %v, %v", got, err)
 	}
-	for name, secret := range map[string]string{"default": "/a.json", "work": "/a.json", "home": "/b.json"} {
-		if err := d.Save(name, Config{ClientSecretPath: secret}); err != nil {
+	for name, c := range map[string]Config{
+		"default":   {ClientSecretPath: "/a.json", AccountEmail: "one@example.com", ClientProject: "proj-a"},
+		"same":      {ClientSecretPath: "/a.json", AccountEmail: "ONE@example.com", ClientProject: "proj-a"},
+		"sibling":   {ClientSecretPath: "/a2.json", AccountEmail: "one@example.com", ClientProject: "proj-a"},
+		"unknown":   {ClientSecretPath: "/a3.json", AccountEmail: "one@example.com"},
+		"noaccount": {ClientSecretPath: "/a.json", ClientProject: "proj-a"},
+		"bare":      {},
+		"other":     {ClientSecretPath: "/a.json", AccountEmail: "two@example.com", ClientProject: "proj-a"},
+		"elsewhere": {ClientSecretPath: "/a.json", AccountEmail: "one@example.com", ClientProject: "proj-b"},
+	} {
+		if err := d.Save(name, c); err != nil {
 			t.Fatal(err)
 		}
 	}
@@ -173,20 +182,19 @@ func TestProfilesAndSharingClient(t *testing.T) {
 		t.Fatal(err)
 	}
 	slices.Sort(names)
-	if !slices.Equal(names, []string{"default", "home", "work"}) {
+	if !slices.Equal(names, []string{"bare", "default", "elsewhere", "noaccount", "other", "same", "sibling", "unknown"}) {
 		t.Errorf("Profiles = %v", names)
 	}
-	others, err := d.SharingClient("default")
-	if err != nil || !slices.Equal(others, []string{"work"}) {
-		t.Errorf("SharingClient = %v, %v", others, err)
+	// The same account through the same project, from any client file;
+	// a profile that recorded no account or project is named rather than
+	// ruled out; a different account or project is ruled out, and the
+	// client file path decides nothing.
+	others, err := d.SharingGrant("default")
+	slices.Sort(others)
+	if err != nil || !slices.Equal(others, []string{"bare", "noaccount", "same", "sibling", "unknown"}) {
+		t.Errorf("SharingGrant = %v, %v", others, err)
 	}
-	if err := d.Save("bare", Config{}); err != nil {
-		t.Fatal(err)
-	}
-	if others, err := d.SharingClient("bare"); err != nil || others != nil {
-		t.Errorf("no client path: %v, %v", others, err)
-	}
-	if _, err := d.SharingClient("nobody"); !errors.Is(err, ErrNotFound) {
+	if _, err := d.SharingGrant("nobody"); !errors.Is(err, ErrNotFound) {
 		t.Errorf("unknown profile: %v", err)
 	}
 }
