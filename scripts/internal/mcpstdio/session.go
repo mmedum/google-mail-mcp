@@ -227,14 +227,22 @@ func (s *Session) Options() map[string][]string { return s.options }
 
 // CallTool runs one tool and returns its text and whether it refused.
 func (s *Session) CallTool(name string, args map[string]any) (text string, isError bool, err error) {
+	text, _, isError, err = s.CallToolStructured(name, args)
+	return text, isError, err
+}
+
+// CallToolStructured is CallTool that also returns the result's
+// structuredContent, nil when it has none.
+func (s *Session) CallToolStructured(name string, args map[string]any) (text string, structured map[string]any, isError bool, err error) {
 	if s.onCall != nil {
 		s.onCall(name, args)
 	}
 	reply, err := s.request("tools/call", map[string]any{"name": name, "arguments": args})
 	if err != nil {
-		return "", false, err
+		return "", nil, false, err
 	}
 	result, _ := reply["result"].(map[string]any)
+	structured, _ = result["structuredContent"].(map[string]any)
 	isError, _ = result["isError"].(bool)
 	var b strings.Builder
 	content, _ := result["content"].([]any)
@@ -245,7 +253,7 @@ func (s *Session) CallTool(name string, args map[string]any) (text string, isErr
 			}
 		}
 	}
-	return b.String(), isError, nil
+	return b.String(), structured, isError, nil
 }
 
 // ReadResource reads one resource and returns its text and media type.

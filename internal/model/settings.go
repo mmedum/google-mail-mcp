@@ -139,6 +139,13 @@ func (f Filter) Trashes() bool {
 	return slices.ContainsFunc(f.Add, func(l LabelRef) bool { return l.ID == "TRASH" })
 }
 
+// NeverSpam reports whether the filter keeps matching mail out of spam:
+// Gmail's "Never send it to Spam", which it stores as removing SPAM
+// (§18 row 56).
+func (f Filter) NeverSpam() bool {
+	return slices.ContainsFunc(f.Remove, func(l LabelRef) bool { return l.ID == "SPAM" })
+}
+
 // Forwarding counts the filters that forward mail out of the account.
 func Forwarding(fs []Filter) int {
 	n := 0

@@ -3,6 +3,7 @@ package gapi_test
 import (
 	"bytes"
 	"context"
+	"maps"
 	"net/url"
 	"slices"
 	"strconv"
@@ -425,5 +426,15 @@ func TestLabelCreateAndPatch(t *testing.T) {
 	}
 	if _, err := c.PatchLabel(ctx, "Label_999", gmail.Label{Name: "x"}); !isClass(err, gapi.ClassNotFound) {
 		t.Errorf("patch nothing: %v", err)
+	}
+}
+
+// The client paces the writes the fake refuses when they overlap, and
+// no others: the two lists are kept apart, as the unit costs are, and
+// held equal here.
+func TestFakeAndClientAgreeOnFilterWrites(t *testing.T) {
+	got := slices.Sorted(maps.Keys(gapi.FilterWriteIDs))
+	if want := gmailtest.FilterWriteMethods(); !slices.Equal(got, want) {
+		t.Errorf("the client paces %v; the fake refuses overlaps of %v", got, want)
 	}
 }

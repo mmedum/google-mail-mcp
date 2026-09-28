@@ -15,6 +15,22 @@ lifted verbatim.
 
 ## [Unreleased]
 
+## [1.2.0] - 2026-09-28
+
+### Added
+
+- `list_filters`, `create_filter` and `delete_filter` report `never_spam` on a filter that keeps matching mail out of spam.
+
+### Fixed
+
+- Filter, signature and vacation changes sent in parallel run one at a time, and filter writes are spaced 5 seconds apart, instead of failing with Gmail's "Precondition check failed"; on a filter write that refusal is retried once, then reported as `[unavailable]` in Google's words.
+- A `create_filter` that Google did not confirm reads the filters afterwards and says whether it was created, not created, or still unknown.
+- A filter that removes `SPAM` is shown as never sending matching mail to spam, rather than as removing a label.
+- `create_filter` refuses an archiving filter that already exists when Gmail has since added `SPAM` to the stored one.
+- `omitted_ids` no longer names a row the text shows, and the text counts every row it leaves out; `list_filters` shows forwarding filters first.
+- `search_threads`, `search_messages` and `list_drafts` say that the structured result carries every row in full, and that a client with a per-result size limit should ask for a smaller `max`.
+- A `delete_filter` that Google did not confirm reads the filters afterwards and says whether it was deleted.
+
 ## [1.1.1] - 2026-09-27
 
 ### Fixed
@@ -67,7 +83,8 @@ lifted verbatim.
 - Repository gates run by `make check` and CI: leaks, pins, error classes, API coverage, schema diff, smoke, staleness and more.
 - Signed release archives for six platforms with SBOMs, build provenance, a Claude Desktop bundle and an MCP registry entry.
 
-[Unreleased]: https://github.com/mmedum/google-mail-mcp/compare/v1.1.1...HEAD
+[Unreleased]: https://github.com/mmedum/google-mail-mcp/compare/v1.2.0...HEAD
+[1.2.0]: https://github.com/mmedum/google-mail-mcp/compare/v1.1.1...v1.2.0
 [1.1.1]: https://github.com/mmedum/google-mail-mcp/compare/v1.1.0...v1.1.1
 [1.1.0]: https://github.com/mmedum/google-mail-mcp/compare/v1.0.0...v1.1.0
 [1.0.0]: https://github.com/mmedum/google-mail-mcp/compare/dc26f63...v1.0.0

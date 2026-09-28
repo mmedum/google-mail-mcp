@@ -242,8 +242,9 @@ func (c *Client) SendAs(ctx context.Context) (*gmail.ListSendAsResponse, error) 
 }
 
 // CreateFilter creates a filter. A POST, so it is not repeated after an
-// ambiguous failure: Gmail refuses an identical second filter, and the
-// refusal would hide that the first was made.
+// ambiguous failure: Gmail keeps an identical second filter (§18 row
+// 52), so a repeat could make a duplicate. create_filter settles it by
+// reading the list instead.
 func (c *Client) CreateFilter(ctx context.Context, f gmail.FilterWrite) (*gmail.Filter, error) {
 	var out gmail.Filter
 	err := c.Do(ctx, Call{ID: "gmail.users.settings.filters.create", Method: http.MethodPost,

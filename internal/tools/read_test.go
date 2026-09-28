@@ -3,29 +3,39 @@ package tools_test
 import (
 	"context"
 	"encoding/json"
+	"fmt"
+	"regexp"
+	"slices"
+	"strconv"
 	"strings"
 	"testing"
 	"time"
+	"unicode/utf8"
 
 	"golang.org/x/oauth2"
 
 	"github.com/mmedum/google-mail-mcp/internal/config"
 	"github.com/mmedum/google-mail-mcp/internal/gapi"
 	"github.com/mmedum/google-mail-mcp/internal/gapi/gmailtest"
+	"github.com/mmedum/google-mail-mcp/internal/gmail"
 	"github.com/mmedum/google-mail-mcp/internal/server"
 	"github.com/mmedum/google-mail-mcp/internal/server/testutil"
 	"github.com/mmedum/google-mail-mcp/internal/tools"
 )
 
-func connectFake(t *testing.T, cfg config.Config) (*testutil.Harness, *gmailtest.Server) {
+func connectFake(t *testing.T, cfg config.Config, opts ...func(*gapi.Options)) (*testutil.Harness, *gmailtest.Server) {
 	t.Helper()
 	fake := gmailtest.New()
 	t.Cleanup(fake.Close)
-	client := gapi.New(gapi.Options{
+	o := gapi.Options{
 		BaseURL:     fake.URL(),
 		TokenSource: oauth2.StaticTokenSource(&oauth2.Token{AccessToken: "test"}),
 		Sleep:       func(context.Context, time.Duration) error { return nil },
-	})
+	}
+	for _, fn := range opts {
+		fn(&o)
+	}
+	client := gapi.New(o)
 	srv := server.New(server.Deps{Deps: tools.Deps{Config: cfg, Client: client}, Version: "test"})
 	return testutil.ConnectServer(t, srv), fake
 }
@@ -156,6 +166,148 @@ func TestSearchMessagesStatesItsQuery(t *testing.T) {
 		if !m.HasAttachments {
 			t.Errorf("message %s has no attachments", m.ID)
 		}
+	}
+}
+
+// shownAndNamed splits a listing's text at the line naming the rows it
+// left out, and returns the text before it and the ids that line names.
+func shownAndNamed(text string) (shown string, named []string) {
+	shown, rest, _ := strings.Cut(text, "not shown (over the budget)")
+	_, list, _ := strings.Cut(rest, "from this page: ")
+	list, _, _ = strings.Cut(list, "\n")
+	list, _, _ = strings.Cut(list, " and ")
+	list = strings.TrimSuffix(list, ",")
+	for id := range strings.SplitSeq(list, ", ") {
+		if id != "" {
+			named = append(named, id)
+		}
+	}
+	return shown, named
+}
+
+// A page of 100 results keeps every row in full, as 1.1.0 did, while the
+// text stays within its budget and names what it leaves out, once each
+// and never a row it shows (§4.8).
+func TestSearchKeepsEveryRowInFull(t *testing.T) {
+	h, fake := connectFake(t, config.Config{}, func(o *gapi.Options) { o.UnitsPerMinute = 1 << 20 })
+	fake.AddBulkMail(120)
+	for _, tool := range []string{"search_messages", "search_threads"} {
+		t.Run(tool, func(t *testing.T) {
+			var out struct {
+				Messages []tools.MessageMeta   `json:"messages"`
+				Threads  []tools.ThreadSummary `json:"threads"`
+				tools.Rendered
+			}
+			text := call(t, h, tool, map[string]any{"max": 100}, &out)
+			if n := utf8.RuneCountInString(text); n > out.Budget {
+				t.Errorf("the text is %d characters, over its budget of %d", n, out.Budget)
+			}
+			ids := make([]string, 0, 100)
+			for _, m := range out.Messages {
+				if m.UntrustedSubject == "" || len(m.UntrustedFrom) == 0 {
+					t.Errorf("row %s is not in full: %+v", m.ID, m)
+				}
+				ids = append(ids, m.ID)
+			}
+			for _, th := range out.Threads {
+				if th.UntrustedSubject == "" || len(th.UntrustedParticipants) == 0 {
+					t.Errorf("row %s is not in full: %+v", th.ID, th)
+				}
+				ids = append(ids, th.ID)
+			}
+			if len(ids) != 100 || len(out.Omitted) == 0 {
+				t.Fatalf("%d rows and %d omitted, want 100 rows and some omitted", len(ids), len(out.Omitted))
+			}
+			shown, named := shownAndNamed(text)
+			if len(named) == 0 || !slices.Equal(named, out.Omitted[:len(named)]) ||
+				len(named) < len(out.Omitted) && !strings.Contains(text, fmt.Sprintf(" and %d more", len(out.Omitted)-len(named))) {
+				t.Errorf("the text names %d ids and not the rest of omitted_ids' %d", len(named), len(out.Omitted))
+			}
+			if want := ids[len(ids)-len(out.Omitted):]; !slices.Equal(out.Omitted, want) {
+				t.Errorf("omitted_ids are not the rows after those shown")
+			}
+			for _, id := range out.Omitted {
+				if strings.Contains(shown, id) {
+					t.Errorf("%s is shown and in omitted_ids", id)
+				}
+			}
+		})
+	}
+}
+
+// Every change the text leaves out is counted, even one whose message a
+// shown change names, and the ids it names are omitted_ids exactly.
+func TestChangesLeftOutAreCounted(t *testing.T) {
+	h, fake := connectFake(t, config.Config{}, func(o *gapi.Options) { o.UnitsPerMinute = 1 << 20 })
+	start := strconv.FormatUint(fake.HistoryID(), 10)
+	ids := fake.AddBulkMail(250)
+	// The first message changes again last, so its id is on a shown row
+	// and on one left out.
+	call(t, h, "modify_labels", map[string]any{"message_ids": []any{ids[0]}, "add": []any{"STARRED"}}, &tools.ItemsOut{})
+
+	var out tools.ChangesOut
+	text := call(t, h, "list_changes", map[string]any{"history_id": start, "max": 500}, &out)
+	if len(out.Changes) != 251 || !out.Truncated {
+		t.Fatalf("%d changes, truncated %v; want 251, truncated", len(out.Changes), out.Truncated)
+	}
+	shown, named := shownAndNamed(text)
+	if len(named) == 0 || !slices.Equal(named, out.Omitted[:len(named)]) {
+		t.Errorf("the text names %v; omitted_ids are %v", named, out.Omitted)
+	}
+	left := len(out.Changes) - strings.Count(shown, "\nhistory ")
+	_, line, _ := strings.Cut(text, "not shown (over the budget)")
+	if want := fmt.Sprintf(", %d changes from this page: ", left); !strings.HasPrefix(line, want) {
+		t.Errorf("the text does not count the %d changes left out:%s", left, line)
+	}
+	if !strings.Contains(line, ", and 1 on messages named already") {
+		t.Errorf("the change on a message shown above is not counted:%s", line)
+	}
+	for _, id := range out.Omitted {
+		if strings.Contains(shown, "message "+id) {
+			t.Errorf("%s is shown and in omitted_ids", id)
+		}
+	}
+}
+
+// Every filter is a full row, and the text shows forwarding filters
+// first, so one that forwards is never out of sight.
+func TestListFiltersShowsForwardingFirst(t *testing.T) {
+	h, fake := connectFake(t, config.Config{})
+	var forwarding []string
+	fake.UpdateSettings(func(st *gmailtest.Settings) {
+		for i := range 250 {
+			f := gmail.Filter{ID: fmt.Sprintf("ANe1BmgBulk%03d", i),
+				Criteria: &gmail.FilterCriteria{From: fmt.Sprintf("list%d@example.org", i), Query: "a longer query to fill the text"},
+				Action:   &gmail.FilterAction{AddLabelIDs: []string{"STARRED"}, RemoveLabelIDs: []string{"INBOX", "UNREAD"}}}
+			if i%80 == 79 {
+				f.Action = &gmail.FilterAction{Forward: gmailtest.BackupAddress}
+				forwarding = append(forwarding, f.ID)
+			}
+			st.Filters = append(st.Filters, f)
+		}
+	})
+	var out tools.FiltersOut
+	text := call(t, h, "list_filters", map[string]any{}, &out)
+	all := fake.Settings().Filters
+	if len(out.Filters) != len(all) || out.Forwarding != len(forwarding)+1 || !out.Truncated {
+		t.Fatalf("%d filters of %d, %d forwarding, truncated %v", len(out.Filters), len(all), out.Forwarding, out.Truncated)
+	}
+	for i, f := range out.Filters {
+		if f.ID != all[i].ID {
+			t.Fatalf("row %d is %s, want %s: every filter, in Gmail's order", i, f.ID, all[i].ID)
+		}
+	}
+	shownText, _, _ := strings.Cut(text, "not shown (over the budget)")
+	if strings.Count(shownText, "\nfilter ") < 20 {
+		t.Errorf("the text shows too few filters:\n%s", shownText[:500])
+	}
+	for _, id := range append(forwarding, gmailtest.FilterForward) {
+		if !strings.Contains(shownText, "filter "+id+"\n") {
+			t.Errorf("forwarding filter %s is not shown", id)
+		}
+	}
+	if !regexp.MustCompile(`not shown \(over the budget\), \d+ filters? from this page: `).MatchString(text) {
+		t.Errorf("the filters left out are not counted:%s", text[max(0, len(text)-400):])
 	}
 }
 
@@ -295,5 +447,34 @@ func TestUpstreamFailureIsAToolError(t *testing.T) {
 		if got := testutil.Text(res); !res.IsError || !strings.HasPrefix(got, "[auth]") {
 			t.Errorf("%s = %q; want [auth]", tool, got)
 		}
+	}
+}
+
+// omitted_ids says what it means for each tool: every listing still has
+// a full row for what its text left out.
+func TestOmittedIDsIsDescribedPerTool(t *testing.T) {
+	h, _ := connectFake(t, config.Config{})
+	want := map[string]string{"search_threads": "full row in threads", "search_messages": "full row in messages",
+		"list_drafts": "full row in drafts", "list_changes": "full row in changes", "list_filters": "full row in filters",
+		"get_thread": "how to read them"}
+	for _, tool := range h.Tools(t) {
+		w, ok := want[tool.Name]
+		if !ok {
+			continue
+		}
+		raw, _ := json.Marshal(tool.OutputSchema)
+		var schema struct {
+			Properties map[string]struct{ Description string } `json:"properties"`
+		}
+		if err := json.Unmarshal(raw, &schema); err != nil {
+			t.Fatal(err)
+		}
+		if d := schema.Properties["omitted_ids"].Description; !strings.Contains(d, w) {
+			t.Errorf("%s: omitted_ids is %q, want it to say %q", tool.Name, d, w)
+		}
+		delete(want, tool.Name)
+	}
+	if len(want) != 0 {
+		t.Errorf("tools not found: %v", want)
 	}
 }

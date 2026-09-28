@@ -2,6 +2,7 @@ package service
 
 import (
 	"context"
+	"fmt"
 	"html"
 	"slices"
 	"strconv"
@@ -28,6 +29,11 @@ const MaxSignature = 10000
 // caller passes reaches the signature. An empty text clears it.
 func (s *Service) UpdateSignature(ctx context.Context, sendAs, text string) (model.SignatureWrite, error) {
 	out := model.SignatureWrite{DryRun: gapi.WritesForbidden(ctx)}
+	unlock, err := s.lockSettings(ctx, out.DryRun)
+	if err != nil {
+		return out, err
+	}
+	defer unlock()
 	list, err := s.client.SendAs(ctx)
 	if err != nil {
 		return out, err
@@ -52,6 +58,18 @@ func (s *Service) UpdateSignature(ctx context.Context, sendAs, text string) (mod
 	}
 	out.After = model.HTMLText(patched.Signature)
 	return out, nil
+}
+
+// lockSettings holds the client's settings lock for a change that will
+// write, from its first read to its write, so two changes sent at once
+// neither overlap at Gmail, which refuses that (§18 row 54), nor read
+// what the other is replacing. A dry run writes nothing and waits for
+// nothing.
+func (s *Service) lockSettings(ctx context.Context, dryRun bool) (unlock func(), err error) {
+	if dryRun {
+		return func() {}, nil
+	}
+	return s.client.LockSettings(ctx)
 }
 
 // sender is the index of the send-as address named, or of the default
@@ -128,6 +146,11 @@ func (s *Service) CreateFilter(ctx context.Context, sp FilterSpec) (model.Filter
 		return out, gapi.Errf(gapi.ClassBlocked,
 			"this filter moves every matching message that arrives to the trash, unseen. Pass confirm: true to create it")
 	}
+	unlock, err := s.lockSettings(ctx, out.DryRun)
+	if err != nil {
+		return out, err
+	}
+	defer unlock()
 	// The labels resolve the actions and the filters find a duplicate;
 	// neither needs the other, so they are read at once.
 	ls, existing, err := withLabels(ctx, s, s.client.Filters)
@@ -160,14 +183,15 @@ func (s *Service) CreateFilter(ctx context.Context, sp FilterSpec) (model.Filter
 	slices.Sort(add)
 	slices.Sort(remove)
 	w := gmail.FilterWrite{Criteria: &c, Action: &gmail.FilterWriteAction{AddLabelIDs: add, RemoveLabelIDs: remove}}
-	for _, f := range existing.Filter {
-		if sameFilter(f, w) {
-			return out, gapi.Errf(gapi.ClassConflict, "filter %s already does this; list_filters shows it", f.ID)
-		}
+	if err := duplicate(existing.Filter, w); err != nil {
+		return out, err
 	}
 	made := gmail.Filter{Criteria: w.Criteria, Action: &gmail.FilterAction{AddLabelIDs: add, RemoveLabelIDs: remove}}
 	if !out.DryRun {
 		created, err := s.client.CreateFilter(ctx, w)
+		if classOf(err) == gapi.ClassAmbiguousOutcome {
+			return out, s.settleFilter(ctx, w, existing.Filter, err)
+		}
 		if err != nil {
 			return out, err
 		}
@@ -195,20 +219,80 @@ func filterLabels(all []gmail.Label, names, refused []string, field string) ([]s
 	return ids, nil
 }
 
+// duplicate refuses w when an existing filter already does it. Gmail
+// keeps duplicates (§18 row 52), so this check is the only guard.
+func duplicate(existing []gmail.Filter, w gmail.FilterWrite) error {
+	for _, f := range existing {
+		if !sameFilter(f, w, false) {
+			continue
+		}
+		if slices.Contains(f.Action.RemoveLabelIDs, "SPAM") && !slices.Contains(w.Action.RemoveLabelIDs, "SPAM") {
+			return gapi.Errf(gapi.ClassConflict, "filter %s already does this, and also never sends matching mail "+
+				"to spam, which Gmail can add to an archiving filter; for this alone, delete it and create "+
+				"this again", f.ID)
+		}
+		return gapi.Errf(gapi.ClassConflict, "filter %s already does this; list_filters shows it", f.ID)
+	}
+	return nil
+}
+
 // sameFilter reports whether an existing filter matches and acts as w
-// would, labels in any order; w's are sorted. A forward makes it
-// different: w has none.
-func sameFilter(f gmail.Filter, w gmail.FilterWrite) bool {
-	if f.Criteria == nil || f.Action == nil || f.Action.Forward != "" || *f.Criteria != *w.Criteria {
+// would, labels in any order. A forward makes it different: w has none.
+// With anySize, a size is not compared: Gmail rounds it (§18 row 52).
+// A stored SPAM removal does not tell apart a filter w archives into:
+// Gmail was seen adding it to every archiving filter some time after a
+// filter write (§18 row 56).
+func sameFilter(f gmail.Filter, w gmail.FilterWrite, anySize bool) bool {
+	if f.Criteria == nil || f.Action == nil || f.Action.Forward != "" {
 		return false
+	}
+	have, want := *f.Criteria, *w.Criteria
+	if anySize {
+		have.Size, want.Size = 0, 0
 	}
 	sorted := func(ids []string) []string {
 		s := slices.Clone(ids)
 		slices.Sort(s)
 		return s
 	}
-	return slices.Equal(sorted(f.Action.AddLabelIDs), w.Action.AddLabelIDs) &&
-		slices.Equal(sorted(f.Action.RemoveLabelIDs), w.Action.RemoveLabelIDs)
+	stored := f.Action.RemoveLabelIDs
+	if slices.Contains(w.Action.RemoveLabelIDs, "INBOX") && !slices.Contains(w.Action.RemoveLabelIDs, "SPAM") {
+		stored = slices.DeleteFunc(slices.Clone(stored), func(id string) bool { return id == "SPAM" })
+	}
+	return have == want && slices.Equal(sorted(f.Action.AddLabelIDs), sorted(w.Action.AddLabelIDs)) &&
+		slices.Equal(sorted(stored), sorted(w.Action.RemoveLabelIDs))
+}
+
+// settleFilter reads the filters after a create Google did not confirm
+// and returns the [ambiguous_outcome] error with what it found, in the
+// spirit of §4.3: the create is never repeated, and the caller learns
+// whether to make it again without listing the filters itself. before
+// is the list read before the create.
+func (s *Service) settleFilter(ctx context.Context, w gmail.FilterWrite, before []gmail.Filter, cause error) error {
+	verdict, why := "unknown", "The read afterwards failed, so whether it was created is unknown; "+
+		"list_filters shows it if it was. Do not create it again before looking"
+	s.settleAfter(ctx, func(ctx context.Context) {
+		if after, err := s.client.Filters(ctx); err == nil {
+			i := slices.IndexFunc(after.Filter, func(f gmail.Filter) bool {
+				return !slices.ContainsFunc(before, func(b gmail.Filter) bool { return b.ID == f.ID }) && sameFilter(f, w, true)
+			})
+			if i >= 0 {
+				verdict, why = "created", fmt.Sprintf("Read afterwards: filter %s does this and was not there before. "+
+					"It was created; do not create it again", after.Filter[i].ID)
+			} else {
+				again := "create_filter refuses it as a conflict if it has appeared by then"
+				if w.Criteria.Size != 0 {
+					// Gmail rounds a size (§18 row 52), which the duplicate
+					// check compares exactly, so it could let a late one by.
+					again = "run list_filters first: Gmail rounds a size, so create_filter may not see a late one as a duplicate"
+				}
+				verdict, why = "not_created", fmt.Sprintf("Read %s afterwards: no new filter does this. It looks not created, "+
+					"though Gmail can save a write late; create it again if it is still wanted, and %s", settleDelay, again)
+			}
+		}
+	})
+	return gapi.Wrap(gapi.ClassAmbiguousOutcome, cause,
+		"Google did not confirm that the filter was created, and the create was not repeated (verdict: %s). %s.", verdict, why)
 }
 
 // DeleteFilter deletes a filter. Mail it already acted on stays as it
@@ -223,6 +307,11 @@ func (s *Service) DeleteFilter(ctx context.Context, id string, confirm bool) (mo
 	if !confirm && !out.DryRun {
 		return out, gapi.Errf(gapi.ClassBlocked, "delete_filter cannot be undone. Pass confirm: true to delete it")
 	}
+	unlock, err := s.lockSettings(ctx, out.DryRun)
+	if err != nil {
+		return out, err
+	}
+	defer unlock()
 	ls, res, err := withLabels(ctx, s, s.client.Filters)
 	if err != nil {
 		return out, err
@@ -236,14 +325,38 @@ func (s *Service) DeleteFilter(ctx context.Context, id string, confirm bool) (mo
 		return out, nil
 	}
 	if err := s.client.DeleteFilter(ctx, id); err != nil {
-		// A 404 here means gone: already deleted elsewhere, or deleted by
-		// this call when a retry followed an answer that was lost.
-		if classOf(err) != gapi.ClassNotFound {
+		switch classOf(err) {
+		case gapi.ClassNotFound:
+			// Gone: already deleted elsewhere, or deleted by this call when
+			// a retry followed an answer that was lost.
+			out.Gone = true
+		case gapi.ClassAmbiguousOutcome:
+			return out, s.settleDelete(ctx, id, err)
+		default:
 			return out, err
 		}
-		out.Gone = true
 	}
 	return out, nil
+}
+
+// settleDelete reads the filters after a delete Google did not confirm
+// and returns the [ambiguous_outcome] error with what it found, as
+// settleFilter does for a create. The delete is not sent again.
+func (s *Service) settleDelete(ctx context.Context, id string, cause error) error {
+	verdict, why := "unknown", "The read afterwards failed, so whether it was deleted is unknown; list_filters shows it if it is still there"
+	s.settleAfter(ctx, func(ctx context.Context) {
+		after, err := s.client.Filters(ctx)
+		switch {
+		case err != nil:
+		case slices.ContainsFunc(after.Filter, func(f gmail.Filter) bool { return f.ID == id }):
+			verdict, why = "still_there", fmt.Sprintf("Read %s afterwards: filter %s is still there. Delete it again if it "+
+				"is still to go", settleDelay, id)
+		default:
+			verdict, why = "deleted", fmt.Sprintf("Read afterwards: filter %s is gone. Do not delete anything else in its place", id)
+		}
+	})
+	return gapi.Wrap(gapi.ClassAmbiguousOutcome, cause,
+		"Google did not confirm that filter %s was deleted, and the delete was not sent again (verdict: %s). %s.", id, verdict, why)
 }
 
 // VacationSpec is what set_vacation was asked for.
@@ -277,6 +390,11 @@ func (s *Service) SetVacation(ctx context.Context, sp VacationSpec) (model.Vacat
 				"set_vacation answers every sender it matches, automatically, until it is turned off. Pass confirm: true to turn it on")
 		}
 	}
+	unlock, err := s.lockSettings(ctx, out.DryRun)
+	if err != nil {
+		return out, err
+	}
+	defer unlock()
 	// audience domain also reads the profile, at once with the reply.
 	var current *gmail.VacationSettings
 	var profile *gmail.Profile

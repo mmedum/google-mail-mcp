@@ -216,7 +216,7 @@ func TestListingsOverBudget(t *testing.T) {
 		"messages": Messages(MessageList{Messages: ms}, o),
 		"drafts":   Drafts(DraftList{Drafts: ds}, o),
 	} {
-		if !res.Truncated || len(res.Omitted) == 0 || !strings.Contains(res.Text, "not shown (over the budget), from this page:") {
+		if !res.Truncated || len(res.Omitted) == 0 || !strings.Contains(res.Text, "not shown (over the budget), ") || !strings.Contains(res.Text, " from this page: ") {
 			t.Errorf("%s: %+v", name, res.Omitted)
 		}
 	}
@@ -258,6 +258,39 @@ func TestPOPIsOnOnlyForKnownWindows(t *testing.T) {
 		st := model.Settings{Pop: gmail.PopSettings{AccessWindow: window, Disposition: "archive"}}
 		if text := Settings(st, Options{Tokens: seq("T")}).Text; !strings.Contains(text, want) {
 			t.Errorf("window %q:\n%s\nwant %q", window, text, want)
+		}
+	}
+}
+
+// A page that fits exactly shows every row and no line naming rows left
+// out: the room for that line is kept only when a row will be left out.
+func TestListingThatFitsExactlyIsWhole(t *testing.T) {
+	var ms []model.Message
+	var fs []model.Filter
+	for i := range 60 {
+		m := plainMessage("body")
+		m.ID = fmt.Sprintf("%016x", i+1)
+		m.Snippet = model.Untrusted(strings.Repeat("snippet text ", 10))
+		ms = append(ms, m)
+		fs = append(fs, model.Filter{ID: fmt.Sprintf("ANe1BmgFit%03d", i),
+			Criteria: gmail.FilterCriteria{From: fmt.Sprintf("list%d@example.org", i), Query: strings.Repeat("words ", 25)}})
+	}
+	for name, list := range map[string]func(Options) Result{
+		"messages": func(o Options) Result { return Messages(MessageList{Messages: ms}, o) },
+		"filters":  func(o Options) Result { return Filters(fs, o) },
+	} {
+		// The same number of digits in the budget line either way.
+		wide := list(Options{Tokens: seq("T"), Budget: 99999})
+		n := utf8.RuneCountInString(wide.Text)
+		if n < 10000 || n > 99999 {
+			t.Fatalf("%s: %d characters, outside the width this test relies on", name, n)
+		}
+		exact := list(Options{Tokens: seq("T"), Budget: n})
+		if exact.Truncated || len(exact.Omitted) != 0 || strings.Contains(exact.Text, "not shown") {
+			t.Errorf("%s at exactly %d: truncated %v, %d omitted", name, n, exact.Truncated, len(exact.Omitted))
+		}
+		if short := list(Options{Tokens: seq("T"), Budget: n - 1}); !short.Truncated || !strings.Contains(short.Text, "not shown") {
+			t.Errorf("%s one character short: not truncated", name)
 		}
 	}
 }

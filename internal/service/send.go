@@ -279,12 +279,8 @@ func unconfirmed(out model.SendWrite) error {
 // "not sent" as on "unknown", the person decides. before are the
 // thread's message ids read before the send.
 func (s *Service) settle(ctx context.Context, out model.SendWrite, before map[string]bool, cause error) error {
-	ctx, cancel := context.WithTimeout(context.WithoutCancel(ctx), settleTimeout)
-	defer cancel()
 	verdict, sentID := model.SettledUnknown, ""
-	if s.client.Wait(ctx, settleDelay) == nil {
-		verdict, sentID = s.readBack(ctx, out, before)
-	}
+	s.settleAfter(ctx, func(ctx context.Context) { verdict, sentID = s.readBack(ctx, out, before) })
 	var why string
 	switch verdict {
 	case model.SettledSent:
@@ -300,6 +296,18 @@ func (s *Service) settle(ctx context.Context, out model.SendWrite, before map[st
 	}
 	return gapi.Wrap(gapi.ClassAmbiguousOutcome, cause,
 		"Google did not confirm the send of draft %s, and it was not repeated (verdict: %s). %s.", out.DraftID, verdict, why)
+}
+
+// settleAfter is the scaffolding of every settle-by-reading (§4.3): it
+// waits settleDelay, then runs read on a context that outlives the
+// call's own, bounded by settleTimeout. read is skipped when the wait
+// fails. It never writes; read must not either.
+func (s *Service) settleAfter(ctx context.Context, read func(ctx context.Context)) {
+	ctx, cancel := context.WithTimeout(context.WithoutCancel(ctx), settleTimeout)
+	defer cancel()
+	if s.client.Wait(ctx, settleDelay) == nil {
+		read(ctx)
+	}
 }
 
 // readBack is the two reads of §4.3: the draft, and its thread for a
