@@ -7,7 +7,7 @@ import (
 	"strings"
 	"unicode/utf8"
 
-	"github.com/mmedum/google-mail-mcp/internal/model"
+	"github.com/mmedum/google-mail-mcp/v2/internal/model"
 )
 
 // Question is what the server asks the person before a write that

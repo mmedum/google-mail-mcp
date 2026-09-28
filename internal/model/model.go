@@ -15,8 +15,8 @@ import (
 	"strings"
 	"time"
 
-	"github.com/mmedum/google-mail-mcp/internal/gmail"
-	"github.com/mmedum/google-mail-mcp/internal/mime"
+	"github.com/mmedum/google-mail-mcp/v2/internal/gmail"
+	"github.com/mmedum/google-mail-mcp/v2/internal/mime"
 )
 
 // Untrusted is text a sender wrote: a subject, a snippet, a header

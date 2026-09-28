@@ -3,7 +3,7 @@ package render
 import (
 	"strings"
 
-	"github.com/mmedum/google-mail-mcp/internal/model"
+	"github.com/mmedum/google-mail-mcp/v2/internal/model"
 )
 
 // Thread renders a conversation newest first under the budget, starting

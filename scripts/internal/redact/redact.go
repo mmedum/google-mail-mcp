@@ -19,7 +19,7 @@ import (
 	"strconv"
 	"strings"
 
-	core "github.com/mmedum/google-mail-mcp/internal/redact"
+	core "github.com/mmedum/google-mail-mcp/v2/internal/redact"
 )
 
 // A Redactor replaces account-specific values with stable placeholders.

@@ -11,7 +11,7 @@ import (
 	"regexp"
 	"strings"
 
-	"github.com/mmedum/google-mail-mcp/internal/mime"
+	"github.com/mmedum/google-mail-mcp/v2/internal/mime"
 )
 
 // The write steps. Everything they touch is the run's own: the messages

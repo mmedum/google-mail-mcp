@@ -9,13 +9,13 @@ import (
 	"strings"
 	"time"
 
-	"github.com/mmedum/google-mail-mcp/internal/app"
-	"github.com/mmedum/google-mail-mcp/internal/auth"
-	"github.com/mmedum/google-mail-mcp/internal/config"
-	"github.com/mmedum/google-mail-mcp/internal/gapi"
-	"github.com/mmedum/google-mail-mcp/internal/redact"
-	"github.com/mmedum/google-mail-mcp/internal/scopes"
-	"github.com/mmedum/google-mail-mcp/internal/version"
+	"github.com/mmedum/google-mail-mcp/v2/internal/app"
+	"github.com/mmedum/google-mail-mcp/v2/internal/auth"
+	"github.com/mmedum/google-mail-mcp/v2/internal/config"
+	"github.com/mmedum/google-mail-mcp/v2/internal/gapi"
+	"github.com/mmedum/google-mail-mcp/v2/internal/redact"
+	"github.com/mmedum/google-mail-mcp/v2/internal/scopes"
+	"github.com/mmedum/google-mail-mcp/v2/internal/version"
 )
 
 // statusSchemaVersion changes only when a field of `status --json` is

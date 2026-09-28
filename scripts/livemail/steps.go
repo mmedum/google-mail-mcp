@@ -18,8 +18,8 @@ import (
 	"strings"
 	"time"
 
-	"github.com/mmedum/google-mail-mcp/scripts/internal/mcpstdio"
-	"github.com/mmedum/google-mail-mcp/scripts/internal/transcript"
+	"github.com/mmedum/google-mail-mcp/v2/scripts/internal/mcpstdio"
+	"github.com/mmedum/google-mail-mcp/v2/scripts/internal/transcript"
 )
 
 // step is one tool call the driver makes and what it checks.

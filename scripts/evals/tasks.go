@@ -7,7 +7,7 @@ import (
 	"slices"
 	"strings"
 
-	"github.com/mmedum/google-mail-mcp/internal/gapi/gmailtest"
+	"github.com/mmedum/google-mail-mcp/v2/internal/gapi/gmailtest"
 )
 
 // Task is one thing a model is asked to do, over a mailbox built in

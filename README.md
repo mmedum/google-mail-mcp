@@ -40,7 +40,7 @@ subjects, names and filenames decode in any charset.
 ## Install
 
 ```bash
-go install github.com/mmedum/google-mail-mcp/cmd/google-mail-mcp@latest
+go install github.com/mmedum/google-mail-mcp/v2/cmd/google-mail-mcp@latest
 ```
 
 Or take an archive from the

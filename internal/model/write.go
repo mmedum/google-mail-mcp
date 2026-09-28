@@ -1,6 +1,6 @@
 package model
 
-import "github.com/mmedum/google-mail-mcp/internal/mime"
+import "github.com/mmedum/google-mail-mcp/v2/internal/mime"
 
 // The results of writes. Each says the state the write produced, read
 // from Gmail's answer rather than assumed from the request (§4.12), and

@@ -8,7 +8,7 @@ import (
 	"strconv"
 	"strings"
 
-	"github.com/mmedum/google-mail-mcp/internal/gmail"
+	"github.com/mmedum/google-mail-mcp/v2/internal/gmail"
 )
 
 // Settings are the account's settings and filters as the settings reads
