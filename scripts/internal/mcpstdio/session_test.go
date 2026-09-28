@@ -24,6 +24,7 @@ func TestMain(m *testing.M) {
 func fakeServer() {
 	in := bufio.NewScanner(os.Stdin)
 	enc := json.NewEncoder(os.Stdout)
+	declared := false
 	for in.Scan() {
 		var req map[string]any
 		if json.Unmarshal(in.Bytes(), &req) != nil {
@@ -36,6 +37,9 @@ func fakeServer() {
 		var result any
 		switch req["method"] {
 		case "initialize":
+			params, _ := req["params"].(map[string]any)
+			caps, _ := params["capabilities"].(map[string]any)
+			_, declared = caps["elicitation"]
 			// A log notification first, which the client must skip.
 			_ = enc.Encode(map[string]any{"jsonrpc": "2.0", "method": "notifications/message"})
 			result = map[string]any{"protocolVersion": "2025-11-25"}
@@ -47,6 +51,10 @@ func fakeServer() {
 			}}
 		case "tools/call":
 			params, _ := req["params"].(map[string]any)
+			if params["name"] == "ask" {
+				result = ask(in, enc, declared)
+				break
+			}
 			result = map[string]any{"isError": params["name"] == "get_message",
 				"content": []any{map[string]any{"type": "text", "text": "called " + params["name"].(string)}}}
 		default:
@@ -56,6 +64,30 @@ func fakeServer() {
 		}
 		_ = enc.Encode(map[string]any{"jsonrpc": "2.0", "id": id, "result": result})
 	}
+}
+
+// ask puts a question to the client, as the SDK does inside a call on
+// protocols before 2026-07-28, and says what came back.
+func ask(in *bufio.Scanner, enc *json.Encoder, declared bool) any {
+	text := "no elicitation declared"
+	if declared {
+		_ = enc.Encode(map[string]any{"jsonrpc": "2.0", "id": "q1", "method": "elicitation/create",
+			"params": map[string]any{"message": "Delete it?"}})
+		in.Scan()
+		var reply struct {
+			ID     string `json:"id"`
+			Result struct {
+				Action  string         `json:"action"`
+				Content map[string]any `json:"content"`
+			} `json:"result"`
+		}
+		_ = json.Unmarshal(in.Bytes(), &reply)
+		text = reply.ID + " " + reply.Result.Action
+		if reply.Result.Content["confirm"] == true {
+			text += " ticked"
+		}
+	}
+	return map[string]any{"content": []any{map[string]any{"type": "text", "text": text}}}
 }
 
 func startFake(t *testing.T) *Session {
@@ -123,6 +155,32 @@ func asRPC(err error, target **RPCError) bool {
 		*target = e
 	}
 	return ok
+}
+
+// A session that answers questions declares so, and answers the one the
+// server puts in the middle of a call before the call's own reply.
+func TestElicitationIsDeclaredAndAnswered(t *testing.T) {
+	s := startFake(t)
+	var asked []string
+	s.OnElicit(func(message string) (string, bool) {
+		asked = append(asked, message)
+		return "accept", true
+	})
+	if _, _, err := s.Initialize("test"); err != nil {
+		t.Fatal(err)
+	}
+	text, _, err := s.CallTool("ask", nil)
+	if err != nil || text != "q1 accept ticked" || !slices.Equal(asked, []string{"Delete it?"}) {
+		t.Errorf("ask = %q, %v; asked %v", text, err, asked)
+	}
+
+	quiet := startFake(t)
+	if _, _, err := quiet.Initialize("test"); err != nil {
+		t.Fatal(err)
+	}
+	if text, _, _ := quiet.CallTool("ask", nil); text != "no elicitation declared" {
+		t.Errorf("without OnElicit: %q", text)
+	}
 }
 
 func TestEncode(t *testing.T) {

@@ -198,10 +198,26 @@ var writeSteps = []step{
 		args:  func(e *env) map[string]any { return map[string]any{"draft_id": e.replyDraft, "dry_run": true} },
 		check: func(_ *env, text string) error { return want(text, "would delete draft") }},
 
+	{name: "a delete the person does not confirm is refused", tool: "delete_draft", refuses: "blocked", declines: true,
+		args: func(e *env) map[string]any { return map[string]any{"draft_id": e.replyDraft, "confirm": true} },
+		check: func(e *env, text string) error {
+			if err := want(text, "not confirmed by the person: the client answered decline"); err != nil {
+				return err
+			}
+			q, err := e.asked()
+			if err != nil {
+				return err
+			}
+			return want(q, "delete_draft: delete this draft for good?")
+		}},
+
 	{name: "delete a draft", tool: "delete_draft",
 		args: func(e *env) map[string]any { return map[string]any{"draft_id": e.replyDraft, "confirm": true} },
 		check: func(e *env, text string) error {
 			if err := want(text, "permanently."); err != nil {
+				return err
+			}
+			if _, err := e.asked(); err != nil {
 				return err
 			}
 			e.seed.forget(e.replyDraft)

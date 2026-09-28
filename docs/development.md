@@ -90,6 +90,11 @@ What it does to the account, so nothing is a surprise:
   command line.
 - Every line it prints goes through one redacting writer; `transcript`
   fails the build on any other print.
+- It is a client that can be asked, so every write that takes `confirm`
+  puts its question to the person (architecture §4.13). The driver
+  answers for you, since you started it: accept, except one step that
+  declines and checks the refusal. Each question is printed, to be read
+  with the rest.
 
 `make evals` scores a model driving the tools against the in-memory
 mailbox. It runs the model through `claude -p`, signed in as you, and

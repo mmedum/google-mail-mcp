@@ -51,13 +51,20 @@ func ConnectServer(t *testing.T, server *mcp.Server) *Harness {
 
 // ConnectTo is ConnectServer for a caller with no *testing.T.
 func ConnectTo(ctx context.Context, server *mcp.Server) (*Harness, error) {
+	return ConnectClient(ctx, server, nil, "")
+}
+
+// ConnectClient is ConnectTo with the client's options — an elicitation
+// handler, say — and the protocol version it asks for, the SDK's newest
+// when empty.
+func ConnectClient(ctx context.Context, server *mcp.Server, opts *mcp.ClientOptions, protocol string) (*Harness, error) {
 	ct, st := mcp.NewInMemoryTransports()
 	ss, err := server.Connect(ctx, st, nil)
 	if err != nil {
 		return nil, fmt.Errorf("server connect: %w", err)
 	}
-	client := mcp.NewClient(&mcp.Implementation{Name: "test-client", Version: "test"}, nil)
-	cs, err := client.Connect(ctx, ct, nil)
+	client := mcp.NewClient(&mcp.Implementation{Name: "test-client", Version: "test"}, opts)
+	cs, err := client.Connect(ctx, ct, &mcp.ClientSessionOptions{ProtocolVersion: protocol})
 	if err != nil {
 		_ = ss.Close()
 		return nil, fmt.Errorf("client connect: %w", err)

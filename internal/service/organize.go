@@ -9,6 +9,7 @@ import (
 	"github.com/mmedum/google-mail-mcp/internal/gapi"
 	"github.com/mmedum/google-mail-mcp/internal/gmail"
 	"github.com/mmedum/google-mail-mcp/internal/model"
+	"github.com/mmedum/google-mail-mcp/internal/render"
 )
 
 // MaxWriteIDs is the most ids one write names (§4.7): far below Google's
@@ -260,6 +261,15 @@ func (s *Service) DeletePermanently(ctx context.Context, in Purge) (model.ItemsW
 	}
 	ls, err := s.labels(ctx)
 	if err != nil {
+		return out, err
+	}
+	threads := 0
+	for _, t := range targets {
+		if t.kind == model.KindThread {
+			threads++
+		}
+	}
+	if err := ask(ctx, render.AskDeletePermanently(len(targets)-threads, threads)); err != nil {
 		return out, err
 	}
 	out.Items = s.each(ctx, targets, ls.index, s.purge())

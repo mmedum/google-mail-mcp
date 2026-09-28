@@ -14,6 +14,7 @@ import (
 	"github.com/mmedum/google-mail-mcp/internal/gmail"
 	"github.com/mmedum/google-mail-mcp/internal/mime"
 	"github.com/mmedum/google-mail-mcp/internal/model"
+	"github.com/mmedum/google-mail-mcp/internal/render"
 )
 
 // Compose is what create_draft was asked for (§7.4).
@@ -704,6 +705,9 @@ func (s *Service) DeleteDraft(ctx context.Context, id string, confirm bool) (mod
 	out.Recipients = keptRecipients(m.To, m.Cc, m.Bcc, nil)
 	if out.DryRun {
 		return out, nil
+	}
+	if err := ask(ctx, render.AskDeleteDraft(out)); err != nil {
+		return out, err
 	}
 	if err := s.client.DeleteDraft(ctx, id); err != nil {
 		if c, _ := gapi.ClassOf(err); c != gapi.ClassNotFound {

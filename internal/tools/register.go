@@ -13,6 +13,7 @@ import (
 
 	"github.com/mmedum/google-mail-mcp/internal/config"
 	"github.com/mmedum/google-mail-mcp/internal/gapi"
+	"github.com/mmedum/google-mail-mcp/internal/service"
 )
 
 // Kind is what a tool does to the world. One field decides a tool's
@@ -135,6 +136,17 @@ func (k Kind) annotations() *mcp.ToolAnnotations {
 // default rather than relying on this.
 func (k Kind) requiresUserInteraction() bool { return k == Send || k == Destructive || k == AutoReply }
 
+// asksPerson says a kind's writes that take confirm are also put to the
+// person, when the client can ask (§4.13). Every kind but Read and Write
+// has one; register refuses a tool that takes confirm under any other.
+func (k Kind) asksPerson() bool {
+	switch k {
+	case WriteForGood, Send, Destructive, Settings, SettingsForGood, AutoReply:
+		return true
+	}
+	return false
+}
+
 // Renderer is the readable half of a reply. Every output type has one,
 // so a tool cannot be added without it: a client may show only content
 // or only structuredContent, and both must carry the substance, never
@@ -163,6 +175,9 @@ func register[In any, Out Renderer](s *mcp.Server, d Deps, sp Spec, h Handler[In
 	if !sp.Kind.allowed(d.Config) {
 		return
 	}
+	if takesConfirm[In]() && !sp.Kind.asksPerson() {
+		panic("tools: " + sp.Name + " takes confirm, and its kind " + sp.Kind.String() + " does not ask the person")
+	}
 	if d.registered != nil {
 		*d.registered = append(*d.registered, sp.Name)
 	}
@@ -176,9 +191,13 @@ func register[In any, Out Renderer](s *mcp.Server, d Deps, sp Spec, h Handler[In
 	if sp.OmittedIDs != "" {
 		describeOmitted(out, sp.OmittedIDs)
 	}
+	description := sp.Description
+	if takesConfirm[In]() {
+		description += personNote
+	}
 	tool := &mcp.Tool{
 		Name:         sp.Name,
-		Description:  sp.Description,
+		Description:  description,
 		Annotations:  sp.Kind.annotations(),
 		InputSchema:  inputSchema[In](),
 		OutputSchema: out,
@@ -186,8 +205,17 @@ func register[In any, Out Renderer](s *mcp.Server, d Deps, sp Spec, h Handler[In
 	if sp.Kind.requiresUserInteraction() {
 		tool.Meta = mcp.Meta{"anthropic/requiresUserInteraction": true}
 	}
-	mcp.AddTool(s, tool, wrap(h, dryRunField[In]()))
+	var a *asking
+	if sp.Kind.asksPerson() {
+		a = d.asking
+	}
+	mcp.AddTool(s, tool, wrap(h, dryRunField[In](), sp.Name, a, d.Config.RequirePrompt))
 }
+
+// personNote ends the description of every tool that takes confirm,
+// since each of them also asks the person (§4.13).
+const personNote = " When the client can ask, the server also asks the person before it writes; a call they do not " +
+	"confirm is [blocked], writes nothing, and is not to be made again unless they ask."
 
 // describeOmitted sets the description of s's omitted_ids, on a copy of
 // the property so no other schema shares the change.
@@ -208,17 +236,34 @@ type costed interface{ setUnits(units int) }
 func (c *Cost) setUnits(units int) { c.Units = units }
 
 // wrap is what every handler gets without asking: a dry run that cannot
-// write, an error rendered "[class] message" as a tool error, the units
-// spent filled into an output that embeds Cost, and Content set from
-// Render so the SDK does not fill it with the JSON of the output.
-func wrap[In any, Out Renderer](h Handler[In, Out], dryRun int) mcp.ToolHandlerFor[In, Out] {
-	return func(ctx context.Context, _ *mcp.CallToolRequest, in In) (*mcp.CallToolResult, Out, error) {
+// write, the person asked before a write that takes confirm when a is
+// set (§4.13), an error rendered "[class] message" as a tool error, the
+// units spent filled into an output that embeds Cost, and Content set
+// from Render so the SDK does not fill it with the JSON of the output.
+func wrap[In any, Out Renderer](h Handler[In, Out], dryRun int, name string, a *asking, requirePrompt bool) mcp.ToolHandlerFor[In, Out] {
+	return func(ctx context.Context, req *mcp.CallToolRequest, in In) (*mcp.CallToolResult, Out, error) {
+		var zero Out
 		if dryRun >= 0 && reflect.ValueOf(in).Field(dryRun).Bool() {
 			ctx = gapi.WithoutWrites(ctx)
 		}
+		var p *person
+		if a != nil {
+			var err error
+			if p, err = a.personFor(req, name, in, requirePrompt); err != nil {
+				return nil, zero, fail(err)
+			}
+			ctx = service.WithAsker(ctx, p)
+		} else if req.Params != nil && (req.Params.RequestState != "" || len(req.Params.InputResponses) > 0) {
+			return nil, zero, fail(gapi.Errf(gapi.ClassBlocked,
+				"%s asks the person nothing, and the call came with an answer; nothing was done. Call it again without one", name))
+		}
 		out, err := h(ctx, in)
+		if p != nil && p.asked != nil {
+			// The service stopped before its write; the question goes out.
+			markAsked(ctx)
+			return p.inputRequest(), zero, nil
+		}
 		if err != nil {
-			var zero Out
 			return nil, zero, fail(err)
 		}
 		if c, ok := any(&out).(costed); ok {
@@ -239,6 +284,22 @@ func fail(err error) error {
 		return errors.New(e.Error())
 	}
 	return fmt.Errorf("[%s] %s", gapi.ClassUnavailable, err.Error())
+}
+
+// takesConfirm reports whether In has confirm or confirm_recipients: the
+// guards a model sets, which a tool that has one backs with the person.
+func takesConfirm[In any]() bool {
+	t := reflect.TypeFor[In]()
+	if t.Kind() != reflect.Struct {
+		return false
+	}
+	for i := range t.NumField() {
+		name, _, _ := strings.Cut(t.Field(i).Tag.Get("json"), ",")
+		if name == "confirm" || name == "confirm_recipients" {
+			return true
+		}
+	}
+	return false
 }
 
 // dryRunField is the index of the input's dry_run bool, or -1. Found by
