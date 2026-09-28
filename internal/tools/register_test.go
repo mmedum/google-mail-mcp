@@ -230,3 +230,26 @@ func TestNamesIsWhatToolsListReturns(t *testing.T) {
 		}
 	}
 }
+
+type confirmIn struct {
+	Confirm bool `json:"confirm,omitempty"`
+}
+
+// A tool that takes confirm is registered only under a kind that also
+// asks the person (§4.13), so a new one cannot rest on the model alone.
+func TestATakingConfirmToolMustAskThePerson(t *testing.T) {
+	all := []Kind{Read, ReadWritesLocally, Write, WriteForGood, Send, Destructive, Settings, SettingsForGood, AutoReply}
+	cfg := FullSurface(config.Config{})
+	for _, k := range all {
+		panicked := func() (p bool) {
+			defer func() { p = recover() != nil }()
+			register(mcp.NewServer(&mcp.Implementation{Name: "t", Version: "0"}, nil), Deps{Config: cfg},
+				Spec{Name: "confirming", Description: "probe", Kind: k},
+				func(context.Context, confirmIn) (probeOut, error) { return probeOut{}, nil })
+			return false
+		}()
+		if panicked == k.asksPerson() {
+			t.Errorf("%s: panicked %v, asks the person %v", k, panicked, k.asksPerson())
+		}
+	}
+}

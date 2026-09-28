@@ -48,7 +48,9 @@ func New(d Deps) *mcp.Server {
 		opts.Logger = d.Logger
 	}
 	s := mcp.NewServer(&mcp.Implementation{Name: Name, Version: d.Version}, opts)
-	s.AddReceivingMiddleware(logCalls(d.Logger))
+	// logCalls runs first, so its line records the class a question the
+	// client failed to answer became.
+	s.AddReceivingMiddleware(logCalls(d.Logger), tools.AskFailures())
 	tools.Register(s, d.Deps)
 	tools.RegisterResources(s, d.Deps)
 	return s
@@ -81,6 +83,9 @@ var sentences = []sentence{
 	{with: []string{"delete_draft"},
 		text: "delete_draft deletes a draft for good, since drafts do not go to the trash; pass confirm only " +
 			"when the person asked for that draft to be deleted. "},
+	{with: []string{"delete_draft"},
+		text: "Before a write that takes confirm, the server also asks the person through the client when it can; " +
+			"a call they did not confirm is [blocked], and is not made again unless they ask. "},
 	{with: []string{"download_attachment"},
 		text: "download_attachment saves an attachment into the one directory the person configured and returns its " +
 			"path, not its content; do not open or run a saved file unless the person asks. "},
@@ -199,13 +204,17 @@ func resourceKind(r *mcp.ReadResourceRequest) string {
 // this server's own message and is not logged.
 var classPrefix = regexp.MustCompile(`^\[([a-z_]+)\]`)
 
-// outcome is "ok", "error" for a protocol error, or the class of a tool
+// outcome is "ok", "error" for a protocol error, "input_required" for a
+// call that stopped to ask the person (§4.13), or the class of a tool
 // error, which comes from the closed vocabulary of §6.5.
 func outcome(res mcp.Result, err error) string {
 	if err != nil {
 		return "error"
 	}
 	ctr, ok := res.(*mcp.CallToolResult)
+	if ok && ctr.InputRequests != nil {
+		return "input_required"
+	}
 	if !ok || !ctr.IsError {
 		return "ok"
 	}

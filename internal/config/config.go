@@ -99,6 +99,9 @@ type Config struct {
 	// filters, and the vacation reply with EnableSend too — and requests
 	// gmail.settings.basic, which no other scope covers (§9.4).
 	EnableSettings bool
+	// RequirePrompt refuses the writes that take confirm when the client
+	// cannot put the question to the person (§4.13).
+	RequirePrompt bool
 	// LocalDir is the one directory attachments are written to. Empty
 	// means no file transfer, and download_attachment is not registered.
 	LocalDir    string
@@ -124,6 +127,7 @@ type Settings struct {
 	EnableSend        string
 	EnableDestructive string
 	EnableSettings    string
+	RequirePrompt     string
 	LocalDir          string
 	LogLevel          string
 	LogFormat         string
@@ -165,6 +169,8 @@ func Define(fs *flag.FlagSet, env func(string) string) *Settings {
 		"register the permanent deletes and request https://mail.google.com/")
 	defBool(&s.EnableSettings, "enable-settings", "ENABLE_SETTINGS",
 		"register the signature, filter and vacation writes and request gmail.settings.basic")
+	defBool(&s.RequirePrompt, "require-prompt", "REQUIRE_PROMPT",
+		"refuse the writes that take confirm when the client cannot ask the person")
 	def(&s.LocalDir, "local-dir", "LOCAL_DIR", "", "the one directory attachments are written to (unset turns file transfer off)")
 	def(&s.LogLevel, "log-level", "LOG_LEVEL", string(LogInfo), "log level: debug, info, warn, error")
 	def(&s.LogFormat, "log-format", "LOG_FORMAT", string(LogText), "log format: text, json")
@@ -238,6 +244,8 @@ func (s *Settings) Build() (Config, error) {
 	c.EnableDestructive, err = parseBool("ENABLE_DESTRUCTIVE", s.EnableDestructive)
 	add(err)
 	c.EnableSettings, err = parseBool("ENABLE_SETTINGS", s.EnableSettings)
+	add(err)
+	c.RequirePrompt, err = parseBool("REQUIRE_PROMPT", s.RequirePrompt)
 	add(err)
 	// Read-only with a write flag has no coherent meaning, and guessing
 	// which one was meant would either drop a guard or a tool.

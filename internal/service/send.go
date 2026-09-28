@@ -10,6 +10,7 @@ import (
 	"github.com/mmedum/google-mail-mcp/internal/gapi"
 	"github.com/mmedum/google-mail-mcp/internal/mime"
 	"github.com/mmedum/google-mail-mcp/internal/model"
+	"github.com/mmedum/google-mail-mcp/internal/render"
 )
 
 // MaxSendRecipients is the most recipients one send may have (§4.2).
@@ -117,6 +118,9 @@ func (s *Service) SendDraft(ctx context.Context, in Dispatch) (model.SendWrite, 
 		return out, nil
 	}
 	if err := unconfirmed(out); err != nil {
+		return out, err
+	}
+	if err := ask(ctx, render.AskSend(out)); err != nil {
 		return out, err
 	}
 	sent, err := s.client.SendDraft(ctx, out.DraftID)

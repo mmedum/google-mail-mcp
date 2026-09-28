@@ -225,6 +225,28 @@ func oneLine(s string, max int) string {
 	return s
 }
 
+// quoted is text from the mailbox or from a call's arguments, shown in a
+// question put to the person (§4.13), where no block can go: a client
+// draws the question as plain text in a dialog. It is made one line,
+// its double quotes become single ones so it cannot close the quote it
+// sits in, a URL scheme and a leading "www." are broken so the client
+// draws no link, and it is cut at max runes. The quotes mark it as
+// quoted material, never the server's own words.
+func quoted(s string, max int) part {
+	s = strings.Join(strings.Fields(oneLine(s, max)), " ")
+	s = strings.ReplaceAll(s, `"`, "'")
+	s = linkShape.ReplaceAllString(s, "$1[:]//")
+	s = wwwShape.ReplaceAllString(s, "${1}[.]")
+	return part{`"` + s + `"`}
+}
+
+var (
+	// linkShape is a URL scheme followed by //, as a client links it.
+	linkShape = regexp.MustCompile(`(?i)\b([a-z][a-z0-9+.-]*)://`)
+	// wwwShape is a host a client links without a scheme.
+	wwwShape = regexp.MustCompile(`(?i)\b(www)\.`)
+)
+
 // labelList is a message's or thread's labels by name.
 func labelList(ls []model.LabelRef) part {
 	if len(ls) == 0 {
