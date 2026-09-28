@@ -42,8 +42,8 @@ const (
 	ClassUnavailable Class = "unavailable"
 	// ClassUnsupported: the API cannot do this (§2).
 	ClassUnsupported Class = "unsupported"
-	// ClassAmbiguousOutcome: a send, or a filter create, may or may not
-	// have happened (§4.3, §7.9). Never retried; the result carries the
+	// ClassAmbiguousOutcome: a send, a filter create or a filter delete
+	// may or may not have happened (§4.3, §7.9). Never retried; the result carries the
 	// read that tries to settle it.
 	ClassAmbiguousOutcome Class = "ambiguous_outcome"
 )

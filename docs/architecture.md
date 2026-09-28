@@ -399,38 +399,21 @@ cursor. A long body is cut at a paragraph boundary with a marker and the
 offset to continue from. Listings use `format=metadata` with a fixed
 header set, never `full`.
 
-A listing's budget covers its reply, not the text alone, and every item
-on the page stays a row, so nothing is lost and paging stays whole. The
-text counts twice, as JSON, since the reply carries it in `content` and
-again in `untrusted_text`; each row the text shows counts once more as
-its structured entry, and the ids left out as `omitted_ids`.
+A listing's budget bounds its text, in `content` and again in
+`untrusted_text`; the structured rows carry every item on the page in
+full, as 1.1.0 did, and are not counted against it. A page that fits
+is shown whole. Otherwise the text shows rows while they and the line
+naming the rest fit, and that line counts every row left out and names
+their ids, each once and none a shown row carries; `omitted_ids` holds
+the same ids. A change listing can name one message twice, so the line
+counts the changes on messages named already apart. `list_filters`
+shows forwarding filters first, so one that forwards is never out of
+the text.
 
-- A search or draft row past the budget is slim: its ids, date, labels
-  and whether it has attachments, without what its sender wrote
-  (subject, participants, snippet, addresses), and `content_omitted`
-  set, so it cannot pass for a blank message. Its id is in
-  `omitted_ids`, which names what the text left out, not what the rows
-  lack. A slim row is a few hundred characters and outside the budget:
-  a page of 100 generated results came to 46,000 characters as messages
-  and 49,000 as threads under a budget of 24,000, where every row in
-  full had come to 127,000 and 102,000 (§18 row 57).
-- Changes hold nothing a sender wrote, and every row stays whole: a
-  change dropped could not be read again. The rows are spent first and
-  the text fits in what is left; a page whose rows alone pass the
-  budget goes over it by them. The text counts the changes it leaves
-  out and names their messages; an id a shown row carries is not also
-  in `omitted_ids`.
-- Filters are exempt: they are the account's own settings, and one that
-  forwards must never be out of sight. Every row is whole, whatever the
-  size, and the text has the budget to itself. It shows forwarding
-  filters first, then as many others as fit, and counts and names the
-  rest.
-
-A page that fits whole shows every row; room for the line naming what
-was left out is kept only when a row will be left out.
-
-The fields around the rows — the query, the page token, the counts —
-are outside the budget and come to well under 1,000 characters.
+The structured half is not bounded: a page of 100 results came to
+70,000 to 106,000 characters under a budget of 24,000 (§18 row 57). The
+search and draft descriptions say so, and that a client that limits
+the size of one result should ask for a smaller `max`, such as 25.
 
 The rule is that **a read never silently returns less than it found**:
 every omission is named and continuable.
@@ -634,7 +617,7 @@ forces:
 | `rate_limited` | §2.2's per-user, project or sending limits | wait; the message says how long |
 | `unavailable` | a transient upstream failure | retry |
 | `unsupported` | the API cannot do this (§2, "cannot do") | see §2 |
-| `ambiguous_outcome` | a send, or a filter create, may or may not have happened (§4.3, §7.9) | read the result's verdict; never resend blind |
+| `ambiguous_outcome` | a send, a filter create or a filter delete may or may not have happened (§4.3, §7.9) | read the result's verdict; never resend blind |
 
 `rate_limited` distinguishes the sending limit from request-rate limits
 in its message, because "wait a minute" and "wait up to a day" are
@@ -854,10 +837,17 @@ the pacing or the repeat: their writes were not probed (rule 18). Any
 other `failedPrecondition` stays `[invalid]`. Spike L, which sends
 filter writes at once to see how Gmail refuses them, runs only with the
 live driver's `-spike-l`. Once, creates sent together were answered 500
-instead; on a create that is `[ambiguous_outcome]`, settled as above.
-The duplicate check and the settle read compare a filter's text
-criteria as Gmail's search reads them, ignoring case and runs of
-spaces.
+instead; on a create that is `[ambiguous_outcome]`, settled as above. A delete Google did not
+confirm is settled the same way: the list read 5 seconds after gives
+`deleted`, `still_there` or `unknown`, and the delete is not sent
+again. The pacing reserves each write's slot before it waits, so two
+writers that do not hold the lock still go 5 seconds apart. The
+duplicate check compares criteria exactly, a size included: Gmail's
+rounding rule is unknown (§18 row 52), so a request with a size may
+slip past an existing filter, which the verdict after an unconfirmed
+create says. When the existing filter differs only by a `SPAM` Gmail
+added, the conflict says so, and that deleting it and creating this
+again gives the filter without it.
 
 ## 8. Tool surface
 
@@ -1874,6 +1864,26 @@ what fixed them.
   their scaffolding, `settleAfter`; the send's own reads are unchanged
   and never send. The driver's `call` comment sat on a constant and
   named only 403s.
+- **Filters and search size, fourth code review: the listing design
+  reverted, and seven filter findings fixed.** The lead reverted the
+  whole-reply budget: emptying the content of rows past it changes what
+  a released field holds, which `CLAUDE.md` makes a breaking change, for
+  a size that only a page near `max` 100 reaches. Every row is full
+  again, `budget_chars` bounds the text, and the descriptions advise a
+  smaller `max`; `content_omitted` and the reply-cost options are gone.
+  The text's "not shown" line and `omitted_ids` disagreed for changes;
+  they name the same ids, and the line counts the rest apart. The loose
+  criteria match folded `OR`, `AND` and `AROUND` to lower case, which
+  changes a Gmail query; criteria are compared exactly again, and a
+  sized filter's rounding is a known limit. A call canceled while
+  waiting its turn or its backoff after an attempt that may have acted
+  said "not sent"; it is `[ambiguous_outcome]`. Pacing reserved no
+  slot, so two unlocked writers could send together; it reserves one.
+  Units were charged and the timer started before the pacing wait, and
+  the final attempt went unlogged; both are fixed, and a canceled wait
+  charges nothing. A filter delete Google did not confirm is settled by
+  reading, as a create is. A conflict with a filter that also keeps
+  mail out of spam says so, and how to get the filter without it.
 
 ### Closing a phase
 
@@ -2051,4 +2061,4 @@ live** — §15 exists to settle these, and they are marked.
 | 54 | Gmail takes filter writes sent at once, as it takes them one at a time | Observed live 2026-09-28: about eight `create_filter` calls sent in parallel, several refused, the same calls sent one at a time taken. Spike L, the live driver, the same day, five runs: eight `filters.create` at once, each refused one again alone 5 seconds later, then the run's filters deleted back to back | **Refuted, intermittently.** One run answered 6 of 8 creates 500 `backendError`, "Internal error encountered.", which had created nothing; one answered all 8 that way, and of the 8 sent again one at a time, back to back, refused 2 with 400 `failedPrecondition`; two answered 3 of 8 with 400 `failedPrecondition`, "Precondition check failed.", and took each 5 seconds later, and one of those refused 3 of 8 deletes sent back to back, not at once, the same way; one took all 8. The server holds its settings changes to one at a time, paces filter writes 5 seconds apart, the one wait seen to work, and repeats that refusal on a filter write once, without calling it an overlap: the refusal does not say why (§7.9, §11). `sendAs.patch` and `updateVacation` were not probed, so they take the lock and neither the pacing nor the repeat |
 | 55 | After a `create_filter` Google did not confirm, the caller can tell whether it was saved | Observed live 2026-09-28: a 500 "Internal error" answered `[ambiguous_outcome]`, and only a `list_filters` showed that nothing was saved | **Refuted.** The server now reads the list 5 seconds after such a create and gives a verdict, as §4.3 does for a send: `created` naming the new filter, `not_created`, or `unknown`. The create is never repeated. Row 54's 500s are the likeliest cause |
 | 56 | A filter keeps the removed labels it was created with | Observed live 2026-09-28: archiving filters, including ones made in Gmail's settings page, later listed `SPAM` among their removed labels though no write named it; a filter read at once after its create did not, nor 15 seconds and one more filter write later. Gmail's filter guide, read 2026-09-28: `removeLabelIds=['SPAM']` is "Never mark as spam" | **Refuted, cause unknown.** Gmail can add `SPAM` to archiving filters after the fact, not at create time; what triggers it is not known. So `create_filter`'s duplicate check, and the read that settles an unconfirmed create, do not count a stored `SPAM` against a request that archives without it. A request that names `SPAM` is compared as given. The text says "never sends matching mail to spam" rather than naming a label taken off, and `never_spam` reports it. The live driver lists its own archiving filter again after another filter write and reports, without judging, whether `SPAM` appeared |
-| 57 | `budget_chars` bounds a listing's reply | Observed live 2026-09-28: `search_messages` and `search_threads` with `max` 100 under a budget of 24,000 returned 70,000 to 106,000 characters, over the client's limit, with rows in `omitted_ids` that were also rows in `messages` and `threads`; the same page of 100 generated in `gmailtest` came to 102,000 and 127,000 | **Refuted.** It bounded the text, and the reply carried the text twice and every row in full. A listing's budget now covers the text twice and the rows it shows; a row past it stays, slim, and is named in `omitted_ids`; changes keep every row whole and fit the text in what is left; filters keep every row and give the text its own budget (§4.8). Tests hold a page of 100 within the budget, its slim rows and 1,000 characters, and changes within the budget and 1,000 |
+| 57 | `budget_chars` bounds a listing's whole reply | Observed live 2026-09-28: `search_messages` and `search_threads` with `max` 100 under a budget of 24,000 returned 70,000 to 106,000 characters, over the client's limit, with rows in `omitted_ids` that were also rows in `messages` and `threads`; the same page of 100 generated in `gmailtest` came to 102,000 and 127,000 | **Refuted, and kept.** It bounds the text; the structured rows carry every result in full, which is the released contract. Bounding them was tried on this branch, first by dropping rows and then by emptying their content, and reverted: both break clients that read the rows. `omitted_ids` no longer repeats a row the text shows, and the search and draft descriptions advise a smaller `max` to a client that limits one result's size (§4.8) |

@@ -54,9 +54,6 @@ type MessageMeta struct {
 	// LinkMismatches counts links whose visible text names a different
 	// host from the one they point to.
 	LinkMismatches int `json:"link_mismatches,omitempty"`
-	// ContentOmitted marks a listing row past the budget, which keeps
-	// its ids, date and labels and drops what its sender wrote (§4.8).
-	ContentOmitted bool `json:"content_omitted,omitempty" jsonschema:"this row is past the reply's budget: its sender's words are left out, not empty; get_message reads them"`
 }
 
 // Rendered is what every read returns besides its rows: how the text was
@@ -66,7 +63,7 @@ type Rendered struct {
 	// blocks delimited by Boundary.
 	UntrustedText model.Untrusted `json:"untrusted_text"`
 	Boundary      string          `json:"boundary"`
-	Budget        int             `json:"budget_chars" jsonschema:"the budget in characters: of the text, for a thread, message or draft; of the whole reply, both halves, for a listing"`
+	Budget        int             `json:"budget_chars" jsonschema:"the budget, in characters, of the text in content and untrusted_text; the structured rows are not counted against it"`
 	Truncated     bool            `json:"truncated"`
 	NextCursor    int             `json:"next_cursor,omitempty"`
 	NextOffset    int             `json:"next_offset,omitempty"`
