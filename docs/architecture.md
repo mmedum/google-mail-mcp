@@ -1,10 +1,8 @@
 # Architecture — google-mail-mcp
 
-**Status: 1.1.1 is released, 2026-09-28, from `main`, and verified from
-outside: checksums, the cosign signature and the provenance attestation,
-each also against a tampered copy, and the registry entry. Since 1.1.0
-`logout` names the profiles its revoke reaches, by account and Cloud
-project, and the bundle's descriptions name the settings flag.** Still unproven: the
+**Status: 1.2.0 is prepared, 2026-09-28; since 1.1.1 filter writes are
+paced and settle an unconfirmed outcome by reading, `never_spam` is
+reported, and listings name every row the text leaves out.** Still unproven: the
 bundle installed in Claude Desktop.
 
 ## 1. Mission and scope
@@ -399,6 +397,22 @@ cursor. A long body is cut at a paragraph boundary with a marker and the
 offset to continue from. Listings use `format=metadata` with a fixed
 header set, never `full`.
 
+A listing's budget bounds its text, in `content` and again in
+`untrusted_text`; the structured rows carry every item on the page in
+full, as 1.1.0 did, and are not counted against it. A page that fits
+is shown whole. Otherwise the text shows rows while they and the line
+naming the rest fit, and that line counts every row left out and names
+their ids, each once and none a shown row carries; `omitted_ids` holds
+the same ids. A change listing can name one message twice, so the line
+counts the changes on messages named already apart. `list_filters`
+shows forwarding filters first, so one that forwards is never out of
+the text.
+
+The structured half is not bounded: a page of 100 results came to
+70,000 to 106,000 characters under a budget of 24,000 (§18 row 57). The
+search and draft descriptions say so, and that a client that limits
+the size of one result should ask for a smaller `max`, such as 25.
+
 The rule is that **a read never silently returns less than it found**:
 every omission is named and continuable.
 
@@ -601,7 +615,7 @@ forces:
 | `rate_limited` | §2.2's per-user, project or sending limits | wait; the message says how long |
 | `unavailable` | a transient upstream failure | retry |
 | `unsupported` | the API cannot do this (§2, "cannot do") | see §2 |
-| `ambiguous_outcome` | a send may or may not have happened (§4.3) | read the result's verdict; never resend blind |
+| `ambiguous_outcome` | a send, a filter create or a filter delete may or may not have happened (§4.3, §7.9) | read the result's verdict; never resend blind |
 
 `rate_limited` distinguishes the sending limit from request-rate limits
 in its message, because "wait a minute" and "wait up to a day" are
@@ -780,6 +794,19 @@ after that read.
   rounds a size (§18 row 52), so a filter with one may escape the check. A filter acts on mail that arrives
   from now on, never on mail already there, so it is not a write that
   takes a query (§4.7).
+  `SPAM` among a filter's removed labels is Gmail's "Never send it to
+  Spam". `remove_labels` keeps Gmail's list, `never_spam` says it, and
+  the text says "never sends matching mail to spam" rather than naming a
+  label taken off. Gmail stores a filter with the labels sent, but was
+  seen adding `SPAM` to every archiving filter later, ones it did not
+  just write included (§18 row 56). So the duplicate check, and the
+  read that settles an unconfirmed create, ignore a stored `SPAM` when
+  the request archives and does not name it.
+  A create Google did not confirm is `[ambiguous_outcome]` and is not
+  repeated. As §4.3 does for a send, the server waits 5 seconds, reads
+  the list, and gives a verdict: `created`, naming the new filter that
+  does this; `not_created`; or `unknown` when the read fails (§18
+  row 55).
 - `delete_filter` takes a filter id and `confirm: true`, and reports what
   the filter did. A 404 on the delete is reported as gone.
 - `set_vacation` also needs `GMAIL_ENABLE_SEND=true`: an auto-reply
@@ -790,6 +817,35 @@ after that read.
   `domain` is refused on a personal account (`gmail.com`,
   `googlemail.com`), found by one profile read: whether Gmail refuses it
   there or answers every sender is unchecked (§18 row 51).
+
+Settings changes run one at a time within the process. Gmail refused
+filter writes sent together, and some sent back to back, with 400
+`failedPrecondition`, "Precondition check failed.", and took each 5
+seconds later (§18 row 54). Each change holds the client's settings
+lock from its first read to its write; a dry run takes none. Filter
+writes are also paced: each attempt waits until 5 seconds have passed
+since the last one finished. That refusal on a filter write says
+nothing of its cause, and a limit or a policy may answer the same, so
+it is repeated once, after the pacing wait, then reported
+`[unavailable]` with Google's own words and no cause claimed. If an
+earlier attempt of the same call may have taken effect, as a delete
+that failed after it was sent may have, it is `[ambiguous_outcome]`
+instead. `update_signature` and `set_vacation` take the lock but not
+the pacing or the repeat: their writes were not probed (rule 18). Any
+other `failedPrecondition` stays `[invalid]`. Spike L, which sends
+filter writes at once to see how Gmail refuses them, runs only with the
+live driver's `-spike-l`. Once, creates sent together were answered 500
+instead; on a create that is `[ambiguous_outcome]`, settled as above. A delete Google did not
+confirm is settled the same way: the list read 5 seconds after gives
+`deleted`, `still_there` or `unknown`, and the delete is not sent
+again. The pacing reserves each write's slot before it waits, so two
+writers that do not hold the lock still go 5 seconds apart. The
+duplicate check compares criteria exactly, a size included: Gmail's
+rounding rule is unknown (§18 row 52), so a request with a size may
+slip past an existing filter, which the verdict after an unconfirmed
+create says. When the existing filter differs only by a `SPAM` Gmail
+added, the conflict says so, and that deleting it and creating this
+again gives the filter without it.
 
 ## 8. Tool surface
 
@@ -981,7 +1037,9 @@ Process: one stdio session; starts before authentication so `doctor` and
   is not repeatable: a retry makes two drafts. `drafts.send` is never
   retried (§4.3).
 - **Turned-away statuses** — 429, 503, a 403 with a rate-limit reason,
-  or a connection never made —
+  a filter write refused with Google's generic "Precondition check
+  failed." (§7.9, repeated once), or a
+  connection never made —
   are retried for any method, since Google did not act; `Retry-After`
   is a minimum; full jitter; at most four attempts; the sending-limit
   429 is not retried at all, because its wait is hours.
@@ -1723,6 +1781,111 @@ what fixed them.
   not a live probe (§18 row 53, tier 3). `logout` relied on it before
   this release; the probe costs the maintainer's grant and a new login.
 - **1.1.1, security review: no findings.**
+- **Filters and search size, self-review: four findings fixed, two
+  recorded.** The first live run read an archiving filter back at once
+  without `SPAM`, and the fix first concluded Gmail never adds it.
+  Gmail was later seen adding it to archiving filters; the duplicate
+  check and the settle read now ignore a stored `SPAM` on a request
+  that archives without it (§18 row 56). Spike L showed deletes sent back to
+  back refused like overlapping ones, so a repeat waits at least 2
+  seconds (§18 row 54). The fake refused an identical filter, which row
+  52 had refuted, and the client's comment said Gmail does; both now
+  keep it. The search descriptions name `omitted_ids`. Recorded: every
+  read carries its text twice, in `content` and in `untrusted_text`,
+  which reads against `CLAUDE.md` rule 12; `untrusted_text` is a
+  released field (rule 14), so the listing budget counts both copies
+  instead. And a listing now shows fewer rows under the same budget:
+  10 of a page of 100 generated messages, and 12 of a default page of
+  20, where the text alone showed about 42. Search takes no
+  `budget_chars` to widen it; adding one is not breaking.
+- **Filters and search size, code review: ten findings, all fixed.**
+  Rows past a listing's budget were dropped from the structured half,
+  which lost filters (a forwarding one included) and changes for good,
+  and left search and draft rows past the budget unreachable, since the
+  next page starts after them. Every row now stays: search and draft
+  rows past the budget are slim, without what a sender wrote; filters
+  and changes are kept whole and spent first (§4.8). A change could
+  name a message both shown and omitted; `omitted_ids` now leaves out
+  any id a shown row carries. `budget_chars` and `omitted_ids` say what
+  they now mean. The CHANGELOG files the listing change under Changed.
+  The new evidence rows named whose account they came from; they no
+  longer do. The overlap repeat covered `sendAs.patch` and
+  `updateVacation` with no evidence (rule 18); it covers the filter
+  writes alone. The live report step found its filter in the text, which
+  a long list cuts, and slept without its context; it reads the
+  structured rows and waits on the run's context. The listing
+  marshaled the remaining ids on every row, which is quadratic; it keeps
+  a running total. Two JSON sizing helpers became one,
+  `render.JSONChars`.
+- **Filters and search size, second code review: ten findings, all
+  fixed.** A change left out whose message a shown row named went
+  unnamed, and the "not shown" line could vanish while the page was
+  truncated; the line now counts every row left out and names each
+  message once. The `not_created` verdict promised a retry would be
+  refused as a duplicate, which a rounded size can defeat; with a size
+  it says to list the filters first. The driver's cleanup deleted
+  filters back to back with no repeat, so a refusal could leave one on
+  the account; it waits out an overlap refusal as it does a rate limit.
+  Spike L ran on every settings run; it needs `-spike-l`. The overlap
+  repeat waited 2 seconds, which nothing showed to work; it waits 5, the
+  one wait seen to. Many filters could leave the text with none; filters
+  now have the text budget to themselves, forwarding ones first. The
+  listing still rendered the rest of the page on every row; it reserves
+  that line once. The evidence rows described the account they came
+  from; they describe only what Gmail did. The live report step printed
+  the account's filter count; it prints only the fact about the run's
+  own filter. The listing chose its mode from a zero-filled slice; it
+  takes an explicit reply cost.
+  Recorded: one live run after these fixes had the step that clears the
+  signature refused, and the driver's restore of the signature answered
+  400; the signature ended as the run found it, read back without
+  printing it. The refusal was not printed, since the step is quiet; the
+  driver now prints a quiet step's refusal, which carries no setting's
+  text. Two runs after, the signature steps alone and the whole driver,
+  passed. `sendAs.patch` is not repeated on a refusal until one is seen
+  and read (rule 18).
+- **Filters and search size, third code review: ten findings, all
+  fixed.** The repeat matched Google's generic "Precondition check
+  failed.", which a limit or a policy may also answer, and called it an
+  overlap; it is repeated once and reported in Google's words. The lock
+  released at once, and Gmail refuses writes back to back; filter
+  writes are paced 5 seconds apart, tested on a fake clock. The
+  refusal said "nothing was changed" after an earlier attempt that may
+  have acted; that is `[ambiguous_outcome]` now. The listing kept room
+  for the "not shown" line on every page, so a page that fit was cut;
+  the room is kept only when a row will be left out. The duplicate check
+  and the settle read compared criteria exactly; they ignore case and
+  runs of spaces, as Gmail's search does. `omitted_ids` is described per
+  tool. A slim row could pass for a blank message; it carries
+  `content_omitted`. The fake's list of filter writes is held equal to
+  the client's by a test. The filter settle and the send settle share
+  their scaffolding, `settleAfter`; the send's own reads are unchanged
+  and never send. The driver's `call` comment sat on a constant and
+  named only 403s.
+- **Filters and search size, fourth code review: the listing design
+  reverted, and seven filter findings fixed.** The lead reverted the
+  whole-reply budget: emptying the content of rows past it changes what
+  a released field holds, which `CLAUDE.md` makes a breaking change, for
+  a size that only a page near `max` 100 reaches. Every row is full
+  again, `budget_chars` bounds the text, and the descriptions advise a
+  smaller `max`; `content_omitted` and the reply-cost options are gone.
+  The text's "not shown" line and `omitted_ids` disagreed for changes;
+  they name the same ids, and the line counts the rest apart. The loose
+  criteria match folded `OR`, `AND` and `AROUND` to lower case, which
+  changes a Gmail query; criteria are compared exactly again, and a
+  sized filter's rounding is a known limit. A call canceled while
+  waiting its turn or its backoff after an attempt that may have acted
+  said "not sent"; it is `[ambiguous_outcome]`. Pacing reserved no
+  slot, so two unlocked writers could send together; it reserves one.
+  Units were charged and the timer started before the pacing wait, and
+  the final attempt went unlogged; both are fixed, and a canceled wait
+  charges nothing. A filter delete Google did not confirm is settled by
+  reading, as a create is. A conflict with a filter that also keeps
+  mail out of spam says so, and how to get the filter without it.
+- **Filters and listings, code review at medium: one finding, fixed.**
+  A call whose last attempt failed on its own returned that failure
+  unchanged, though an earlier attempt may have acted; it is
+  `[ambiguous_outcome]`, so a filter delete settles by reading.
 
 ### Closing a phase
 
@@ -1897,3 +2060,7 @@ live** — §15 exists to settle these, and they are marked.
 | 51 | `restrictToDomain` limits a personal Gmail account's vacation reply | Not checked: raised by the phase 5 security review, 2026-09-27. No reference page says what a personal account does with it, and the live driver runs on one account | **Refused until checked.** If Gmail accepted it and answered every sender, that is the audience §17.4 rules out, so `set_vacation` refuses `domain` for `gmail.com` and `googlemail.com` addresses. A live probe on a personal profile would settle it |
 | 52 | Gmail refuses an identical filter, keeps a filter's size as given, and reads an empty HTML vacation body as absent | Phase 5's first live run, 2026-09-27 | **Refuted, all three.** A second filter identical to the first was created, not refused, so `create_filter`'s own check is the only guard against a duplicate. A size of 1,048,576 bytes was stored as 1,000,000, so a filter with a size may not match its own request and a duplicate of it can get through; the rounding rule is unknown and the check does not guess at it. A vacation reply sent with `responseBodyHtml: ""` beside a plain body came back with no body at all; the HTML body is now left out unless it holds something. The run restored the account's own reply after |
 | 53 | `login` can revoke the refresh token it replaces and keep the new one | Google's OAuth 2.0 page for installed apps, "Revoking a token", read 2026-09-27: "Revocation removes all OAuth 2.0 scopes previously granted to a project, invalidating any issued access or refresh tokens for all clients registered under that project" | **Refuted, tier 3.** Revoking the old token ends the grant the new one belongs to, so `login` would sign itself out. §17a's cleanup is written off. `logout` and the runbook already rely on the same rule. Not probed live: the probe revokes the maintainer's grant and needs a new login |
+| 54 | Gmail takes filter writes sent at once, as it takes them one at a time | Observed live 2026-09-28: about eight `create_filter` calls sent in parallel, several refused, the same calls sent one at a time taken. Spike L, the live driver, the same day, five runs: eight `filters.create` at once, each refused one again alone 5 seconds later, then the run's filters deleted back to back | **Refuted, intermittently.** One run answered 6 of 8 creates 500 `backendError`, "Internal error encountered.", which had created nothing; one answered all 8 that way, and of the 8 sent again one at a time, back to back, refused 2 with 400 `failedPrecondition`; two answered 3 of 8 with 400 `failedPrecondition`, "Precondition check failed.", and took each 5 seconds later, and one of those refused 3 of 8 deletes sent back to back, not at once, the same way; one took all 8. The server holds its settings changes to one at a time, paces filter writes 5 seconds apart, the one wait seen to work, and repeats that refusal on a filter write once, without calling it an overlap: the refusal does not say why (§7.9, §11). `sendAs.patch` and `updateVacation` were not probed, so they take the lock and neither the pacing nor the repeat |
+| 55 | After a `create_filter` Google did not confirm, the caller can tell whether it was saved | Observed live 2026-09-28: a 500 "Internal error" answered `[ambiguous_outcome]`, and only a `list_filters` showed that nothing was saved | **Refuted.** The server now reads the list 5 seconds after such a create and gives a verdict, as §4.3 does for a send: `created` naming the new filter, `not_created`, or `unknown`. The create is never repeated. Row 54's 500s are the likeliest cause |
+| 56 | A filter keeps the removed labels it was created with | Observed live 2026-09-28: archiving filters, including ones made in Gmail's settings page, later listed `SPAM` among their removed labels though no write named it; a filter read at once after its create did not, nor 15 seconds and one more filter write later. Gmail's filter guide, read 2026-09-28: `removeLabelIds=['SPAM']` is "Never mark as spam" | **Refuted, cause unknown.** Gmail can add `SPAM` to archiving filters after the fact, not at create time; what triggers it is not known. So `create_filter`'s duplicate check, and the read that settles an unconfirmed create, do not count a stored `SPAM` against a request that archives without it. A request that names `SPAM` is compared as given. The text says "never sends matching mail to spam" rather than naming a label taken off, and `never_spam` reports it. The live driver lists its own archiving filter again after another filter write and reports, without judging, whether `SPAM` appeared |
+| 57 | `budget_chars` bounds a listing's whole reply | Observed live 2026-09-28: `search_messages` and `search_threads` with `max` 100 under a budget of 24,000 returned 70,000 to 106,000 characters, over the client's limit, with rows in `omitted_ids` that were also rows in `messages` and `threads`; the same page of 100 generated in `gmailtest` came to 102,000 and 127,000 | **Refuted, and kept.** It bounds the text; the structured rows carry every result in full, which is the released contract. Bounding them was tried on this branch, first by dropping rows and then by emptying their content, and reverted: both break clients that read the rows. `omitted_ids` no longer repeats a row the text shows, and the search and draft descriptions advise a smaller `max` to a client that limits one result's size (§4.8) |

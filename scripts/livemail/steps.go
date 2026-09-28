@@ -279,6 +279,14 @@ type env struct {
 	settings   bool
 	filters    []string
 	filterArgs map[string]any
+	// archiveFilter is the archiving filter a step made, which a later
+	// step looks for SPAM on (§18 row 56).
+	archiveFilter string
+	// structured is the last step's structuredContent, for a check that
+	// needs a row the text may have left out.
+	structured map[string]any
+	// ctx bounds the waits a step makes.
+	ctx context.Context
 	// signatureAddress is the default send-as address, whose signature
 	// the run saved and changes; no other one is touched.
 	signatureAddress string
@@ -371,13 +379,19 @@ func (e *env) runStep(s step) error {
 		return err
 	}
 	e.tr.Sayf("=== %s %s ===", s.tool, mcpstdio.Encode(args))
-	text, isError, err := e.session.CallTool(s.tool, args)
+	text, structured, isError, err := e.session.CallToolStructured(s.tool, args)
 	if err != nil {
 		return err
 	}
-	if s.quiet {
+	e.structured = structured
+	switch {
+	case s.quiet && isError:
+		// A refusal is the server's "[class] message", which carries no
+		// setting's text, and is what a failed quiet step needs read.
+		e.tr.Say(text)
+	case s.quiet:
 		e.tr.Sayf("(%d characters; not printed, since this result is the whole mailbox's rather than the run's)", len(text))
-	} else {
+	default:
 		e.tr.Say(text)
 	}
 	switch {
@@ -417,6 +431,9 @@ type spikeRun struct {
 	// spikeH floods the run's own message with reads for spike H, only
 	// when -spike-h is given.
 	spikeH bool
+	// spikeL sends filter writes at once for spike L, only when -spike-l
+	// is given.
+	spikeL bool
 	// spikesDE lets spikes D and E send again.
 	spikesDE bool
 }
@@ -489,7 +506,7 @@ var spikes = []spike{
 }
 
 func runSpikes(ctx context.Context, x spikeRun, tr *transcript.Transcript) {
-	for _, sp := range slices.Concat(spikes, writeSpikes, sendSpikes) {
+	for _, sp := range slices.Concat(spikes, writeSpikes, sendSpikes, settingsSpikes) {
 		tr.Sayf("spike %s — question: %s", sp.name, sp.question)
 		tr.Sayf("spike %s — observed: %s", sp.name, sp.ask(ctx, x))
 	}

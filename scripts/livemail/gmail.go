@@ -107,7 +107,7 @@ func (m *restMailbox) RestoreSettings(ctx context.Context, s savedSettings) erro
 	return errors.Join(sig, m.call(ctx, http.MethodPut, "settings/vacation", nil, vacation, nil))
 }
 
-func (m *restMailbox) DeleteFiltersFrom(ctx context.Context, from string) (int, error) {
+func (m *restMailbox) FiltersFrom(ctx context.Context, from string) ([]string, error) {
 	var list struct {
 		Filter []struct {
 			ID       string `json:"id"`
@@ -117,15 +117,26 @@ func (m *restMailbox) DeleteFiltersFrom(ctx context.Context, from string) (int, 
 		} `json:"filter"`
 	}
 	if err := m.call(ctx, http.MethodGet, "settings/filters", nil, nil, &list); err != nil {
+		return nil, err
+	}
+	var ids []string
+	for _, f := range list.Filter {
+		if f.Criteria.From == from {
+			ids = append(ids, f.ID)
+		}
+	}
+	return ids, nil
+}
+
+func (m *restMailbox) DeleteFiltersFrom(ctx context.Context, from string) (int, error) {
+	ids, err := m.FiltersFrom(ctx, from)
+	if err != nil {
 		return 0, err
 	}
 	n := 0
 	var errs []error
-	for _, f := range list.Filter {
-		if f.Criteria.From != from {
-			continue
-		}
-		if err := m.call(ctx, http.MethodDelete, "settings/filters/"+url.PathEscape(f.ID), nil, nil, nil); err != nil {
+	for _, id := range ids {
+		if err := m.call(ctx, http.MethodDelete, "settings/filters/"+url.PathEscape(id), nil, nil, nil); err != nil {
 			errs = append(errs, err)
 			continue
 		}
@@ -134,16 +145,20 @@ func (m *restMailbox) DeleteFiltersFrom(ctx context.Context, from string) (int, 
 	return n, errors.Join(errs...)
 }
 
-// call sends one request and decodes a successful reply into out.
-// A rate-limit refusal is waited out and the call made again, up to
-// rateTries times: spike H spends the minute's quota, and the cleanup
-// after it must still run. Gmail answered those refusals 403, so a 403
-// is retried only when its body names a rate limit.
-const (
-	rateTries = 8
-	rateWait  = 15 * time.Second
-)
+// rateTries is the most attempts call makes of one request.
+const rateTries = 8
 
+// rateWait is the wait before each repeat. It is a variable so the
+// driver's own tests can shorten it.
+var rateWait = 15 * time.Second
+
+// call sends one request and decodes a successful reply into out. Two
+// refusals are waited out and the call made again, up to rateTries
+// times: a rate limit, since spike H spends the minute's quota and the
+// cleanup after it must still run, and a filter call refused with
+// "Precondition check failed.", since cleanup deletes filters back to
+// back (§18 row 54). A rate limit is a 429, or a 403 whose body names
+// one, as Gmail answered spike H; any other refusal is final.
 func (m *restMailbox) call(ctx context.Context, method, path string, q url.Values, body, out any) error {
 	var (
 		status int
@@ -159,7 +174,7 @@ func (m *restMailbox) call(ctx context.Context, method, path string, q url.Value
 			}
 		}
 		status, _, data, err = m.callRaw(ctx, method, path, q, body)
-		if !rateLimited(status, data) {
+		if !rateLimited(status, data) && !filterOverlap(path, status, data) {
 			break
 		}
 	}
@@ -173,6 +188,14 @@ func (m *restMailbox) call(ctx context.Context, method, path string, q url.Value
 func rateLimited(status int, body []byte) bool {
 	return status == http.StatusTooManyRequests ||
 		status == http.StatusForbidden && bytes.Contains(bytes.ToLower(body), []byte("ratelimitexceeded"))
+}
+
+// filterOverlap reports a filter write Gmail refused because another
+// was saved too close to it, which it takes seconds later (§18 row 54).
+// Cleanup deletes the run's filters back to back, so it repeats these.
+func filterOverlap(path string, status int, body []byte) bool {
+	return strings.HasPrefix(path, "settings/filters") && status == http.StatusBadRequest &&
+		bytes.Contains(bytes.ToLower(body), []byte("precondition check failed"))
 }
 
 // callRaw sends one request and returns the reply's header and body

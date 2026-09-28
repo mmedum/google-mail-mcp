@@ -134,6 +134,7 @@ type Filter struct {
 	AddLabels    []LabelRef     `json:"add_labels"`
 	RemoveLabels []LabelRef     `json:"remove_labels"`
 	Forward      string         `json:"forward,omitempty" jsonschema:"the address matching mail is forwarded to: mail leaving the account"`
+	NeverSpam    bool           `json:"never_spam,omitempty" jsonschema:"matching mail is never sent to spam: Gmail stores this as SPAM in remove_labels"`
 }
 
 // FiltersOut is every filter.
@@ -147,7 +148,7 @@ type FiltersOut struct {
 func registerAccount(s *mcp.Server, d Deps) {
 	svc := service.New(d.Client)
 
-	register(s, d, Spec{Name: "list_changes", Kind: Read, Description: "What changed in the mailbox after a " +
+	register(s, d, Spec{Name: "list_changes", Kind: Read, OmittedIDs: omittedChanges, Description: "What changed in the mailbox after a " +
 		"history_id: messages added, deleted permanently, and labels added or removed, each by message id. Start " +
 		"from get_profile's history_id and pass the history_id each call returns to the next. If Gmail no longer " +
 		"keeps history that far back, the result says the cursor expired and gives a fresh history_id; the changes " +
@@ -158,11 +159,10 @@ func registerAccount(s *mcp.Server, d Deps) {
 			if err != nil {
 				return ChangesOut{}, err
 			}
+			r := render.Changes(render.ChangeList{Start: c.Start, Changes: c.Changes, Expired: c.Expired,
+				HistoryID: c.HistoryID, NextPageToken: c.NextPageToken, Label: c.Label}, render.Options{})
 			out := ChangesOut{Changes: mapSlice(c.Changes, change), Expired: c.Expired, HistoryID: c.HistoryID,
-				NextPageToken: c.NextPageToken, Complete: c.NextPageToken == "",
-				Rendered: readOf(render.Changes(render.ChangeList{Start: c.Start, Changes: c.Changes,
-					Expired: c.Expired, HistoryID: c.HistoryID, NextPageToken: c.NextPageToken, Label: c.Label},
-					render.Options{}))}
+				NextPageToken: c.NextPageToken, Complete: c.NextPageToken == "", Rendered: readOf(r)}
 			if c.Label != nil {
 				out.Label = &LabelRef{ID: c.Label.ID, Name: c.Label.Name}
 			}
@@ -193,7 +193,7 @@ func registerAccount(s *mcp.Server, d Deps) {
 			return settingsOut(st), nil
 		})
 
-	register(s, d, Spec{Name: "list_filters", Kind: Read, Description: "The account's filters: what each " +
+	register(s, d, Spec{Name: "list_filters", Kind: Read, OmittedIDs: omittedFilters, Description: "The account's filters: what each " +
 		"matches and what it does, with labels by name. A filter that forwards mail out of the account is flagged." +
 		filtersChange + " Two units."},
 		func(ctx context.Context, _ ListFiltersIn) (FiltersOut, error) {
@@ -201,8 +201,11 @@ func registerAccount(s *mcp.Server, d Deps) {
 			if err != nil {
 				return FiltersOut{}, err
 			}
-			return FiltersOut{Filters: mapSlice(fs, filter), Forwarding: model.Forwarding(fs),
-				Rendered: readOf(render.Filters(fs, render.Options{}))}, nil
+			// Every filter stays a row, and the text has a budget of its own:
+			// filters are the account's own settings, and one that forwards
+			// must never be out of sight (§4.8).
+			r := render.Filters(fs, render.Options{})
+			return FiltersOut{Filters: mapSlice(fs, filter), Forwarding: model.Forwarding(fs), Rendered: readOf(r)}, nil
 		})
 }
 
@@ -233,7 +236,7 @@ func settingsOut(st model.Settings) SettingsOut {
 
 func filter(f model.Filter) Filter {
 	c := f.Criteria
-	return Filter{ID: f.ID, AddLabels: labelRefs(f.Add), RemoveLabels: labelRefs(f.Remove), Forward: f.Forward,
+	return Filter{ID: f.ID, AddLabels: labelRefs(f.Add), RemoveLabels: labelRefs(f.Remove), Forward: f.Forward, NeverSpam: f.NeverSpam(),
 		Criteria: FilterCriteria{From: c.From, To: c.To, Subject: c.Subject, Query: c.Query, NegatedQuery: c.NegatedQuery,
 			HasAttachment: c.HasAttachment, ExcludeChats: c.ExcludeChats, Size: int(c.Size), SizeComparison: c.SizeComparison}}
 }

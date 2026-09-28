@@ -63,11 +63,11 @@ type Rendered struct {
 	// blocks delimited by Boundary.
 	UntrustedText model.Untrusted `json:"untrusted_text"`
 	Boundary      string          `json:"boundary"`
-	Budget        int             `json:"budget_chars"`
+	Budget        int             `json:"budget_chars" jsonschema:"the budget, in characters, of the text in content and untrusted_text; the structured rows are not counted against it"`
 	Truncated     bool            `json:"truncated"`
 	NextCursor    int             `json:"next_cursor,omitempty"`
 	NextOffset    int             `json:"next_offset,omitempty"`
-	Omitted       []string        `json:"omitted_ids,omitempty"`
+	Omitted       []string        `json:"omitted_ids,omitempty" jsonschema:"ids the text leaves out for the budget, named in the text with how to read them"`
 }
 
 // Render implements Renderer for every read that embeds Rendered.

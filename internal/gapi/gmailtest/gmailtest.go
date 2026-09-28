@@ -17,13 +17,15 @@
 // It models what the server's logic depends on: search with a subset of
 // Gmail's operators, spam and trash hidden unless asked for, paging that
 // can return an empty page with a token, bodies stored behind an
-// attachment id, a history cursor that expires (404), unit costs per
-// method, and injected failures. The writes are in write.go.
+// attachment id, a history cursor that expires (404), filter writes
+// refused when they overlap, unit costs per method, and injected
+// failures. The writes are in write.go.
 package gmailtest
 
 import (
 	"encoding/json"
 	"fmt"
+	"maps"
 	"net"
 	"net/http"
 	"net/http/httptest"
@@ -32,6 +34,7 @@ import (
 	"sort"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/mmedum/google-mail-mcp/internal/gmail"
@@ -158,6 +161,11 @@ type Server struct {
 	// settings are the account's settings and filters, generated like
 	// the mail. UpdateSettings changes them.
 	settings Settings
+
+	// filterWriting is held while a filter write is served; overlaps
+	// counts the ones refused because it was.
+	filterWriting atomic.Bool
+	overlaps      int
 
 	failures  []*Failure
 	calls     []Call
@@ -358,10 +366,20 @@ func (s *Server) serve(w http.ResponseWriter, r *http.Request) {
 		if !ok || rt.method != r.Method || (upload && !rt.upload) {
 			continue
 		}
+		if filterWrites[rt.id] {
+			if !s.filterWriting.CompareAndSwap(false, true) {
+				s.mu.Lock()
+				s.record(rt.id, r)
+				s.overlaps++
+				s.mu.Unlock()
+				writeError(w, http.StatusBadRequest, "failedPrecondition", "Precondition check failed.")
+				return
+			}
+			defer s.filterWriting.Store(false)
+			time.Sleep(filterWriteTime)
+		}
 		s.mu.Lock()
-		cost := unitCost[rt.id]
-		s.calls = append(s.calls, Call{Method: rt.id, Path: r.URL.Path, Query: r.URL.RawQuery, Units: cost})
-		s.units += cost
+		s.record(rt.id, r)
 		f := s.takeFailure(rt.id)
 		if f != nil {
 			if f.Served {
@@ -379,6 +397,38 @@ func (s *Server) serve(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	writeError(w, http.StatusNotFound, "notFound", "Method not found.")
+}
+
+// record counts a request served and its units.
+func (s *Server) record(id string, r *http.Request) {
+	cost := unitCost[id]
+	s.calls = append(s.calls, Call{Method: id, Path: r.URL.Path, Query: r.URL.RawQuery, Units: cost})
+	s.units += cost
+}
+
+// filterWrites are the writes Gmail refused live when one overlapped
+// another on the same account (§18 row 54): 400 failedPrecondition,
+// "Precondition check failed.", taken seconds later. The fake refuses
+// them the same way, and spends filterWriteTime on each outside its
+// lock, so writes sent together do overlap.
+var filterWrites = map[string]bool{
+	"gmail.users.settings.filters.create": true,
+	"gmail.users.settings.filters.delete": true,
+}
+
+const filterWriteTime = 5 * time.Millisecond
+
+// FilterWriteMethods are the methods the fake refuses when they overlap,
+// sorted. The client keeps its own list of the writes it paces; a test
+// holds the two equal.
+func FilterWriteMethods() []string { return slices.Sorted(maps.Keys(filterWrites)) }
+
+// Overlaps is how many filter writes the fake refused because another
+// was in progress.
+func (s *Server) Overlaps() int {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return s.overlaps
 }
 
 // discard is a response nobody reads: a served request whose answer is

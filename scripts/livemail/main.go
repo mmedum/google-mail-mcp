@@ -10,7 +10,7 @@
 // set. Everything it prints goes through the redacting transcript, which
 // `gates transcript` holds.
 //
-//	go run -tags live ./scripts/livemail -profile NAME [-keep] [-run PATTERN] [-send-to ADDRESS] [-spikes-de] [-spike-h]
+//	go run -tags live ./scripts/livemail -profile NAME [-keep] [-run PATTERN] [-send-to ADDRESS] [-spikes-de] [-spike-h] [-spike-l]
 //
 // Nothing is sent unless -send-to names the maintainer's second address;
 // then one send_draft step sends to it, and spikes D and E too with
@@ -56,6 +56,9 @@ type options struct {
 	// spikeH floods the run's own message with reads until Gmail rate
 	// limits them, for spike H.
 	spikeH bool
+	// spikeL sends filter writes at once to see how Gmail refuses them,
+	// for spike L.
+	spikeL bool
 	// spikesDE sends spikes D and E again; they were answered in phase 2.
 	spikesDE bool
 	// clean names a stranded run whose drafts and messages to remove,
@@ -114,6 +117,7 @@ func parseOptions(args []string) (options, *transcript.Transcript, error) {
 	fs.StringVar(&o.clean, "clean", "", "remove the drafts and messages a stranded run left, by its name, and exit")
 	fs.BoolVar(&o.spikesDE, "spikes-de", false, "send spikes D and E again, to -send-to; answered in phase 2")
 	fs.BoolVar(&o.spikeH, "spike-h", false, "read the run's own message until Gmail rate limits the reads, for spike H")
+	fs.BoolVar(&o.spikeL, "spike-l", false, "send eight filter creates at once, for spike L; answered 2026-09-28")
 	if err := fs.Parse(args); err != nil {
 		return o, nil, err
 	}
@@ -213,7 +217,7 @@ func drive(ctx context.Context, o options, tr *transcript.Transcript, box mailbo
 
 	rec := livecover.NewRecorder()
 	session.OnCall(rec.Sent)
-	e := &env{session: session, tr: tr, seed: seed, localDir: localDir, sendTo: o.sendTo, full: box.FullScope(),
+	e := &env{ctx: ctx, session: session, tr: tr, seed: seed, localDir: localDir, sendTo: o.sendTo, full: box.FullScope(),
 		settings: box.SettingsScope(), signatureAddress: saved.address}
 
 	failed := 0
@@ -236,7 +240,7 @@ func drive(ctx context.Context, o options, tr *transcript.Transcript, box mailbo
 	}
 
 	runSpikes(ctx, spikeRun{box: box, s: seed, sendTo: o.sendTo, account: e.account, draftSide: e.spikeE, full: e.full,
-		sent: e.sent, spikeH: o.spikeH, spikesDE: o.spikesDE}, tr)
+		sent: e.sent, spikeH: o.spikeH, spikeL: o.spikeL, spikesDE: o.spikesDE}, tr)
 
 	believed, srcErr := livecover.FromSource(driverDir, session.Options())
 	if srcErr != nil {

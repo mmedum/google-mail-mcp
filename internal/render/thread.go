@@ -242,9 +242,12 @@ func Drafts(l DraftList, o Options) Result {
 		}, nil)
 }
 
-// listing renders one page of a listing: what the page holds, then a
-// row per item while the row and the list of rows after it fit. head,
-// when set, adds lines after the page's own.
+// listing renders one page of a listing within the budget: what the
+// page holds, then a row per item. A page that fits is shown whole;
+// otherwise rows are shown while they and the line naming the rest fit.
+// head, when set, adds lines after the page's own. Omitted holds the ids
+// of the rows left out, each once and none a shown row carries, and the
+// line names the same ids and counts every row left out.
 func listing[T any](o Options, items []T, token string, one, many phrase,
 	id func(T) string, row func(w *writer, item T), head func(w *writer),
 ) Result {
@@ -256,34 +259,75 @@ func listing[T any](o Options, items []T, token string, one, many phrase,
 			head(w)
 		}
 		ids := make([]string, len(items))
+		rows := make([]fragment, len(items))
+		total := w.len()
 		for i, it := range items {
 			ids[i] = id(it)
-		}
-		for i, it := range items {
-			r := w.sub(func(s *writer) {
+			rows[i] = w.sub(func(s *writer) {
 				s.blank()
 				row(s, it)
 			})
-			rest := w.sub(func(s *writer) { s.rowsOmitted(ids[i+1:]) })
-			if w.len()+r.len()+rest.len() > res.Budget {
-				w.rowsOmitted(ids[i:])
+			total += rows[i].len()
+		}
+		if total <= res.Budget {
+			for _, r := range rows {
+				w.add(r)
+			}
+			return res
+		}
+		// The line naming the rest, at its longest: every row. Reserved
+		// once, not measured per row.
+		all := w.sub(func(s *writer) { s.rowsOmitted(len(items), one, many, distinct(ids)) })
+		for i := range items {
+			if w.len()+rows[i].len()+all.len() > res.Budget {
 				res.Truncated = true
-				res.Omitted = ids[i:]
+				res.Omitted = unseen(ids[:i], ids[i:])
+				w.rowsOmitted(len(items)-i, one, many, res.Omitted)
 				return res
 			}
-			w.add(r)
+			w.add(rows[i])
 		}
 		return res
 	})
 }
 
-// rowsOmitted names rows of this page that did not fit.
-func (w *writer) rowsOmitted(ids []string) {
-	if len(ids) == 0 {
+// distinct is ids without repeats, in order.
+func distinct(ids []string) []string { return unseen(nil, ids) }
+
+// unseen is rest without the ids shown already carries and without
+// repeats, in order: a listing of changes can name one message twice.
+func unseen(shown, rest []string) []string {
+	seen := make(map[string]bool, len(shown))
+	for _, id := range shown {
+		seen[id] = true
+	}
+	out := make([]string, 0, len(rest))
+	for _, id := range rest {
+		if !seen[id] {
+			seen[id] = true
+			out = append(out, id)
+		}
+	}
+	return out
+}
+
+// rowsOmitted counts the n rows of this page that did not fit and names
+// ids, their ids less any named already: of a change listing, several
+// rows can share a message.
+func (w *writer) rowsOmitted(n int, one, many phrase, ids []string) {
+	if n == 0 {
 		return
 	}
 	w.blank()
-	w.say("not shown (over the budget), from this page: %s", idList(ids))
+	switch {
+	case len(ids) == 0:
+		w.say("not shown (over the budget), %s from this page, on messages named above", plural(n, one, many))
+	case n > len(ids):
+		w.say("not shown (over the budget), %s from this page: %s, and %s on messages named already",
+			plural(n, one, many), idList(ids), num(n-len(ids)))
+	default:
+		w.say("not shown (over the budget), %s from this page: %s", plural(n, one, many), idList(ids))
+	}
 }
 
 // listingHead states what the page holds and whether the listing is

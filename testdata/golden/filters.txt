@@ -3,14 +3,15 @@ budget: 24000 characters
 complete: yes
 forwarding mail out of the account: 1 filter
 
+filter ANe1BmgFixture02
+  matches: search invoice; has an attachment
+  FORWARDS matching mail to backup@example.org
+
 filter ANe1BmgFixture01
   matches: from news@harbor-weekly.invalid
   adds labels: Newsletters
   removes labels: INBOX
-
-filter ANe1BmgFixture02
-  matches: search invoice; has an attachment
-  FORWARDS matching mail to backup@example.org
+  never sends matching mail to spam
 
 filter ANe1BmgFixture03
   matches: subject receipt; not from:winner@prizes.invalid; size smaller 1.0 MB

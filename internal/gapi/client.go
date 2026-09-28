@@ -26,6 +26,7 @@ import (
 	"net/url"
 	"strconv"
 	"strings"
+	"sync"
 	"sync/atomic"
 	"time"
 
@@ -91,6 +92,9 @@ type Options struct {
 	UserAgent string
 	// Sleep waits between attempts; tests stub it.
 	Sleep func(ctx context.Context, d time.Duration) error
+	// Now is the clock filter writes are paced by; tests stub it with
+	// Sleep. nil is time.Now.
+	Now func() time.Time
 }
 
 // Client calls the Gmail API.
@@ -108,6 +112,13 @@ type Client struct {
 	// idleTimeout bounds each wait for progress instead.
 	streamHTTP  *http.Client
 	idleTimeout time.Duration
+	// settings is held by one settings change at a time (LockSettings).
+	settings chan struct{}
+	// now is the clock; lastFilterWrite is when the last filter write's
+	// attempt finished, which the next one waits filterPacing after.
+	now             func() time.Time
+	paceMu          sync.Mutex
+	lastFilterWrite time.Time
 }
 
 // googleOrigins are Google's own API origins an access token may go to,
@@ -128,6 +139,11 @@ func New(o Options) *Client {
 		log:        o.Logger,
 		userAgent:  o.UserAgent,
 		sleep:      o.Sleep,
+		settings:   make(chan struct{}, 1),
+		now:        o.Now,
+	}
+	if c.now == nil {
+		c.now = time.Now
 	}
 	if c.base == "" {
 		c.base = DefaultBaseURL
@@ -338,6 +354,108 @@ func (c *Client) policyFor(call Call) (policy, error) {
 	}, nil
 }
 
+// LockSettings waits until no other settings change through this client
+// is in progress, or ctx ends, and returns the unlock. Gmail refuses a
+// filter write that overlaps another on the same account (§18 row 54);
+// the other settings writes are held too, and a change reads what it
+// replaces first, so the whole read and write is held. Filter writes are
+// also paced, whether or not the lock is held: see pace.
+func (c *Client) LockSettings(ctx context.Context) (unlock func(), err error) {
+	select {
+	case c.settings <- struct{}{}:
+		return func() { <-c.settings }, nil
+	case <-ctx.Done():
+		return nil, Wrap(ClassUnavailable, ctx.Err(), "gave up waiting for another settings change to finish")
+	}
+}
+
+// filterPacing is how long a filter write waits after the last one
+// finished. Gmail refused filter writes sent back to back and took the
+// same writes 5 seconds later; no shorter wait was tried (§18 row 54).
+const filterPacing = 5 * time.Second
+
+// pace waits, for a filter write, until filterPacing has passed since
+// the last one, or ctx ends. The slot is reserved under the lock before
+// the wait, so two writers that do not hold the settings lock still go
+// filterPacing apart.
+func (c *Client) pace(ctx context.Context, call Call) error {
+	if !filterWriteIDs[call.ID] {
+		return nil
+	}
+	c.paceMu.Lock()
+	now := c.now()
+	at := c.lastFilterWrite.Add(filterPacing)
+	if at.Before(now) {
+		at = now
+	}
+	c.lastFilterWrite = at
+	c.paceMu.Unlock()
+	if wait := at.Sub(now); wait > 0 {
+		return c.sleep(ctx, wait)
+	}
+	return nil
+}
+
+// paced records that a filter write's attempt finished, so the next one
+// waits filterPacing from then; a slot reserved later is kept.
+func (c *Client) paced(call Call) {
+	if !filterWriteIDs[call.ID] {
+		return
+	}
+	c.paceMu.Lock()
+	if now := c.now(); now.After(c.lastFilterWrite) {
+		c.lastFilterWrite = now
+	}
+	c.paceMu.Unlock()
+}
+
+// decodeInto decodes a successful answer into out, which may be nil.
+func decodeInto(call Call, body []byte, out any) error {
+	if out == nil || len(body) == 0 {
+		return nil
+	}
+	if err := json.Unmarshal(body, out); err != nil {
+		return Wrap(ClassUnavailable, err, "Google's answer to %s was not the JSON this server expected", call.ID)
+	}
+	return nil
+}
+
+// attempts is what one call's attempts so far bound the next by.
+type attempts struct {
+	// repeatedOnce is set once a failure that allows one repeat had it;
+	// mayHaveActed once an attempt of a write may have taken effect.
+	repeatedOnce, mayHaveActed bool
+}
+
+// end is the error v ends the call with, or nil when the call goes on
+// as v says.
+func (a *attempts) end(call Call, v verdict) error {
+	switch {
+	case v.once && a.mayHaveActed:
+		// An earlier attempt may have done what this refusal says was not
+		// done: say so rather than report the refusal alone.
+		return Wrap(ClassAmbiguousOutcome, v.err,
+			"%s: an earlier attempt may have taken effect before Gmail refused the repeat. Read before doing it again. %s",
+			call.ID, v.err.Message)
+	case v.once && a.repeatedOnce:
+		return v.err
+	}
+	a.repeatedOnce = a.repeatedOnce || v.once
+	a.mayHaveActed = a.mayHaveActed || v.mayHaveActed
+	return nil
+}
+
+// stopped is err for a call that stopped before its next attempt, which
+// is an ambiguous outcome when an earlier attempt may have acted.
+func (a *attempts) stopped(call Call, err *Error) error {
+	if !a.mayHaveActed {
+		return err
+	}
+	return Wrap(ClassAmbiguousOutcome, err,
+		"%s: an earlier attempt may have taken effect, and the call stopped before it was repeated. Read before doing it again. %s",
+		call.ID, err.Message)
+}
+
 // Wait pauses for d, or until ctx ends, with the same sleep the client
 // backs off with, so a test that stubs one stubs both.
 func (c *Client) Wait(ctx context.Context, d time.Duration) error { return c.sleep(ctx, d) }
@@ -413,33 +531,38 @@ func (c *Client) do(ctx context.Context, call Call, out any, consume func(io.Rea
 	}
 
 	var last verdict
+	var past attempts
 	for attempt := 1; attempt <= p.tries; attempt++ {
 		if attempt > 1 {
 			if err := c.sleep(ctx, backoff(attempt-1, last.after)); err != nil {
-				return last.err
+				return past.stopped(call, last.err)
 			}
 		}
+		if err := c.pace(ctx, call); err != nil {
+			return past.stopped(call, Wrap(ClassUnavailable, err, "%s was not sent: the call was canceled while waiting its turn", call.ID))
+		}
 		if err := c.budget.WaitN(ctx, cost); err != nil {
-			return Wrap(ClassUnavailable, err, "%s was not sent: the call was canceled while waiting for quota", call.ID)
+			return past.stopped(call, Wrap(ClassUnavailable, err, "%s was not sent: the call was canceled while waiting for quota", call.ID))
 		}
 		charge(ctx, cost)
 		start := time.Now()
 		body, status, header, sendErr := c.attempt(ctx, call.Method, endpoint, payload, contentType, token,
 			call.Media != nil, consume)
+		c.paced(call)
 		v := decide(ctx, call, p, status, header, body, sendErr)
 		c.log.Debug("gmail_request", "id", call.ID, "attempt", attempt, "status", status,
 			"ms", time.Since(start).Milliseconds(), "units", cost, "outcome", v.outcome())
+		earlier := past
+		if err := past.end(call, v); err != nil {
+			return err
+		}
 		if v.err == nil {
-			if out == nil || len(body) == 0 {
-				return nil
-			}
-			if err := json.Unmarshal(body, out); err != nil {
-				return Wrap(ClassUnavailable, err, "Google's answer to %s was not the JSON this server expected", call.ID)
-			}
-			return nil
+			return decodeInto(call, body, out)
 		}
 		if !v.retry || attempt == p.tries {
-			return v.err
+			// The last attempt's own failure does not undo an earlier one
+			// that may have acted.
+			return earlier.stopped(call, v.err)
 		}
 		last = v
 	}
@@ -613,6 +736,11 @@ type verdict struct {
 	after time.Duration
 	// retry says another attempt may be made.
 	retry bool
+	// once says the failure allows one repeat at most.
+	once bool
+	// mayHaveActed says the attempt may have taken effect: a write that
+	// failed after it was sent, and may be repeated.
+	mayHaveActed bool
 }
 
 func (v verdict) outcome() string {
@@ -645,6 +773,9 @@ type failure struct {
 	// message. Empty for a failure that will not clear.
 	advice, said string
 	after        time.Duration
+	// once allows one repeat at most, for a refusal whose cause is not
+	// known.
+	once bool
 }
 
 // decide classifies one attempt and says whether it may be repeated.
@@ -655,12 +786,18 @@ func decide(ctx context.Context, call Call, p policy, status int, header http.He
 		// Already judged by the consumer of a stream, which knows whether
 		// its own failure can clear.
 		return verdict{err: classified}
-	case sendErr != nil:
-		return p.settle(classifyTransport(ctx, call, p, sendErr))
-	case status >= 200 && status < 300:
+	case sendErr == nil && status >= 200 && status < 300:
 		return verdict{}
 	}
-	return p.settle(classifyStatus(call, p, status, header, body))
+	var f failure
+	if sendErr != nil {
+		f = classifyTransport(ctx, call, p, sendErr)
+	} else {
+		f = classifyStatus(call, p, status, header, body)
+	}
+	v := p.settle(f)
+	v.mayHaveActed = isWrite(call) && f.repeat == again
+	return v
 }
 
 // settle turns a failure into a verdict under the policy. It is the one
@@ -668,7 +805,7 @@ func decide(ctx context.Context, call Call, p policy, status int, header http.He
 // not waited for, and the message says how long Google asked for
 // instead of the usual advice.
 func (p policy) settle(f failure) verdict {
-	v := verdict{err: f.err, after: f.after,
+	v := verdict{err: f.err, after: f.after, once: f.once,
 		retry: f.repeat == again || (f.repeat == ifTurnedAway && p.whenTurnedAway)}
 	if f.advice == "" {
 		return v
@@ -742,6 +879,16 @@ func classifyStatus(call Call, p policy, status int, header http.Header, body []
 		return final(ClassStale, "this changed since it was read; read it again and retry. Google said: %s", detail)
 	case status == http.StatusServiceUnavailable:
 		return transient(ifTurnedAway, "retry shortly", ClassUnavailable, "Gmail is not serving right now (%s)", call.ID)
+	case status == http.StatusBadRequest && filterWriteIDs[call.ID] && isGenericPrecondition(env):
+		// Gmail refused filter writes sent close together this way and
+		// took them seconds later (§18 row 54), but the refusal does not
+		// say why, and a limit or a policy may answer the same. So it is
+		// repeated once, after the pacing wait, and never called an
+		// overlap.
+		f := transient(ifTurnedAway, "Gmail has refused filter writes sent close together this way; if it persists, "+
+			"the cause is something else", ClassUnavailable, "Gmail refused %s without saying why", call.ID)
+		f.once = true
+		return f
 	case status >= 500 && !p.whenAmbiguous:
 		return final(ClassAmbiguousOutcome, ambiguous+" Google said: %s", call.ID, detail)
 	case status >= 500:
@@ -790,6 +937,15 @@ func matches(reason string, want []string) bool {
 		}
 	}
 	return false
+}
+
+// isGenericPrecondition is Google's generic refusal, reason
+// failedPrecondition, "Precondition check failed.", which Gmail gave
+// filter writes sent close together (§18 row 54). Another
+// failedPrecondition, such as "A draft cannot be labeled.", is not it.
+func isGenericPrecondition(env envelope) bool {
+	return matches(env.reason, []string{"failedPrecondition"}) &&
+		strings.Contains(strings.ToLower(env.message), "precondition check failed")
 }
 
 func isMissingScope(env envelope) bool {

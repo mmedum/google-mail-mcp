@@ -48,6 +48,22 @@ func readOf(r render.Result) Rendered {
 		NextCursor: r.NextCursor, NextOffset: r.NextOffset, Omitted: omitted}
 }
 
+// What omitted_ids means for each listing (§4.8). The structured rows
+// carry every item in full whatever the text shows.
+const (
+	omittedThreads  = "threads the text leaves out for its budget; each is still a full row in threads"
+	omittedMessages = "messages the text leaves out for its budget; each is still a full row in messages"
+	omittedDrafts   = "drafts the text leaves out for its budget; each is still a full row in drafts"
+	omittedChanges  = "messages whose changes the text leaves out for its budget, each once and none a shown change " +
+		"names; every change is still a full row in changes"
+	omittedFilters = "filters the text leaves out for its budget; every filter is still a full row in filters"
+)
+
+// fullRowsNote ends the description of a listing whose structured half
+// carries every row in full, which the text's budget does not bound.
+const fullRowsNote = " The structured result carries every row in full whatever the text shows, so a client that " +
+	"limits the size of one result should ask for a smaller max, such as 25."
+
 // GetProfileIn takes nothing.
 type GetProfileIn struct{}
 
@@ -230,11 +246,11 @@ func registerRead(s *mcp.Server, d Deps) {
 				HistoryID: p.HistoryID, text: render.Profile(p)}, nil
 		})
 
-	register(s, d, Spec{Name: "search_threads", Kind: Read, Description: "Find conversations with a Gmail search. " +
+	register(s, d, Spec{Name: "search_threads", Kind: Read, OmittedIDs: omittedThreads, Description: "Find conversations with a Gmail search. " +
 		"The usual starting point: threads are what a person reads. Each row gives the thread id, subject, participants, " +
 		"latest date, labels and Gmail's snippet; read one with get_thread. Use search_messages instead when single " +
 		"messages matter, e.g. which one carries an attachment. Costs about 40 units per result, so the default page is 20." +
-		untrustedNote},
+		fullRowsNote + untrustedNote},
 		func(ctx context.Context, in SearchIn) (ThreadsOut, error) {
 			search, o, err := in.search()
 			if err != nil {
@@ -248,9 +264,9 @@ func registerRead(s *mcp.Server, d Deps) {
 				Page: page(list.NextPageToken, list.ResultSizeEstimate), Rendered: readOf(render.Threads(list, o))}, nil
 		})
 
-	register(s, d, Spec{Name: "search_messages", Kind: Read, Description: "Find single messages with a Gmail search. " +
+	register(s, d, Spec{Name: "search_messages", Kind: Read, OmittedIDs: omittedMessages, Description: "Find single messages with a Gmail search. " +
 		"Prefer search_threads to find a conversation; use this when individual messages matter — their own labels, " +
-		"attachments or dates. Read one with get_message. Costs about 20 units per result." + untrustedNote},
+		"attachments or dates. Read one with get_message. Costs about 20 units per result." + fullRowsNote + untrustedNote},
 		func(ctx context.Context, in SearchIn) (MessagesOut, error) {
 			search, o, err := in.search()
 			if err != nil {
@@ -312,8 +328,8 @@ func registerRead(s *mcp.Server, d Deps) {
 			return LabelsOut{Labels: mapSlice(ls, label), text: render.Labels(ls)}, nil
 		})
 
-	register(s, d, Spec{Name: "list_drafts", Kind: Read, Description: "Unsent drafts, newest first, each with its " +
-		"draft_id and the headers of the message inside it. Read one with get_draft." + untrustedNote},
+	register(s, d, Spec{Name: "list_drafts", Kind: Read, OmittedIDs: omittedDrafts, Description: "Unsent drafts, newest first, each with its " +
+		"draft_id and the headers of the message inside it. Read one with get_draft." + fullRowsNote + untrustedNote},
 		func(ctx context.Context, in ListDraftsIn) (DraftsOut, error) {
 			list, err := svc.Drafts(ctx, in.Q, in.Max, in.PageToken)
 			if err != nil {
