@@ -552,6 +552,7 @@ func (c *Client) do(ctx context.Context, call Call, out any, consume func(io.Rea
 		v := decide(ctx, call, p, status, header, body, sendErr)
 		c.log.Debug("gmail_request", "id", call.ID, "attempt", attempt, "status", status,
 			"ms", time.Since(start).Milliseconds(), "units", cost, "outcome", v.outcome())
+		earlier := past
 		if err := past.end(call, v); err != nil {
 			return err
 		}
@@ -559,7 +560,9 @@ func (c *Client) do(ctx context.Context, call Call, out any, consume func(io.Rea
 			return decodeInto(call, body, out)
 		}
 		if !v.retry || attempt == p.tries {
-			return v.err
+			// The last attempt's own failure does not undo an earlier one
+			// that may have acted.
+			return earlier.stopped(call, v.err)
 		}
 		last = v
 	}
