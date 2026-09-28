@@ -163,6 +163,10 @@ type Spec struct {
 	// OmittedIDs, when set, is what omitted_ids means for this tool, in
 	// place of Rendered's general description.
 	OmittedIDs string
+	// AskUnits is what asking the person adds to a tool that takes
+	// confirm, starting with the number of units: the retry repeats the
+	// reads before the write (§4.13). Required for such a tool.
+	AskUnits string
 }
 
 // Handler is a tool's work: validated input in, a rendered result or a
@@ -175,8 +179,9 @@ func register[In any, Out Renderer](s *mcp.Server, d Deps, sp Spec, h Handler[In
 	if !sp.Kind.allowed(d.Config) {
 		return
 	}
-	if takesConfirm[In]() && !sp.Kind.asksPerson() {
-		panic("tools: " + sp.Name + " takes confirm, and its kind " + sp.Kind.String() + " does not ask the person")
+	if takesConfirm[In]() && (!sp.Kind.asksPerson() || sp.AskUnits == "") {
+		panic("tools: " + sp.Name + " takes confirm, and its kind " + sp.Kind.String() + " does not ask the person, " +
+			"or its Spec does not say what asking costs")
 	}
 	if d.registered != nil {
 		*d.registered = append(*d.registered, sp.Name)
@@ -193,7 +198,7 @@ func register[In any, Out Renderer](s *mcp.Server, d Deps, sp Spec, h Handler[In
 	}
 	description := sp.Description
 	if takesConfirm[In]() {
-		description += personNote
+		description += personNote + " Asking repeats the reads before the write: " + sp.AskUnits + "."
 	}
 	tool := &mcp.Tool{
 		Name:         sp.Name,
@@ -260,8 +265,11 @@ func wrap[In any, Out Renderer](h Handler[In, Out], dryRun int, name string, a *
 		out, err := h(ctx, in)
 		if p != nil && p.asked != nil {
 			// The service stopped before its write; the question goes out.
-			markAsked(ctx)
+			setStage(ctx, stageWaiting)
 			return p.inputRequest(), zero, nil
+		}
+		if err == nil && stageOf(ctx) == stageWriting {
+			setStage(ctx, stageWritten)
 		}
 		if err != nil {
 			return nil, zero, fail(err)

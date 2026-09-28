@@ -36,7 +36,7 @@ type Session struct {
 	options map[string][]string
 	// onElicit answers the server's questions to the person; when set,
 	// Initialize declares form elicitation.
-	onElicit func(message string) (action string, confirm bool)
+	onElicit func(message string) (action string)
 
 	mu     sync.Mutex
 	stderr []string
@@ -150,20 +150,25 @@ func (s *Session) request(method string, params any) (map[string]any, error) {
 		method, strings.Join(s.StderrTail(20), "\n"))
 }
 
-// answer replies to one request the server sent: elicitation/create
-// through onElicit, anything else with method-not-found.
+// answer replies to one request the server sent: ping with an empty
+// result, elicitation/create through onElicit, anything else with
+// method-not-found.
 func (s *Session) answer(id any, method string, params any) error {
 	frame := map[string]any{"jsonrpc": "2.0", "id": id}
-	if method == "elicitation/create" && s.onElicit != nil {
+	switch {
+	case method == "ping":
+		frame["result"] = map[string]any{}
+	case method == "elicitation/create" && s.onElicit != nil:
 		p, _ := params.(map[string]any)
 		message, _ := p["message"].(string)
-		action, confirm := s.onElicit(message)
-		result := map[string]any{"action": action}
-		if action == "accept" {
-			result["content"] = map[string]any{"confirm": confirm}
+		result := map[string]any{"action": s.onElicit(message)}
+		if result["action"] == "accept" {
+			// The question's form has no fields (docs/architecture.md
+			// §4.13): the accept is the answer.
+			result["content"] = map[string]any{}
 		}
 		frame["result"] = result
-	} else {
+	default:
 		frame["error"] = map[string]any{"code": -32601, "message": "this client does not take " + method}
 	}
 	raw, err := json.Marshal(frame)
@@ -264,10 +269,9 @@ func (s *Session) OnCall(f func(tool string, args map[string]any)) { s.onCall = 
 
 // OnElicit makes the session a client that can ask the person: it
 // declares form elicitation at Initialize, so it is set before, and f
-// answers each question the server puts, with an action and, on accept,
-// whether the box was ticked. The question's form is always one boolean
-// named confirm (docs/architecture.md §4.13).
-func (s *Session) OnElicit(f func(message string) (action string, confirm bool)) { s.onElicit = f }
+// answers each question the server puts with an action: accept,
+// decline or cancel.
+func (s *Session) OnElicit(f func(message string) (action string)) { s.onElicit = f }
 
 // Options is the tool surface the server published at initialize: each
 // registered tool and the option names its schema declares.

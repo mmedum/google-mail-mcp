@@ -89,8 +89,8 @@ when the filter trashes, `set_vacation` when it turns the reply on, and
 supports elicitation, the server also asks you, through the client,
 before each of these writes. The question names the tool, what it
 touches and what cannot be undone. Text from your mailbox in it stands
-in double quotes. Nothing is written unless you tick the box and
-accept. Declining, dismissing, a timeout, or an answer the client gives
+in double quotes. Accepting the question is the confirmation; there is
+no box to tick. Nothing is written unless you accept. Declining, dismissing, a timeout, or an answer the client gives
 without showing you anything all leave the call `[blocked]`.
 
 So a client that supports elicitation but runs with nobody watching,

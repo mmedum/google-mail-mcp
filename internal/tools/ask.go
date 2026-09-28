@@ -15,7 +15,6 @@ import (
 	"sync/atomic"
 	"time"
 
-	"github.com/google/jsonschema-go/jsonschema"
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 
 	"github.com/mmedum/google-mail-mcp/internal/gapi"
@@ -24,20 +23,36 @@ import (
 
 // Asking the person (§4.13). A write that takes confirm is put to the
 // person through the client, as an MCP form elicitation, when the client
-// declares it can ask. The question goes out the multi-round-trip way:
-// the first call does every read, stops before the write and returns the
+// declares it can ask. The form has no fields: accepting it is the
+// confirmation. The question goes out the multi-round-trip way: the
+// first call does every read, stops before the write and returns the
 // question with a signed requestState; the call comes back with the
-// answer and that state, reads again, and writes only on an accept that
-// ticked the box. Clients on protocols before 2026-07-28 get the same
-// through the SDK, which asks with elicitation/create and calls the
-// handler again in the same request.
+// answer and that state, reads again, and writes only on an accept.
+// Clients on protocols before 2026-07-28 get the same through the SDK,
+// which asks with elicitation/create and calls the handler again within
+// the same request.
 
-// askTTL is how long a question may wait for its answer. An answer
-// after it is refused, and the call is made again to ask again.
+// askTTL is how long a question may wait for its answer when its state
+// travels through the client, from 2026-07-28. An answer after it is
+// refused, and the call is made again to ask again.
 var askTTL = 5 * time.Minute
 
-// askKey names the one input request and the one field it asks for.
+// inProcessTTL bounds a state that never leaves the process, before
+// 2026-07-28: the request's own context bounds the wait, and this only
+// how long its nonce is remembered.
+const inProcessTTL = 24 * time.Hour
+
+// statelessProtocol is the first revision whose client carries the
+// requestState: the SDK's own test for asking the multi-round-trip way.
+const statelessProtocol = "2026-07-28"
+
+// askKey names the one input request.
 const askKey = "confirm"
+
+// emptyForm is the question's form: no fields, so the client's accept
+// is the answer. The specification types properties as an open map with
+// no minimum (§18 row 64).
+var emptyForm = json.RawMessage(`{"type":"object","properties":{}}`)
 
 // asking signs and redeems the requestState of every question this
 // process asks. The key is drawn per process, so a state is good only
@@ -58,7 +73,8 @@ func newAsking(lg *slog.Logger) *asking {
 
 // askState is what a requestState carries. It binds the answer to the
 // tool, to the call's arguments — the ids it names and, for a send, the
-// draft's message_id witness among them — and to the question shown.
+// draft's message_id witness among them — and to what the question
+// binds (render.Question.Bind).
 type askState struct {
 	Tool     string `json:"t"`
 	Args     string `json:"a"`
@@ -120,10 +136,15 @@ func (a *asking) redeem(state, tool, args string, now time.Time) (askState, erro
 type person struct {
 	a       *asking
 	tool    string
-	args    string
+	in      any
 	canAsk  bool
 	require bool
+	// travels is whether the requestState goes through the client,
+	// which is when askTTL applies.
+	travels bool
 	now     time.Time
+	// argSum is the arguments' hash, computed when first needed.
+	argSum string
 
 	// answer is set when the call came back with a question this
 	// process asked, verified.
@@ -134,8 +155,7 @@ type person struct {
 
 type answer struct {
 	question string
-	action   string // accept, decline, cancel, or none
-	ticked   bool
+	action   string // accept, decline, cancel, other, or none
 	spent    bool
 }
 
@@ -143,18 +163,31 @@ type answer struct {
 // out. It becomes the input request and never reaches a caller.
 var errAsking = gapi.Errf(gapi.ClassBlocked, "the person has not answered yet; nothing was written")
 
+// args is the hash of the call's arguments, as the handler decoded them.
+func (p *person) args() string {
+	if p.argSum == "" {
+		raw, _ := json.Marshal(p.in)
+		sum := sha256.Sum256(raw)
+		p.argSum = hex.EncodeToString(sum[:])
+	}
+	return p.argSum
+}
+
 // personFor sets up one call. A call that carries answers must also
 // carry the requestState they belong to, which must be one this process
 // issued for this tool and these arguments, unexpired and unspent: a
 // client could otherwise answer a question before it was asked.
 func (a *asking) personFor(req *mcp.CallToolRequest, tool string, in any, require bool) (*person, error) {
-	raw, _ := json.Marshal(in)
-	sum := sha256.Sum256(raw)
-	p := &person{a: a, tool: tool, args: hex.EncodeToString(sum[:]), require: require, now: time.Now()}
+	p := &person{a: a, tool: tool, in: in, require: require, now: time.Now(), travels: true}
 	if c := req.ClientCapabilities(); c != nil && c.Elicitation != nil {
 		// Form is what an empty elicitation capability declares; only a
 		// client that declares URL alone cannot show a form.
 		p.canAsk = c.Elicitation.Form != nil || c.Elicitation.URL == nil
+	}
+	if req.Session != nil {
+		if ip := req.Session.InitializeParams(); ip != nil {
+			p.travels = ip.ProtocolVersion >= statelessProtocol
+		}
 	}
 	var state string
 	var responses mcp.InputResponseMap
@@ -168,7 +201,7 @@ func (a *asking) personFor(req *mcp.CallToolRequest, tool string, in any, requir
 		return nil, gapi.Errf(gapi.ClassBlocked,
 			"the call came with answers to a question this server has not asked; nothing was written. Call it again without them")
 	}
-	st, err := a.redeem(state, tool, p.args, p.now)
+	st, err := a.redeem(state, tool, p.args(), p.now)
 	if err != nil {
 		return nil, err
 	}
@@ -180,15 +213,13 @@ func (a *asking) personFor(req *mcp.CallToolRequest, tool string, in any, requir
 		default:
 			p.answer.action = "other"
 		}
-		ticked, _ := r.Content[askKey].(bool)
-		p.answer.ticked = r.Action == "accept" && ticked
 	}
-	a.lg.Info("person_answered", "tool", tool, "answer", p.answer.action, "confirmed", p.answer.ticked)
+	a.lg.Info("person_answered", "tool", tool, "answer", p.answer.action)
 	return p, nil
 }
 
 // Ask implements service.Asker.
-func (p *person) Ask(_ context.Context, q render.Question) error {
+func (p *person) Ask(ctx context.Context, q render.Question) error {
 	if ans := p.answer; ans != nil {
 		switch {
 		case ans.spent:
@@ -197,12 +228,15 @@ func (p *person) Ask(_ context.Context, q render.Question) error {
 			ans.spent = true
 			return gapi.Errf(gapi.ClassBlocked, "what %s would do changed after the person was asked, so what they saw is not "+
 				"what would be written; nothing was written. Call it again to ask again", p.tool)
-		case !ans.ticked:
+		case ans.action != "accept":
 			ans.spent = true
-			return gapi.Errf(gapi.ClassBlocked, "%s was not confirmed by the person: the client answered %s%s. Nothing was "+
-				"written. Do not call it again unless the person asks for it", p.tool, ans.action, unticked(ans.action))
+			return gapi.Errf(gapi.ClassBlocked, "%s was not confirmed by the person: the client answered %s. Nothing was "+
+				"written. Do not call it again unless the person asks for it", p.tool, ans.action)
 		}
 		ans.spent = true
+		// From here the write may happen: a failure to reply is no longer
+		// "nothing was written".
+		setStage(ctx, stageWriting)
 		return nil
 	}
 	if !p.canAsk {
@@ -216,74 +250,111 @@ func (p *person) Ask(_ context.Context, q render.Question) error {
 	return errAsking
 }
 
-// unticked says why an accept did not count.
-func unticked(action string) string {
-	if action == "accept" {
-		return " without ticking the box"
-	}
-	return ""
-}
-
 // inputRequest is the question as the result that asks it.
 func (p *person) inputRequest() *mcp.CallToolResult {
 	nonce := make([]byte, 16)
 	_, _ = rand.Read(nonce)
-	st := askState{Tool: p.tool, Args: p.args, Question: questionSum(*p.asked), Nonce: hex.EncodeToString(nonce),
-		Expires: p.now.Add(askTTL).Unix()}
+	ttl := askTTL
+	if !p.travels {
+		ttl = inProcessTTL
+	}
+	st := askState{Tool: p.tool, Args: p.args(), Question: questionSum(*p.asked), Nonce: hex.EncodeToString(nonce),
+		Expires: p.now.Add(ttl).Unix()}
 	p.a.lg.Info("person_asked", "tool", p.tool)
 	return &mcp.CallToolResult{
 		InputRequests: mcp.InputRequestMap{askKey: &mcp.ElicitParams{
-			Mode:    "form",
-			Message: p.asked.Text,
-			RequestedSchema: &jsonschema.Schema{
-				Type: "object",
-				Properties: map[string]*jsonschema.Schema{askKey: {
-					Type: "boolean", Title: p.asked.Title, Default: json.RawMessage("false"),
-				}},
-				Required: []string{askKey},
-			},
+			Mode: "form", Message: p.asked.Text, RequestedSchema: emptyForm,
 		}},
 		RequestState: p.a.sign(st),
 	}
 }
 
-// questionSum binds a state to the question's words.
+// questionSum binds a state to what the question binds.
 func questionSum(q render.Question) string {
-	sum := sha256.Sum256([]byte(q.Title + "\x00" + q.Text))
+	sum := sha256.Sum256([]byte(q.Bind))
 	return hex.EncodeToString(sum[:])
 }
 
-type askedKey struct{}
+// The stages of one tools/call that asked, for AskFailures: what a
+// failure to reply means depends on how far the call got.
+const (
+	stageNone    int32 = iota
+	stageWaiting       // the question is out; nothing is written before the answer
+	stageWriting       // the answer confirmed the write, which may have happened
+	stageWritten       // the handler returned after writing
+)
 
-// markAsked records on the request's context that a question went out.
-func markAsked(ctx context.Context) {
-	if f, ok := ctx.Value(askedKey{}).(*atomic.Bool); ok {
-		f.Store(true)
+type stageKey struct{}
+
+func setStage(ctx context.Context, s int32) {
+	if v, ok := ctx.Value(stageKey{}).(*atomic.Int32); ok {
+		v.Store(s)
 	}
 }
 
-// AskFailures is receiving middleware that makes a question the client
-// failed to answer a [blocked] tool result. On protocols before
-// 2026-07-28 the SDK asks with elicitation/create itself, and a client
-// that answers with an error, or an answer that does not fit the form,
-// fails the whole tools/call as a JSON-RPC error; the call wrote nothing,
-// since its write waits for the answer, and the caller is told so in the
-// vocabulary of §6.5. The client's error text is not repeated.
+func stageOf(ctx context.Context) int32 {
+	if v, ok := ctx.Value(stageKey{}).(*atomic.Int32); ok {
+		return v.Load()
+	}
+	return stageNone
+}
+
+// AskFailures is receiving middleware for a tools/call that asked the
+// person and then failed as a JSON-RPC error rather than a tool result.
+// On protocols before 2026-07-28 the SDK asks with elicitation/create
+// itself, and a client that answers with an error, or an answer that
+// does not fit the form, fails the whole call that way; that call wrote
+// nothing, since its write waits for the answer, and it becomes
+// [blocked]. A failure after the answer confirmed the write — the reply
+// could not be built or sent, the request was canceled — may follow a
+// write, so it becomes [ambiguous_outcome] and is never "nothing was
+// written" (§4.3). The client's error text is not repeated.
 func AskFailures() mcp.Middleware {
 	return func(next mcp.MethodHandler) mcp.MethodHandler {
 		return func(ctx context.Context, method string, req mcp.Request) (mcp.Result, error) {
-			if _, ok := req.(*mcp.CallToolRequest); !ok {
+			call, ok := req.(*mcp.CallToolRequest)
+			if !ok {
 				return next(ctx, method, req)
 			}
-			asked := &atomic.Bool{}
-			res, err := next(context.WithValue(ctx, askedKey{}, asked), method, req)
-			if err == nil || !asked.Load() {
+			stage := &atomic.Int32{}
+			res, err := next(context.WithValue(ctx, stageKey{}, stage), method, req)
+			if err == nil || stage.Load() == stageNone {
 				return res, err
 			}
+			name := "the call"
+			if call.Params != nil && toolName(call.Params.Name) {
+				name = call.Params.Name
+			}
+			var msg string
+			switch stage.Load() {
+			case stageWaiting:
+				msg = "[" + string(gapi.ClassBlocked) + "] " + name + " was not confirmed by the person: the client " +
+					"could not put the question to them, or its answer could not be read. Nothing was written"
+			case stageWritten:
+				msg = "[" + string(gapi.ClassAmbiguousOutcome) + "] the person confirmed " + name + ", and it was written " +
+					"(verdict: written), but its result could not be returned. Do not make the call again"
+			default:
+				msg = "[" + string(gapi.ClassAmbiguousOutcome) + "] the person confirmed " + name + ", and the server went " +
+					"on to write, but the call ended before its result (verdict: unknown). Do not make the call again; " +
+					"read the mailbox to see whether it took effect"
+			}
 			out := &mcp.CallToolResult{}
-			out.SetError(errors.New("[" + string(gapi.ClassBlocked) + "] the call was not confirmed by the person: the " +
-				"client could not put the question to them, or its answer could not be read. Nothing was written"))
+			out.SetError(errors.New(msg))
 			return out, nil
 		}
 	}
+}
+
+// toolName is true for a name shaped like this server's tools, which a
+// message may repeat; anything else came from the client.
+func toolName(s string) bool {
+	if s == "" || len(s) > 64 {
+		return false
+	}
+	for _, r := range s {
+		if (r < 'a' || r > 'z') && (r < '0' || r > '9') && r != '_' {
+			return false
+		}
+	}
+	return true
 }

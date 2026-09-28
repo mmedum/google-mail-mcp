@@ -227,24 +227,38 @@ func oneLine(s string, max int) string {
 
 // quoted is text from the mailbox or from a call's arguments, shown in a
 // question put to the person (§4.13), where no block can go: a client
-// draws the question as plain text in a dialog. It is made one line,
-// its double quotes become single ones so it cannot close the quote it
-// sits in, a URL scheme and a leading "www." are broken so the client
-// draws no link, and it is cut at max runes. The quotes mark it as
-// quoted material, never the server's own words.
+// draws the question as plain text in a dialog. It is made one line;
+// every double or typographic quote mark becomes a plain single one, so
+// it cannot close the quote it sits in or seem to; and a URL scheme, a
+// mailto:, a leading "www." and a bare domain followed by a path are
+// broken so the client draws no link. It is cut at max runes. The quotes
+// mark it as quoted material, never the server's own words.
 func quoted(s string, max int) part {
 	s = strings.Join(strings.Fields(oneLine(s, max)), " ")
-	s = strings.ReplaceAll(s, `"`, "'")
+	s = quoteMarks.Replace(s)
 	s = linkShape.ReplaceAllString(s, "$1[:]//")
+	s = mailtoShape.ReplaceAllString(s, "${1}[:]")
 	s = wwwShape.ReplaceAllString(s, "${1}[.]")
+	s = pathShape.ReplaceAllString(s, "${1}[.]${2}/")
 	return part{`"` + s + `"`}
 }
 
 var (
+	// quoteMarks folds every quotation mark a reader could take for the
+	// question's own to a plain single quote.
+	quoteMarks = strings.NewReplacer(`"`, "'", "\u2018", "'", "\u2019", "'", "\u201a", "'", "\u201b", "'",
+		"\u201c", "'", "\u201d", "'", "\u201e", "'", "\u201f", "'", "\u2032", "'", "\u2033", "'",
+		"\u00ab", "'", "\u00bb", "'", "\u2039", "'", "\u203a", "'", "\u301d", "'", "\u301e", "'",
+		"\u301f", "'", "\uff02", "'", "\uff07", "'")
 	// linkShape is a URL scheme followed by //, as a client links it.
 	linkShape = regexp.MustCompile(`(?i)\b([a-z][a-z0-9+.-]*)://`)
+	// mailtoShape is a mail link without //.
+	mailtoShape = regexp.MustCompile(`(?i)\b(mailto):`)
 	// wwwShape is a host a client links without a scheme.
 	wwwShape = regexp.MustCompile(`(?i)\b(www)\.`)
+	// pathShape is a bare domain followed by a path, x.example/..., which
+	// a client links too; its last dot is broken.
+	pathShape = regexp.MustCompile(`(?i)\b([a-z0-9-]+(?:\.[a-z0-9-]+)*)\.([a-z]{2,63})/`)
 )
 
 // labelList is a message's or thread's labels by name.

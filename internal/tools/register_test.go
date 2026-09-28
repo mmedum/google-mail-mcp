@@ -244,7 +244,7 @@ func TestATakingConfirmToolMustAskThePerson(t *testing.T) {
 		panicked := func() (p bool) {
 			defer func() { p = recover() != nil }()
 			register(mcp.NewServer(&mcp.Implementation{Name: "t", Version: "0"}, nil), Deps{Config: cfg},
-				Spec{Name: "confirming", Description: "probe", Kind: k},
+				Spec{Name: "confirming", Description: "probe", Kind: k, AskUnits: "1 more unit"},
 				func(context.Context, confirmIn) (probeOut, error) { return probeOut{}, nil })
 			return false
 		}()

@@ -85,6 +85,7 @@ func (s *Service) SendDraft(ctx context.Context, in Dispatch) (model.SendWrite, 
 		return out, err
 	}
 	out.MessageID, out.ThreadID, out.Subject, out.RFC822MessageID = m.ID, m.ThreadID, m.Subject, m.RFC822MessageID
+	out.Body = model.Untrusted(m.Body.Text)
 	if len(m.From) > 0 {
 		out.From = &m.From[0]
 	}
