@@ -2104,6 +2104,15 @@ what fixed them.
     quote marks now fold to a plain single quote, and `mailto:` and a
     bare domain followed by a path are broken, so no client links them.
 
+- **Phase 6, security review of the review round: none at the bar; three
+  low items closed.** Lookalike double quotes outside the folded set
+  (modifier and Hebrew marks, ornament quotes, ditto marks) are folded
+  too; a bare domain followed by a port, query or fragment, or written in
+  a non-Latin script, is broken like one followed by a path; and blank
+  characters no stripping removes, such as the Braille blank, become
+  spaces, so a preview cannot be padded to steer where a client wraps it.
+  The code review at medium found nothing.
+
 ### Closing a phase
 
 1. `make check` green; the live driver run and its transcript read.
