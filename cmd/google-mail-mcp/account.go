@@ -102,6 +102,7 @@ func cmdLogin(args []string, stdout, stderr io.Writer, env func(string) string) 
 
 	uc := p.User
 	uc.ClientSecretPath = p.ClientSecretPath
+	uc.ClientProject = auth.ClientProject(p.ClientSecretPath)
 	uc.TokenStore = string(src)
 	// The profile records what Google GRANTED. A scope requested and
 	// refused is the failure worth seeing, and storing the request would
@@ -151,12 +152,11 @@ func cmdLogout(args []string, stdout, stderr io.Writer, env func(string) string)
 	if err != nil {
 		return fail(stderr, "%v", err)
 	}
-	// Google revokes the grant, not one token, so every profile sharing
-	// this OAuth client is signed out too. Said before, not after.
-	if others, err := cfg.ConfigDir.SharingClient(cfg.Profile); err == nil && len(others) > 0 {
-		outf(stdout, "Note: these profiles use the same OAuth client and will also be signed out: %s\n",
-			strings.Join(others, ", "))
-	}
+	// Google revokes the grant, not one token, and the grant covers every
+	// client in the Cloud project, so another profile of the same account
+	// in that project is signed out too (§18 row 53). Read now, while this
+	// profile's record exists, and said only once a revoke happened.
+	others, _ := cfg.ConfigDir.SharingGrant(cfg.Profile)
 
 	token, _, err := p.Store.ResolveStored()
 	switch {
@@ -167,6 +167,10 @@ func cmdLogout(args []string, stdout, stderr io.Writer, env func(string) string)
 			outf(stdout, "Could not revoke the token at Google (%v); removing the local copy anyway.\n", rerr)
 		} else {
 			outf(stdout, "Revoked the grant at Google.\n")
+			if len(others) > 0 {
+				outf(stdout, "These profiles may hold the same account's grant to the same Cloud project, and are signed out too: %s\n",
+					strings.Join(others, ", "))
+			}
 		}
 	case errors.Is(err, credentials.ErrNotFound):
 		outf(stdout, "No stored token to revoke.\n")

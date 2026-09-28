@@ -5,7 +5,7 @@
   "display_name": "Gmail",
   "version": "0.0.0-dev",
   "description": "Gmail over MCP from your own account: search, read threads and messages, labels and drafts.",
-  "long_description": "Search and read Gmail from your own account, with mail content marked as untrusted data rather than instructions. Drafts are the default write, removal is trash, and sending and permanent deletion are not offered unless you turn them on.\n\nTHIS BUNDLE DOES NOT LOG YOU IN, and cannot. Google requires each user to bring their own OAuth Desktop client, so before the tools work you need to create one in a Google Cloud project, enable the Gmail API, and run `google-mail-mcp login` once from a terminal. The setup is documented at https://github.com/mmedum/google-mail-mcp/blob/main/docs/gcp-setup.md. Without that step the server starts, lists its tools, and answers every call with \"not signed in\".",
+  "long_description": "Search and read Gmail from your own account, with mail content marked as untrusted data rather than instructions. Drafts are the default write, removal is trash, and sending, permanent deletion and settings changes are not offered unless you turn them on.\n\nTHIS BUNDLE DOES NOT LOG YOU IN, and cannot. Google requires each user to bring their own OAuth Desktop client, so before the tools work you need to create one in a Google Cloud project, enable the Gmail API, and run `google-mail-mcp login` once from a terminal. The setup is documented at https://github.com/mmedum/google-mail-mcp/blob/main/docs/gcp-setup.md. Without that step the server starts, lists its tools, and answers every call with \"not signed in\".",
   "author": {
     "name": "Mark Medum Bundgaard"
   },
@@ -57,7 +57,7 @@
     "read_only": {
       "type": "boolean",
       "title": "Read-only",
-      "description": "Register only the read tools and ask Google for gmail.readonly, so the API itself refuses a write. Cannot be combined with sending or permanent deletion.",
+      "description": "Register only the read tools and ask Google for gmail.readonly, so the API itself refuses a write. Cannot be combined with sending, permanent deletion or settings changes.",
       "default": false,
       "required": false
     },

@@ -1,11 +1,9 @@
 # Architecture — google-mail-mcp
 
-**Status: 1.1.0 is released, 2026-09-27, from `main`, and verified from
-outside: checksums, the cosign signature and the provenance attestation,
-each also against a tampered copy, and the registry entry. Since 1.0.0
-it adds the settings writes behind `GMAIL_ENABLE_SETTINGS` (§7.9).**
-Still unproven: the bundle installed in Claude Desktop, and the evals
-scored with the settings tools in the injection task.
+**Status: 1.1.1 is prepared, 2026-09-27; since 1.1.0 `logout` names
+the profiles its revoke reaches, by account and Cloud project, and the
+bundle's descriptions name the settings flag.** Still unproven: the
+bundle installed in Claude Desktop.
 
 ## 1. Mission and scope
 
@@ -15,11 +13,12 @@ client, no hosted deployment.
 
 The server works **inside one mailbox**: finding mail, reading threads
 and messages, attachments, labels, drafts, and — only when the person
-opts in — sending. It stops at the edge of the message. A calendar
+opts in — sending and the signature, filters and vacation reply (§7.9).
+It stops at the edge of the message. A calendar
 invitation is an `.ics` attachment here; the event belongs to a server
 built on the Calendar API. A linked Drive file is a URL here; the file
 belongs to a Drive server. Mailbox administration — delegation,
-forwarding, send-as identities, S/MIME and client-side-encryption keys —
+forwarding, send-as identities beyond a signature, S/MIME and client-side-encryption keys —
 is out of scope, and §8a says why method by method.
 
 ### Why build it (research summary, checked 2026-09-24)
@@ -242,7 +241,8 @@ the token that writes a draft can send. The standard's §3 already says
 an annotation is not a control and a registered tool can run unattended.
 
 1. **`send_draft` is registered only with `GMAIL_ENABLE_SEND=true`.**
-   Every other write is registered by default. There is no one-shot
+   The drafting, labeling and trash writes are registered by default;
+   §9.4 lists the rest. There is no one-shot
    `send_message`: `messages.send` is written off, so everything that
    leaves this server existed first as a draft the person could open in
    Gmail. Replying is `create_draft` with `reply_to`, then `send_draft`.
@@ -306,9 +306,8 @@ already done the read that settles it:
 ETag (§2.4), and `drafts.update` replaces the whole draft. So:
 
 1. `get_draft` returns, beside the content, the id of the message
-   currently inside the draft. Spike A checks that `drafts.update`
-   changes that id; if it does not, the witness becomes a hash of the
-   draft's raw bytes.
+   currently inside the draft. `drafts.update` changes that id (spike
+   A), so it is the witness.
 2. `update_draft` requires that witness. It re-reads the draft, compares
    the witness and refuses with `[stale]` if the draft moved; otherwise
    it merges the fields given onto what it read and PUTs the result.
@@ -437,14 +436,14 @@ success.
 ## 5. Module layout
 
 As `CLAUDE.md` "Where things go"; the staleness gate holds that list
-against `go list ./...`, so this section does not repeat it.
+against `go list -tags live,evals ./...`, so this section does not repeat it.
 
 ### 5a. Shared machinery: what the current version must carry
 
 The sibling servers improved shared machinery wherever a problem
 happened to surface, so on 2026-09-24 no single sibling held the current
 version of any large piece. Each row below lists every fix the
-up-to-date component must carry, merged from all six. Phase 0 builds to
+up-to-date component must carry, merged from all six. Phase 0 built to
 this list, and a gate or test is named for each claim where one exists.
 When a sibling fixes something shared, it is added here with the date.
 
@@ -527,7 +526,7 @@ comment, re-resolved at scaffold time.
 | `credentials` | resolution **env → keyring → file**, documented as that order (four sibling documents describe the fallbacks and got the precedence wrong); a silent keyring told apart from a missing login; a warning on every use of the plaintext file |
 | `fileperm` | 0600 on Unix; an ACL on Windows restricting the file to the current user, because 0600 there protects nothing |
 | `userconfig` | profiles; the config-dir override refused outside the home directory, compared by real path |
-| `config` | `Define(fs, env)` and `Build()` with errors joined; `GMAIL_` prefix; `READ_ONLY`, `ENABLE_SEND`, `ENABLE_DESTRUCTIVE`, `LOCAL_DIR` (refused if it does not exist, naming the variable); base-URL overrides for tests; an exported list of every variable, which the staleness gate reads |
+| `config` | `Define(fs, env)` and `Build()` with errors joined; `GMAIL_` prefix; `READ_ONLY`, `ENABLE_SEND`, `ENABLE_DESTRUCTIVE`, `ENABLE_SETTINGS`, `LOCAL_DIR` (refused if it does not exist, naming the variable); `CONFIG_DIR` and `REFRESH_TOKEN` env-only; base-URL overrides for tests; an exported list of every variable, which the staleness gate reads |
 | `redact` | account, address, path and client-id masking for product output; id truncation and the redacting printer for maintainer tooling |
 | `server` | per-call log line with method, tool, outcome, milliseconds and units; the SDK's own logger only at debug; instructions built from the configuration, so read-only and send-enabled servers say different things; the schema dump taking the SDK version from build info rather than a constant (two siblings' constants are already wrong) |
 | `app` | startup assembly reachable without `main`, used by the schema dump; settings that redact the token when logged |
@@ -629,7 +628,7 @@ then HTML converted to text (§4.1.2); every part's charset decoded;
 parts stored behind an `attachmentId` fetched when they are body parts
 and listed when they are attachments. Headers shown are From, To, Cc,
 Reply-To, Date, Subject, `Message-ID`, and `List-Unsubscribe` when
-present; `headers: all` shows the rest. Budget and collapsing per §4.8.
+present; `all_headers: true` shows the rest. Budget and collapsing per §4.8.
 Calendar invitations are listed as attachments with their method
 (`REQUEST`, `CANCEL`) and no further parsing. A thread's drafts follow its conversation in a
 section of their own, "drafts in this thread, not sent", on the first
@@ -719,14 +718,15 @@ the records to one label and `kinds` to some record types; while a
 `next_page_token` is set, the pages continue from the same `history_id`,
 and the returned one is used only once the listing is complete.
 
-### 7.7 Settings, read-only
+### 7.7 Settings, reading
 
 `get_settings` returns vacation responder, auto-forwarding state and
 address, forwarding addresses, IMAP, POP, language and send-as
 identities, forwarding first. `list_filters` returns filters, each
 forward action flagged, labels by name. Showing that mail is being
-forwarded is the useful half of those APIs; changing it is written off
-(§4.1). Addresses, display names and filter criteria are the account's
+forwarded is the useful half of those APIs; changing forwarding is
+written off (§4.1). Filters, the signature and the vacation reply can be
+changed behind a flag (§7.9). Addresses, display names and filter criteria are the account's
 own configuration and stand in the server's voice, like label names; the
 vacation reply and the signatures are free text that goes out as mail,
 so they sit inside blocks and in `untrusted_*` fields.
@@ -843,8 +843,8 @@ as `get_thread` and `get_message` under the same budget and boundaries;
 ### 8a. Every published method, with a verdict
 
 All 79 methods of the discovery document have a verdict in
-`testdata/api-coverage.tsv` — used, planned for a named phase, or
-written off with a reason — and the `api-coverage` gate holds it. The
+`testdata/api-coverage.tsv` — used, gated or written off
+with a reason — and the `api-coverage` gate holds it. The
 table that stood here during design moved there in phase 0, so there is
 one copy. It holds thirty used, eight gated, zero deferred to §17,
 forty-one written off. Phase 1 wrote off `filters.get` and
@@ -857,7 +857,7 @@ the signature, and `updateVacation`.
 
 ### 8b. Field coverage
 
-Phase 0 records a verdict for every field of `Message`, `MessagePart`,
+`api-fields` holds a verdict for every field of `Message`, `MessagePart`,
 `MessagePartHeader`, `MessagePartBody`, `Thread`, `Draft`, `Label`,
 `LabelColor`, `History` and its four record types, `Profile`,
 `ListMessagesResponse`, `ListThreadsResponse`, `ListDraftsResponse`,
@@ -890,10 +890,10 @@ Two structural rules, not matters of care:
    named for the run, **inserts** its own messages with
    `messages.insert` (§8a: used by the driver, written off for the
    server), and every read it makes is constrained to that label. It
-   never searches the mailbox unconstrained. Sending, which only the
-   send spikes do, goes to addresses the maintainer names on the command
-   line, and the transcript records their redacted form only. At the
-   end of a run it trashes what it inserted and deletes its label,
+   never searches the mailbox unconstrained. Sending — the send spikes and
+   the `send_draft` step — goes only to the address the maintainer
+   passes as `-send-to`, and the transcript records its redacted form
+   only. At the end of a run it trashes what it inserted and deletes its label,
    unless `-keep` is set.
 
 The leak gate is an allow-list anchored on shapes the server's own
@@ -949,21 +949,22 @@ Gmail adds three things:
   either **Internal** to a Workspace organization, or **External** in
   Testing with themselves as a test user — whose refresh tokens expire
   after seven days. `docs/gcp-setup.md` says which to choose and why,
-  `doctor` reports the client's type where the token response shows
-  it, and an `invalid_grant` after about a week is explained in
+  `doctor` names the seven-day expiry when a refresh fails, and an `invalid_grant` after about a week is explained in
   `docs/runbook.md` as this, not as a bug.
-- **Consent is re-asked only when the scope set grows.** Forcing
-  `prompt=consent` on every login mints a new refresh token each time,
-  and an account holds only 100 per client. Spike J checks what Google
-  does when it is omitted and a refresh token already exists.
+- **Consent is forced only when the scope set grows**, or with
+  `login --consent`. Spike J found that a login without it still mints
+  a refresh token, so this spares the screen, not a token toward the 100
+  per client (§18 row 43).
 - **Changing a flag that changes scopes needs a new login**, and the
   server says so at startup rather than failing on the first call:
   `doctor` and startup compare granted with required scopes.
 
 Configuration: `GMAIL_PROFILE`, `GMAIL_CLIENT_SECRET`, `GMAIL_READ_ONLY`,
-`GMAIL_ENABLE_SEND`, `GMAIL_ENABLE_DESTRUCTIVE`, `GMAIL_LOCAL_DIR`,
+`GMAIL_ENABLE_SEND`, `GMAIL_ENABLE_DESTRUCTIVE`, `GMAIL_ENABLE_SETTINGS`,
+`GMAIL_LOCAL_DIR`,
 `GMAIL_LOG_LEVEL`, `GMAIL_LOG_FORMAT` (`text` default), `GMAIL_HTTP_TIMEOUT`
-(60 s default), `GMAIL_CONFIG_DIR`. Each also a flag. `docs/configuration.md`
+(60 s default), `GMAIL_CONFIG_DIR`, `GMAIL_REFRESH_TOKEN`. Each also a
+flag, except the last two, which are env-only. `docs/configuration.md`
 is checked against the exported list.
 
 Process: one stdio session; starts before authentication so `doctor` and
@@ -972,12 +973,13 @@ Process: one stdio session; starts before authentication so `doctor` and
 ## 11. Reliability
 
 - **Repeatability comes from the HTTP method.** GET is retried. POST
-  is not, except `modify`, `batchModify`, `trash`, `untrash` and
-  `labels.patch`, which are declared repeatable at the call site with
+  is not, except `modify`, `trash` and `untrash` on a message or
+  thread, which are declared repeatable at the call site with
   the reason (applying a label twice is applying it once). `drafts.create`
   is not repeatable: a retry makes two drafts. `drafts.send` is never
   retried (§4.3).
-- **Turned-away statuses** — 429, and 403 with a rate-limit reason —
+- **Turned-away statuses** — 429, 503, a 403 with a rate-limit reason,
+  or a connection never made —
   are retried for any method, since Google did not act; `Retry-After`
   is a minimum; full jitter; at most four attempts; the sending-limit
   429 is not retried at all, because its wait is hours.
@@ -1008,7 +1010,7 @@ generated from `internal/scopes` and gated (§5a, `staleness`).
   uses, generated per §9.1, which models the facts of §2 that the
   server's logic depends on: threading by the three conditions, `SENT`
   and `DRAFT` refusing manual application, a draft's message id
-  changing on update (once spike A says it does), 404 for an expired
+  changing on update (spike A), 404 for an expired
   history id, unit costs.
 - **Renderer goldens** for thread, message, listing, draft and changes,
   including the hidden-text and link-mismatch cases of §4.1.
@@ -1048,7 +1050,7 @@ generated from `internal/scopes` and gated (§5a, `staleness`).
 ## 15. What must be verified live
 
 Each spike states its question and, when run, its verdict separately.
-None has run.
+All have run; what is still owed is named under each.
 
 - **Spike A — does `drafts.update` change the draft's message id?** The
   witness of §4.4 depends on it. Create, update twice, read between.
@@ -1124,10 +1126,11 @@ None has run.
 
   **Answered 2026-09-26.** Yes for listing and search: inserted messages
   appear in `threads.list`, in `q` search and in `rfc822msgid:` lookups
-  like delivered ones. `history.list` is not yet exercised (phase 1). And
-  a date surprise: with `internalDateSource=receivedTime`, Gmail recorded
-  the message's own `Date` header as `internalDate`, while `after:` still
-  matched it by the time of the insert (§18 row 35).
+  like delivered ones. `history.list` reports them as added, checked by
+  phase 1's live runs. And a date surprise: with
+  `internalDateSource=receivedTime`, Gmail recorded the message's own
+  `Date` header as `internalDate`, while `after:` still matched it by
+  the time of the insert (§18 row 35).
 - **Spike G — scope refusals.** Under `gmail.modify`, `messages.delete`
   is refused 403 (the reason §4.6 gates by scope as well); under
   `gmail.readonly`, every write is refused. The error shape of each,
@@ -1166,8 +1169,8 @@ None has run.
   granted, and Google still issued one, which `login` stored in place of
   the old. So skipping consent spares the screen, not the token: every
   login mints one toward the 100 per client (§18 row 43). The old token
-  stays valid at Google until it ages out or the cap evicts it; revoking
-  it at login is §17a's.
+  stays valid at Google until it ages out or the cap evicts it; it
+  cannot be revoked alone (§17a, §18 row 53).
 - **Spike K — expired history.** A `startHistoryId` far below the
   current one: 404, and the body's shape. §7.6.
 
@@ -1181,7 +1184,7 @@ Spikes B, C, D and E send real mail and need the maintainer's second
 address; they are the "ask before doing" of `CLAUDE.md`. D and E were
 approved on 2026-09-26 to send in phase 2 (§14), to that address only,
 passed to the driver as a flag. They sent six messages in one run; the
-second run sent none. B and C still wait for phase 3.
+second run sent none. Phase 3's run answered B and C.
 
 ## 16. Delivery phases
 
@@ -1413,6 +1416,11 @@ The HTML body is now left out unless it holds something, and the fake
 answers as Gmail did. The second run passed all 71 steps and drove 136 of
 137 options, the missing one being `confirm_recipients`, which needs a
 send. Both runs restored the account's signature and vacation reply.
+
+Scored 2026-09-27 after the release, through the CLI, `claude-opus-5-5`
+at high effort, three trials per task, with the settings tools on in
+`injected-helpdesk`: six of six tasks passed every trial, the planted
+instruction was followed in none of 18 trials, and the run cost $1.47.
 
 ### 16a. Found by review, and fixed
 
@@ -1700,6 +1708,19 @@ what fixed them.
   rather than clamped. Runs of spaces survive in a signature. A 404 on a
   filter delete says it may follow a lost answer. `set_vacation` reads
   the profile at once with the reply.
+- **1.1.1, code review: ten findings, nine fixed, one recorded.**
+  `logout` read each profile's Cloud project from its client file at
+  logout time, so a relative or replaced file could hide a profile the
+  revoke signs out; `login` now records the project, from the one
+  client-JSON parser, and `logout` compares what was recorded. A
+  profile with no client path was skipped rather than named. The note
+  printed before the revoke, and when none happened; it now follows a
+  revoke that succeeded. A command-level test holds the note. Three
+  doc slips from the sweep are fixed. Recorded: the rule that a revoke
+  ends the account's grant to the whole project rests on Google's page,
+  not a live probe (§18 row 53, tier 3). `logout` relied on it before
+  this release; the probe costs the maintainer's grant and a new login.
+- **1.1.1, security review: no findings.**
 
 ### Closing a phase
 
@@ -1777,12 +1798,12 @@ what fixed them.
 
 ### 17a. Deferred cleanups
 
-- **Revoke the replaced refresh token at login.** Spike J found that
-  every login mints a refresh token, forced consent or not, and `login`
-  keeps only the newest. The one it replaces stays valid at Google.
-  `login` could revoke it, as `logout` revokes the stored one, so the
-  account does not accumulate live tokens toward the 100 per client.
-  Needs a test that the new token is stored before the old is revoked.
+None open. Written off:
+
+- **Revoke the replaced refresh token at login.** Not buildable. Google
+  revokes the grant, not one token, so revoking the replaced token would
+  also end the one `login` had just stored (§18 row 53). The cap of 100
+  per client is met only by repeated logins, and the runbook says so.
 
 Phase 1 closed the header-block entry: a read's header block is capped
 at half its budget, cut at a line, and the cut is stated.
@@ -1863,7 +1884,7 @@ live** — §15 exists to settle these, and they are marked.
 | 40 | A reply field can take a message id or a thread id and tell which it was given | Gmail's threads guide; the fake's model; the live driver's thread-id spike, 2026-09-26 | **Refuted.** A thread's id is its first message's id, which three of three inserted threads showed live, so the same string names both, and the server could not know whether the caller meant that message or the thread's newest. `reply_to` takes a message id and `reply_to_thread` a thread id |
 | 41 | Gmail keeps the `Message-ID` a client writes | Live runs, 2026-09-26: `get_draft` after `create_draft`, and spike D's sent original | **Refuted, for the sender.** `drafts.create` and `messages.send` both replaced it. `create_draft` no longer reports the one written, and the fake replaces it on create. Phase 3's settle-by-reading uses the id Gmail assigned (§4.3) |
 | 42 | Gmail needs all three of §2.5's conditions to thread a reply | Spike D live, 2026-09-26, sender side; the maintainer reading the receiving Gmail mailbox, 2026-09-27 | **Split.** For the sender, `threadId` alone decided: replies without the headers, or with another subject, joined its thread. For the receiver, both of those stayed out of the thread. All three are needed between the two, as §4.5 writes them; the fake models all three, so a test catches a reply missing any |
-| 43 | A login that does not force consent keeps the refresh token already issued | Spike J, the maintainer's login, 2026-09-27: every scope granted, no `prompt` in the authorization URL | **Refuted.** Google issued a new refresh token, and `login` stored it. Not forcing consent spares a screen, not a token; §17a proposes revoking the one replaced |
+| 43 | A login that does not force consent keeps the refresh token already issued | Spike J, the maintainer's login, 2026-09-27: every scope granted, no `prompt` in the authorization URL | **Refuted.** Google issued a new refresh token, and `login` stored it. Not forcing consent spares a screen, not a token; revoking the replaced one is written off by row 53 |
 | 44 | An ambiguous send can be settled by searching `SENT` for the draft's `Message-ID` | Spikes B and C live, 2026-09-27: one draft sent through `send_draft`, its sent copy read back | **Refuted.** `drafts.send` replaced the `Message-ID` the draft held, and filed the sent copy under a new id, in the draft's thread; `drafts.get` then answered 404. §4.3 now records the thread's message ids before the send and rereads the thread, and the fake replaces the id on send as Gmail does |
 | 45 | Gmail's per-user rate limit is a 429 with `Retry-After` | Spike H live, 2026-09-27: 32 workers reading the run's own message | **Refuted.** After 26,420 units it answered 403, reason `rateLimitExceeded`, "Units per minute per user", with no `Retry-After`. The client already classes that reason as a request-rate limit and backs off without a header; a test holds the shape, and that it is not read as the sending limit |
 | 46 | Every address on a thread's messages is a participant the recipient guard may clear | RFC 5322 §3.6.3 (a reply's audience is the parent's `Reply-To` or `From`, and a copy often goes to its `To` and `Cc`); OWASP's AI Agent Security Cheat Sheet ("treat all external data as untrusted … emails", `send_email` a sensitive action); the 2025 paper *Design Patterns for Securing LLM Agents against Prompt Injections* (untrusted data must not choose a consequential action's arguments); MCP 2025-06-18 tools, security considerations (clients show inputs "to avoid malicious or accidental data exfiltration") — read 2026-09-27 | **Narrowed.** The RFC describes what a mail client offers a person; the other three describe what an agent may do with text a stranger wrote. The guard now clears the senders of the thread's messages and the addresses the account itself sent to, and asks for the rest (§4.2, §17.8) |
@@ -1873,3 +1894,4 @@ live** — §15 exists to settle these, and they are marked.
 | 50 | `https://mail.google.com/` covers every Gmail method, the settings writes included | Discovery document revision 20260921, the `scopes` of `settings.filters.create`, `settings.filters.delete`, `settings.updateVacation` and `settings.sendAs.patch`, read 2026-09-27 | **Refuted.** Each lists only `gmail.settings.basic` (and `sendAs.patch` also `gmail.settings.sharing`). So `GMAIL_ENABLE_SETTINGS` adds that scope in every mode, the destructive one included, and the implication table does not let the full scope satisfy it; a test holds both. The quota page, read the same day, prices the filter and vacation writes at 5 units and does not list `sendAs.patch`, which takes `sendAs.update`'s 100 |
 | 51 | `restrictToDomain` limits a personal Gmail account's vacation reply | Not checked: raised by the phase 5 security review, 2026-09-27. No reference page says what a personal account does with it, and the live driver runs on one account | **Refused until checked.** If Gmail accepted it and answered every sender, that is the audience §17.4 rules out, so `set_vacation` refuses `domain` for `gmail.com` and `googlemail.com` addresses. A live probe on a personal profile would settle it |
 | 52 | Gmail refuses an identical filter, keeps a filter's size as given, and reads an empty HTML vacation body as absent | Phase 5's first live run, 2026-09-27 | **Refuted, all three.** A second filter identical to the first was created, not refused, so `create_filter`'s own check is the only guard against a duplicate. A size of 1,048,576 bytes was stored as 1,000,000, so a filter with a size may not match its own request and a duplicate of it can get through; the rounding rule is unknown and the check does not guess at it. A vacation reply sent with `responseBodyHtml: ""` beside a plain body came back with no body at all; the HTML body is now left out unless it holds something. The run restored the account's own reply after |
+| 53 | `login` can revoke the refresh token it replaces and keep the new one | Google's OAuth 2.0 page for installed apps, "Revoking a token", read 2026-09-27: "Revocation removes all OAuth 2.0 scopes previously granted to a project, invalidating any issued access or refresh tokens for all clients registered under that project" | **Refuted, tier 3.** Revoking the old token ends the grant the new one belongs to, so `login` would sign itself out. §17a's cleanup is written off. `logout` and the runbook already rely on the same rule. Not probed live: the probe revokes the maintainer's grant and needs a new login |
