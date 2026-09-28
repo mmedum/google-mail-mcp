@@ -54,6 +54,9 @@ type MessageMeta struct {
 	// LinkMismatches counts links whose visible text names a different
 	// host from the one they point to.
 	LinkMismatches int `json:"link_mismatches,omitempty"`
+	// ContentOmitted marks a listing row past the budget, which keeps
+	// its ids, date and labels and drops what its sender wrote (§4.8).
+	ContentOmitted bool `json:"content_omitted,omitempty" jsonschema:"this row is past the reply's budget: its sender's words are left out, not empty; get_message reads them"`
 }
 
 // Rendered is what every read returns besides its rows: how the text was
@@ -67,7 +70,7 @@ type Rendered struct {
 	Truncated     bool            `json:"truncated"`
 	NextCursor    int             `json:"next_cursor,omitempty"`
 	NextOffset    int             `json:"next_offset,omitempty"`
-	Omitted       []string        `json:"omitted_ids,omitempty" jsonschema:"ids the text leaves out for the budget. A listing still has a row for each, with its ids and labels but without what the sender wrote; read it with get_thread, get_message or get_draft"`
+	Omitted       []string        `json:"omitted_ids,omitempty" jsonschema:"ids the text leaves out for the budget, named in the text with how to read them"`
 }
 
 // Render implements Renderer for every read that embeds Rendered.

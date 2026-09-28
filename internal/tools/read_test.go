@@ -227,13 +227,16 @@ func TestSearchReplyStaysWithinItsBudget(t *testing.T) {
 					t.Errorf("row %d lost its id or labels: %v", i, r)
 				}
 				if i < shown {
-					if r[tc.content] == "" || !strings.Contains(testutil.Text(res), id) {
+					if r[tc.content] == "" || r["content_omitted"] != nil || !strings.Contains(testutil.Text(res), id) {
 						t.Errorf("row %d is shown but not whole: %v", i, r)
 					}
 					continue
 				}
 				if out.Omitted[i-shown] != id {
 					t.Errorf("row %d is %s; omitted_ids has %s there", i, id, out.Omitted[i-shown])
+				}
+				if r["content_omitted"] != true {
+					t.Errorf("slim row %d does not say its content is left out: %v", i, r)
 				}
 				if r[tc.content] != "" || r["untrusted_snippet"] != nil && r["untrusted_snippet"] != "" {
 					t.Errorf("slim row %d carries what its sender wrote: %v", i, r)
@@ -300,11 +303,11 @@ func TestListFiltersShowsForwardingFirst(t *testing.T) {
 	h, fake := connectFake(t, config.Config{})
 	var forwarding []string
 	fake.UpdateSettings(func(st *gmailtest.Settings) {
-		for i := range 150 {
+		for i := range 250 {
 			f := gmail.Filter{ID: fmt.Sprintf("ANe1BmgBulk%03d", i),
 				Criteria: &gmail.FilterCriteria{From: fmt.Sprintf("list%d@example.org", i), Query: "a longer query to fill the text"},
 				Action:   &gmail.FilterAction{AddLabelIDs: []string{"STARRED"}, RemoveLabelIDs: []string{"INBOX", "UNREAD"}}}
-			if i%50 == 49 {
+			if i%80 == 79 {
 				f.Action = &gmail.FilterAction{Forward: gmailtest.BackupAddress}
 				forwarding = append(forwarding, f.ID)
 			}
@@ -472,5 +475,34 @@ func TestUpstreamFailureIsAToolError(t *testing.T) {
 		if got := testutil.Text(res); !res.IsError || !strings.HasPrefix(got, "[auth]") {
 			t.Errorf("%s = %q; want [auth]", tool, got)
 		}
+	}
+}
+
+// omitted_ids says what it means for each tool: rows slimmed for the
+// searches and drafts, rows kept whole for changes and filters.
+func TestOmittedIDsIsDescribedPerTool(t *testing.T) {
+	h, _ := connectFake(t, config.Config{})
+	want := map[string]string{"search_threads": "content_omitted", "search_messages": "content_omitted",
+		"list_drafts": "content_omitted", "list_changes": "whole row in changes", "list_filters": "whole row in filters",
+		"get_thread": "how to read them"}
+	for _, tool := range h.Tools(t) {
+		w, ok := want[tool.Name]
+		if !ok {
+			continue
+		}
+		raw, _ := json.Marshal(tool.OutputSchema)
+		var schema struct {
+			Properties map[string]struct{ Description string } `json:"properties"`
+		}
+		if err := json.Unmarshal(raw, &schema); err != nil {
+			t.Fatal(err)
+		}
+		if d := schema.Properties["omitted_ids"].Description; !strings.Contains(d, w) {
+			t.Errorf("%s: omitted_ids is %q, want it to say %q", tool.Name, d, w)
+		}
+		delete(want, tool.Name)
+	}
+	if len(want) != 0 {
+		t.Errorf("tools not found: %v", want)
 	}
 }

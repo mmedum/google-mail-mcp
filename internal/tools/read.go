@@ -48,6 +48,19 @@ func readOf(r render.Result) Rendered {
 		NextCursor: r.NextCursor, NextOffset: r.NextOffset, Omitted: omitted}
 }
 
+// What omitted_ids means for each listing (§4.8).
+const (
+	omittedThreads = "threads the text leaves out for the budget. Each still has a row in threads, with its ids, " +
+		"date and labels but not what its senders wrote, and content_omitted set; get_thread reads it"
+	omittedMessages = "messages the text leaves out for the budget. Each still has a row in messages, with its ids, " +
+		"date and labels but not what its sender wrote, and content_omitted set; get_message reads it"
+	omittedDrafts = "drafts the text leaves out for the budget. Each still has a row in drafts, with its ids, date " +
+		"and labels but not what it says, and content_omitted set; get_draft reads it"
+	omittedChanges = "messages whose changes the text leaves out for the budget, each once and none a shown change " +
+		"names. Every change is still a whole row in changes"
+	omittedFilters = "filters the text leaves out for its budget. Every filter is still a whole row in filters"
+)
+
 // fittedCost is the reply cost of a listing whose rows past the budget
 // go slim: what each row adds to structuredContent in full, as JSON with
 // its comma (§4.8).
@@ -86,14 +99,14 @@ func fitted[T any](rows []T, slim func(T) T, r render.Result) []T {
 // attachments, and drops what its sender wrote.
 func slimMessage(m MessageMeta) MessageMeta {
 	return MessageMeta{ID: m.ID, ThreadID: m.ThreadID, Date: m.Date, Labels: m.Labels, HasAttachments: m.HasAttachments,
-		UntrustedFrom: []model.Untrusted{}}
+		UntrustedFrom: []model.Untrusted{}, ContentOmitted: true}
 }
 
 // slimThread keeps a thread's id, counts, date, labels and whether it
 // has attachments, and drops what its senders wrote.
 func slimThread(t ThreadSummary) ThreadSummary {
 	return ThreadSummary{ID: t.ID, MessageCount: t.MessageCount, Unread: t.Unread, Latest: t.Latest, Labels: t.Labels,
-		HasAttachments: t.HasAttachments, UntrustedParticipants: []model.Untrusted{}}
+		HasAttachments: t.HasAttachments, UntrustedParticipants: []model.Untrusted{}, ContentOmitted: true}
 }
 
 func slimDraft(d DraftSummary) DraftSummary {
@@ -154,6 +167,8 @@ type ThreadSummary struct {
 	UntrustedSubject      model.Untrusted   `json:"untrusted_subject"`
 	UntrustedParticipants []model.Untrusted `json:"untrusted_participants"`
 	UntrustedSnippet      model.Untrusted   `json:"untrusted_snippet"`
+	// ContentOmitted marks a row past the budget (§4.8).
+	ContentOmitted bool `json:"content_omitted,omitempty" jsonschema:"this row is past the reply's budget: its senders' words are left out, not empty; get_thread reads them"`
 }
 
 // ThreadsOut is a page of search_threads.
@@ -282,7 +297,7 @@ func registerRead(s *mcp.Server, d Deps) {
 				HistoryID: p.HistoryID, text: render.Profile(p)}, nil
 		})
 
-	register(s, d, Spec{Name: "search_threads", Kind: Read, Description: "Find conversations with a Gmail search. " +
+	register(s, d, Spec{Name: "search_threads", Kind: Read, OmittedIDs: omittedThreads, Description: "Find conversations with a Gmail search. " +
 		"The usual starting point: threads are what a person reads. Each row gives the thread id, subject, participants, " +
 		"latest date, labels and Gmail's snippet; read one with get_thread. Use search_messages instead when single " +
 		"messages matter, e.g. which one carries an attachment. Costs about 40 units per result, so the default page is 20. " +
@@ -304,7 +319,7 @@ func registerRead(s *mcp.Server, d Deps) {
 				Page: page(list.NextPageToken, list.ResultSizeEstimate), Rendered: readOf(r)}, nil
 		})
 
-	register(s, d, Spec{Name: "search_messages", Kind: Read, Description: "Find single messages with a Gmail search. " +
+	register(s, d, Spec{Name: "search_messages", Kind: Read, OmittedIDs: omittedMessages, Description: "Find single messages with a Gmail search. " +
 		"Prefer search_threads to find a conversation; use this when individual messages matter — their own labels, " +
 		"attachments or dates. Read one with get_message. Costs about 20 units per result. Rows past the reply's budget " +
 		"keep their ids, date and labels but not their senders, subject or snippet, and are named in omitted_ids." + untrustedNote},
@@ -372,7 +387,7 @@ func registerRead(s *mcp.Server, d Deps) {
 			return LabelsOut{Labels: mapSlice(ls, label), text: render.Labels(ls)}, nil
 		})
 
-	register(s, d, Spec{Name: "list_drafts", Kind: Read, Description: "Unsent drafts, newest first, each with its " +
+	register(s, d, Spec{Name: "list_drafts", Kind: Read, OmittedIDs: omittedDrafts, Description: "Unsent drafts, newest first, each with its " +
 		"draft_id and the headers of the message inside it. Read one with get_draft." + untrustedNote},
 		func(ctx context.Context, in ListDraftsIn) (DraftsOut, error) {
 			list, err := svc.Drafts(ctx, in.Q, in.Max, in.PageToken)

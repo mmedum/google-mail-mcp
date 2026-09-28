@@ -145,17 +145,20 @@ func (m *restMailbox) DeleteFiltersFrom(ctx context.Context, from string) (int, 
 	return n, errors.Join(errs...)
 }
 
-// call sends one request and decodes a successful reply into out.
-// A rate-limit refusal, or a filter write refused as overlapping, is
-// waited out and the call made again, up to rateTries times: spike H
-// spends the minute's quota, and the cleanup after it must still run. Gmail answered those refusals 403, so a 403
-// is retried only when its body names a rate limit.
+// rateTries is the most attempts call makes of one request.
 const rateTries = 8
 
 // rateWait is the wait before each repeat. It is a variable so the
 // driver's own tests can shorten it.
 var rateWait = 15 * time.Second
 
+// call sends one request and decodes a successful reply into out. Two
+// refusals are waited out and the call made again, up to rateTries
+// times: a rate limit, since spike H spends the minute's quota and the
+// cleanup after it must still run, and a filter call refused with
+// "Precondition check failed.", since cleanup deletes filters back to
+// back (§18 row 54). A rate limit is a 429, or a 403 whose body names
+// one, as Gmail answered spike H; any other refusal is final.
 func (m *restMailbox) call(ctx context.Context, method, path string, q url.Values, body, out any) error {
 	var (
 		status int

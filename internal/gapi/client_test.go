@@ -286,39 +286,110 @@ func TestStatusClasses(t *testing.T) {
 	}
 }
 
-// Gmail refused filter writes sent in parallel with 400
-// failedPrecondition "Precondition check failed." and took them one at a
-// time (§18 row 54). That refusal comes before Gmail acts, so a filter
-// write repeats it and then says to write one at a time; any other 400,
-// and the same refusal on a call that is not a filter write, stays
-// invalid and is not repeated.
-func TestOverlappingFilterWriteIsRepeated(t *testing.T) {
+// fakeClock is a clock that moves only when the client sleeps.
+type fakeClock struct {
+	mu    sync.Mutex
+	now   time.Time
+	slept []time.Duration
+}
+
+func (f *fakeClock) Now() time.Time {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	return f.now
+}
+
+func (f *fakeClock) Sleep(_ context.Context, d time.Duration) error {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	f.slept = append(f.slept, d)
+	f.now = f.now.Add(d)
+	return nil
+}
+
+func (f *fakeClock) options(o *Options) { o.Now, o.Sleep = f.Now, f.Sleep }
+
+// Filter writes are paced: each waits filterPacing after the last one
+// finished, since Gmail refused filter writes sent back to back and took
+// them 5 seconds later (§18 row 54). Other calls are not paced.
+func TestFilterWritesArePaced(t *testing.T) {
 	createFilter := Call{ID: "gmail.users.settings.filters.create", Method: http.MethodPost, Path: "settings/filters",
 		Body: map[string]string{"k": "v"}}
-	overlap := googleErr(400, "failedPrecondition", "Precondition check failed.")
+	clock := &fakeClock{now: time.Date(2026, 9, 28, 12, 0, 0, 0, time.UTC)}
+	f := newFake(t, reply(200, `{}`), reply(200, `{}`), reply(200, `{}`), reply(200, `{}`))
+	c, _ := client(t, f, clock.options)
+	for range 2 {
+		if err := c.Do(context.Background(), createFilter, nil); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if len(clock.slept) != 1 || clock.slept[0] != filterPacing {
+		t.Errorf("slept %v between two filter writes, want one wait of %s", clock.slept, filterPacing)
+	}
+	clock.slept = nil
+	if err := c.Do(context.Background(), listLabels, nil); err != nil || len(clock.slept) != 0 {
+		t.Errorf("a read after a filter write slept %v (%v)", clock.slept, err)
+	}
+	clock.now = clock.now.Add(time.Minute)
+	if err := c.Do(context.Background(), createFilter, nil); err != nil || len(clock.slept) != 0 {
+		t.Errorf("a filter write long after the last slept %v (%v)", clock.slept, err)
+	}
+}
+
+// Gmail's generic "Precondition check failed." on a filter write is
+// repeated once, after the pacing wait, then reported with Google's own
+// words and without claiming a cause (§18 row 54). After an attempt that
+// may have taken effect, it is an ambiguous outcome instead. Any other
+// 400, and the same refusal on a call that is not a filter write, stays
+// invalid and is not repeated.
+func TestGenericPreconditionOnFilterWriteIsRepeatedOnce(t *testing.T) {
+	createFilter := Call{ID: "gmail.users.settings.filters.create", Method: http.MethodPost, Path: "settings/filters",
+		Body: map[string]string{"k": "v"}}
+	deleteFilter := Call{ID: "gmail.users.settings.filters.delete", Method: http.MethodDelete, Path: "settings/filters/{}",
+		Args: []string{"f1"}}
+	generic := googleErr(400, "failedPrecondition", "Precondition check failed.")
 	for id := range filterWriteIDs {
 		if _, ok := unitCost[id]; !ok || !strings.HasPrefix(id, "gmail.users.settings.filters.") {
 			t.Errorf("%s is not a filter method the client calls", id)
 		}
 	}
 
-	f := newFake(t, reply(400, overlap), reply(200, `{"id":"f1"}`))
-	c, sl := client(t, f)
+	clock := &fakeClock{now: time.Date(2026, 9, 28, 12, 0, 0, 0, time.UTC)}
+	f := newFake(t, reply(400, generic), reply(200, `{"id":"f1"}`))
+	c, _ := client(t, f, clock.options)
 	if err := c.Do(context.Background(), createFilter, nil); err != nil || f.count() != 2 {
-		t.Fatalf("after one overlap: %v, %d attempts, want success on the second", err, f.count())
+		t.Fatalf("after one refusal: %v, %d attempts, want success on the second", err, f.count())
 	}
-	if len(sl.d) != 1 || sl.d[0] < overlapWait {
-		t.Errorf("waited %v before the second attempt, want at least %s", sl.d, overlapWait)
+	var slept time.Duration
+	for _, d := range clock.slept {
+		slept += d
+	}
+	if slept < filterPacing {
+		t.Errorf("waited %v before the repeat, want at least %s", slept, filterPacing)
 	}
 
-	f = newFake(t, reply(400, overlap), reply(400, overlap), reply(400, overlap), reply(400, overlap))
-	c, _ = client(t, f, func(o *Options) { o.MaxRetries = 1 })
+	f = newFake(t, reply(400, generic), reply(400, generic), reply(400, generic), reply(400, generic))
+	c, _ = client(t, f, clock.options)
 	err := c.Do(context.Background(), createFilter, nil)
 	if got := classOf(t, err); got != ClassUnavailable || f.count() != 2 {
-		t.Fatalf("overlapping every time: %s after %d attempts, want unavailable after 2 (%v)", got, f.count(), err)
+		t.Fatalf("refused every time: %s after %d attempts, want unavailable after 2 (%v)", got, f.count(), err)
 	}
-	if !strings.Contains(err.Error(), "one at a time") || !strings.Contains(err.Error(), "nothing was changed") {
-		t.Errorf("the message does not say what happened and what to do: %v", err)
+	for _, s := range []string{"Precondition check failed", "if it persists"} {
+		if !strings.Contains(err.Error(), s) {
+			t.Errorf("the message lacks %q: %v", s, err)
+		}
+	}
+	for _, s := range []string{"nothing was changed", "overlap"} {
+		if strings.Contains(err.Error(), s) {
+			t.Errorf("the message asserts %q: %v", s, err)
+		}
+	}
+
+	f = newFake(t, reply(500, googleErr(500, "backendError", "Internal error")), reply(400, generic), reply(204, ``))
+	c, _ = client(t, f, clock.options)
+	err = c.Do(context.Background(), deleteFilter, nil)
+	if got := classOf(t, err); got != ClassAmbiguousOutcome || f.count() != 2 || strings.Contains(err.Error(), "nothing was changed") {
+		t.Errorf("a refusal after an attempt that may have acted: %s after %d attempts: %v", got, f.count(), err)
 	}
 
 	for _, tc := range []struct {
@@ -327,13 +398,13 @@ func TestOverlappingFilterWriteIsRepeated(t *testing.T) {
 	}{
 		{createFilter, googleErr(400, "failedPrecondition", "A draft cannot be labeled.")},
 		{createFilter, googleErr(400, "invalidArgument", "Precondition check failed.")},
-		{createDraft, overlap},
+		{createDraft, generic},
 		// No evidence for the other settings writes (rule 18): not repeated.
 		{Call{ID: "gmail.users.settings.updateVacation", Method: http.MethodPut, Path: "settings/vacation",
-			Body: map[string]string{"k": "v"}}, overlap},
+			Body: map[string]string{"k": "v"}}, generic},
 	} {
 		f = newFake(t, reply(400, tc.body), reply(200, `{}`))
-		c, _ = client(t, f)
+		c, _ = client(t, f, clock.options)
 		if got := classOf(t, c.Do(context.Background(), tc.call, nil)); got != ClassInvalid || f.count() != 1 {
 			t.Errorf("%s %s: %s after %d attempts, want invalid after 1", tc.call.ID, tc.body, got, f.count())
 		}

@@ -231,7 +231,7 @@ func sameFilter(f gmail.Filter, w gmail.FilterWrite, anySize bool) bool {
 	if f.Criteria == nil || f.Action == nil || f.Action.Forward != "" {
 		return false
 	}
-	have, want := *f.Criteria, *w.Criteria
+	have, want := looseCriteria(*f.Criteria), looseCriteria(*w.Criteria)
 	if anySize {
 		have.Size, want.Size = 0, 0
 	}
@@ -248,17 +248,25 @@ func sameFilter(f gmail.Filter, w gmail.FilterWrite, anySize bool) bool {
 		slices.Equal(sorted(stored), sorted(w.Action.RemoveLabelIDs))
 }
 
+// looseCriteria are criteria as a search reads them: Gmail's search
+// ignores case and runs of spaces, and Gmail may store the text
+// normalized, so neither tells two filters apart.
+func looseCriteria(c gmail.FilterCriteria) gmail.FilterCriteria {
+	for _, f := range []*string{&c.From, &c.To, &c.Subject, &c.Query, &c.NegatedQuery} {
+		*f = strings.ToLower(strings.Join(strings.Fields(*f), " "))
+	}
+	return c
+}
+
 // settleFilter reads the filters after a create Google did not confirm
 // and returns the [ambiguous_outcome] error with what it found, in the
 // spirit of §4.3: the create is never repeated, and the caller learns
 // whether to make it again without listing the filters itself. before
 // is the list read before the create.
 func (s *Service) settleFilter(ctx context.Context, w gmail.FilterWrite, before []gmail.Filter, cause error) error {
-	ctx, cancel := context.WithTimeout(context.WithoutCancel(ctx), settleTimeout)
-	defer cancel()
 	verdict, why := "unknown", "The read afterwards failed, so whether it was created is unknown; "+
 		"list_filters shows it if it was. Do not create it again before looking"
-	if s.client.Wait(ctx, settleDelay) == nil {
+	s.settleAfter(ctx, func(ctx context.Context) {
 		if after, err := s.client.Filters(ctx); err == nil {
 			i := slices.IndexFunc(after.Filter, func(f gmail.Filter) bool {
 				return !slices.ContainsFunc(before, func(b gmail.Filter) bool { return b.ID == f.ID }) && sameFilter(f, w, true)
@@ -277,7 +285,7 @@ func (s *Service) settleFilter(ctx context.Context, w gmail.FilterWrite, before 
 					"though Gmail can save a write late; create it again if it is still wanted, and %s", settleDelay, again)
 			}
 		}
-	}
+	})
 	return gapi.Wrap(gapi.ClassAmbiguousOutcome, cause,
 		"Google did not confirm that the filter was created, and the create was not repeated (verdict: %s). %s.", verdict, why)
 }
