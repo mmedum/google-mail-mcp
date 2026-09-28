@@ -5,20 +5,19 @@ import (
 	"encoding/json"
 	"fmt"
 	"regexp"
+	"slices"
 	"strconv"
 	"strings"
 	"testing"
 	"time"
 	"unicode/utf8"
 
-	"github.com/modelcontextprotocol/go-sdk/mcp"
 	"golang.org/x/oauth2"
 
 	"github.com/mmedum/google-mail-mcp/internal/config"
 	"github.com/mmedum/google-mail-mcp/internal/gapi"
 	"github.com/mmedum/google-mail-mcp/internal/gapi/gmailtest"
 	"github.com/mmedum/google-mail-mcp/internal/gmail"
-	"github.com/mmedum/google-mail-mcp/internal/render"
 	"github.com/mmedum/google-mail-mcp/internal/server"
 	"github.com/mmedum/google-mail-mcp/internal/server/testutil"
 	"github.com/mmedum/google-mail-mcp/internal/tools"
@@ -170,134 +169,107 @@ func TestSearchMessagesStatesItsQuery(t *testing.T) {
 	}
 }
 
-// replyEnvelope is what a listing's reply carries around its rows and
-// text: the query, the page token, the boundary, the counts and the
-// JSON-RPC result's own keys.
-const replyEnvelope = 1000
-
-// maxSlimRow is the most a slim row may take: ids, a date, labels and
-// flags, nothing a sender wrote.
-const maxSlimRow = 400
-
-// replySize is the serialized reply and its structured rows, each as
-// JSON.
-func replySize(t *testing.T, res *mcp.CallToolResult, field string) (int, []map[string]any) {
-	t.Helper()
-	raw, err := json.Marshal(res)
-	if err != nil {
-		t.Fatal(err)
+// shownAndNamed splits a listing's text at the line naming the rows it
+// left out, and returns the text before it and the ids that line names.
+func shownAndNamed(text string) (shown string, named []string) {
+	shown, rest, _ := strings.Cut(text, "not shown (over the budget)")
+	_, list, _ := strings.Cut(rest, "from this page: ")
+	list, _, _ = strings.Cut(list, "\n")
+	list, _, _ = strings.Cut(list, " and ")
+	list = strings.TrimSuffix(list, ",")
+	for id := range strings.SplitSeq(list, ", ") {
+		if id != "" {
+			named = append(named, id)
+		}
 	}
-	var out map[string]json.RawMessage
-	testutil.DecodeStructured(t, res.StructuredContent, &out)
-	var rows []map[string]any
-	if err := json.Unmarshal(out[field], &rows); err != nil {
-		t.Fatalf("%s: %v", field, err)
-	}
-	return utf8.RuneCount(raw), rows
+	return shown, named
 }
 
-// A full page of 100 results keeps a row for each, and stays within the
-// budget, the slim rows and a margin (§4.8). A row past the budget keeps
-// its ids and labels and loses what its sender wrote, and is named in
-// omitted_ids. A live run saw 70,000 to 106,000 characters for such a
-// page under a budget of 24,000.
-func TestSearchReplyStaysWithinItsBudget(t *testing.T) {
+// A page of 100 results keeps every row in full, as 1.1.0 did, while the
+// text stays within its budget and names what it leaves out, once each
+// and never a row it shows (§4.8).
+func TestSearchKeepsEveryRowInFull(t *testing.T) {
 	h, fake := connectFake(t, config.Config{}, func(o *gapi.Options) { o.UnitsPerMinute = 1 << 20 })
 	fake.AddBulkMail(120)
-	for _, tc := range []struct{ tool, field, content string }{
-		{"search_messages", "messages", "untrusted_subject"},
-		{"search_threads", "threads", "untrusted_subject"},
-	} {
-		t.Run(tc.tool, func(t *testing.T) {
-			res := h.Call(t, tc.tool, map[string]any{"max": 100})
-			if res.IsError {
-				t.Fatal(testutil.Text(res))
+	for _, tool := range []string{"search_messages", "search_threads"} {
+		t.Run(tool, func(t *testing.T) {
+			var out struct {
+				Messages []tools.MessageMeta   `json:"messages"`
+				Threads  []tools.ThreadSummary `json:"threads"`
+				tools.Rendered
 			}
-			var out tools.Rendered
-			structured(t, res, testutil.Text(res), res.StructuredContent, &out)
-			n, rows := replySize(t, res, tc.field)
-			if len(rows) != 100 || len(out.Omitted) == 0 || len(out.Omitted) == 100 {
-				t.Fatalf("%d rows and %d omitted, want 100 rows and some omitted", len(rows), len(out.Omitted))
+			text := call(t, h, tool, map[string]any{"max": 100}, &out)
+			if n := utf8.RuneCountInString(text); n > out.Budget {
+				t.Errorf("the text is %d characters, over its budget of %d", n, out.Budget)
 			}
-			shown := len(rows) - len(out.Omitted)
-			slim := 0
-			for i, r := range rows {
-				id, _ := r["id"].(string)
-				if id == "" || r["labels"] == nil {
-					t.Errorf("row %d lost its id or labels: %v", i, r)
+			ids := make([]string, 0, 100)
+			for _, m := range out.Messages {
+				if m.UntrustedSubject == "" || len(m.UntrustedFrom) == 0 {
+					t.Errorf("row %s is not in full: %+v", m.ID, m)
 				}
-				if i < shown {
-					if r[tc.content] == "" || r["content_omitted"] != nil || !strings.Contains(testutil.Text(res), id) {
-						t.Errorf("row %d is shown but not whole: %v", i, r)
-					}
-					continue
-				}
-				if out.Omitted[i-shown] != id {
-					t.Errorf("row %d is %s; omitted_ids has %s there", i, id, out.Omitted[i-shown])
-				}
-				if r["content_omitted"] != true {
-					t.Errorf("slim row %d does not say its content is left out: %v", i, r)
-				}
-				if r[tc.content] != "" || r["untrusted_snippet"] != nil && r["untrusted_snippet"] != "" {
-					t.Errorf("slim row %d carries what its sender wrote: %v", i, r)
-				}
-				size := render.JSONChars(r) + 1
-				if size > maxSlimRow {
-					t.Errorf("slim row %d is %d characters, over %d", i, size, maxSlimRow)
-				}
-				slim += size
+				ids = append(ids, m.ID)
 			}
-			if most := out.Budget + slim + replyEnvelope; n > most {
-				t.Errorf("the reply is %d characters, over %d: the budget of %d, %d of slim rows and %d around them",
-					n, most, out.Budget, slim, replyEnvelope)
+			for _, th := range out.Threads {
+				if th.UntrustedSubject == "" || len(th.UntrustedParticipants) == 0 {
+					t.Errorf("row %s is not in full: %+v", th.ID, th)
+				}
+				ids = append(ids, th.ID)
+			}
+			if len(ids) != 100 || len(out.Omitted) == 0 {
+				t.Fatalf("%d rows and %d omitted, want 100 rows and some omitted", len(ids), len(out.Omitted))
+			}
+			shown, named := shownAndNamed(text)
+			if len(named) == 0 || !slices.Equal(named, out.Omitted[:len(named)]) ||
+				len(named) < len(out.Omitted) && !strings.Contains(text, fmt.Sprintf(" and %d more", len(out.Omitted)-len(named))) {
+				t.Errorf("the text names %d ids and not the rest of omitted_ids' %d", len(named), len(out.Omitted))
+			}
+			if want := ids[len(ids)-len(out.Omitted):]; !slices.Equal(out.Omitted, want) {
+				t.Errorf("omitted_ids are not the rows after those shown")
+			}
+			for _, id := range out.Omitted {
+				if strings.Contains(shown, id) {
+					t.Errorf("%s is shown and in omitted_ids", id)
+				}
 			}
 		})
 	}
 }
 
-// Changes keep every row whole, and the text fits in what is left of
-// the budget: a change dropped could not be read again. Every change the
-// text leaves out is counted, even one whose message a shown row names.
-func TestChangesKeepEveryRow(t *testing.T) {
+// Every change the text leaves out is counted, even one whose message a
+// shown change names, and the ids it names are omitted_ids exactly.
+func TestChangesLeftOutAreCounted(t *testing.T) {
 	h, fake := connectFake(t, config.Config{}, func(o *gapi.Options) { o.UnitsPerMinute = 1 << 20 })
 	start := strconv.FormatUint(fake.HistoryID(), 10)
-	ids := fake.AddBulkMail(60)
+	ids := fake.AddBulkMail(250)
 	// The first message changes again last, so its id is on a shown row
-	// and on one past the budget.
+	// and on one left out.
 	call(t, h, "modify_labels", map[string]any{"message_ids": []any{ids[0]}, "add": []any{"STARRED"}}, &tools.ItemsOut{})
 
-	res := h.Call(t, "list_changes", map[string]any{"history_id": start})
 	var out tools.ChangesOut
-	structured(t, res, testutil.Text(res), res.StructuredContent, &out)
-	n, _ := replySize(t, res, "changes")
-	if len(out.Changes) != 61 || !out.Truncated {
-		t.Fatalf("%d changes, truncated %v; want 61, truncated", len(out.Changes), out.Truncated)
+	text := call(t, h, "list_changes", map[string]any{"history_id": start, "max": 500}, &out)
+	if len(out.Changes) != 251 || !out.Truncated {
+		t.Fatalf("%d changes, truncated %v; want 251, truncated", len(out.Changes), out.Truncated)
 	}
-	for _, c := range out.Changes {
-		if c.Kind == "" || c.MessageID == "" {
-			t.Errorf("a change lost its kind or message: %+v", c)
-		}
+	shown, named := shownAndNamed(text)
+	if len(named) == 0 || !slices.Equal(named, out.Omitted[:len(named)]) {
+		t.Errorf("the text names %v; omitted_ids are %v", named, out.Omitted)
 	}
-	shownText, rest, _ := strings.Cut(testutil.Text(res), "not shown (over the budget)")
-	shown := strings.Count(shownText, "\nhistory ")
-	if want := fmt.Sprintf(", %d changes from this page: ", len(out.Changes)-shown); !strings.HasPrefix(rest, want) {
-		t.Errorf("%d changes shown of %d; the text does not count the rest as %q:%s", shown, len(out.Changes), want, rest)
+	left := len(out.Changes) - strings.Count(shown, "\nhistory ")
+	_, line, _ := strings.Cut(text, "not shown (over the budget)")
+	if want := fmt.Sprintf(", %d changes from this page: ", left); !strings.HasPrefix(line, want) {
+		t.Errorf("the text does not count the %d changes left out:%s", left, line)
 	}
-	if !strings.Contains(rest, ids[0]) {
-		t.Errorf("the last change's message is not named among those not shown:%s", rest)
+	if !strings.Contains(line, ", and 1 on messages named already") {
+		t.Errorf("the change on a message shown above is not counted:%s", line)
 	}
 	for _, id := range out.Omitted {
-		if strings.Contains(shownText, "message "+id) {
+		if strings.Contains(shown, "message "+id) {
 			t.Errorf("%s is shown and in omitted_ids", id)
 		}
 	}
-	if most := out.Budget + replyEnvelope; n > most {
-		t.Errorf("the reply is %d characters, over %d", n, most)
-	}
 }
 
-// Filters are exempt from the whole-reply budget: every row is whole,
-// and the text has a budget of its own and shows forwarding filters
+// Every filter is a full row, and the text shows forwarding filters
 // first, so one that forwards is never out of sight.
 func TestListFiltersShowsForwardingFirst(t *testing.T) {
 	h, fake := connectFake(t, config.Config{})
@@ -478,12 +450,12 @@ func TestUpstreamFailureIsAToolError(t *testing.T) {
 	}
 }
 
-// omitted_ids says what it means for each tool: rows slimmed for the
-// searches and drafts, rows kept whole for changes and filters.
+// omitted_ids says what it means for each tool: every listing still has
+// a full row for what its text left out.
 func TestOmittedIDsIsDescribedPerTool(t *testing.T) {
 	h, _ := connectFake(t, config.Config{})
-	want := map[string]string{"search_threads": "content_omitted", "search_messages": "content_omitted",
-		"list_drafts": "content_omitted", "list_changes": "whole row in changes", "list_filters": "whole row in filters",
+	want := map[string]string{"search_threads": "full row in threads", "search_messages": "full row in messages",
+		"list_drafts": "full row in drafts", "list_changes": "full row in changes", "list_filters": "full row in filters",
 		"get_thread": "how to read them"}
 	for _, tool := range h.Tools(t) {
 		w, ok := want[tool.Name]

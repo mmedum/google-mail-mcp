@@ -183,10 +183,8 @@ func (s *Service) CreateFilter(ctx context.Context, sp FilterSpec) (model.Filter
 	slices.Sort(add)
 	slices.Sort(remove)
 	w := gmail.FilterWrite{Criteria: &c, Action: &gmail.FilterWriteAction{AddLabelIDs: add, RemoveLabelIDs: remove}}
-	for _, f := range existing.Filter {
-		if sameFilter(f, w, false) {
-			return out, gapi.Errf(gapi.ClassConflict, "filter %s already does this; list_filters shows it", f.ID)
-		}
+	if err := duplicate(existing.Filter, w); err != nil {
+		return out, err
 	}
 	made := gmail.Filter{Criteria: w.Criteria, Action: &gmail.FilterAction{AddLabelIDs: add, RemoveLabelIDs: remove}}
 	if !out.DryRun {
@@ -221,6 +219,23 @@ func filterLabels(all []gmail.Label, names, refused []string, field string) ([]s
 	return ids, nil
 }
 
+// duplicate refuses w when an existing filter already does it. Gmail
+// keeps duplicates (§18 row 52), so this check is the only guard.
+func duplicate(existing []gmail.Filter, w gmail.FilterWrite) error {
+	for _, f := range existing {
+		if !sameFilter(f, w, false) {
+			continue
+		}
+		if slices.Contains(f.Action.RemoveLabelIDs, "SPAM") && !slices.Contains(w.Action.RemoveLabelIDs, "SPAM") {
+			return gapi.Errf(gapi.ClassConflict, "filter %s already does this, and also never sends matching mail "+
+				"to spam, which Gmail can add to an archiving filter; for this alone, delete it and create "+
+				"this again", f.ID)
+		}
+		return gapi.Errf(gapi.ClassConflict, "filter %s already does this; list_filters shows it", f.ID)
+	}
+	return nil
+}
+
 // sameFilter reports whether an existing filter matches and acts as w
 // would, labels in any order. A forward makes it different: w has none.
 // With anySize, a size is not compared: Gmail rounds it (§18 row 52).
@@ -231,7 +246,7 @@ func sameFilter(f gmail.Filter, w gmail.FilterWrite, anySize bool) bool {
 	if f.Criteria == nil || f.Action == nil || f.Action.Forward != "" {
 		return false
 	}
-	have, want := looseCriteria(*f.Criteria), looseCriteria(*w.Criteria)
+	have, want := *f.Criteria, *w.Criteria
 	if anySize {
 		have.Size, want.Size = 0, 0
 	}
@@ -246,16 +261,6 @@ func sameFilter(f gmail.Filter, w gmail.FilterWrite, anySize bool) bool {
 	}
 	return have == want && slices.Equal(sorted(f.Action.AddLabelIDs), sorted(w.Action.AddLabelIDs)) &&
 		slices.Equal(sorted(stored), sorted(w.Action.RemoveLabelIDs))
-}
-
-// looseCriteria are criteria as a search reads them: Gmail's search
-// ignores case and runs of spaces, and Gmail may store the text
-// normalized, so neither tells two filters apart.
-func looseCriteria(c gmail.FilterCriteria) gmail.FilterCriteria {
-	for _, f := range []*string{&c.From, &c.To, &c.Subject, &c.Query, &c.NegatedQuery} {
-		*f = strings.ToLower(strings.Join(strings.Fields(*f), " "))
-	}
-	return c
 }
 
 // settleFilter reads the filters after a create Google did not confirm
@@ -320,14 +325,38 @@ func (s *Service) DeleteFilter(ctx context.Context, id string, confirm bool) (mo
 		return out, nil
 	}
 	if err := s.client.DeleteFilter(ctx, id); err != nil {
-		// A 404 here means gone: already deleted elsewhere, or deleted by
-		// this call when a retry followed an answer that was lost.
-		if classOf(err) != gapi.ClassNotFound {
+		switch classOf(err) {
+		case gapi.ClassNotFound:
+			// Gone: already deleted elsewhere, or deleted by this call when
+			// a retry followed an answer that was lost.
+			out.Gone = true
+		case gapi.ClassAmbiguousOutcome:
+			return out, s.settleDelete(ctx, id, err)
+		default:
 			return out, err
 		}
-		out.Gone = true
 	}
 	return out, nil
+}
+
+// settleDelete reads the filters after a delete Google did not confirm
+// and returns the [ambiguous_outcome] error with what it found, as
+// settleFilter does for a create. The delete is not sent again.
+func (s *Service) settleDelete(ctx context.Context, id string, cause error) error {
+	verdict, why := "unknown", "The read afterwards failed, so whether it was deleted is unknown; list_filters shows it if it is still there"
+	s.settleAfter(ctx, func(ctx context.Context) {
+		after, err := s.client.Filters(ctx)
+		switch {
+		case err != nil:
+		case slices.ContainsFunc(after.Filter, func(f gmail.Filter) bool { return f.ID == id }):
+			verdict, why = "still_there", fmt.Sprintf("Read %s afterwards: filter %s is still there. Delete it again if it "+
+				"is still to go", settleDelay, id)
+		default:
+			verdict, why = "deleted", fmt.Sprintf("Read afterwards: filter %s is gone. Do not delete anything else in its place", id)
+		}
+	})
+	return gapi.Wrap(gapi.ClassAmbiguousOutcome, cause,
+		"Google did not confirm that filter %s was deleted, and the delete was not sent again (verdict: %s). %s.", id, verdict, why)
 }
 
 // VacationSpec is what set_vacation was asked for.

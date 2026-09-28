@@ -159,12 +159,9 @@ func registerAccount(s *mcp.Server, d Deps) {
 			if err != nil {
 				return ChangesOut{}, err
 			}
-			// Every change stays a row: a row holds nothing a sender wrote,
-			// and one dropped could not be read again.
-			rows := mapSlice(c.Changes, change)
 			r := render.Changes(render.ChangeList{Start: c.Start, Changes: c.Changes, Expired: c.Expired,
-				HistoryID: c.HistoryID, NextPageToken: c.NextPageToken, Label: c.Label}, render.Options{Reply: wholeCost(rows)})
-			out := ChangesOut{Changes: rows, Expired: c.Expired, HistoryID: c.HistoryID,
+				HistoryID: c.HistoryID, NextPageToken: c.NextPageToken, Label: c.Label}, render.Options{})
+			out := ChangesOut{Changes: mapSlice(c.Changes, change), Expired: c.Expired, HistoryID: c.HistoryID,
 				NextPageToken: c.NextPageToken, Complete: c.NextPageToken == "", Rendered: readOf(r)}
 			if c.Label != nil {
 				out.Label = &LabelRef{ID: c.Label.ID, Name: c.Label.Name}

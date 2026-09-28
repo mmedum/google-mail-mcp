@@ -183,20 +183,18 @@ func TestCreateFilter(t *testing.T) {
 	if !strings.Contains(conflict, out.Filter.ID) {
 		t.Errorf("the conflict does not name the filter: %s", conflict)
 	}
-	// Gmail's search ignores case and runs of spaces, so neither makes a
-	// filter different.
-	if text := refused(t, h, "create_filter", with(args, "from", strings.ToUpper(gmailtest.Ada.Email)), gapi.ClassConflict); !strings.Contains(text, out.Filter.ID) {
-		t.Errorf("a filter differing only in case is not the same one: %s", text)
-	}
-
 	// Gmail was seen adding SPAM to archiving filters after the fact
 	// (§18 row 56). The seeded newsletter filter carries it; asking for
 	// the same filter without it is still a duplicate. Asking for one
 	// that only never-spams is not the archiving filter.
 	harbor := map[string]any{"from": gmailtest.Harbor.Email, "add_labels": []any{"Newsletters"}, "archive": true}
-	if text := refused(t, h, "create_filter", harbor, gapi.ClassConflict); !strings.Contains(text, gmailtest.FilterNewsletters) {
-		t.Errorf("the conflict does not name the stored filter: %s", text)
+	if text := refused(t, h, "create_filter", harbor, gapi.ClassConflict); !strings.Contains(text, gmailtest.FilterNewsletters) ||
+		!strings.Contains(text, "also never sends matching mail to spam") || !strings.Contains(text, "delete it and create this again") {
+		t.Errorf("the conflict does not say the stored filter also keeps mail out of spam: %s", text)
 	}
+	// A filter differing in case is another filter: the criteria are
+	// compared as given.
+	call(t, h, "create_filter", with(with(args, "from", strings.ToUpper(gmailtest.Ada.Email)), "dry_run", true), &tools.FilterWriteOut{})
 	call(t, h, "create_filter", map[string]any{"from": gmailtest.Harbor.Email, "add_labels": []any{"Newsletters"},
 		"remove_labels": []any{"SPAM"}, "dry_run": true}, &tools.FilterWriteOut{})
 	refused(t, h, "create_filter", map[string]any{"archive": true}, gapi.ClassInvalid)
@@ -271,14 +269,6 @@ func TestAmbiguousFilterCreateIsSettledByReading(t *testing.T) {
 				s.UpdateSettings(func(st *gmailtest.Settings) {
 					f := st.Filters[len(st.Filters)-1]
 					f.Action.RemoveLabelIDs = append(f.Action.RemoveLabelIDs, "SPAM")
-				})
-			}},
-			"verdict: created", true},
-		// Gmail may store the criteria normalized; case is no difference.
-		{"created, stored in another case", gmailtest.Failure{Method: create, Status: 500, Reason: "backendError",
-			Message: "Internal error", Served: true, Then: func(s *gmailtest.Server) {
-				s.UpdateSettings(func(st *gmailtest.Settings) {
-					st.Filters[len(st.Filters)-1].Criteria.From = strings.ToUpper(st.Filters[len(st.Filters)-1].Criteria.From)
 				})
 			}},
 			"verdict: created", true},
@@ -466,5 +456,42 @@ func TestUpdateSignatureKeepsSpacing(t *testing.T) {
 	call(t, h, "update_signature", map[string]any{"signature": "Rae\n    Title  here"}, &tools.SignatureOut{})
 	if got := fake.Settings().SendAs[0].Signature; got != "Rae<br>&nbsp; &nbsp; Title&nbsp; here" {
 		t.Errorf("stored %q", got)
+	}
+}
+
+// A delete Google did not confirm is not sent again. The server reads
+// the filters afterwards and says whether it was deleted.
+func TestAmbiguousFilterDeleteIsSettledByReading(t *testing.T) {
+	const del, list = "gmail.users.settings.filters.delete", "gmail.users.settings.filters.list"
+	// A 500 after the delete, then Gmail's generic refusal of the repeat,
+	// is ambiguous (§7.9).
+	refusal := gmailtest.Failure{Method: del, Status: 400, Reason: "failedPrecondition", Message: "Precondition check failed."}
+	for _, tc := range []struct {
+		name, want string
+		served     bool
+		listFails  bool
+	}{
+		{"deleted", "verdict: deleted", true, false},
+		{"still there", "verdict: still_there", false, false},
+		{"unknown", "verdict: unknown", false, true},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			h, fake := connectSettings(t, settingsOn)
+			fake.Fail(gmailtest.Failure{Method: del, Status: 500, Reason: "backendError", Message: "Internal error", Served: tc.served})
+			r := refusal
+			if tc.listFails {
+				r.Then = func(s *gmailtest.Server) { s.Fail(gmailtest.Failure{Method: list, Status: 403, Reason: "forbidden"}) }
+			}
+			fake.Fail(r)
+			text := refused(t, h, "delete_filter", map[string]any{"filter_id": gmailtest.FilterReceipts, "confirm": true},
+				gapi.ClassAmbiguousOutcome)
+			there := slices.ContainsFunc(fake.Settings().Filters, func(f gmail.Filter) bool { return f.ID == gmailtest.FilterReceipts })
+			if !strings.Contains(text, tc.want) || there == tc.served {
+				t.Errorf("filter there %v; %s", there, text)
+			}
+			if n := len(fake.CallsOf(del)); n != 2 {
+				t.Errorf("the delete was sent %d times, want 2: the first and one repeat", n)
+			}
+		})
 	}
 }

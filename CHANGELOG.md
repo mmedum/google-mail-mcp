@@ -18,11 +18,6 @@ lifted verbatim.
 ### Added
 
 - `list_filters`, `create_filter` and `delete_filter` report `never_spam` on a filter that keeps matching mail out of spam.
-- Rows of `search_threads`, `search_messages` and `list_drafts` past the budget carry `content_omitted: true`.
-
-### Changed
-
-- A listing's budget covers its whole reply: rows of `search_threads`, `search_messages` and `list_drafts` past the budget carry their ids, date and labels without their subject, participants or snippet, and are named in `omitted_ids`; `list_filters` and `list_changes` keep every row whole.
 
 ### Fixed
 
@@ -30,7 +25,9 @@ lifted verbatim.
 - A `create_filter` that Google did not confirm reads the filters afterwards and says whether it was created, not created, or still unknown.
 - A filter that removes `SPAM` is shown as never sending matching mail to spam, rather than as removing a label.
 - `create_filter` refuses an archiving filter that already exists when Gmail has since added `SPAM` to the stored one.
-- A page of 100 search results no longer runs to over 100,000 characters under a budget of 24,000.
+- `omitted_ids` no longer names a row the text shows, and the text counts every row it leaves out; `list_filters` shows forwarding filters first.
+- `search_threads`, `search_messages` and `list_drafts` say that the structured result carries every row in full, and that a client with a per-result size limit should ask for a smaller `max`.
+- A `delete_filter` that Google did not confirm reads the filters afterwards and says whether it was deleted.
 
 ## [1.1.1] - 2026-09-27
 

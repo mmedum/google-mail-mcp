@@ -374,22 +374,38 @@ func (c *Client) LockSettings(ctx context.Context) (unlock func(), err error) {
 // same writes 5 seconds later; no shorter wait was tried (§18 row 54).
 const filterPacing = 5 * time.Second
 
-// pace waits until filterPacing has passed since the last filter write
-// finished, or ctx ends.
-func (c *Client) pace(ctx context.Context) error {
-	c.paceMu.Lock()
-	wait := c.lastFilterWrite.Add(filterPacing).Sub(c.now())
-	c.paceMu.Unlock()
-	if wait <= 0 {
+// pace waits, for a filter write, until filterPacing has passed since
+// the last one, or ctx ends. The slot is reserved under the lock before
+// the wait, so two writers that do not hold the settings lock still go
+// filterPacing apart.
+func (c *Client) pace(ctx context.Context, call Call) error {
+	if !filterWriteIDs[call.ID] {
 		return nil
 	}
-	return c.sleep(ctx, wait)
+	c.paceMu.Lock()
+	now := c.now()
+	at := c.lastFilterWrite.Add(filterPacing)
+	if at.Before(now) {
+		at = now
+	}
+	c.lastFilterWrite = at
+	c.paceMu.Unlock()
+	if wait := at.Sub(now); wait > 0 {
+		return c.sleep(ctx, wait)
+	}
+	return nil
 }
 
-// paced records that a filter write's attempt finished.
-func (c *Client) paced() {
+// paced records that a filter write's attempt finished, so the next one
+// waits filterPacing from then; a slot reserved later is kept.
+func (c *Client) paced(call Call) {
+	if !filterWriteIDs[call.ID] {
+		return
+	}
 	c.paceMu.Lock()
-	c.lastFilterWrite = c.now()
+	if now := c.now(); now.After(c.lastFilterWrite) {
+		c.lastFilterWrite = now
+	}
 	c.paceMu.Unlock()
 }
 
@@ -401,21 +417,6 @@ func decodeInto(call Call, body []byte, out any) error {
 	if err := json.Unmarshal(body, out); err != nil {
 		return Wrap(ClassUnavailable, err, "Google's answer to %s was not the JSON this server expected", call.ID)
 	}
-	return nil
-}
-
-// inTurn runs send, and for a filter write waits its turn first (pace)
-// and records when it finished.
-func (c *Client) inTurn(ctx context.Context, call Call, send func()) error {
-	if !filterWriteIDs[call.ID] {
-		send()
-		return nil
-	}
-	if err := c.pace(ctx); err != nil {
-		return Wrap(ClassUnavailable, err, "%s was not sent: the call was canceled while waiting its turn", call.ID)
-	}
-	send()
-	c.paced()
 	return nil
 }
 
@@ -442,6 +443,17 @@ func (a *attempts) end(call Call, v verdict) error {
 	a.repeatedOnce = a.repeatedOnce || v.once
 	a.mayHaveActed = a.mayHaveActed || v.mayHaveActed
 	return nil
+}
+
+// stopped is err for a call that stopped before its next attempt, which
+// is an ambiguous outcome when an earlier attempt may have acted.
+func (a *attempts) stopped(call Call, err *Error) error {
+	if !a.mayHaveActed {
+		return err
+	}
+	return Wrap(ClassAmbiguousOutcome, err,
+		"%s: an earlier attempt may have taken effect, and the call stopped before it was repeated. Read before doing it again. %s",
+		call.ID, err.Message)
 }
 
 // Wait pauses for d, or until ctx ends, with the same sleep the client
@@ -523,32 +535,26 @@ func (c *Client) do(ctx context.Context, call Call, out any, consume func(io.Rea
 	for attempt := 1; attempt <= p.tries; attempt++ {
 		if attempt > 1 {
 			if err := c.sleep(ctx, backoff(attempt-1, last.after)); err != nil {
-				return last.err
+				return past.stopped(call, last.err)
 			}
 		}
+		if err := c.pace(ctx, call); err != nil {
+			return past.stopped(call, Wrap(ClassUnavailable, err, "%s was not sent: the call was canceled while waiting its turn", call.ID))
+		}
 		if err := c.budget.WaitN(ctx, cost); err != nil {
-			return Wrap(ClassUnavailable, err, "%s was not sent: the call was canceled while waiting for quota", call.ID)
+			return past.stopped(call, Wrap(ClassUnavailable, err, "%s was not sent: the call was canceled while waiting for quota", call.ID))
 		}
 		charge(ctx, cost)
 		start := time.Now()
-		var (
-			body    []byte
-			status  int
-			header  http.Header
-			sendErr error
-		)
-		if err := c.inTurn(ctx, call, func() {
-			body, status, header, sendErr = c.attempt(ctx, call.Method, endpoint, payload, contentType, token,
-				call.Media != nil, consume)
-		}); err != nil {
-			return err
-		}
+		body, status, header, sendErr := c.attempt(ctx, call.Method, endpoint, payload, contentType, token,
+			call.Media != nil, consume)
+		c.paced(call)
 		v := decide(ctx, call, p, status, header, body, sendErr)
+		c.log.Debug("gmail_request", "id", call.ID, "attempt", attempt, "status", status,
+			"ms", time.Since(start).Milliseconds(), "units", cost, "outcome", v.outcome())
 		if err := past.end(call, v); err != nil {
 			return err
 		}
-		c.log.Debug("gmail_request", "id", call.ID, "attempt", attempt, "status", status,
-			"ms", time.Since(start).Milliseconds(), "units", cost, "outcome", v.outcome())
 		if v.err == nil {
 			return decodeInto(call, body, out)
 		}

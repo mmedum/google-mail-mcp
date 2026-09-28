@@ -11,6 +11,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"net/url"
+	"slices"
 	"strings"
 	"sync"
 	"sync/atomic"
@@ -333,6 +334,66 @@ func TestFilterWritesArePaced(t *testing.T) {
 	clock.now = clock.now.Add(time.Minute)
 	if err := c.Do(context.Background(), createFilter, nil); err != nil || len(clock.slept) != 0 {
 		t.Errorf("a filter write long after the last slept %v (%v)", clock.slept, err)
+	}
+}
+
+// Two writers that do not hold the settings lock still go filterPacing
+// apart: the first reserves its slot before it sends.
+func TestPacingReservesTheSlot(t *testing.T) {
+	clock := &fakeClock{now: time.Date(2026, 9, 28, 12, 0, 0, 0, time.UTC)}
+	c, _ := client(t, newFake(t), func(o *Options) { o.Now = clock.Now })
+	createFilter := Call{ID: "gmail.users.settings.filters.create", Method: http.MethodPost}
+	var waits []time.Duration
+	c.sleep = func(_ context.Context, d time.Duration) error { waits = append(waits, d); return nil }
+	for range 3 {
+		if err := c.pace(context.Background(), createFilter); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if want := []time.Duration{filterPacing, 2 * filterPacing}; !slices.Equal(waits, want) {
+		t.Errorf("three writers at once waited %v, want %v", waits, want)
+	}
+}
+
+// A call canceled while it waits its turn is not sent and spends no
+// units; after an attempt that may have acted, a call that stops before
+// its repeat is an ambiguous outcome, not "not sent".
+func TestStoppedFilterWrites(t *testing.T) {
+	createFilter := Call{ID: "gmail.users.settings.filters.create", Method: http.MethodPost, Path: "settings/filters",
+		Body: map[string]string{"k": "v"}}
+	deleteFilter := Call{ID: "gmail.users.settings.filters.delete", Method: http.MethodDelete, Path: "settings/filters/{}",
+		Args: []string{"f1"}}
+	clock := &fakeClock{now: time.Date(2026, 9, 28, 12, 0, 0, 0, time.UTC)}
+
+	f := newFake(t, reply(200, `{}`))
+	c, _ := client(t, f, clock.options)
+	if err := c.Do(context.Background(), createFilter, nil); err != nil {
+		t.Fatal(err)
+	}
+	c.sleep = func(context.Context, time.Duration) error { return context.Canceled }
+	ctx := WithCounter(context.Background())
+	err := c.Do(ctx, createFilter, nil)
+	if got := classOf(t, err); got != ClassUnavailable || f.count() != 1 || UnitsSpent(ctx) != 0 {
+		t.Errorf("canceled while waiting its turn: %s, %d sent, %d units: %v", got, f.count(), UnitsSpent(ctx), err)
+	}
+
+	// failAt makes the nth sleep fail: the backoff is the first after a
+	// failed attempt, the pacing wait the second.
+	for _, failAt := range []int{1, 2} {
+		clock := &fakeClock{now: time.Date(2026, 9, 28, 12, 0, 0, 0, time.UTC)}
+		f := newFake(t, reply(500, googleErr(500, "backendError", "Internal error")), reply(204, ``))
+		c, _ := client(t, f, clock.options)
+		n := 0
+		c.sleep = func(ctx context.Context, d time.Duration) error {
+			if n++; n == failAt {
+				return context.Canceled
+			}
+			return clock.Sleep(ctx, d)
+		}
+		err := c.Do(context.Background(), deleteFilter, nil)
+		if got := classOf(t, err); got != ClassAmbiguousOutcome || f.count() != 1 || !strings.Contains(err.Error(), "Read before") {
+			t.Errorf("stopped at sleep %d after a 500: %s after %d attempts: %v", failAt, got, f.count(), err)
+		}
 	}
 }
 

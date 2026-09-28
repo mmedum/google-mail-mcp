@@ -1,9 +1,7 @@
 package render
 
 import (
-	"encoding/json"
 	"strings"
-	"unicode/utf8"
 
 	"github.com/mmedum/google-mail-mcp/internal/model"
 )
@@ -244,12 +242,12 @@ func Drafts(l DraftList, o Options) Result {
 		}, nil)
 }
 
-// listing renders one page of a listing: what the page holds, then a
-// row per item while the row and the line naming the rows after it fit.
-// head, when set, adds lines after the page's own. The rows that do not
-// fit are counted and their ids named in the text; Omitted holds each
-// of those ids once, less any a shown row carries, and Shown is how
-// many rows were shown.
+// listing renders one page of a listing within the budget: what the
+// page holds, then a row per item. A page that fits is shown whole;
+// otherwise rows are shown while they and the line naming the rest fit.
+// head, when set, adds lines after the page's own. Omitted holds the ids
+// of the rows left out, each once and none a shown row carries, and the
+// line names the same ids and counts every row left out.
 func listing[T any](o Options, items []T, token string, one, many phrase,
 	id func(T) string, row func(w *writer, item T), head func(w *writer),
 ) Result {
@@ -261,72 +259,43 @@ func listing[T any](o Options, items []T, token string, one, many phrase,
 			head(w)
 		}
 		ids := make([]string, len(items))
+		rows := make([]fragment, len(items))
+		total := w.len()
 		for i, it := range items {
 			ids[i] = id(it)
-		}
-		whole := o.Reply != nil
-		cost := func(text string, n int) int {
-			if whole {
-				return 2 * (JSONChars(text) - 2)
-			}
-			return n
-		}
-		spent := cost(w.text(), w.len())
-		if whole {
-			spent += o.Reply.Fixed
-		}
-		rows := make([]fragment, len(items))
-		costs := make([]int, len(items))
-		total := spent
-		for i, it := range items {
 			rows[i] = w.sub(func(s *writer) {
 				s.blank()
 				row(s, it)
 			})
-			costs[i] = cost(rows[i].s, rows[i].len())
-			if whole && i < len(o.Reply.Rows) {
-				costs[i] += o.Reply.Rows[i]
-			}
-			total += costs[i]
+			total += rows[i].len()
 		}
-		// A page that fits whole needs no line naming what was left out,
-		// so nothing is reserved for one.
 		if total <= res.Budget {
 			for _, r := range rows {
 				w.add(r)
 			}
-			res.Shown = len(items)
 			return res
 		}
-		// Otherwise the line, at most: every row counted, and with Reply
-		// every id as omitted_ids. Reserved once, not measured per row.
+		// The line naming the rest, at its longest: every row. Reserved
+		// once, not measured per row.
 		all := w.sub(func(s *writer) { s.rowsOmitted(len(items), one, many, distinct(ids)) })
-		reserve := cost(all.s, all.len())
-		if whole {
-			reserve += JSONChars(ids)
-		}
 		for i := range items {
-			if spent+costs[i]+reserve > res.Budget {
+			if w.len()+rows[i].len()+all.len() > res.Budget {
 				res.Truncated = true
-				res.Shown = i
 				res.Omitted = unseen(ids[:i], ids[i:])
-				w.rowsOmitted(len(items)-i, one, many, distinct(ids[i:]))
+				w.rowsOmitted(len(items)-i, one, many, res.Omitted)
 				return res
 			}
 			w.add(rows[i])
-			spent += costs[i]
 		}
-		res.Shown = len(items)
 		return res
 	})
 }
 
-// distinct is ids without repeats, in order: a listing of changes can
-// name one message twice.
+// distinct is ids without repeats, in order.
 func distinct(ids []string) []string { return unseen(nil, ids) }
 
 // unseen is rest without the ids shown already carries and without
-// repeats, in order.
+// repeats, in order: a listing of changes can name one message twice.
 func unseen(shown, rest []string) []string {
 	seen := make(map[string]bool, len(shown))
 	for _, id := range shown {
@@ -342,22 +311,23 @@ func unseen(shown, rest []string) []string {
 	return out
 }
 
-// JSONChars is how many characters v takes as JSON, as encoding/json
-// writes it: a line break in a string is two, and each angle bracket of
-// a block's boundary six.
-func JSONChars(v any) int {
-	b, _ := json.Marshal(v)
-	return utf8.RuneCount(b)
-}
-
-// rowsOmitted counts the rows of this page that did not fit and names
-// their ids, each once.
+// rowsOmitted counts the n rows of this page that did not fit and names
+// ids, their ids less any named already: of a change listing, several
+// rows can share a message.
 func (w *writer) rowsOmitted(n int, one, many phrase, ids []string) {
 	if n == 0 {
 		return
 	}
 	w.blank()
-	w.say("not shown (over the budget), %s from this page: %s", plural(n, one, many), idList(ids))
+	switch {
+	case len(ids) == 0:
+		w.say("not shown (over the budget), %s from this page, on messages named above", plural(n, one, many))
+	case n > len(ids):
+		w.say("not shown (over the budget), %s from this page: %s, and %s on messages named already",
+			plural(n, one, many), idList(ids), num(n-len(ids)))
+	default:
+		w.say("not shown (over the budget), %s from this page: %s", plural(n, one, many), idList(ids))
+	}
 }
 
 // listingHead states what the page holds and whether the listing is

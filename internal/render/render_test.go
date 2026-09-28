@@ -286,8 +286,8 @@ func TestListingThatFitsExactlyIsWhole(t *testing.T) {
 			t.Fatalf("%s: %d characters, outside the width this test relies on", name, n)
 		}
 		exact := list(Options{Tokens: seq("T"), Budget: n})
-		if exact.Truncated || len(exact.Omitted) != 0 || exact.Shown != 60 || strings.Contains(exact.Text, "not shown") {
-			t.Errorf("%s at exactly %d: truncated %v, %d shown, %d omitted", name, n, exact.Truncated, exact.Shown, len(exact.Omitted))
+		if exact.Truncated || len(exact.Omitted) != 0 || strings.Contains(exact.Text, "not shown") {
+			t.Errorf("%s at exactly %d: truncated %v, %d omitted", name, n, exact.Truncated, len(exact.Omitted))
 		}
 		if short := list(Options{Tokens: seq("T"), Budget: n - 1}); !short.Truncated || !strings.Contains(short.Text, "not shown") {
 			t.Errorf("%s one character short: not truncated", name)
