@@ -15,6 +15,10 @@ lifted verbatim.
 
 ## [Unreleased]
 
+### Fixed
+
+- A question the server asks quotes mail text between backticks, not double quotes, with a blank line between lines, so a client that draws it as Markdown, such as VS Code, shows the text as written rather than as links or emphasis.
+
 ## [2.0.0] - 2026-09-28
 
 ### Added
