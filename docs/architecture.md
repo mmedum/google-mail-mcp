@@ -1,12 +1,12 @@
 # Architecture — google-mail-mcp
 
-**Status: 2.0.1 is tagged from `main`, 2026-09-29: a question quotes
-mail text in code spans, so a client that draws Markdown shows it
-literally. Unproven since 2.0.0: that rendering in VS Code itself, where
-it was read from the source, not seen. 2.0.0 was verified from
+**Status: 2.0.1 is released, 2026-09-29, from `main`, and verified from
 outside: checksums, the cosign signature and the provenance attestation,
 each also against a tampered copy, the registry entry, and the Go proxy
-resolving the `/v2` module path. Since 1.2.0 the server asks the person
+resolving the `/v2` module path. A question quotes mail text in code
+spans, so a client that draws Markdown shows it literally; that
+rendering in VS Code was read from its source, not seen. Since 1.2.0
+the server asks the person
 through the MCP client before each write that takes `confirm` (§4.13).** Still
 unproven: the bundle installed in Claude Desktop.
 
@@ -1682,7 +1682,7 @@ The task scores that the same as before; the server's question under
 Owed: the maintainer's check of the empty form in an interactive
 client; and `/simplify` and `/security-review` on the round.
 
-**2.0.1 — questions drawn as Markdown (unreleased).** From the
+**2.0.1 — questions drawn as Markdown (released 2026-09-29).** From the
 elicitation research of 2026-09-29. VS Code draws a question as
 Markdown, and 2.0.0 quoted mail text in double quotes, so a label
 named in Markdown's link syntax drew a link there. Each quoted value is now a code
