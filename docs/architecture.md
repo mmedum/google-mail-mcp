@@ -1,8 +1,8 @@
 # Architecture — google-mail-mcp
 
-**Status: 2.0.2 is built on a topic branch, unreleased: a question
-breaks a link after an underscore or in any script, and a refused answer
-is refused before the retry reads. 2.0.1 is released, 2026-09-29, from `main`, and verified from
+**Status: 2.0.2 is tagged from `main`, 2026-09-29: a question breaks a
+link after an underscore or in any script, and a refused answer is
+refused before the retry reads. 2.0.1 was released, 2026-09-29, and verified from
 outside: checksums, the cosign signature and the provenance attestation,
 each also against a tampered copy, the registry entry, and the Go proxy
 resolving the `/v2` module path. A question quotes mail text in code
@@ -1703,7 +1703,7 @@ missing one `confirm_recipients`, which needs a send. The transcript's
 nine questions each quote the run's own text in code spans, one line
 apart, and the declined delete wrote nothing. Reviews in §16a.
 
-**2.0.2 — the ask path hardened (unreleased).** From a review of the
+**2.0.2 — the ask path hardened (released 2026-09-29).** From a review of the
 same pattern, 2026-09-29. Three changes, none reachable as a bypass
 here:
 

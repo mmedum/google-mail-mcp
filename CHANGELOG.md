@@ -15,9 +15,11 @@ lifted verbatim.
 
 ## [Unreleased]
 
+## [2.0.2] - 2026-09-29
+
 ### Fixed
 
-- A question the server asks breaks a link that follows an underscore or is written in a non-Latin script, so no client draws it as a link.
+- A question the server asks breaks a link that follows an underscore or punctuation, sits right after another link, or is written in a non-Latin script, so no client draws it as a link.
 - An answer other than accept is refused before the call reads the mailbox again, and a failure after an accept is never reported as "nothing was written".
 
 ## [2.0.1] - 2026-09-29
@@ -107,7 +109,8 @@ lifted verbatim.
 - Repository gates run by `make check` and CI: leaks, pins, error classes, API coverage, schema diff, smoke, staleness and more.
 - Signed release archives for six platforms with SBOMs, build provenance, a Claude Desktop bundle and an MCP registry entry.
 
-[Unreleased]: https://github.com/mmedum/google-mail-mcp/compare/v2.0.1...HEAD
+[Unreleased]: https://github.com/mmedum/google-mail-mcp/compare/v2.0.2...HEAD
+[2.0.2]: https://github.com/mmedum/google-mail-mcp/compare/v2.0.1...v2.0.2
 [2.0.1]: https://github.com/mmedum/google-mail-mcp/compare/v2.0.0...v2.0.1
 [2.0.0]: https://github.com/mmedum/google-mail-mcp/compare/v1.2.0...v2.0.0
 [1.2.0]: https://github.com/mmedum/google-mail-mcp/compare/v1.1.1...v1.2.0
