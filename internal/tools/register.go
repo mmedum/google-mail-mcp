@@ -258,6 +258,12 @@ func wrap[In any, Out Renderer](h Handler[In, Out], dryRun int, name string, a *
 				return nil, zero, fail(err)
 			}
 			ctx = service.WithAsker(ctx, p)
+			if p.answer != nil {
+				// The person accepted: from here the write may happen whether
+				// or not this round reaches its question again, so a failure
+				// to reply is no longer "nothing was written".
+				setStage(ctx, stageWriting)
+			}
 		} else if req.Params != nil && (req.Params.RequestState != "" || len(req.Params.InputResponses) > 0) {
 			return nil, zero, fail(gapi.Errf(gapi.ClassBlocked,
 				"%s asks the person nothing, and the call came with an answer; nothing was done. Call it again without one", name))
@@ -268,7 +274,7 @@ func wrap[In any, Out Renderer](h Handler[In, Out], dryRun int, name string, a *
 			setStage(ctx, stageWaiting)
 			return p.inputRequest(), zero, nil
 		}
-		if err == nil && stageOf(ctx) == stageWriting {
+		if err == nil && p != nil && p.answer != nil && p.answer.spent {
 			setStage(ctx, stageWritten)
 		}
 		if err != nil {

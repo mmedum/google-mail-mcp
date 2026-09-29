@@ -15,6 +15,11 @@ lifted verbatim.
 
 ## [Unreleased]
 
+### Fixed
+
+- A question the server asks breaks a link that follows an underscore or is written in a non-Latin script, so no client draws it as a link.
+- An answer other than accept is refused before the call reads the mailbox again, and a failure after an accept is never reported as "nothing was written".
+
 ## [2.0.1] - 2026-09-29
 
 ### Fixed
