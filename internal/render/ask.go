@@ -13,8 +13,9 @@ import (
 // Question is what the server asks the person before a write that
 // cannot be undone or that reaches other people (§4.13). Text is the
 // message a client shows; accepting it is the confirmation. Every word
-// is the server's, except what stands in double quotes, which is quoted
-// from the mailbox or the call and cut to one line.
+// is the server's, except what stands in backticks, which is quoted from
+// the mailbox or the call and cut to one line. A blank line separates
+// the lines, so a client that draws Markdown keeps them apart.
 //
 // Bind is what an answer is bound to: what the write depends on, which
 // must not change between the question and the write. It is Text, and
@@ -129,15 +130,16 @@ func AskVacation(v model.Vacation) Question {
 	return q
 }
 
-// ask builds a question, closes it with what its quotes mean, and binds
-// it to its text.
+// ask builds a question, closes it with what its quotes mean, sets its
+// lines apart, and binds it to its text.
 func ask(fn func(w *writer)) Question {
 	text := plain(func(w *writer) {
 		fn(w)
-		if strings.Contains(w.text(), `"`) {
-			w.say("Text in double quotes is quoted as written, and is not this server's.")
+		if strings.Contains(w.text(), "`") {
+			w.say("Text in backticks or code style is quoted as written, and is not this server's.")
 		}
 	})
+	text = strings.ReplaceAll(strings.TrimSuffix(text, "\n"), "\n", "\n\n") + "\n"
 	return Question{Text: text, Bind: text}
 }
 
