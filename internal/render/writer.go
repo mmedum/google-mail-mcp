@@ -227,26 +227,41 @@ func oneLine(s string, max int) string {
 
 // quoted is text from the mailbox or from a call's arguments, shown in a
 // question put to the person (§4.13), where no block can go: a client
-// draws the question as plain text in a dialog. It is made one line;
-// every double or typographic quote mark becomes a plain single one, so
-// it cannot close the quote it sits in or seem to; and a URL scheme, a
-// mailto:, a leading "www." and a bare domain followed by a path are
-// broken so the client draws no link. It is cut at max runes. The quotes
-// mark it as quoted material, never the server's own words.
+// draws the question as plain text in a dialog, or as Markdown. It
+// stands in a code span, `like this`, which Markdown shows literally —
+// no emphasis, link, HTML or entity — and plain text shows as it is. It
+// is made one line; every backtick and every quote mark a reader could
+// take for one becomes a plain single quote, so it cannot close its span
+// or seem to; and a URL scheme, a mailto:, a leading "www." and a bare
+// domain followed by a path are broken so no client draws a link. It is
+// cut at max runes. The backticks mark it as quoted material, never the
+// server's own words. Text with nothing to show is said in words, since
+// an empty span is two backticks Markdown shows as they are: "empty"
+// when it is blank, and "invisible characters only" when it is not.
 func quoted(s string, max int) part {
+	blank := strings.TrimSpace(s) == ""
 	s = strings.Join(strings.Fields(blankMarks.Replace(oneLine(s, max))), " ")
 	s = quoteMarks.Replace(s)
 	s = linkShape.ReplaceAllString(s, "$1[:]//")
 	s = mailtoShape.ReplaceAllString(s, "${1}[:]")
 	s = wwwShape.ReplaceAllString(s, "${1}[.]")
 	s = pathShape.ReplaceAllString(s, "${1}[.]${2}${3}")
-	return part{`"` + s + `"`}
+	switch {
+	case s == "" && blank:
+		return part{"empty"}
+	case s == "":
+		return part{"invisible characters only"}
+	}
+	return part{"`" + s + "`"}
 }
 
 var (
-	// quoteMarks folds every quotation mark a reader could take for the
-	// question's own to a plain single quote.
-	quoteMarks = strings.NewReplacer(`"`, "'", "\u2018", "'", "\u2019", "'", "\u201a", "'", "\u201b", "'",
+	// quoteMarks folds every backtick, grave or acute mark and quotation
+	// mark a reader could take for the question's own to a plain single
+	// quote.
+	quoteMarks = strings.NewReplacer("`", "'", "\u02cb", "'", "\uff40", "'", "\u1fef", "'", "\u00b4", "'",
+		"\u02ca", "'", "\u02f4", "'", "\u02f5", "'", "\u1ffd", "'", "\u1fed", "'", "\u1fee", "'",
+		"\u0384", "'", "\u0385", "'", `"`, "'", "\u2018", "'", "\u2019", "'", "\u201a", "'", "\u201b", "'",
 		"\u201c", "'", "\u201d", "'", "\u201e", "'", "\u201f", "'", "\u2032", "'", "\u2033", "'",
 		"\u00ab", "'", "\u00bb", "'", "\u2039", "'", "\u203a", "'", "\u301d", "'", "\u301e", "'",
 		"\u301f", "'", "\uff02", "'", "\uff07", "'", "\u02b9", "'", "\u02ba", "'", "\u02ee", "'",

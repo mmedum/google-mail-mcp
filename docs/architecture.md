@@ -1,6 +1,9 @@
 # Architecture — google-mail-mcp
 
-**Status: 2.0.0 is released, 2026-09-29, from `main`, and verified from
+**Status: 2.0.1 is tagged from `main`, 2026-09-29: a question quotes
+mail text in code spans, so a client that draws Markdown shows it
+literally. Unproven since 2.0.0: that rendering in VS Code itself, where
+it was read from the source, not seen. 2.0.0 was verified from
 outside: checksums, the cosign signature and the provenance attestation,
 each also against a tampered copy, the registry entry, and the Go proxy
 resolving the `/v2` module path. Since 1.2.0 the server asks the person
@@ -480,7 +483,12 @@ when it turns the reply on, and `send_draft`.
    person declined: a client can answer without showing anyone anything
    (§18 row 60), and a client hook can accept for the person (§18
    row 61). So an unattended client that declares elicitation cannot
-   make these writes, which is accepted (§14).
+   make these writes, which is accepted (§14). Two clients accept an
+   empty form without a person choosing to: Codex under approval policy
+   `never` with full access, and VS Code when the person skips the
+   question. A required choice naming the outcome would stop both, and
+   was declined after the maintainer's check found it slower and less
+   clear than Accept (§18 row 67).
 3. **No question possible.** A client that declares no form elicitation
    gets no question, and the arguments are the guard, as before.
    `GMAIL_REQUIRE_PROMPT=true` refuses those writes as `[blocked]`
@@ -493,13 +501,18 @@ when it turns the reply on, and `send_draft`.
    the vacation reply by its audience, dates, subject and the start of
    its text; a send by every address it reaches, its subject and the
    start of its body. Text from the mailbox or from the call stands in
-   double quotes on one line: control and invisible characters removed;
-   double, typographic and fullwidth quote marks made a plain single
-   quote; a URL scheme, `mailto:`, `www.` and a bare domain followed by a
-   path broken so no client draws a link; cut at 120 characters, an
-   address at 254, a body at 300 with the count of the rest. A closing
-   line says quoted text is not the server's. Nothing is phrased as an
-   instruction from the mail (§4.1).
+   a code span, between backticks, on one line: control and invisible
+   characters removed; backticks, grave and acute marks, and double,
+   typographic and fullwidth quote marks made a plain single quote; a URL scheme, `mailto:`,
+   `www.` and a bare domain followed by a path broken so no client draws
+   a link; cut at 120 characters, an address at 254, a body at 300 with
+   the count of the rest; one with nothing left to show is said in
+   words, `empty` or "invisible characters only". A client that draws the question as Markdown
+   shows a code span literally, so mail text draws no emphasis, link or
+   HTML there, and a blank line between lines keeps them apart (§18 row
+   66). A closing line says text in backticks or code style is not the
+   server's. Nothing is
+   phrased as an instruction from the mail (§4.1).
 6. **One handler on every protocol.** The handler returns the question
    as an input request, the multi-round-trip pattern of 2026-07-28.
    Before that revision the SDK asks with `elicitation/create` and calls
@@ -649,6 +662,7 @@ comment, re-resolved at scaffold time.
 | `app` | startup assembly reachable without `main`, used by the schema dump; settings that redact the token when logged |
 | `tools` | one `register` deciding annotations, gating, `_meta`, the dry-run context and the rendering from one `Kind`; an explicit output schema with `date-time` for times; `Content` set so the SDK does not duplicate the JSON |
 | `gapi` | write and repeatability derived from the HTTP method, POST failing closed, declared exceptions only; a POST retried only on a turned-away status; `Retry-After` honored as a minimum; full-jitter backoff; the unit budget of §4.9; a body cap; an origin allow-list, port included, checked before any credential is attached and on every redirect; transport errors stripped of the URL; **a context under which the client refuses every write**, which is what `dry_run` is; a closed `Class` type with `Retryable()`; addresses masked in API error text; a per-call counter of requests and units |
+| `ask` (2026-09-29) | a form with no fields, accepting it the confirmation; `requestState` signed, single-use and bound to the tool, the arguments and the question; every quoted value a code span with backticks and quote marks folded, links broken, cut to one line, and a blank line between lines, because VS Code draws the message as Markdown (§4.13, §18 rows 66, 67) |
 | logging test | every registered tool driven with canary values at debug; asserts the logs are non-empty and contain no canary |
 
 ## 6. Addressing
@@ -1668,6 +1682,23 @@ The task scores that the same as before; the server's question under
 Owed: the maintainer's check of the empty form in an interactive
 client; and `/simplify` and `/security-review` on the round.
 
+**2.0.1 — questions drawn as Markdown (unreleased).** From the
+elicitation research of 2026-09-29. VS Code draws a question as
+Markdown, and 2.0.0 quoted mail text in double quotes, so a label
+named in Markdown's link syntax drew a link there. Each quoted value is now a code
+span and the lines stand apart (§4.13, §18 row 66).
+`TestQuestionsAreInertMarkdown` puts Markdown in every field of every
+question and holds the text outside the spans to the server's own. The
+form stays empty: the maintainer compared three forms in Claude Code
+2.1.284 against a throwaway probe, and a required choice naming the
+outcome was slower and less clear than Accept (§18 row 67).
+
+Run live 2026-09-29 without `-send-to`, before and after the review
+round: 78 steps passed each time, 136 of 137 options driven, the
+missing one `confirm_recipients`, which needs a send. The transcript's
+nine questions each quote the run's own text in code spans, one line
+apart, and the declined delete wrote nothing. Reviews in §16a.
+
 ### 16a. Found by review, and fixed
 
 Each phase's `/code-review high` and `/security-review` findings, with
@@ -2111,6 +2142,28 @@ what fixed them.
   spaces, so a preview cannot be padded to steer where a client wraps it.
   The code review at medium found nothing.
 
+- **2.0.1, code review at high: five fixed, two declined.**
+  - The closing line named backticks, which a Markdown client does not
+    draw around a code span. It now says "in backticks or code style",
+    and so do the user documents.
+  - Grave and acute lookalikes outside the folded set, such as U+00B4,
+    U+02CA, U+02F4 and the Greek oxia and tonos, could seem to close a
+    span where a client draws plain text. They fold to a plain single
+    quote.
+  - A value of invisible characters only was shown as the word `empty`.
+    It is now "invisible characters only"; blank is still `empty`.
+  - The test of `quoted` used its expected word `empty` as a sentinel,
+    and the test of whole questions counted spans across all of them.
+    Each case now states its whole output, a value literally named
+    "empty" among them, and each question has its own span count.
+  - Declined: doubling line breaks after rendering rather than where
+    lines are written. `ask` is the one place every question passes,
+    and the text it spaces is the text it binds; the test holds the
+    layout. Declined: the version named in the status line and §16,
+    which is this document's practice.
+- **2.0.1, security review: none at the bar.** `/simplify` found the
+  code clean and simplified the new test.
+
 ### Closing a phase
 
 1. `make check` green; the live driver run and its transcript read.
@@ -2296,3 +2349,5 @@ live** — §15 exists to settle these, and they are marked.
 | 63 | Other clients ask the person when a server elicits | VS Code 1.102 release notes (<https://code.visualstudio.com/updates/v1_102>), "includes support for elicitations"; Cursor 1.5 changelog (<https://cursor.com/changelog/1-5>), "Cursor now supports MCP elicitation"; <https://github.com/anthropics/claude-code/issues/79174>, closed, on an editor extension that declared the capability and declined every question — read 2026-09-28 | **Tier 3, not probed.** Support is announced; whether a person sees each question is not checked here. Either way a refusal is what an unanswered question gets |
 | 64 | A form elicitation must ask for at least one field, so a confirmation needs a checkbox | The `ElicitRequestFormParams` type in the specification's `schema.ts` for 2025-06-18, 2025-11-25 and 2026-07-28, and the MCP Go SDK v1.8.0's `validateElicitSchema`, read 2026-09-28; the maintainer's check in Claude Code 2.1.284, protocol 2025-11-25, the same day | **Refuted.** `requestedSchema` is `type: "object"` with `properties: {[key: string]: PrimitiveSchemaDefinition}` and `required` optional: an open map with no minimum, so `properties: {}` is valid, and the SDK accepts it. The first build asked for one boolean as well. In the maintainer's check of `delete_draft`, Accept with the box unticked, Esc and Decline were each refused, answered `accept` unconfirmed, `cancel` and `decline`; ticked and Accept deleted the draft; the model never saw the question and did not call again on its own; the log carried no subject or address. A person pressed Accept meaning to confirm and was refused. So the form has no fields and the accept is the answer (§4.13). The second check, on the final build: Decline was refused and a plain Accept deleted the draft, and Claude Code drew the fieldless form with its three buttons |
 | 65 | The Gmail API lists every inbox category Gmail shows | `labels.list`, observed live 2026-09-28; news reports of a "Purchases" category in Gmail from September 2025, not found on a Google page | **Refuted, observation only.** The list held the five classic `CATEGORY_*` labels — personal, social, promotions, updates, forums — while Gmail's interface showed a Purchases category. The server cannot see that category or filter by it. Nothing was changed |
+| 66 | A client draws an elicitation question as plain text | VS Code `src/vs/workbench/contrib/mcp/browser/mcpElicitationService.ts` L100 and L173, and `src/vs/base/common/htmlContent.ts` L52-62, `main` at 251bcf5f, read 2026-09-29; the maintainer's check in Claude Code 2.1.284 the same day | **Refuted.** VS Code builds a form question as `new MarkdownString(elicitation.message)`, untrusted: command links are off, but emphasis, link text, code spans and HTML-like text draw, and single line breaks join into one paragraph. Only URL mode escapes the message, with `appendText`. 2.0.0 quoted mail text in double quotes, so a label named in Markdown's link syntax drew as link text, and one in double asterisks as the server's emphasis. Each quoted value is now a code span, which CommonMark draws literally, with backticks folded, and a blank line separates the lines. Backslash escaping was rejected: where a client draws plain text, the backslashes show inside addresses, the datum a send asks the person to check. The maintainer compared both in Claude Code and chose the code span |
+| 67 | A required choice naming the outcome confirms better than an empty form | Codex `codex-rs/codex-mcp/src/elicitation.rs` L415-458 and L552-571, `main` at c248f6d4, and VS Code `mcpElicitationService.ts` L111-119 and L237-297, read 2026-09-29; the maintainer's check in Claude Code 2.1.284, protocol 2025-11-25, 2026-09-29, against a throwaway probe with three forms of one `delete_label` question | **Declined, for now.** For: Codex accepts a form with no properties by itself under approval policy `never` with full access, and a VS Code chat question the person skips resolves as `accept` with no content. A required choice survives both, since Codex then declines and an answer without the choice is refused. Against: in Claude Code the choice list, "Keep the label" first and no default, took the maintainer 60 seconds, against 8 for the empty form and 10 for a typed name, and they found it confusing. The empty form stays, and both client behaviors are recorded as limits (§4.13). Revisit if either client changes, or a client is shown to draw a choice list clearly |

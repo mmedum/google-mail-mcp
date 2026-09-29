@@ -15,6 +15,12 @@ lifted verbatim.
 
 ## [Unreleased]
 
+## [2.0.1] - 2026-09-29
+
+### Fixed
+
+- A question the server asks quotes mail text between backticks, not double quotes, with a blank line between lines, so a client that draws it as Markdown, such as VS Code, shows the text as written rather than as links or emphasis.
+
 ## [2.0.0] - 2026-09-28
 
 ### Added
@@ -96,7 +102,8 @@ lifted verbatim.
 - Repository gates run by `make check` and CI: leaks, pins, error classes, API coverage, schema diff, smoke, staleness and more.
 - Signed release archives for six platforms with SBOMs, build provenance, a Claude Desktop bundle and an MCP registry entry.
 
-[Unreleased]: https://github.com/mmedum/google-mail-mcp/compare/v2.0.0...HEAD
+[Unreleased]: https://github.com/mmedum/google-mail-mcp/compare/v2.0.1...HEAD
+[2.0.1]: https://github.com/mmedum/google-mail-mcp/compare/v2.0.0...v2.0.1
 [2.0.0]: https://github.com/mmedum/google-mail-mcp/compare/v1.2.0...v2.0.0
 [1.2.0]: https://github.com/mmedum/google-mail-mcp/compare/v1.1.1...v1.2.0
 [1.1.1]: https://github.com/mmedum/google-mail-mcp/compare/v1.1.0...v1.1.1

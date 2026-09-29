@@ -132,7 +132,8 @@ pasted — a debug log, `doctor` and `status` — are the ones that mask.
   a model persuaded by a message writes them too. So when the client
   supports MCP elicitation, the server asks you itself before each of
   those writes, naming what it touches; text from the mailbox in the
-  question stands in double quotes, on one line, with no link drawn.
+  question stands in backticks or code style, on one line, with no link drawn,
+  so a client that shows the question as Markdown shows it as written.
   Only an accept writes. The answer is bound to the call it was
   asked for, spent once, and void after 5 minutes, and a client cannot
   answer before it is asked. A client that cannot ask gets no question,
