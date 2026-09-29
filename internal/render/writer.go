@@ -242,7 +242,7 @@ func quoted(s string, max int) part {
 	blank := strings.TrimSpace(s) == ""
 	s = strings.Join(strings.Fields(blankMarks.Replace(oneLine(s, max))), " ")
 	s = quoteMarks.Replace(s)
-	s = linkShape.ReplaceAllString(s, "$1[:]//")
+	s = linkShape.ReplaceAllString(s, "${1}[:]//")
 	s = mailtoShape.ReplaceAllString(s, "${1}[:]")
 	s = wwwShape.ReplaceAllString(s, "${1}[.]")
 	s = pathShape.ReplaceAllString(s, "${1}[.]${2}${3}")
@@ -270,17 +270,21 @@ var (
 	// blankMarks are characters drawn as blank space that no invisible
 	// stripping removes; they become spaces and collapse with the rest.
 	blankMarks = strings.NewReplacer("\u2800", " ", "\u3164", " ", "\uffa0", " ")
+	// No shape is anchored: \b is ASCII-only, and a class before the
+	// shape would consume a separator the next link needs. A match inside
+	// a longer word is broken too, which costs only a bracket.
+	//
 	// linkShape is a URL scheme followed by //, as a client links it.
-	linkShape = regexp.MustCompile(`(?i)\b([a-z][a-z0-9+.-]*)://`)
+	linkShape = regexp.MustCompile(`(?i)([a-z][a-z0-9+.-]*)://`)
 	// mailtoShape is a mail link without //.
-	mailtoShape = regexp.MustCompile(`(?i)\b(mailto):`)
+	mailtoShape = regexp.MustCompile(`(?i)(mailto):`)
 	// wwwShape is a host a client links without a scheme.
-	wwwShape = regexp.MustCompile(`(?i)\b(www)\.`)
+	wwwShape = regexp.MustCompile(`(?i)(www)\.`)
 	// pathShape is a bare domain followed by a path, a port, a query or a
 	// fragment, x.example/..., which a client links too; its last dot is
-	// broken. Letters from any script count, so a non-ASCII domain is
-	// broken as well.
-	pathShape = regexp.MustCompile(`(?i)\b([\p{L}\p{N}-]+(?:\.[\p{L}\p{N}-]+)*)\.(\p{L}{2,63})([/:?#])`)
+	// broken. Letters and their marks from any script count, so a
+	// non-ASCII domain is broken as well.
+	pathShape = regexp.MustCompile(`(?i)([\p{L}\p{M}\p{N}-]+(?:\.[\p{L}\p{M}\p{N}-]+)*)\.([\p{L}\p{M}]{2,63})([/:?#])`)
 )
 
 // labelList is a message's or thread's labels by name.

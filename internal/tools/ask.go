@@ -146,7 +146,7 @@ type person struct {
 	// argSum is the arguments' hash, computed when first needed.
 	argSum string
 
-	// answer is set when the call came back with a question this
+	// answer is set when the call came back accepting a question this
 	// process asked, verified.
 	answer *answer
 	// asked is set when the service asked and the question is to go out.
@@ -155,7 +155,6 @@ type person struct {
 
 type answer struct {
 	question string
-	action   string // accept, decline, cancel, other, or none
 	spent    bool
 }
 
@@ -205,38 +204,37 @@ func (a *asking) personFor(req *mcp.CallToolRequest, tool string, in any, requir
 	if err != nil {
 		return nil, err
 	}
-	p.answer = &answer{question: st.Question, action: "none"}
+	action := "none"
 	if r, ok := responses[askKey].(*mcp.ElicitResult); ok && r != nil {
 		switch r.Action {
 		case "accept", "decline", "cancel":
-			p.answer.action = r.Action
+			action = r.Action
 		default:
-			p.answer.action = "other"
+			action = "other"
 		}
 	}
-	a.lg.Info("person_answered", "tool", tool, "answer", p.answer.action)
+	a.lg.Info("person_answered", "tool", tool, "answer", action)
+	if action != "accept" {
+		// Refused here, before any read runs, so the refusal never
+		// depends on this round reaching its question again.
+		return nil, gapi.Errf(gapi.ClassBlocked, "%s was not confirmed by the person: the client answered %s. Nothing was "+
+			"written. Do not call it again unless the person asks for it", tool, action)
+	}
+	p.answer = &answer{question: st.Question}
 	return p, nil
 }
 
 // Ask implements service.Asker.
-func (p *person) Ask(ctx context.Context, q render.Question) error {
+func (p *person) Ask(_ context.Context, q render.Question) error {
 	if ans := p.answer; ans != nil {
-		switch {
-		case ans.spent:
+		if ans.spent {
 			return gapi.Errf(gapi.ClassUnavailable, "%s asked the person twice in one call, which is a bug in this server; nothing more was written", p.tool)
-		case ans.question != questionSum(q):
-			ans.spent = true
-			return gapi.Errf(gapi.ClassBlocked, "what %s would do changed after the person was asked, so what they saw is not "+
-				"what would be written; nothing was written. Call it again to ask again", p.tool)
-		case ans.action != "accept":
-			ans.spent = true
-			return gapi.Errf(gapi.ClassBlocked, "%s was not confirmed by the person: the client answered %s. Nothing was "+
-				"written. Do not call it again unless the person asks for it", p.tool, ans.action)
 		}
 		ans.spent = true
-		// From here the write may happen: a failure to reply is no longer
-		// "nothing was written".
-		setStage(ctx, stageWriting)
+		if ans.question != questionSum(q) {
+			return gapi.Errf(gapi.ClassBlocked, "what %s would do changed after the person was asked, so what they saw is not "+
+				"what would be written; nothing was written. Call it again to ask again", p.tool)
+		}
 		return nil
 	}
 	if !p.canAsk {
@@ -334,8 +332,8 @@ func AskFailures() mcp.Middleware {
 				msg = "[" + string(gapi.ClassAmbiguousOutcome) + "] the person confirmed " + name + ", and it was written " +
 					"(verdict: written), but its result could not be returned. Do not make the call again"
 			default:
-				msg = "[" + string(gapi.ClassAmbiguousOutcome) + "] the person confirmed " + name + ", and the server went " +
-					"on to write, but the call ended before its result (verdict: unknown). Do not make the call again; " +
+				msg = "[" + string(gapi.ClassAmbiguousOutcome) + "] the person confirmed " + name + ", and the call ended " +
+					"before its result, so the write may have started (verdict: unknown). Do not make the call again; " +
 					"read the mailbox to see whether it took effect"
 			}
 			out := &mcp.CallToolResult{}
