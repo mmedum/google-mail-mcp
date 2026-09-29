@@ -1,7 +1,7 @@
 {
   "note": "Written by `go run ./scripts/gates api-diff`; nobody edits this. Verdicts live in testdata/api-coverage.tsv (methods) and testdata/api-fields.tsv (fields).",
   "url": "https://gmail.googleapis.com/$discovery/rest?version=v1",
-  "fetched": "2026-09-27",
+  "fetched": "2026-09-29",
   "version": "v1",
   "revision": "20260921",
   "methods": [

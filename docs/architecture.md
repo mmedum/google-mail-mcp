@@ -1,8 +1,9 @@
 # Architecture — google-mail-mcp
 
-**Status: 2.0.1 is built on a topic branch, unreleased: a question
-quotes mail text in code spans, so a client that draws Markdown shows it
-literally. 2.0.0 is released, 2026-09-29, from `main`, and verified from
+**Status: 2.0.1 is tagged from `main`, 2026-09-29: a question quotes
+mail text in code spans, so a client that draws Markdown shows it
+literally. Unproven since 2.0.0: that rendering in VS Code itself, where
+it was read from the source, not seen. 2.0.0 was verified from
 outside: checksums, the cosign signature and the provenance attestation,
 each also against a tampered copy, the registry entry, and the Go proxy
 resolving the `/v2` module path. Since 1.2.0 the server asks the person
