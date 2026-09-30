@@ -173,6 +173,16 @@ func TestTheDriversTemporaryDirectoryIsMasked(t *testing.T) {
 	}
 }
 
+// One filter id keeps one placeholder wherever it appears, and an id's
+// last character is masked with the rest.
+func TestAFilterIDIsMaskedOnceAndWhole(t *testing.T) {
+	r := NewRedactor(false)
+	got := r.Do(`created filter ANe1Bmj1; {"filter_id":"ANe1Bmj1"}; filter abc1- x`)
+	if strings.Count(got, "<FILTER_1>") != 2 || !strings.Contains(got, "filter <FILTER_2> x") {
+		t.Errorf("%s", got)
+	}
+}
+
 // Label and filter ids say what the account has set up, and are masked
 // wherever they appear; a word after "filter" that is not an id stays.
 func TestLabelAndFilterIDsAreMasked(t *testing.T) {

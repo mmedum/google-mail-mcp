@@ -73,8 +73,9 @@ var patterns = []pattern{
 // rendered "filter <id>", where a token with a digit in it is an id and a
 // word like "without" is not, and an argument echo's "filter_id":"<id>".
 var filterPositions = []*regexp.Regexp{
-	regexp.MustCompile(`\bfilter ([0-9A-Za-z_\-]*[0-9][0-9A-Za-z_\-]*)\b`),
-	regexp.MustCompile(`"filter_id":"([^"]+)"`),
+	regexp.MustCompile(`\bfilter ([0-9A-Za-z_\-]*[0-9][0-9A-Za-z_\-]*)`),
+	// Not a placeholder the FILTER pattern already put there.
+	regexp.MustCompile(`"filter_id":"([^"<]+)"`),
 }
 
 // historyPositions are where a history id appears. It is a plain decimal
