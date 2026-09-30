@@ -1,6 +1,8 @@
 # Architecture — google-mail-mcp
 
-**Status: 2.0.1 is released, 2026-09-29, from `main`, and verified from
+**Status: 2.0.2 is tagged from `main`, 2026-09-29: a question breaks a
+link after an underscore or in any script, and a refused answer is
+refused before the retry reads. 2.0.1 was released, 2026-09-29, and verified from
 outside: checksums, the cosign signature and the provenance attestation,
 each also against a tampered copy, the registry entry, and the Go proxy
 resolving the `/v2` module path. A question quotes mail text in code
@@ -478,7 +480,7 @@ when it turns the reply on, and `send_draft`.
    confirm, and was refused; two confirmations that read as one were
    dropped for one. Anything but `accept` — decline, cancel, an error,
    an answer that came back after its question expired — is `[blocked]`,
-   and nothing is written. The refusal says the call was "not confirmed
+   refused before the retry reads anything, and nothing is written. The refusal says the call was "not confirmed
    by the person" and names the client's answer. It never says the
    person declined: a client can answer without showing anyone anything
    (§18 row 60), and a client hook can accept for the person (§18
@@ -505,7 +507,8 @@ when it turns the reply on, and `send_draft`.
    characters removed; backticks, grave and acute marks, and double,
    typographic and fullwidth quote marks made a plain single quote; a URL scheme, `mailto:`,
    `www.` and a bare domain followed by a path broken so no client draws
-   a link; cut at 120 characters, an address at 254, a body at 300 with
+   a link wherever it starts, after an underscore, after punctuation,
+   right after another link, or in a domain of any script (§18 row 68); cut at 120 characters, an address at 254, a body at 300 with
    the count of the rest; one with nothing left to show is said in
    words, `empty` or "invisible characters only". A client that draws the question as Markdown
    shows a code span literally, so mail text draws no emphasis, link or
@@ -541,8 +544,9 @@ when it turns the reply on, and `send_draft`.
 9. **A send goes at most once (§4.3).** The first round stops before
    `drafts.send`. Only the verified retry sends, and its state is spent
    before the handler runs, so a replay is refused.
-10. **A failure after the answer is never "nothing written".** Once an
-    answer has confirmed the write, a call that then fails without a
+10. **A failure after the answer is never "nothing written".** From the
+    start of a round that carries an accept, before its reads, a call
+    that fails without a
     result — its reply could not be built or sent, or it was canceled —
     is `[ambiguous_outcome]`: verdict `written` when the handler
     returned from its write, `unknown` otherwise, and never to be
@@ -1699,6 +1703,30 @@ missing one `confirm_recipients`, which needs a send. The transcript's
 nine questions each quote the run's own text in code spans, one line
 apart, and the declined delete wrote nothing. Reviews in §16a.
 
+**2.0.2 — the ask path hardened (released 2026-09-29).** From a review of the
+same pattern, 2026-09-29. Three changes, none reachable as a bypass
+here:
+
+- The link shapes in a question anchored on `\b`, which in Go is ASCII
+  only and counts `_` as a letter, so `x_evil.example/login`,
+  `a_https://` and a Cyrillic domain with a path stayed linkable. The
+  shapes are now unanchored, and a domain's letters may carry combining
+  marks (§18 row 68).
+- A decline, cancel or other answer was refused only when the retry
+  reached its question, after its reads. Every question here depends
+  only on the arguments, so each retry reached it; the refusal now comes
+  first all the same (`TestARefusalIsRefusedBeforeAnyRead`).
+- A round that carries an accept counted as writing only from its
+  question. It now does from the start, so a failure without a result
+  on that round is never "nothing was written" (§4.13 item 10), and it
+  counts as written only once the answer is spent on its question.
+
+Run live 2026-09-29 without `-send-to`, before and after the review
+round: 78 steps passed each time, 136 of 137 options driven, the missing
+one `confirm_recipients`, which needs a send. The declined delete was
+refused and wrote nothing; each question quotes the run's own text in
+code spans. Reviews in §16a.
+
 ### 16a. Found by review, and fixed
 
 Each phase's `/code-review high` and `/security-review` findings, with
@@ -2161,6 +2189,36 @@ what fixed them.
     and the text it spaces is the text it binds; the test holds the
     layout. Declined: the version named in the status line and §16,
     which is this document's practice.
+- **2.0.2, code review at high: six fixed, one declined.**
+  - The first port anchored each link shape on a character class before
+    it. That missed a scheme after `.`, `-` or `+`, and consumed the
+    separator a second link needed, so `x.example/y.example/z` and
+    `http://https://…` kept their second link. The shapes are now
+    unanchored.
+  - A domain whose letters carry combining marks, as in Devanagari, was
+    not broken. The domain classes take `\p{M}`.
+  - The message for a failure after an accept said the server "went on
+    to write", which is false during the reads. It now says the write
+    may have started.
+  - An accepted round whose handler returned without spending its
+    answer was promoted to written. It is promoted only once the answer
+    is spent.
+  - The tests held only the cases the change was made for. They now
+    hold punctuation before a scheme and links back to back.
+  - The document lost its final newline.
+  - Declined: refusing an accepted round that returns without asking
+    again. A write that skips its question is a defect with or without
+    this change, and a success with nothing to ask would be refused.
+- **2.0.2, `/simplify`.** The stage test reuses the package's probe
+  types; `Ask` spends its answer in one place; `wrap` promotes to written
+  on the spent answer alone. Declined: a fourth stage between accepted
+  and writing, which would again depend on the round reaching its
+  question. Left to the maintainer: breaking every dot between two
+  letters, which would cover a bare domain with no path, now out of
+  scope (§4.13 item 5).
+- **2.0.2, security review: none at the bar.** It confirmed a
+  non-accept answer is now refused even on a round that would not reach
+  its question, which before went on as if accepted.
 - **2.0.1, security review: none at the bar.** `/simplify` found the
   code clean and simplified the new test.
 
@@ -2351,3 +2409,4 @@ live** — §15 exists to settle these, and they are marked.
 | 65 | The Gmail API lists every inbox category Gmail shows | `labels.list`, observed live 2026-09-28; news reports of a "Purchases" category in Gmail from September 2025, not found on a Google page | **Refuted, observation only.** The list held the five classic `CATEGORY_*` labels — personal, social, promotions, updates, forums — while Gmail's interface showed a Purchases category. The server cannot see that category or filter by it. Nothing was changed |
 | 66 | A client draws an elicitation question as plain text | VS Code `src/vs/workbench/contrib/mcp/browser/mcpElicitationService.ts` L100 and L173, and `src/vs/base/common/htmlContent.ts` L52-62, `main` at 251bcf5f, read 2026-09-29; the maintainer's check in Claude Code 2.1.284 the same day | **Refuted.** VS Code builds a form question as `new MarkdownString(elicitation.message)`, untrusted: command links are off, but emphasis, link text, code spans and HTML-like text draw, and single line breaks join into one paragraph. Only URL mode escapes the message, with `appendText`. 2.0.0 quoted mail text in double quotes, so a label named in Markdown's link syntax drew as link text, and one in double asterisks as the server's emphasis. Each quoted value is now a code span, which CommonMark draws literally, with backticks folded, and a blank line separates the lines. Backslash escaping was rejected: where a client draws plain text, the backslashes show inside addresses, the datum a send asks the person to check. The maintainer compared both in Claude Code and chose the code span |
 | 67 | A required choice naming the outcome confirms better than an empty form | Codex `codex-rs/codex-mcp/src/elicitation.rs` L415-458 and L552-571, `main` at c248f6d4, and VS Code `mcpElicitationService.ts` L111-119 and L237-297, read 2026-09-29; the maintainer's check in Claude Code 2.1.284, protocol 2025-11-25, 2026-09-29, against a throwaway probe with three forms of one `delete_label` question | **Declined, for now.** For: Codex accepts a form with no properties by itself under approval policy `never` with full access, and a VS Code chat question the person skips resolves as `accept` with no content. A required choice survives both, since Codex then declines and an answer without the choice is refused. Against: in Claude Code the choice list, "Keep the label" first and no default, took the maintainer 60 seconds, against 8 for the empty form and 10 for a typed name, and they found it confusing. The empty form stays, and both client behaviors are recorded as limits (§4.13). Revisit if either client changes, or a client is shown to draw a choice list clearly |
+| 68 | `\b` in a Go regular expression is a word boundary in any script | `go doc regexp/syntax`, Go 1.27.1, read 2026-09-29 | **Refuted.** `\b` is "at ASCII word boundary", and `\w` is `[0-9A-Za-z_]`. So `\b` finds no start inside a Cyrillic domain and none after an underscore. The link shapes in a question are now unanchored: a match starts as far left as its own characters reach, and a class before it would consume a separator the next link needs. A domain's letters may carry combining marks (`\p{M}`). A test holds an underscore, a Cyrillic and a Devanagari domain, a scheme after punctuation, and two links back to back (§4.13) |

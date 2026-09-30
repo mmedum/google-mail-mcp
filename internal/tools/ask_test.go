@@ -427,6 +427,25 @@ func TestTheAnswerIsBoundToItsQuestion(t *testing.T) {
 	}
 }
 
+// Any answer but an accept is refused before the call reads anything,
+// so the refusal never depends on the round reaching its question.
+func TestARefusalIsRefusedBeforeAnyRead(t *testing.T) {
+	for _, action := range []string{"decline", "cancel", "maybe"} {
+		h, fake := mrtr(t, sendOn)
+		args := confirmCases["send_draft"].args(fake)
+		first := callRaw(t, h, &mcp.CallToolParams{Name: "send_draft", Arguments: args})
+		before := len(fake.Calls())
+		res := callRaw(t, h, &mcp.CallToolParams{Name: "send_draft", Arguments: args, RequestState: first.RequestState,
+			InputResponses: mcp.InputResponseMap{"confirm": &mcp.ElicitResult{Action: action}}})
+		if text := testutil.Text(res); !res.IsError || !strings.HasPrefix(text, "[blocked]") || !strings.Contains(text, "not confirmed by the person") {
+			t.Errorf("%s: %s", action, text)
+		}
+		if n := len(fake.Calls()) - before; n != 0 || sends(fake) != 0 {
+			t.Errorf("%s: %d Gmail calls after the answer; %d sends", action, n, sends(fake))
+		}
+	}
+}
+
 // A state that travels through the client expires; one that stays in
 // the process, before 2026-07-28, waits as long as the request does, so
 // a slow accept still counts.

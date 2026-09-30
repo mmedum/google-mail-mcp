@@ -29,6 +29,15 @@ func TestQuotedIsOneInertLine(t *testing.T) {
 		{"\u275dclose\u275e \u02baa\u02ba \u3003b\u3003 \u05f4c\u05f4", span("'close' 'a' 'b' 'c'")},
 		{"at evil.example:8080/x, evil.example?q=1 and evil.example#top", span("at evil[.]example:8080/x, evil[.]example?q=1 and evil[.]example#top")},
 		{"see bücher.example/a", span("see bücher[.]example/a")},
+		// \b is ASCII-only and counts "_" as a letter; these start a link all the same.
+		{"a_https://evil.example/x and x_evil.example/login", span("a_https[:]//evil[.]example/x and x_evil[.]example/login")},
+		{"x_www.evil.example and x_mailto:someone@example.com", span("x_www[.]evil.example and x_mailto[:]someone@example.com")},
+		{"see пример.рф/login", span("see пример[.]рф/login")},
+		{"see नमस्ते.भारत/login", span("see नमस्ते[.]भारत/login")},
+		// A link right after punctuation or another link is broken too.
+		{"see .https://evil.example and -https://evil.example", span("see .https[:]//evil.example and -https[:]//evil.example")},
+		{"x.example/y.example/z http://https://evil.example", span("x[.]example/y[.]example/z http[:]//https[:]//evil.example")},
+		{"www.www.evil.example mailto:mailto:someone@example.com", span("www[.]www[.]evil.example mailto[:]mailto[:]someone@example.com")},
 		{"pad\u2800\u2800\u2800ded", span("pad ded")},
 		{" \t", "empty"},
 		{" \u200b\t", "invisible characters only"},
