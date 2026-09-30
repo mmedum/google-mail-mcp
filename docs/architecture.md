@@ -1728,6 +1728,19 @@ one `confirm_recipients`, which needs a send. The declined delete was
 refused and wrote nothing; each question quotes the run's own text in
 code spans. Reviews in §16a.
 
+**2.0.3 — bare domains and the transcript (unreleased).** The two items
+2.0.2 left to the maintainer:
+
+- A question breaks the last dot of a bare domain a fuzzy Markdown
+  linkifier would link, by linkify-it's own rule, and leaves a file name
+  like `report.pdf` and an address as they are (§18 row 69).
+- The live driver's transcript masks `Label_` ids and filter ids: a
+  filter id by Gmail's observed shape, and by position after "filter"
+  when it carries a digit, which keeps a word like "without" readable.
+
+Run live 2026-09-30 without `-send-to`: the transcript masked 8 filter
+ids and 1 label id and carried none of either.
+
 ### 16a. Found by review, and fixed
 
 Each phase's `/code-review high` and `/security-review` findings, with
