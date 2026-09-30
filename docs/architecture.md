@@ -1738,8 +1738,10 @@ code spans. Reviews in §16a.
   filter id by Gmail's observed shape, and by position after "filter"
   when it carries a digit, which keeps a word like "without" readable.
 
-Run live 2026-09-30 without `-send-to`: the transcript masked 8 filter
-ids and 1 label id and carried none of either.
+Run live 2026-09-30 without `-send-to`: the transcript carried no label
+or filter id. The first run's count double-counted a filter id echoed in
+a step's arguments; review fixed that, and the second run is the one
+recorded below the review round.
 
 ### 16a. Found by review, and fixed
 
@@ -2237,6 +2239,21 @@ what fixed them.
 - **2.0.1, security review: none at the bar.** `/simplify` found the
   code clean and simplified the new test.
 
+- **2.0.3, `/code-review high`.** Fixed: an address with a dotted local
+  part (jane.ai@...) was broken on the local part's side of the @, and is
+  now left alone on both; a domain label with a symbol in it (pay$.com)
+  was not broken, and a label is now what linkify-it reads as one; a
+  filter id echoed in a step's arguments was masked twice, as two
+  placeholders; an id ending in "-" kept that character; the evidence
+  row said linkify-it's fuzzy links are off by default, which holds for
+  6.x only (§18 row 69). Declined: breaking a domain again after another
+  shape broke part of it, since what is left is still linkable; the full
+  IANA TLD list and quoted label names and queries, which the rule
+  chosen covers by design and row 69 records.
+- **2.0.3, security review: none at the bar.** It confirmed a break only
+  inserts brackets, cannot close a code span, and that the @ exception
+  reads one ASCII byte.
+
 ### Closing a phase
 
 1. `make check` green; the live driver run and its transcript read.
@@ -2425,4 +2442,4 @@ live** — §15 exists to settle these, and they are marked.
 | 66 | A client draws an elicitation question as plain text | VS Code `src/vs/workbench/contrib/mcp/browser/mcpElicitationService.ts` L100 and L173, and `src/vs/base/common/htmlContent.ts` L52-62, `main` at 251bcf5f, read 2026-09-29; the maintainer's check in Claude Code 2.1.284 the same day | **Refuted.** VS Code builds a form question as `new MarkdownString(elicitation.message)`, untrusted: command links are off, but emphasis, link text, code spans and HTML-like text draw, and single line breaks join into one paragraph. Only URL mode escapes the message, with `appendText`. 2.0.0 quoted mail text in double quotes, so a label named in Markdown's link syntax drew as link text, and one in double asterisks as the server's emphasis. Each quoted value is now a code span, which CommonMark draws literally, with backticks folded, and a blank line separates the lines. Backslash escaping was rejected: where a client draws plain text, the backslashes show inside addresses, the datum a send asks the person to check. The maintainer compared both in Claude Code and chose the code span |
 | 67 | A required choice naming the outcome confirms better than an empty form | Codex `codex-rs/codex-mcp/src/elicitation.rs` L415-458 and L552-571, `main` at c248f6d4, and VS Code `mcpElicitationService.ts` L111-119 and L237-297, read 2026-09-29; the maintainer's check in Claude Code 2.1.284, protocol 2025-11-25, 2026-09-29, against a throwaway probe with three forms of one `delete_label` question | **Declined, for now.** For: Codex accepts a form with no properties by itself under approval policy `never` with full access, and a VS Code chat question the person skips resolves as `accept` with no content. A required choice survives both, since Codex then declines and an answer without the choice is refused. Against: in Claude Code the choice list, "Keep the label" first and no default, took the maintainer 60 seconds, against 8 for the empty form and 10 for a typed name, and they found it confusing. The empty form stays, and both client behaviors are recorded as limits (§4.13). Revisit if either client changes, or a client is shown to draw a choice list clearly |
 | 68 | `\b` in a Go regular expression is a word boundary in any script | `go doc regexp/syntax`, Go 1.27.1, read 2026-09-29 | **Refuted.** `\b` is "at ASCII word boundary", and `\w` is `[0-9A-Za-z_]`. So `\b` finds no start inside a Cyrillic domain and none after an underscore. The link shapes in a question are now unanchored: a match starts as far left as its own characters reach, and a class before it would consume a separator the next link needs. A domain's letters may carry combining marks (`\p{M}`). A test holds an underscore, a Cyrillic and a Devanagari domain, a scheme after punctuation, and two links back to back (§4.13) |
-| 69 | A bare domain with nothing after it is drawn as a link | cmark-gfm `extensions/autolink.c` and linkify-it `src/linkifyit.ts`, read 2026-09-30 | **Only by a fuzzy linkifier.** GitHub-flavored Markdown links a scheme (`http`, `https`, `ftp`), a `www.` host and an email address, never a bare domain. linkify-it, markdown-it's linkifier, links one only with `fuzzyLink`, off by default, and then only when the last label is two ASCII letters, punycode, or on its default list (biz, com, edu, gov, net, org, pro, web, xxx, aero, asia, coop, info, museum, name, shop, рф). `quoted()` breaks the last dot of exactly those, so `report.pdf` stays and a Markdown file name does not, `.md` being a country code; an address is left alone, since the question means to show it and a client links it as mail at most. Tier 1 |
+| 69 | A bare domain with nothing after it is drawn as a link | cmark-gfm `extensions/autolink.c`; linkify-it 5.0.0 and 6.1.0 as published on npm, and the markdown-it releases that use each; read 2026-09-30 | **By a fuzzy linkifier, which is common.** GitHub-flavored Markdown links a scheme (`http`, `https`, `ftp`), a `www.` host and an email address, never a bare domain. linkify-it links one when `fuzzyLink` is on, which is its default in 5.x (markdown-it 14) and not in 6.x (markdown-it 15), and then when the last label is two ASCII letters, punycode, or on its default list (biz, com, edu, gov, net, org, pro, web, xxx, aero, asia, coop, info, museum, name, shop, рф); a label is anything but space, punctuation or a control, so a symbol counts. `quoted()` breaks the last dot of exactly those, including one another break left, so `report.pdf` stays and a Markdown file name, a label like Clients.EU or a query naming a domain does not, `.md` and `.eu` being countries' codes. An address is left alone on both sides of its @, since the question means to show it and a client links it as mail at most. A client that loads the full IANA list links newer TLDs this does not break. Tier 1 |

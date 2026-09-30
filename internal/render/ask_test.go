@@ -38,6 +38,8 @@ func TestQuotedIsOneInertLine(t *testing.T) {
 		{"visit evil.com or sub.evil.io, then evil.co.uk.", span("visit evil[.]com or sub.evil[.]io, then evil.co[.]uk.")},
 		{"EVIL.COM and xn--80ak6aa92e.xn--p1ai and пример.рф", span("EVIL[.]COM and xn--80ak6aa92e[.]xn--p1ai and пример[.]рф")},
 		{"report.pdf, notes.md and write to someone@example.com", span("report.pdf, notes[.]md and write to someone@example.com")},
+		{"jane.ai@example.com and sales.team.eu@example.com", span("jane.ai@example.com and sales.team.eu@example.com")},
+		{"pay$.com and evil\u263a.com", span("pay$[.]com and evil\u263a[.]com")},
 		{"see नमस्ते.भारत/login", span("see नमस्ते[.]भारत/login")},
 		// A link right after punctuation or another link is broken too.
 		{"see .https://evil.example and -https://evil.example", span("see .https[:]//evil.example and -https[:]//evil.example")},
