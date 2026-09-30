@@ -33,6 +33,13 @@ func TestQuotedIsOneInertLine(t *testing.T) {
 		{"a_https://evil.example/x and x_evil.example/login", span("a_https[:]//evil[.]example/x and x_evil[.]example/login")},
 		{"x_www.evil.example and x_mailto:someone@example.com", span("x_www[.]evil.example and x_mailto[:]someone@example.com")},
 		{"see пример.рф/login", span("see пример[.]рф/login")},
+		// A bare domain is broken where a fuzzy linkifier would link it,
+		// and a file name or an address is not.
+		{"visit evil.com or sub.evil.io, then evil.co.uk.", span("visit evil[.]com or sub.evil[.]io, then evil.co[.]uk.")},
+		{"EVIL.COM and xn--80ak6aa92e.xn--p1ai and пример.рф", span("EVIL[.]COM and xn--80ak6aa92e[.]xn--p1ai and пример[.]рф")},
+		{"report.pdf, notes.md and write to someone@example.com", span("report.pdf, notes[.]md and write to someone@example.com")},
+		{"jane.ai@example.com and sales.team.eu@example.com", span("jane.ai@example.com and sales.team.eu@example.com")},
+		{"pay$.com and evil\u263a.com", span("pay$[.]com and evil\u263a[.]com")},
 		{"see नमस्ते.भारत/login", span("see नमस्ते[.]भारत/login")},
 		// A link right after punctuation or another link is broken too.
 		{"see .https://evil.example and -https://evil.example", span("see .https[:]//evil.example and -https[:]//evil.example")},
