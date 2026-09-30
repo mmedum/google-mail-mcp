@@ -172,3 +172,19 @@ func TestTheDriversTemporaryDirectoryIsMasked(t *testing.T) {
 		}
 	}
 }
+
+// Label and filter ids say what the account has set up, and are masked
+// wherever they appear; a word after "filter" that is not an id stays.
+func TestLabelAndFilterIDsAreMasked(t *testing.T) {
+	r := NewRedactor(false)
+	got := r.Do(`created filter ANe1BmjAbCdEf_12-x; labels Label_12, Label_7; ` +
+		`{"filter_id":"xyz_789"}; deleted filter Zq9_abcdef; the filter is gone; a filter without confirm`)
+	for _, leak := range []string{"ANe1BmjAbCdEf", "Label_12", "Label_7", "xyz_789", "Zq9_abcdef"} {
+		if strings.Contains(got, leak) {
+			t.Errorf("%q leaked: %s", leak, got)
+		}
+	}
+	if !strings.Contains(got, "the filter is gone") || !strings.Contains(got, "a filter without confirm") {
+		t.Errorf("ordinary words were masked: %s", got)
+	}
+}
