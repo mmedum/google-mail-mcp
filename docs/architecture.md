@@ -1,6 +1,8 @@
 # Architecture — google-mail-mcp
 
-**Status: 2.0.2 is released, 2026-09-30, from `main`, and verified from
+**Status: 2.0.3 is tagged from `main`, 2026-09-30: a question also
+breaks a bare domain a fuzzy linkifier would link, and the live
+transcript masks label and filter ids. 2.0.2 was released, 2026-09-30, from `main`, and verified from
 outside: checksums, the cosign signature and the provenance attestation,
 each also against a tampered copy, the registry entry, and the Go proxy
 resolving the `/v2` module path. A question breaks a link after an
@@ -1728,7 +1730,7 @@ one `confirm_recipients`, which needs a send. The declined delete was
 refused and wrote nothing; each question quotes the run's own text in
 code spans. Reviews in §16a.
 
-**2.0.3 — bare domains and the transcript (unreleased).** The two items
+**2.0.3 — bare domains and the transcript (released 2026-09-30).** The two items
 2.0.2 left to the maintainer:
 
 - A question breaks the last dot of a bare domain a fuzzy Markdown
@@ -2250,6 +2252,12 @@ what fixed them.
   shape broke part of it, since what is left is still linkable; the full
   IANA TLD list and quoted label names and queries, which the rule
   chosen covers by design and row 69 records.
+- **2.0.3, `/simplify`.** The domain grammar is three named fragments
+  shared by the path and bare shapes, `domainLabel` so it does not read
+  as a Gmail label, and a string with no bare domain is returned as it
+  is. Declined: masking every id by its position in the tool surface's
+  own argument names, a larger change than this release, left for the
+  next id kind rather than done for this one.
 - **2.0.3, security review: none at the bar.** It confirmed a break only
   inserts brackets, cannot close a code span, and that the @ exception
   reads one ASCII byte.

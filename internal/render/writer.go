@@ -232,8 +232,9 @@ func oneLine(s string, max int) string {
 // no emphasis, link, HTML or entity — and plain text shows as it is. It
 // is made one line; every backtick and every quote mark a reader could
 // take for one becomes a plain single quote, so it cannot close its span
-// or seem to; and a URL scheme, a mailto:, a leading "www." and a bare
-// domain followed by a path are broken so no client draws a link. It is
+// or seem to; and a URL scheme, a mailto:, a leading "www.", a bare
+// domain followed by a path, and a bare domain a fuzzy linkifier would
+// link are broken so no client draws a link. It is
 // cut at max runes. The backticks mark it as quoted material, never the
 // server's own words. Text with nothing to show is said in words, since
 // an empty span is two backticks Markdown shows as they are: "empty"
@@ -283,31 +284,39 @@ var (
 	wwwShape = regexp.MustCompile(`(?i)(www)\.`)
 	// pathShape is a bare domain followed by a path, a port, a query or a
 	// fragment, x.example/..., which a client links too; its last dot is
-	// broken. Letters and their marks from any script count, so a
+	// broken. A label is what linkify-it reads as one, in any script, so a
 	// non-ASCII domain is broken as well.
-	pathShape = regexp.MustCompile(`(?i)(` + label + `(?:\.` + label + `)*)\.([\p{L}\p{M}]{2,63})([/:?#])`)
+	pathShape = regexp.MustCompile(`(?i)(` + domain + `)\.([\p{L}\p{M}]{2,63})([/:?#])`)
 	// bareShape is a bare domain with nothing after it, evil.com, which a
 	// client with a fuzzy linkifier links. It is the rule linkify-it (the
 	// markdown-it linkifier) applies with fuzzyLink on: a last label of
 	// two ASCII letters, a punycode label, or one of its default generic
 	// TLDs (§18). A file name like report.pdf is left alone; notes.md is
 	// not, since .md is a country's. The match ends where the word does.
-	bareShape = regexp.MustCompile(`(?i)` + label + `(?:\.` + label + `)*(\.)(?:[a-z]{2}|biz|com|edu|gov|net|org|pro|web|xxx|aero|asia|coop|info|museum|name|shop|рф|xn--[a-z0-9-]+)(?:[\s\p{Z}\p{P}\p{Cc}<>\x{ff5c}]|$)`)
+	bareShape = regexp.MustCompile(`(?i)` + domain + `(\.)(?:[a-z]{2}|biz|com|edu|gov|net|org|pro|web|xxx|aero|asia|coop|info|museum|name|shop|рф|xn--[a-z0-9-]+)(?:[` + domainSep + `]|$)`)
 )
 
-// label is one label of a domain as linkify-it reads one: characters
-// that are not space, punctuation, a control or one of its text
-// separators, so a symbol counts (pay$.com), and hyphens between them.
-const label = `(?:[^\s\p{Z}\p{P}\p{Cc}<>\x{ff5c}]|-)+`
+// A domain as linkify-it reads one: labels of characters that are not
+// space, punctuation, a control or one of its text separators, so a
+// symbol counts (pay$.com), with hyphens among them, joined by dots.
+const (
+	domainSep   = `\s\p{Z}\p{P}\p{Cc}<>\x{ff5c}`
+	domainLabel = `(?:[^` + domainSep + `]|-)+`
+	domain      = domainLabel + `(?:\.` + domainLabel + `)*`
+)
 
 // breakBareDomains breaks the last dot of each bare domain bareShape
 // finds, except in an address, on either side of its @: jane.ai@
 // example.com is a mail address a question means to show, and a client
 // links it as mail at most.
 func breakBareDomains(s string) string {
+	ms := bareShape.FindAllStringSubmatchIndex(s, -1)
+	if len(ms) == 0 {
+		return s
+	}
 	var b strings.Builder
 	last := 0
-	for _, m := range bareShape.FindAllStringSubmatchIndex(s, -1) {
+	for _, m := range ms {
 		if (m[0] > 0 && s[m[0]-1] == '@') || s[m[1]-1] == '@' {
 			continue
 		}

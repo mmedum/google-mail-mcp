@@ -15,6 +15,8 @@ lifted verbatim.
 
 ## [Unreleased]
 
+## [2.0.3] - 2026-09-30
+
 ### Fixed
 
 - A question breaks a bare domain a fuzzy Markdown linkifier would link, like `evil.com`, not only one followed by a path; a file name like `report.pdf` and an email address stay as they are.
@@ -114,7 +116,8 @@ lifted verbatim.
 - Repository gates run by `make check` and CI: leaks, pins, error classes, API coverage, schema diff, smoke, staleness and more.
 - Signed release archives for six platforms with SBOMs, build provenance, a Claude Desktop bundle and an MCP registry entry.
 
-[Unreleased]: https://github.com/mmedum/google-mail-mcp/compare/v2.0.2...HEAD
+[Unreleased]: https://github.com/mmedum/google-mail-mcp/compare/v2.0.3...HEAD
+[2.0.3]: https://github.com/mmedum/google-mail-mcp/compare/v2.0.2...v2.0.3
 [2.0.2]: https://github.com/mmedum/google-mail-mcp/compare/v2.0.1...v2.0.2
 [2.0.1]: https://github.com/mmedum/google-mail-mcp/compare/v2.0.0...v2.0.1
 [2.0.0]: https://github.com/mmedum/google-mail-mcp/compare/v1.2.0...v2.0.0
