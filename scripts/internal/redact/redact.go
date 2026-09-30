@@ -61,6 +61,20 @@ var patterns = []pattern{
 	// by reading a live transcript. Ten digits and up also takes page
 	// tokens and epoch seconds, which cost a reader nothing to lose.
 	{"NUMBER", regexp.MustCompile(`\b[0-9]{10,}\b`)},
+	// A user label's id, Label_ and a counter. It says which labels the
+	// account has; a live transcript carried them before this existed.
+	{"LABEL", regexp.MustCompile(`\bLabel_[0-9]+\b`)},
+	// A filter id in the shape a live run showed Gmail issuing. The
+	// positions below catch one in any other shape.
+	{"FILTER", regexp.MustCompile(`\bANe1B[0-9A-Za-z_\-]{2,}`)},
+}
+
+// filterPositions are where a filter id appears whatever its shape: the
+// rendered "filter <id>", where a token with a digit in it is an id and a
+// word like "without" is not, and an argument echo's "filter_id":"<id>".
+var filterPositions = []*regexp.Regexp{
+	regexp.MustCompile(`\bfilter ([0-9A-Za-z_\-]*[0-9][0-9A-Za-z_\-]*)\b`),
+	regexp.MustCompile(`"filter_id":"([^"]+)"`),
 }
 
 // historyPositions are where a history id appears. It is a plain decimal
@@ -117,6 +131,7 @@ func (r *Redactor) Do(text string) string {
 		})
 	}
 	text = r.inPositions(text, "HISTORY", historyPositions)
+	text = r.inPositions(text, "FILTER", filterPositions)
 	text = r.inPositions(text, "DIR", dirPositions)
 	// Names last: one of their positions is defined by an address
 	// placeholder.

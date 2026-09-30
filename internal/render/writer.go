@@ -246,6 +246,7 @@ func quoted(s string, max int) part {
 	s = mailtoShape.ReplaceAllString(s, "${1}[:]")
 	s = wwwShape.ReplaceAllString(s, "${1}[.]")
 	s = pathShape.ReplaceAllString(s, "${1}[.]${2}${3}")
+	s = breakBareDomains(s)
 	switch {
 	case s == "" && blank:
 		return part{"empty"}
@@ -285,7 +286,32 @@ var (
 	// broken. Letters and their marks from any script count, so a
 	// non-ASCII domain is broken as well.
 	pathShape = regexp.MustCompile(`(?i)([\p{L}\p{M}\p{N}-]+(?:\.[\p{L}\p{M}\p{N}-]+)*)\.([\p{L}\p{M}]{2,63})([/:?#])`)
+	// bareShape is a bare domain with nothing after it, evil.com, which a
+	// client with a fuzzy linkifier links. It is the rule linkify-it (the
+	// markdown-it linkifier) applies with fuzzyLink on: a last label of
+	// two ASCII letters, a punycode label, or one of its default generic
+	// TLDs (§18). A file name like report.pdf is left alone; notes.md is
+	// not, since .md is a country's. The match ends where the word does.
+	bareShape = regexp.MustCompile(`(?i)[\p{L}\p{M}\p{N}-]+(?:\.[\p{L}\p{M}\p{N}-]+)*(\.)(?:[a-z]{2}|biz|com|edu|gov|net|org|pro|web|xxx|aero|asia|coop|info|museum|name|shop|рф|xn--[a-z0-9-]+)(?:[^\p{L}\p{M}\p{N}-]|$)`)
 )
+
+// breakBareDomains breaks the last dot of each bare domain bareShape
+// finds, except in an address: someone@example.com is a mail address a
+// question means to show, and a client links it as mail at most.
+func breakBareDomains(s string) string {
+	var b strings.Builder
+	last := 0
+	for _, m := range bareShape.FindAllStringSubmatchIndex(s, -1) {
+		if m[0] > 0 && s[m[0]-1] == '@' {
+			continue
+		}
+		b.WriteString(s[last:m[2]])
+		b.WriteString("[.]")
+		last = m[3]
+	}
+	b.WriteString(s[last:])
+	return b.String()
+}
 
 // labelList is a message's or thread's labels by name.
 func labelList(ls []model.LabelRef) part {
