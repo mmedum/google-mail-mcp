@@ -174,7 +174,7 @@ func (s *Service) relabel(add, remove []string) itemWrite {
 		},
 		// Gmail skips a thread's drafts, so their labels stay as they are.
 		predict: func(labels map[string][]string) []string {
-			return applied(labels, add, remove, func(ls []string) bool { return !slices.Contains(ls, "DRAFT") })
+			return applied(labels, add, remove, true)
 		},
 	}
 }
@@ -240,10 +240,11 @@ func (s *Service) move(restore bool) itemWrite {
 			}
 		},
 		predict: func(labels map[string][]string) []string {
+			add, remove := []string{"TRASH"}, []string(nil)
 			if restore {
-				return applied(labels, nil, []string{"TRASH"}, nil)
+				add, remove = nil, add
 			}
-			return applied(labels, []string{"TRASH"}, nil, nil)
+			return applied(labels, add, remove, false)
 		},
 	}
 }
@@ -426,27 +427,28 @@ func labelsOf(ms []gmail.Message) map[string][]string {
 	return out
 }
 
-// union is every label on any of the messages, sorted.
-// applied is the union of the item's labels once add and remove are
-// applied to each message that changes, all of them when changes is nil.
-func applied(labels map[string][]string, add, remove []string, changes func([]string) bool) []string {
-	after := make(map[string][]string, len(labels))
-	for id, ls := range labels {
-		if changes != nil && !changes(ls) {
-			after[id] = ls
+// applied is every label the item's messages would carry once add and
+// remove are applied to each, sorted; with skipDrafts a draft keeps its own.
+func applied(labels map[string][]string, add, remove []string, skipDrafts bool) []string {
+	var all []string
+	for _, ls := range labels {
+		if skipDrafts && slices.Contains(ls, "DRAFT") {
+			all = append(all, ls...)
 			continue
 		}
-		next := slices.DeleteFunc(slices.Clone(ls), func(l string) bool { return slices.Contains(remove, l) })
-		for _, l := range add {
-			if !slices.Contains(next, l) {
-				next = append(next, l)
+		a, r := needs(ls, add, remove)
+		for _, l := range ls {
+			if !slices.Contains(r, l) {
+				all = append(all, l)
 			}
 		}
-		after[id] = next
+		all = append(all, a...)
 	}
-	return union(after)
+	slices.Sort(all)
+	return slices.Compact(all)
 }
 
+// union is every label on any of the messages, sorted.
 func union(labels map[string][]string) []string {
 	var out []string
 	for _, ls := range labels {

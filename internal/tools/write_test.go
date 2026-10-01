@@ -545,21 +545,15 @@ func TestDryRunPredictsLabelsAfter(t *testing.T) {
 		dryArgs["dry_run"] = true
 		var dry, real tools.ItemsOut
 		text := call(t, h, c.tool, dryArgs, &dry)
-		if dry.Items[0].Outcome != "would_change" || !slices.Equal(sorted(labelIDs(dry.Items[0].LabelsAfter)), c.want) {
+		if dry.Items[0].Outcome != "would_change" || !slices.Equal(labelIDs(dry.Items[0].LabelsAfter), c.want) {
 			t.Errorf("%s: dry run %+v", c.name, dry.Items[0])
 		}
 		if !strings.Contains(text, "after: ") {
 			t.Errorf("%s: dry-run text does not say the labels after:\n%s", c.name, text)
 		}
 		call(t, h, c.tool, c.args, &real)
-		if got := sorted(labelIDs(real.Items[0].LabelsAfter)); !slices.Equal(got, c.want) {
+		if got := slices.Sorted(slices.Values(labelIDs(real.Items[0].LabelsAfter))); !slices.Equal(got, c.want) {
 			t.Errorf("%s: the write left %v, the dry run said %v", c.name, got, c.want)
 		}
 	}
-}
-
-func sorted(s []string) []string {
-	s = slices.Clone(s)
-	slices.Sort(s)
-	return s
 }
