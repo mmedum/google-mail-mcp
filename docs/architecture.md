@@ -1,6 +1,6 @@
 # Architecture — google-mail-mcp
 
-**Status: 2.0.4 is built on a topic branch, unreleased: a dry run of
+**Status: 2.0.4 is tagged from `main`, 2026-10-01: a dry run of
 `modify_labels`, `trash` or `restore` reports each item's labels after,
 and trash's prediction takes the mail out of the inbox as Gmail does.
 2.0.3 was released, 2026-09-30, from `main`: a question also breaks a
@@ -1748,7 +1748,7 @@ or filter id. The first run's count double-counted a filter id echoed in
 a step's arguments; review fixed that, and the second run is the one
 recorded below the review round.
 
-**2.0.4 — a dry run's labels after (unreleased).** Found in use, cleaning
+**2.0.4 — a dry run's labels after (released 2026-10-01).** Found in use, cleaning
 a personal mailbox: a dry run of `modify_labels`, `trash` or `restore`
 left `labels_after` empty, which read as every label being removed.
 

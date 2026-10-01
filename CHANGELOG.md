@@ -15,6 +15,8 @@ lifted verbatim.
 
 ## [Unreleased]
 
+## [2.0.4] - 2026-10-01
+
 ### Fixed
 
 - A dry run of `modify_labels`, `trash` or `restore` reports the labels each item would have after the write, instead of an empty `labels_after` that read as every label being removed.
@@ -120,7 +122,8 @@ lifted verbatim.
 - Repository gates run by `make check` and CI: leaks, pins, error classes, API coverage, schema diff, smoke, staleness and more.
 - Signed release archives for six platforms with SBOMs, build provenance, a Claude Desktop bundle and an MCP registry entry.
 
-[Unreleased]: https://github.com/mmedum/google-mail-mcp/compare/v2.0.3...HEAD
+[Unreleased]: https://github.com/mmedum/google-mail-mcp/compare/v2.0.4...HEAD
+[2.0.4]: https://github.com/mmedum/google-mail-mcp/compare/v2.0.3...v2.0.4
 [2.0.3]: https://github.com/mmedum/google-mail-mcp/compare/v2.0.2...v2.0.3
 [2.0.2]: https://github.com/mmedum/google-mail-mcp/compare/v2.0.1...v2.0.2
 [2.0.1]: https://github.com/mmedum/google-mail-mcp/compare/v2.0.0...v2.0.1
