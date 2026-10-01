@@ -63,10 +63,26 @@ func TestChangelogAddedUnderUnreleased(t *testing.T) {
 }
 
 func TestChangelogTouched(t *testing.T) {
+	shipped := map[string]bool{"internal/x": true, "cmd/m": true}
 	got := changelogTouched([]string{"internal/x/a.go", "internal/x/a_test.go", "internal/x/testdata/f",
-		"docs/a.md", "cmd/m/main.go", "scripts/gates/x.go"})
-	if strings.Join(got, ",") != "internal/x/a.go,cmd/m/main.go" {
+		"docs/a.md", "cmd/m/main.go", "scripts/gates/x.go", "internal/x/fake/fake.go", "packaging/m.json", "go.mod"},
+		shipped)
+	if strings.Join(got, ",") != "internal/x/a.go,cmd/m/main.go,packaging/m.json,go.mod" {
 		t.Errorf("changelogTouched = %v", got)
+	}
+}
+
+// The binary links the server and not the in-memory fake.
+func TestShippedPackageDirsIsTheBinarys(t *testing.T) {
+	dirs, err := shippedPackageDirs("../..")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !dirs["internal/service"] || !dirs["cmd/google-mail-mcp"] {
+		t.Errorf("the binary's packages miss internal/service or cmd/google-mail-mcp: %v", dirs)
+	}
+	if dirs["internal/gapi/gmailtest"] || dirs["scripts/gates"] {
+		t.Errorf("the binary's packages include gmailtest or the gates: %v", dirs)
 	}
 }
 
@@ -102,13 +118,13 @@ func TestChangelogCheckOverGit(t *testing.T) {
 	write("internal/a/a.go", "package a\n\nvar X = 1\n")
 	git("commit", "-qam", "two")
 	var out sink
-	if err := changelogCheck(&out, root, "HEAD~1", "HEAD"); err == nil || !strings.Contains(err.Error(), "did not") {
+	if err := changelogCheck(&out, root, "HEAD~1", "HEAD", map[string]bool{"internal/a": true}); err == nil || !strings.Contains(err.Error(), "did not") {
 		t.Errorf("a source change with no entry passed: %v", err)
 	}
 
 	write("CHANGELOG.md", "# Changelog\n\n## [Unreleased]\n\n- X exists\n\n[Unreleased]: https://h\n")
 	git("commit", "-qam", "three")
-	if err := changelogCheck(&out, root, "HEAD~2", "HEAD"); err != nil {
+	if err := changelogCheck(&out, root, "HEAD~2", "HEAD", map[string]bool{"internal/a": true}); err != nil {
 		t.Errorf("an entry under [Unreleased] failed: %v", err)
 	}
 	out.mustSay(t, "1 line(s) added under [Unreleased]")
