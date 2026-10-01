@@ -2,6 +2,7 @@ package mime
 
 import (
 	"encoding/base64"
+	"strconv"
 	"strings"
 	"testing"
 
@@ -94,6 +95,16 @@ func TestParseRawCharsetsAndEncodings(t *testing.T) {
 		t.Errorf("header invisibles: %q %q %d", m.Subject, m.From[0].Name, m.HeaderHidden)
 	}
 
+	m = ParseRaw([]byte("Content-Type: text/html; charset=windows-1251\n\n<p>" + string(cyr) + "</p>"))
+	if m.Body.Text != "Привет, как дела?" {
+		t.Errorf("declared html charset: %q", m.Body.Text)
+	}
+
+	m = ParseRaw([]byte("Content-Type: text/plain\nContent-Transfer-Encoding: base64\n\nYT8-\n"))
+	if m.Body.Text != "a?>" {
+		t.Errorf("base64url body: %q", m.Body.Text)
+	}
+
 	m = ParseRaw([]byte("To: Ada <ada@example.com, bruno@example.org\n\nx"))
 	if len(m.LenientHeaders) != 1 || m.LenientHeaders[0] != "To" || len(m.To) != 2 {
 		t.Errorf("lenient: %v %+v", m.LenientHeaders, m.To)
@@ -140,6 +151,12 @@ func TestBodySelection(t *testing.T) {
 	m = ParseRaw([]byte(htmlOnly))
 	if m.Body.Text != "Only example.com <track.example.invalid>" || len(m.Body.Mismatches()) != 1 {
 		t.Fatalf("html only: %q %+v", m.Body.Text, m.Body.Links)
+	}
+
+	htmlAlt := "Content-Type: multipart/alternative; boundary=alt\n\n--alt\nContent-Type: text/html\n\n<p>Only HTML</p>\n--alt--\n"
+	m = ParseRaw([]byte(htmlAlt))
+	if m.Body.Text != "Only HTML" || m.Body.PlaceholderSkipped {
+		t.Fatalf("alternative with only html skipped nothing: %+v", m.Body)
 	}
 }
 
@@ -280,8 +297,70 @@ func TestMalformedStructure(t *testing.T) {
 	for range maxParts + 50 {
 		b.WriteString("--b\nContent-Type: image/png\n\nx\n")
 	}
-	if n := len(ParseRaw([]byte(b.String())).Attachments); n > maxParts {
-		t.Errorf("parts = %d", n)
+	// The message itself counts toward the 1000 entities read.
+	if n := len(ParseRaw([]byte(b.String())).Attachments); n != 999 {
+		t.Errorf("parts = %d, want 999", n)
+	}
+}
+
+// nestedToLimit wraps parts in multiparts so that each part sits at
+// depth 32, the deepest read; parts are given without delimiters.
+func nestedToLimit(parts ...string) string {
+	s := "Content-Type: multipart/mixed; boundary=b31\r\n\r\n"
+	for _, p := range parts {
+		s += "--b31\r\n" + p + "\r\n"
+	}
+	s += "--b31--\r\n"
+	for i := 30; i >= 0; i-- {
+		b := "b" + strconv.Itoa(i)
+		s = "Content-Type: multipart/mixed; boundary=" + b + "\r\n\r\n--" + b + "\r\n" + s + "\r\n--" + b + "--\r\n"
+	}
+	return s
+}
+
+const unsplitPart = "Content-Type: multipart/mixed; boundary=z\r\n\r\nunsplit"
+
+// Parts at depth 32 are read; a multipart there is not split but read
+// as text.
+func TestParseRawReadsToTheNestingLimit(t *testing.T) {
+	m := ParseRaw([]byte(nestedToLimit(
+		"Content-Type: text/plain\r\n\r\ndeep body",
+		"Content-Type: image/png\r\nContent-Disposition: attachment; filename=\"deep.png\"\r\n\r\npng",
+		unsplitPart,
+	)))
+	if m.Body.Text != "deep body\n\nunsplit" {
+		t.Errorf("body %q, want %q", m.Body.Text, "deep body\n\nunsplit")
+	}
+	wantID := strings.Repeat("0.", 31) + "1"
+	if len(m.Attachments) != 1 || m.Attachments[0].PartID != wantID || m.Attachments[0].Filename != "deep.png" {
+		t.Errorf("attachments %+v, want deep.png at %s", m.Attachments, wantID)
+	}
+}
+
+// splitMultipart returns each part without the line break before the
+// next delimiter, CRLF or LF, and keeps an empty part.
+func TestSplitMultipart(t *testing.T) {
+	cases := []struct {
+		name, in string
+		want     []string
+	}{
+		{"crlf", "--b\r\nA\r\n--b\r\nB\r\n--b--\r\n", []string{"A", "B"}},
+		{"crlf in a part kept", "--b\r\nA\r\n\r\n--b--", []string{"A\r\n"}},
+		{"lf with a blank line", "--b\nA\n\nB\n--b\nC\n--b--\n", []string{"A\n\nB", "C"}},
+		{"empty part", "--b\r\n--b\r\nx\r\n--b--", []string{"", "x"}},
+	}
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			got := splitMultipart([]byte(c.in), "b")
+			if len(got) != len(c.want) {
+				t.Fatalf("splitMultipart(%q) = %q, want %q", c.in, got, c.want)
+			}
+			for i := range got {
+				if string(got[i]) != c.want[i] {
+					t.Errorf("splitMultipart(%q)[%d] = %q, want %q", c.in, i, got[i], c.want[i])
+				}
+			}
+		})
 	}
 }
 
@@ -328,6 +407,23 @@ func TestParsePayload(t *testing.T) {
 	}
 }
 
+// The payload, like raw bytes, is read to 1000 entities, the message
+// itself included.
+func TestParsePayloadStopsAtThePartLimit(t *testing.T) {
+	p := &gmail.MessagePart{MimeType: "multipart/mixed"}
+	for i := range maxParts + 50 {
+		p.Parts = append(p.Parts, gmail.MessagePart{PartID: strconv.Itoa(i), MimeType: "image/png",
+			Body: &gmail.MessagePartBody{Size: 1, Data: b64u("x")}})
+	}
+	m, err := ParsePayload(p, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if n := len(m.Attachments); n != 999 {
+		t.Fatalf("parts = %d, want 999", n)
+	}
+}
+
 func TestParsePayloadNeedsFetch(t *testing.T) {
 	p := &gmail.MessagePart{
 		MimeType: "text/html",
@@ -345,6 +441,19 @@ func TestParsePayloadNeedsFetch(t *testing.T) {
 	if m.Body.Text != "fetched" || len(m.NeedsFetch) != 0 || len(m.Body.Missing) != 0 {
 		t.Fatalf("after fetch %+v", m.Body)
 	}
+
+	// An invitation stored apart, whose header names no method.
+	inv := &gmail.MessagePart{MimeType: "multipart/mixed", Parts: []gmail.MessagePart{
+		{PartID: "0", MimeType: "text/plain", Body: &gmail.MessagePartBody{Size: 2, Data: b64u("hi")}},
+		{PartID: "1", MimeType: "text/calendar", Filename: "invite.ics",
+			Headers: []gmail.MessagePartHeader{{Name: "Content-Type", Value: "text/calendar; charset=utf-8"}},
+			Body:    &gmail.MessagePartBody{Size: 300, AttachmentID: "CAL"}},
+	}}
+	m, _ = ParsePayload(inv, nil)
+	want := PartRef{PartID: "1", AttachmentID: "CAL", MimeType: "text/calendar", Size: 300}
+	if len(m.NeedsFetch) != 1 || m.NeedsFetch[0] != want {
+		t.Fatalf("invitation needs fetch %+v, want %+v", m.NeedsFetch, want)
+	}
 }
 
 func TestParsePayloadMetadata(t *testing.T) {
@@ -355,8 +464,8 @@ func TestParsePayloadMetadata(t *testing.T) {
 	}
 	p = &gmail.MessagePart{MimeType: "text/plain", Headers: []gmail.MessagePartHeader{{Name: "Subject", Value: "Hi"}}}
 	m, _ = ParsePayload(p, nil)
-	if len(m.Body.Missing) != 0 {
-		t.Fatalf("metadata text/plain %+v", m.Body)
+	if len(m.Body.Missing) != 0 || len(m.NeedsFetch) != 0 {
+		t.Fatalf("metadata text/plain %+v needs fetch %+v", m.Body, m.NeedsFetch)
 	}
 }
 
@@ -386,6 +495,7 @@ func TestDecodeQP(t *testing.T) {
 		"bad=ZZ":         "bad=ZZ",
 		"end=":           "end",
 		"lower=c3=a9":    "loweré",
+		"short=4":        "short=4",
 	}
 	for in, want := range cases {
 		if got := string(decodeQP([]byte(in))); got != want {

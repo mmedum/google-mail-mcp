@@ -44,6 +44,9 @@ func TestHTMLToTextStructure(t *testing.T) {
 		{"anchor without href", `<a name="x">plain</a>`, "plain"},
 		{"idn host shown in ascii", `<a href="https://bücher.invalid/">shop</a>`, "shop <xn--bcher-kva.invalid>"},
 		{"tel", `<a href="tel:+15550100">call</a>`, "call <tel:+15550100>"},
+		{"mailto percent-encoded", `<a href="mailto:help%40example.com">write</a>`, "write <mailto:help@example.com>"},
+		{"pre with inline markup", "<pre>a<b>b</b>c</pre>", "abc"},
+		{"blank lines collapsed", "<pre>a\n \n \nb</pre>", "a\n\nb"},
 	}
 	for _, c := range cases {
 		t.Run(c.name, func(t *testing.T) {
@@ -66,6 +69,7 @@ func TestHTMLToTextHidden(t *testing.T) {
 		{"font-size zero", `Hi<span style="font-size:0">abcd</span>`, "Hi", HiddenFontSize, 4},
 		{"font-size 1px", `Hi<span style="font-size: 1px">abcd</span>`, "Hi", HiddenFontSize, 4},
 		{"font-size 0em", `Hi<span style="font-size:0em">ab</span>`, "Hi", HiddenFontSize, 2},
+		{"font-size 1pt", `Hi<span style="font-size:1pt">abcd</span>`, "Hi", HiddenFontSize, 4},
 		{"opacity", `Hi<span style="opacity:0">ab</span>`, "Hi", HiddenOpacity, 2},
 		{"zero box", `Hi<div style="max-height:0;overflow:hidden">ab</div>`, "Hi", HiddenZeroBox, 2},
 		{"hidden attribute", `Hi<p hidden>ab</p>`, "Hi", HiddenAttribute, 2},
@@ -80,6 +84,9 @@ func TestHTMLToTextHidden(t *testing.T) {
 		{"zero width", "Hi\u200Bthere", "Hithere", HiddenInvisible, 1},
 		{"style sheet class", `<style>.pre{display:none}</style>Hi<div class="x pre">preheader</div>`, "Hi", HiddenStyleSheet, 9},
 		{"style sheet id", `<style>/* c */ #p, span.q { visibility: hidden }</style>Hi<div id="p">ab</div><span class="q">cd</span>`, "Hi", HiddenStyleSheet, 4},
+		{"style sheet id only", `<style>#p{display:none}</style>Hi<div id="p">ab</div>`, "Hi", HiddenStyleSheet, 2},
+		{"style sheet second rule", `<style>.a{color:red} .b{display:none}</style>Hi<div class="b">ab</div>`, "Hi", HiddenStyleSheet, 2},
+		{"style sheet rule after import", `<style>@import url(x);.h{display:none}</style>Hi<p class="h">ab</p>`, "Hi", HiddenStyleSheet, 2},
 		{"media rule not applied", `<style>@media (max-width:600px){.m{display:none}} @import url(x);</style><div class="m">Hi</div>`, "Hi", "", 0},
 		{"hidden link counted not listed", `Hi<div style="display:none"><a href="https://x.example.com">go</a><img alt="pic"></div>`, "Hi", HiddenDisplayNone, 5},
 	}
@@ -90,7 +97,7 @@ func TestHTMLToTextHidden(t *testing.T) {
 				t.Fatalf("text = %q, want %q", got.Text, c.visible)
 			}
 			if c.reason == "" {
-				if HiddenTotal(got.Hidden) != 0 {
+				if len(got.Hidden) != 0 {
 					t.Fatalf("hidden = %+v, want none", got.Hidden)
 				}
 				return
@@ -116,6 +123,8 @@ func TestHTMLLinks(t *testing.T) {
 		{"no host in text", `<a href="https://example.com/r">Read more</a>`, "", false},
 		{"email in text vs mailto", `<a href="mailto:x@evil.invalid">help@example.com</a>`, "example.com", true},
 		{"country code", `<a href="https://a.example.com">shop.example.de</a>`, "shop.example.de", true},
+		{"second host in text", `<a href="https://example.com/r">example.com or evil.example.org</a>`, "evil.example.org", true},
+		{"second address in text", `<a href="mailto:a@example.com">a@example.com, b@evil.example.org</a>`, "evil.example.org", true},
 	}
 	for _, c := range cases {
 		t.Run(c.name, func(t *testing.T) {
@@ -153,6 +162,11 @@ func TestHTMLLinks(t *testing.T) {
 		"evil.invalid\n\nnote: x": "",
 		"a b.example":             "",
 		"x<y>.example":            "",
+		// A label is at most 63 characters and a name at most 253.
+		strings.Repeat("a", 63) + ".example":                                     strings.Repeat("a", 63) + ".example",
+		strings.Repeat("a", 64) + ".example":                                     "",
+		strings.Repeat(strings.Repeat("a", 63)+".", 3) + strings.Repeat("b", 61): strings.Repeat(strings.Repeat("a", 63)+".", 3) + strings.Repeat("b", 61),
+		strings.Repeat(strings.Repeat("a", 63)+".", 3) + strings.Repeat("b", 62): "",
 	} {
 		if got := asciiHost(in); got != want {
 			t.Errorf("asciiHost(%q) = %q, want %q", in, got, want)
@@ -188,8 +202,32 @@ func TestStripAtBlocks(t *testing.T) {
 	if strings.Contains(got, "b{}") || !strings.Contains(got, "d{}") || !strings.Contains(got, "e{}") {
 		t.Fatalf("got %q", got)
 	}
+	if want := "a{}  d{}  e{} "; got != want {
+		t.Fatalf("got %q, want %q", got, want)
+	}
 	if got := stripAtBlocks("@media"); got != "" {
 		t.Fatalf("unterminated: %q", got)
+	}
+}
+
+// Text is read to a depth of 512 nodes: the document, html and body,
+// then 508 elements. Depth is the path to a node, not how many came
+// before it.
+func TestHTMLDepthLimit(t *testing.T) {
+	nest := func(k int) string { return strings.Repeat("<div>", k) + "x" + strings.Repeat("</div>", k) }
+	cases := []struct {
+		name, in, want string
+	}{
+		{"508 deep", nest(508), "x"},
+		{"509 deep", nest(509), ""},
+		{"600 paragraphs", strings.Repeat("<p>x</p>", 600), strings.TrimSuffix(strings.Repeat("x\n\n", 600), "\n\n")},
+	}
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			if got := HTMLToText([]byte(c.in)).Text; got != c.want {
+				t.Fatalf("got %d bytes %.40q, want %d bytes %.40q", len(got), got, len(c.want), c.want)
+			}
+		})
 	}
 }
 

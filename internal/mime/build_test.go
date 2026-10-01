@@ -179,6 +179,12 @@ func TestBuildRefuses(t *testing.T) {
 		{"bad reference", func(o *Outgoing) { o.References = []string{"<a@b> <c@d>"} }},
 		{"path as attachment name", func(o *Outgoing) { o.Attachments = []OutAttachment{{Filename: "../x"}} }},
 		{"bad media type", func(o *Outgoing) { o.Attachments = []OutAttachment{{Filename: "x", MediaType: "text"}} }},
+		{"space in media type", func(o *Outgoing) { o.Attachments = []OutAttachment{{Filename: "x", MediaType: "text/pl ain"}} }},
+		{"DEL in media type", func(o *Outgoing) { o.Attachments = []OutAttachment{{Filename: "x", MediaType: "text/pl\x7fain"}} }},
+		{"tspecial in media type", func(o *Outgoing) { o.Attachments = []OutAttachment{{Filename: "x", MediaType: "text/(plain"}} }},
+		{"line break in media type", func(o *Outgoing) {
+			o.Attachments = []OutAttachment{{Filename: "x", MediaType: "text/plain\r\nBcc: e@example.com"}}
+		}},
 	}
 	for _, tt := range cases {
 		t.Run(tt.name, func(t *testing.T) {
@@ -207,6 +213,10 @@ func TestFormatAddressesQuotesAndEncodes(t *testing.T) {
 		{Address{Name: "Ada  Quill", Email: "a@example.com"}, `"Ada  Quill" <a@example.com>`},
 		{Address{Name: "=?utf-8?q?x?=", Email: "a@example.com"}, "=?utf-8?b?PT91dGYtOD9xP3g/PQ==?= <a@example.com>"},
 		{Address{Name: "Zoë", Email: "z@example.org"}, "=?utf-8?b?Wm/Dqw==?= <z@example.org>"},
+		// The ends of the printable range are atext, so they pass as written.
+		{Address{Email: "!a@example.com"}, "!a@example.com"},
+		{Address{Email: "a~@example.com"}, "a~@example.com"},
+		{Address{Name: "Ada~Quill", Email: "a@example.com"}, "Ada~Quill <a@example.com>"},
 	}
 	for _, tt := range cases {
 		got, err := FormatAddresses([]Address{tt.in})
@@ -236,6 +246,137 @@ func TestEncodeWordsStayWithinSeventyFive(t *testing.T) {
 	}
 	if got := DecodeHeader(encodeWords(s)); got != s {
 		t.Fatalf("decoded %q", got)
+	}
+}
+
+// FormatText writes printable ASCII as it is and encodes only non-ASCII,
+// "=?" and a run too long to fold, in words of at most 45 bytes.
+func TestFormatTextEncodesOnlyWhatItMust(t *testing.T) {
+	cases := []struct{ name, in, want string }{
+		{"tilde is printable", "a~b", "a~b"},
+		{"run of 75 is written", strings.Repeat("x", 75), strings.Repeat("x", 75)},
+		{"run of 76 is encoded", strings.Repeat("x", 76),
+			"=?utf-8?b?" + strings.Repeat("eHh4", 15) + "?= =?utf-8?b?" + strings.Repeat("eHh4", 10) + "eA==?="},
+	}
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			got, err := FormatText(c.in)
+			if err != nil || got != c.want {
+				t.Fatalf("FormatText(%q) = %q, %v; want %q", c.in, got, err, c.want)
+			}
+		})
+	}
+}
+
+// HasControl draws its line at C0, DEL and C1, both ends included.
+func TestHasControl(t *testing.T) {
+	cases := []struct {
+		in   string
+		want bool
+	}{
+		{"a\x1fb", true},
+		{"a b", false},
+		{"a~b", false},
+		{"a\x7fb", true},
+		{"a\u0080b", true},
+		{"a\u009fb", true},
+		{"a b", false},
+	}
+	for _, c := range cases {
+		if got := HasControl(c.in); got != c.want {
+			t.Errorf("HasControl(%q) = %v, want %v", c.in, got, c.want)
+		}
+	}
+}
+
+// ValidMessageID takes "<local@domain>" of printable ASCII other than
+// brackets, "@" and space, at most 499 characters with the brackets.
+func TestValidMessageID(t *testing.T) {
+	at499 := "<" + strings.Repeat("a", 485) + "@example.com>"
+	cases := []struct {
+		name, in string
+		want     bool
+	}{
+		{"plain", "<a@example.com>", true},
+		{"printable ends", "<!a~@example.com>", true},
+		{"499 characters", at499, true},
+		{"500 characters", "<a" + at499[1:], false},
+		{"DEL in local part", "<a\x7f@example.com>", false},
+		{"bracket first in local part", "<<a@example.com>", false},
+		{"bracket first in domain", "<a@>example.com>", false},
+	}
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			if got := ValidMessageID(c.in); got != c.want {
+				t.Fatalf("ValidMessageID(%q) = %v, want %v", c.in, got, c.want)
+			}
+		})
+	}
+}
+
+// A file name of at most 60 printable ASCII characters without quotes
+// is written quoted. Anything else is RFC 2231 in segments of at most
+// 54 characters, and a segment never ends inside a %XX escape.
+func TestFilenameParamQuotesOrEncodes(t *testing.T) {
+	const p0, p1 = "filename*0*=utf-8''", "; filename*1*="
+	cases := []struct{ name, in, want string }{
+		{"plain", "notes.txt", `filename="notes.txt"`},
+		{"space and tilde", "a b~.txt", `filename="a b~.txt"`},
+		{"60 characters", strings.Repeat("n", 56) + ".txt", `filename="` + strings.Repeat("n", 56) + `.txt"`},
+		{"61 characters", strings.Repeat("n", 57) + ".txt", p0 + strings.Repeat("n", 54) + p1 + "nnn.txt"},
+		{"quotes", `say "hi".txt`, p0 + "say%20%22hi%22.txt"},
+		{"non-ASCII", "Zoë.txt", p0 + "Zo%C3%AB.txt"},
+		{"cut before an escape", strings.Repeat("a", 51) + "é", p0 + strings.Repeat("a", 51) + "%C3" + p1 + "%A9"},
+		{"cut one into an escape", strings.Repeat("a", 52) + "é", p0 + strings.Repeat("a", 52) + p1 + "%C3%A9"},
+		{"cut two into an escape", strings.Repeat("a", 53) + "é", p0 + strings.Repeat("a", 53) + p1 + "%C3%A9"},
+	}
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			if got := filenameParam(c.in); got != c.want {
+				t.Fatalf("filenameParam(%q) =\n%q\nwant\n%q", c.in, got, c.want)
+			}
+		})
+	}
+}
+
+// An attachment's content is base64 in lines of 76 characters, CRLF
+// between lines and none after the last.
+func TestAttachmentBodyIsBase64InLinesOf76(t *testing.T) {
+	head := "Content-Type: text/plain; name=\"notes.txt\"\r\n" +
+		"Content-Disposition: attachment; filename=\"notes.txt\"\r\n" +
+		"Content-Transfer-Encoding: base64\r\n\r\n"
+	cases := []struct {
+		name string
+		n    int
+		body string
+	}{
+		{"one full line", 57, strings.Repeat("QUFB", 19)},
+		{"one byte more", 58, strings.Repeat("QUFB", 19) + "\r\nQQ=="},
+	}
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			a := OutAttachment{Filename: "notes.txt", MediaType: "text/plain", Content: bytes.Repeat([]byte("A"), c.n)}
+			if got := string(entityBytes(t, a)); got != head+c.body {
+				t.Fatalf("%d bytes written as\n%q\nwant\n%q", c.n, got, head+c.body)
+			}
+		})
+	}
+}
+
+// fold breaks at the last space that leaves a line of at most 78, and
+// leaves a line of exactly 78 whole.
+func TestFoldBreaksAtTheLastSpaceThatFits(t *testing.T) {
+	x69, y38, z38 := strings.Repeat("x", 69), strings.Repeat("y", 38), strings.Repeat("z", 38)
+	cases := []struct{ name, in, want string }{
+		{"first line of 78", "Subject: " + x69 + " yz", "Subject: " + x69 + "\r\n yz"},
+		{"rest of 78 stays whole", "Subject: " + x69 + " " + y38 + " " + z38, "Subject: " + x69 + "\r\n " + y38 + " " + z38},
+	}
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			if got := fold(c.in); got != c.want {
+				t.Fatalf("fold(%q) =\n%q\nwant\n%q", c.in, got, c.want)
+			}
+		})
 	}
 }
 

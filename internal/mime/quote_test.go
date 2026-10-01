@@ -60,6 +60,27 @@ func TestFindSpans(t *testing.T) {
 		{"long signature is not a signature",
 			"Body\n-- \n" + strings.Repeat("line\n", 40), nil},
 		{"crlf", "Yes.\r\n> old\r\n", []wantSpan{{SpanQuote, "> old\r", true}}},
+		{"attribution on the first line",
+			"On Mon, Ada wrote:\n> Shall we?\n\nYes.",
+			[]wantSpan{{SpanQuote, "On Mon, Ada wrote:\n> Shall we?", false}}},
+		{"signature right below a quote",
+			"Yes.\n> old\n-- \nAda",
+			[]wantSpan{{SpanQuote, "> old", true}, {SpanSignature, "-- \nAda", true}}},
+		{"signature of 30 lines",
+			"Body\n-- \n" + strings.Repeat("line\n", 29) + "line",
+			[]wantSpan{{SpanSignature, "-- \n" + strings.Repeat("line\n", 29) + "line", true}}},
+		{"signature of 31 lines is not one",
+			"Body\n-- \n" + strings.Repeat("line\n", 30) + "line", nil},
+		{"rule as the last line", "Body\n" + strings.Repeat("_", 32), nil},
+		{"from as the last line", "Hi\nFrom: Ada", nil},
+		{"outlook header after a rule and a blank line",
+			"Ok.\n" + strings.Repeat("_", 32) + "\n\nFrom: Ada\nSent: today\nTo: Bruno\nold",
+			[]wantSpan{{SpanQuote, strings.Repeat("_", 32) + "\n\nFrom: Ada\nSent: today\nTo: Bruno\nold", true}}},
+		{"outlook to five lines below from",
+			"Ok.\nFrom: Ada\nSent: today\nx\nx\nx\nTo: Bruno\nold",
+			[]wantSpan{{SpanQuote, "From: Ada\nSent: today\nx\nx\nx\nTo: Bruno\nold", true}}},
+		{"outlook to six lines below from is not a header",
+			"Ok.\nFrom: Ada\nSent: today\nx\nx\nx\nx\nTo: Bruno\nold", nil},
 	}
 	for _, c := range cases {
 		t.Run(c.name, func(t *testing.T) {
@@ -105,6 +126,7 @@ func TestIsPlaceholder(t *testing.T) {
 		"Your email client does not support HTML messages.",
 		"This is a multi-part message in MIME format.",
 		"Please view the HTML version of this message.",
+		"View this email in your browser." + strings.Repeat(".", 368), // 400 characters
 	}
 	for _, s := range yes {
 		if !isPlaceholder(s) {
@@ -114,6 +136,7 @@ func TestIsPlaceholder(t *testing.T) {
 	no := []string{
 		"Hi Ada, the meeting is at 10.",
 		strings.Repeat("A long real body that mentions the web version once. ", 20),
+		"View this email in your browser." + strings.Repeat(".", 369),
 	}
 	for _, s := range no {
 		if isPlaceholder(s) {
