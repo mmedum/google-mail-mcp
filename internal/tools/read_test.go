@@ -425,6 +425,9 @@ func TestReadRefusalsAreClassified(t *testing.T) {
 		{"get_thread", map[string]any{"thread_id": "00000000000fffff"}, "[not_found]"},
 		{"get_draft", map[string]any{"draft_id": "r00000000000fffff"}, "[not_found]"},
 		{"get_message", map[string]any{"message_id": "x", "budget_chars": 10}, "[invalid]"},
+		// The largest budget is accepted, so the read goes on to Gmail.
+		{"get_message", map[string]any{"message_id": "00000000000fffff", "budget_chars": 100000}, "[not_found]"},
+		{"get_message", map[string]any{"message_id": "x", "budget_chars": 100001}, "[invalid]"},
 		{"get_thread", map[string]any{"thread_id": "x", "time_zone": "Nowhere/Else"}, "[invalid]"},
 		{"search_threads", map[string]any{"labels": []any{"no such label"}}, "[not_found]"},
 		{"search_messages", map[string]any{"time_zone": "Nowhere/Else"}, "[invalid]"},

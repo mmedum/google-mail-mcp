@@ -134,6 +134,28 @@ func TestReadOnlyWithAnEnableFlagIsRefused(t *testing.T) {
 	}
 }
 
+// GMAIL_HTTP_TIMEOUT is 1s to 10m, both ends included.
+func TestHTTPTimeoutBounds(t *testing.T) {
+	isolate(t)
+	for _, tc := range []struct {
+		value string
+		want  time.Duration // 0 means refused
+	}{
+		{"999ms", 0},
+		{"1s", time.Second},
+		{"10m", 10 * time.Minute},
+		{"10m1ms", 0},
+	} {
+		c, err := build(t, map[string]string{"GMAIL_HTTP_TIMEOUT": tc.value})
+		switch {
+		case tc.want == 0 && !errors.Is(err, ErrInvalid):
+			t.Errorf("%s: accepted as %s; want refused", tc.value, c.HTTPTimeout)
+		case tc.want != 0 && (err != nil || c.HTTPTimeout != tc.want):
+			t.Errorf("%s: %s, %v; want %s", tc.value, c.HTTPTimeout, err, tc.want)
+		}
+	}
+}
+
 func TestEveryProblemIsReported(t *testing.T) {
 	home := isolate(t)
 	file := filepath.Join(t.TempDir(), "file")

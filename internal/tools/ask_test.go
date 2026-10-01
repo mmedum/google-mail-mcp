@@ -110,10 +110,11 @@ var confirmCases = map[string]confirmCase{
 	"delete_permanently": {
 		args: func(f *gmailtest.Server) map[string]any {
 			return map[string]any{"message_ids": []any{f.Scenario(gmailtest.ScenarioPlainThread).MessageIDs[0]},
-				"thread_ids": []any{f.Scenario(gmailtest.ScenarioLongThread).ThreadID}, "confirm": true}
+				"thread_ids": []any{f.Scenario(gmailtest.ScenarioLongThread).ThreadID, f.Scenario(gmailtest.ScenarioNewsletter).ThreadID},
+				"confirm":    true}
 		},
 		write: "gmail.users.messages.delete",
-		shows: []string{"delete 1 message and 1 thread, every message in them, for good"},
+		shows: []string{"delete 1 message and 2 threads, every message in them, for good"},
 	},
 	"delete_draft": {
 		args: func(f *gmailtest.Server) map[string]any {
@@ -315,6 +316,31 @@ func TestNoPromptPossible(t *testing.T) {
 	call(t, h, "create_filter", map[string]any{"from": "noise@example.org", "star": true}, &tools.FilterWriteOut{})
 	call(t, h, "set_vacation", map[string]any{"enable": false}, &tools.VacationOut{})
 	call(t, h, "send_draft", with(c.args(fake), "dry_run", true), &tools.SendDraftOut{})
+}
+
+// A client that declares form elicitation is asked, with URL elicitation
+// or without; one that declares URL alone cannot show a form, so confirm
+// stays the only guard.
+func TestOnlyAClientThatShowsFormsIsAsked(t *testing.T) {
+	for _, tc := range []struct {
+		name  string
+		caps  *mcp.ElicitationCapabilities
+		asked int
+	}{
+		{"form and url", &mcp.ElicitationCapabilities{Form: &mcp.FormElicitationCapabilities{}, URL: &mcp.URLElicitationCapabilities{}}, 1},
+		{"url alone", &mcp.ElicitationCapabilities{URL: &mcp.URLElicitationCapabilities{}}, 0},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			p := &person{answer: accepts}
+			h, fake := connectAsking(t, sendOn, "2025-11-25", p, func(o *mcp.ClientOptions) {
+				o.Capabilities = &mcp.ClientCapabilities{Elicitation: tc.caps}
+			})
+			call(t, h, "send_draft", confirmCases["send_draft"].args(fake), &tools.SendDraftOut{})
+			if n := len(p.asked()); n != tc.asked || sends(fake) != 1 {
+				t.Errorf("asked %d questions, %d sends; want %d and 1", n, sends(fake), tc.asked)
+			}
+		})
+	}
 }
 
 // A dry run never asks, and a call a guard refuses is refused before
@@ -582,7 +608,9 @@ func TestAReplyLostAfterTheSendIsAmbiguous(t *testing.T) {
 	t.Cleanup(h.Close)
 	res := h.Call(t, "send_draft", confirmCases["send_draft"].args(fake))
 	text := testutil.Text(res)
-	if !res.IsError || !strings.HasPrefix(text, "[ambiguous_outcome]") || strings.Contains(text, "Nothing was written") || sends(fake) != 1 {
+	// The send returned before the reply was lost, so it was written.
+	if !res.IsError || !strings.HasPrefix(text, "[ambiguous_outcome]") || !strings.Contains(text, "verdict: written") ||
+		strings.Contains(text, "Nothing was written") || sends(fake) != 1 {
 		t.Fatalf("%s; %d sends", text, sends(fake))
 	}
 }

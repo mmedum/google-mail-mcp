@@ -76,7 +76,8 @@ func TestSendDraftReply(t *testing.T) {
 	var dry tools.SendDraftOut
 	text := call(t, h, "send_draft", with(args, "dry_run", true), &dry)
 	if !dry.DryRun || dry.Sent || dry.Answers != 2 || dry.Unconfirmed != 0 || len(dry.Recipients) != 1 ||
-		!dry.Recipients[0].Participant || sends(fake) != 0 {
+		!dry.Recipients[0].Participant || sends(fake) != 0 ||
+		string(dry.UntrustedFrom) != gmailtest.Reader.Name+" <"+gmailtest.Account+">" {
 		t.Fatalf("dry run %+v", dry)
 	}
 	if !strings.Contains(text, "answers a thread of 2 messages") || strings.Contains(outside(text), "freya") {
@@ -212,6 +213,16 @@ func TestSendDraftAmbiguousOutcome(t *testing.T) {
 			Then: func(s *gmailtest.Server) {
 				s.Fail(gmailtest.Failure{Method: "gmail.users.threads.get", Status: 400, Reason: "invalidArgument"})
 			}}}, "verdict: unknown", true},
+		// The draft still there says nothing alone: without the thread,
+		// a late copy in SENT cannot be ruled out.
+		{"the thread read fails, the draft still there", []gmailtest.Failure{{Method: "gmail.users.drafts.send", Reset: true,
+			Then: func(s *gmailtest.Server) {
+				s.Fail(gmailtest.Failure{Method: "gmail.users.threads.get", Status: 400, Reason: "invalidArgument"})
+			}}}, "verdict: unknown", false},
+		{"the thread is gone, the draft still there", []gmailtest.Failure{{Method: "gmail.users.drafts.send", Reset: true,
+			Then: func(s *gmailtest.Server) {
+				s.Fail(gmailtest.Failure{Method: "gmail.users.threads.get", Status: 404, Reason: "notFound"})
+			}}}, "verdict: not_sent", false},
 		{"the draft read fails", []gmailtest.Failure{{Method: "gmail.users.drafts.send", Status: 500,
 			Then: func(s *gmailtest.Server) {
 				s.Fail(gmailtest.Failure{Method: "gmail.users.drafts.get", Status: 403, Reason: "forbidden"})
@@ -283,8 +294,15 @@ func TestDeletePermanently(t *testing.T) {
 	if _, ok := fake.Message(plain.MessageIDs[0], "minimal"); ok {
 		t.Error("the message is still there")
 	}
-	if _, ok := fake.Message(long.MessageIDs[0], "minimal"); ok {
-		t.Error("the thread's first message is still there")
+	// A message id deletes that message alone, and a thread id every
+	// message of the thread.
+	if _, ok := fake.Message(plain.MessageIDs[1], "minimal"); !ok {
+		t.Error("the deleted message's thread lost another message")
+	}
+	for _, id := range long.MessageIDs {
+		if _, ok := fake.Message(id, "minimal"); ok {
+			t.Errorf("message %s of the deleted thread is still there", id)
+		}
 	}
 	if !strings.Contains(text, "deleted for good · labels it had:") || out.Units != 1+30+20+20+60 {
 		t.Errorf("%d units:\n%s", out.Units, text)
