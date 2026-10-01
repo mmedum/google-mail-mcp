@@ -81,8 +81,8 @@ func TestGoldenItemsWrites(t *testing.T) {
 		}}
 	golden(t, "modify_labels", render.ItemsWrite(modify))
 	modify.DryRun = true
-	modify.Items[0].Outcome, modify.Items[0].After = model.WouldChange, nil
-	modify.Items[2].Outcome, modify.Items[2].After = model.WouldChange, nil
+	modify.Items[0].Outcome = model.WouldChange
+	modify.Items[2].Outcome = model.WouldChange
 	golden(t, "modify_labels_dry_run", render.ItemsWrite(modify))
 
 	trash := model.ItemsWrite{Op: "trash", Items: []model.Item{

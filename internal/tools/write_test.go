@@ -1,6 +1,7 @@
 package tools_test
 
 import (
+	"maps"
 	"os"
 	"path/filepath"
 	"slices"
@@ -633,4 +634,50 @@ func TestLabelNameLength(t *testing.T) {
 	var dry tools.LabelWriteOut
 	call(t, h, "create_label", map[string]any{"name": strings.Repeat("ä", 225), "dry_run": true}, &dry)
 	refused(t, h, "create_label", map[string]any{"name": strings.Repeat("ä", 226), "dry_run": true}, gapi.ClassInvalid)
+}
+
+// A dry run reports the labels each item would have, and the write that
+// follows leaves exactly those.
+func TestDryRunPredictsLabelsAfter(t *testing.T) {
+	h, fake := connectFake(t, config.Config{})
+	plain := fake.Scenario(gmailtest.ScenarioPlainThread)
+	reply := fake.Scenario(gmailtest.ScenarioDraftReply)
+
+	for _, c := range []struct {
+		name, tool string
+		args       map[string]any
+		want       []string
+	}{
+		{"archive a message left with no labels", "modify_labels", map[string]any{"message_ids": []any{reply.MessageIDs[0]},
+			"remove": []any{"INBOX"}}, []string{}},
+		{"modify a message", "modify_labels", map[string]any{"message_ids": []any{plain.MessageIDs[0]},
+			"add": []any{"STARRED"}, "remove": []any{"INBOX"}}, []string{"IMPORTANT", "Label_2", "STARRED"}},
+		{"modify a thread with a draft", "modify_labels", map[string]any{"thread_ids": []any{reply.ThreadID},
+			"add": []any{"STARRED"}}, []string{"DRAFT", "SENT", "STARRED"}},
+		{"trash a message, which leaves the inbox", "trash", map[string]any{"message_ids": []any{plain.MessageIDs[2]}},
+			[]string{"Label_2", "TRASH", "UNREAD"}},
+		{"restore it, which does not return it to the inbox", "restore", map[string]any{"message_ids": []any{plain.MessageIDs[2]}},
+			[]string{"Label_2", "UNREAD"}},
+	} {
+		dryArgs := maps.Clone(c.args)
+		dryArgs["dry_run"] = true
+		var dry, real tools.ItemsOut
+		text := call(t, h, c.tool, dryArgs, &dry)
+		if len(dry.Items) != 1 {
+			t.Fatalf("%s: dry run gave %d items", c.name, len(dry.Items))
+		}
+		if dry.Items[0].Outcome != "would_change" || !slices.Equal(labelIDs(dry.Items[0].LabelsAfter), c.want) {
+			t.Errorf("%s: dry run %+v", c.name, dry.Items[0])
+		}
+		if !strings.Contains(text, "after: ") {
+			t.Errorf("%s: dry-run text does not say the labels after:\n%s", c.name, text)
+		}
+		call(t, h, c.tool, c.args, &real)
+		if len(real.Items) != 1 {
+			t.Fatalf("%s: the write gave %d items", c.name, len(real.Items))
+		}
+		if got := slices.Sorted(slices.Values(labelIDs(real.Items[0].LabelsAfter))); !slices.Equal(got, c.want) {
+			t.Errorf("%s: the write left %v, the dry run said %v", c.name, got, c.want)
+		}
+	}
 }

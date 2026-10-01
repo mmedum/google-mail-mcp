@@ -172,6 +172,10 @@ func (s *Service) relabel(add, remove []string) itemWrite {
 			m, err := s.client.ModifyMessage(ctx, t.id, gmail.ModifyMessageRequest{AddLabelIDs: a, RemoveLabelIDs: r})
 			return m.LabelIDs, err
 		},
+		// Gmail skips a thread's drafts, so their labels stay as they are.
+		predict: func(labels map[string][]string) []string {
+			return applied(labels, add, remove, true)
+		},
 	}
 }
 
@@ -234,6 +238,14 @@ func (s *Service) move(restore bool) itemWrite {
 				m, err := s.client.TrashMessage(ctx, t.id)
 				return m.LabelIDs, err
 			}
+		},
+		// Gmail's trash takes a message out of the inbox, and its restore
+		// does not put it back (§18 row 70).
+		predict: func(labels map[string][]string) []string {
+			if restore {
+				return applied(labels, nil, []string{"TRASH"}, false)
+			}
+			return applied(labels, []string{"TRASH"}, []string{"INBOX"}, false)
 		},
 	}
 }
@@ -319,6 +331,9 @@ type itemWrite struct {
 	// write changes the item, whose labels were before, and returns its
 	// labels after.
 	write func(ctx context.Context, t target, before []string) ([]string, error)
+	// predict is the labels a dry run says the item would have after the
+	// write, from its messages' labels; nil leaves them unreported.
+	predict func(labels map[string][]string) []string
 }
 
 // each runs one write per item, at most fanOutLimit at a time: a read of
@@ -350,6 +365,9 @@ func (s *Service) one(ctx context.Context, t target, index model.LabelIndex, w i
 		item.Outcome, item.After = model.Unchanged, item.Before
 	case gapi.WritesForbidden(ctx):
 		item.Outcome = model.WouldChange
+		if w.predict != nil {
+			item.After = index.Refs(w.predict(labels))
+		}
 	default:
 		after, err := w.write(ctx, t, before)
 		if err != nil {
@@ -408,6 +426,26 @@ func labelsOf(ms []gmail.Message) map[string][]string {
 		out[m.ID] = m.LabelIDs
 	}
 	return out
+}
+
+// applied is every label the item's messages would carry once add and
+// remove are applied to each, sorted; with skipDrafts a draft keeps its own.
+func applied(labels map[string][]string, add, remove []string, skipDrafts bool) []string {
+	var all []string
+	for _, ls := range labels {
+		if skipDrafts && slices.Contains(ls, "DRAFT") {
+			all = append(all, ls...)
+			continue
+		}
+		for _, l := range ls {
+			if !slices.Contains(remove, l) {
+				all = append(all, l)
+			}
+		}
+		all = append(all, add...)
+	}
+	slices.Sort(all)
+	return slices.Compact(all)
 }
 
 // union is every label on any of the messages, sorted.
