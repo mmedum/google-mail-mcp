@@ -2,12 +2,14 @@ package tools_test
 
 import (
 	"context"
+	"errors"
 	"os"
 	"path/filepath"
 	"strconv"
 	"strings"
 	"testing"
 
+	"github.com/modelcontextprotocol/go-sdk/jsonrpc"
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 
 	"github.com/mmedum/google-mail-mcp/v2/internal/config"
@@ -177,9 +179,15 @@ func TestResources(t *testing.T) {
 		t.Errorf("the thread resource differs from get_thread:\n%s\n---\n%s", res.Contents[0].Text, testutil.Text(tool))
 	}
 
-	for _, uri := range []string{"gmail://threads/0000000000fffff0", "gmail://threads/a/b", "gmail://elsewhere/x"} {
-		if _, err := h.Client.ReadResource(ctx, &mcp.ReadResourceParams{URI: uri}); err == nil {
-			t.Errorf("read %s succeeded; want resource not found", uri)
+	// A thread or message Gmail does not have is the protocol's
+	// resource-not-found, invalid params since SEP-2164, not a server
+	// error.
+	for _, uri := range []string{"gmail://threads/0000000000fffff0", "gmail://messages/0000000000fffff0", "gmail://threads/a/b",
+		"gmail://elsewhere/x"} {
+		_, err := h.Client.ReadResource(ctx, &mcp.ReadResourceParams{URI: uri})
+		var werr *jsonrpc.Error
+		if !errors.As(err, &werr) || werr.Code != jsonrpc.CodeInvalidParams {
+			t.Errorf("read %s: err = %v; want resource not found (code -32602)", uri, err)
 		}
 	}
 }

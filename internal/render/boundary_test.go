@@ -459,6 +459,13 @@ func TestBudgetIsHeld(t *testing.T) {
 			if got := utf8.RuneCountInString(Thread(th, Options{Tokens: seq("T"), Budget: budget}).Text); got > budget {
 				t.Errorf("thread of %d words at %d: %d characters", words, budget, got)
 			}
+			// The room its drafts' lines take comes out of the budget.
+			d := m
+			d.ID, d.Labels = "0000000000000009", []model.LabelRef{{ID: "DRAFT", Name: "DRAFT"}}
+			drafted := model.Thread{ID: "0000000000000001", Messages: []model.Message{m, m, m, d}}
+			if got := utf8.RuneCountInString(Thread(drafted, Options{Tokens: seq("T"), Budget: budget}).Text); got > budget {
+				t.Errorf("thread of %d words with a draft at %d: %d characters", words, budget, got)
+			}
 		}
 	}
 }

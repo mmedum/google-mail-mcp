@@ -3,6 +3,7 @@ package service_test
 import (
 	"context"
 	"errors"
+	"slices"
 	"strconv"
 	"strings"
 	"testing"
@@ -287,6 +288,32 @@ func TestMessageFetchesItsBackedParts(t *testing.T) {
 	fake.Fail(gmailtest.Failure{Method: "gmail.users.messages.attachments.get", Status: 404, Reason: "notFound"})
 	_, err := s.Message(context.Background(), backed)
 	wantClass(t, err, gapi.ClassNotFound)
+}
+
+// A thread's every message, and a draft, is read with the body parts
+// Gmail kept behind attachment ids, not only the first one.
+func TestBackedBodiesAreFetchedForEachMessage(t *testing.T) {
+	s, fake := newService(t)
+	threadID, draftID := fake.AddBackedThread()
+	ctx := context.Background()
+	th, err := s.Thread(ctx, threadID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var bodies []string
+	for _, m := range th.Messages {
+		bodies = append(bodies, strings.TrimSpace(m.Body.Text))
+	}
+	if want := []string{"Backed body 1.", "Backed body 2.", "Backed draft body."}; !slices.Equal(bodies, want) {
+		t.Errorf("thread bodies %q; want %q", bodies, want)
+	}
+	d, err := s.Draft(ctx, draftID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := strings.TrimSpace(d.Message.Body.Text); got != "Backed draft body." || len(d.Message.NeedsFetch) != 0 {
+		t.Errorf("draft body %q, %d parts unfetched; want the backed body, all fetched", got, len(d.Message.NeedsFetch))
+	}
 }
 
 // The label list is read alongside the read it serves, and its failure

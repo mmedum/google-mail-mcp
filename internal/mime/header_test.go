@@ -57,6 +57,9 @@ func TestDecodeHeader(t *testing.T) {
 		{"raw latin-1 bytes", "Caf\xe9", "Café"},
 		{"raw utf-8 kept", "Café", "Café"},
 		{"tabs and controls", "a\tb\x01c", "a b c"},
+		{"first C1 control", "a\u0080b", "a b"},
+		{"last C1 control", "a\u009fb", "a b"},
+		{"no-break space kept", "a\u00a0b", "a\u00a0b"},
 	}
 	for _, c := range cases {
 		t.Run(c.name, func(t *testing.T) {
@@ -96,6 +99,12 @@ func TestParseAddressList(t *testing.T) {
 			[]Address{{"not an address", ""}, {"", "ada@example.com"}}, false},
 		{"semicolon separated", "ada@example.com; bruno@example.org",
 			[]Address{{"", "ada@example.com"}, {"", "bruno@example.org"}}, false},
+		{"lenient list keeps every angle address", "Ada <ada@example.com>, Bo <bo@example.com>, Cy <cy@example.com",
+			[]Address{{"Ada", "ada@example.com"}, {"Bo", "bo@example.com"}, {"Cy", "cy@example.com"}}, false},
+		{"lenient list with a comment", "Ada (ops) <ada@example.com>, Bo <bo@example.com>, Cy <cy@example.com",
+			[]Address{{"Ada", "ada@example.com"}, {"Bo", "bo@example.com"}, {"Cy", "cy@example.com"}}, false},
+		{"lenient quoted name unquoted", `"Ada" <ada@example.com, bo@example.org`,
+			[]Address{{"Ada", "ada@example.com"}, {"", "bo@example.org"}}, false},
 		{"bidi in name stripped by message", "Ada <ada@example.com>", []Address{{"Ada", "ada@example.com"}}, true},
 	}
 	for _, c := range cases {
@@ -169,6 +178,10 @@ func TestSplitHeaders(t *testing.T) {
 	hs, body = splitHeaders([]byte("\nno headers"))
 	if hs != nil || string(body) != "no headers" {
 		t.Fatalf("blank first lf: %+v %q", hs, body)
+	}
+	hs, body = splitHeaders([]byte(" folded first\r\nSubject: x\r\n\r\nbody"))
+	if len(hs) != 1 || hs[0].Value != "x" || string(body) != "body" {
+		t.Fatalf("continuation with nothing to continue: %+v %q", hs, body)
 	}
 	hs, body = splitHeaders([]byte("Subject: only"))
 	if len(hs) != 1 || len(body) != 0 {

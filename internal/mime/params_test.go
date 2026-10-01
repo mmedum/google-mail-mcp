@@ -35,6 +35,12 @@ func TestParseMediaType(t *testing.T) {
 		{"bad percent kept", `attachment; filename*=UTF-8''100%zz.txt`, "attachment", "filename", "100%zz.txt"},
 		{"bad continuation index ignored", `attachment; filename*x=a; filename=b`, "attachment", "filename", "b"},
 		{"empty", ``, "", "charset", ""},
+		{"no spaces after semicolons", `text/plain;charset=utf-8;format=flowed`, "text/plain", "format", "flowed"},
+		{"trailing semicolon", `text/plain; charset=utf-8;`, "text/plain", "charset", "utf-8"},
+		{"bare token at the end", `text/plain; charset=utf-8; flowed`, "text/plain", "charset", "utf-8"},
+		{"empty value at the end", `text/plain; format=flowed; charset=`, "text/plain", "format", "flowed"},
+		{"backslash ends an unclosed quote", `attachment; filename="a\`, "attachment", "filename", `a\`},
+		{"percent near the end kept", `attachment; filename*=utf-8''a%4`, "attachment", "filename", "a%4"},
 	}
 	for _, c := range cases {
 		t.Run(c.name, func(t *testing.T) {
@@ -64,6 +70,13 @@ func TestSafeBaseName(t *testing.T) {
 		{"CON.txt", "_CON.txt"},
 		{"nul", "_nul"},
 		{"报告.docx", "报告.docx"},
+		{"/passwd", "passwd"},
+		// Over 200 bytes: the extension is kept and the stem cut on a
+		// character boundary.
+		{strings.Repeat("日", 100) + ".pdf", strings.Repeat("日", 65) + ".pdf"},
+		{strings.Repeat("a", 190) + "." + strings.Repeat("b", 19), strings.Repeat("a", 180) + "." + strings.Repeat("b", 19)},
+		// An extension over 20 bytes is not one.
+		{strings.Repeat("a", 190) + "." + strings.Repeat("b", 20), strings.Repeat("a", 190) + "." + strings.Repeat("b", 9)},
 	}
 	for _, c := range cases {
 		if got := SafeBaseName(c.in); got != c.want {
@@ -96,6 +109,7 @@ func TestStripInvisible(t *testing.T) {
 		{"👩\u200D💻", "👩\u200D💻", 0},
 		{"می\u200Cخواهم", "می\u200Cخواهم", 0},
 		{"a\u200D\u200Bé", "aé", 2},
+		{"日\u200Da", "日a", 1},
 	}
 	for _, c := range cases {
 		got, n := StripInvisible(c.in)

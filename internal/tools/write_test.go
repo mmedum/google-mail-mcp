@@ -5,6 +5,7 @@ import (
 	"os"
 	"path/filepath"
 	"slices"
+	"strconv"
 	"strings"
 	"testing"
 
@@ -122,6 +123,29 @@ func TestCreateDraft(t *testing.T) {
 	}
 }
 
+// With no from, a draft is from the account's default send-as address,
+// or from its primary one when Gmail marks none default.
+func TestCreateDraftFromThePrimaryWhenNoneIsDefault(t *testing.T) {
+	h, fake := connectFake(t, config.Config{})
+	fake.UpdateSettings(func(s *gmailtest.Settings) {
+		for i := range s.SendAs {
+			s.SendAs[i].IsDefault = false
+		}
+	})
+	var out tools.DraftWriteOut
+	call(t, h, "create_draft", map[string]any{"to": []any{"a@example.com"}, "body": "x"}, &out)
+	if want := gmailtest.Reader.Name + " <" + gmailtest.Account + ">"; string(out.UntrustedFrom) != want {
+		t.Errorf("from %q; want the primary address %q", out.UntrustedFrom, want)
+	}
+
+	fake.UpdateSettings(func(s *gmailtest.Settings) {
+		for i := range s.SendAs {
+			s.SendAs[i].IsPrimary = false
+		}
+	})
+	refused(t, h, "create_draft", map[string]any{"to": []any{"a@example.com"}, "body": "x"}, gapi.ClassUnavailable)
+}
+
 func TestCreateDraftRefusals(t *testing.T) {
 	h, fake := connectFake(t, config.Config{})
 	plain := fake.Scenario(gmailtest.ScenarioPlainThread)
@@ -207,6 +231,66 @@ func TestCreateDraftReplies(t *testing.T) {
 	}
 }
 
+// A reply's In-Reply-To and References are built from the parent's own
+// headers (§4.5): its References with its Message-ID appended, or its
+// one In-Reply-To when it has no References, kept to 40 ids. A parent
+// with no Message-ID gives neither header, and the reply says so.
+func TestCreateDraftReplyThreadingHeaders(t *testing.T) {
+	const parent = "<parent.1@example.com>"
+	// ids is <r{from}@example.com> through <r{to}@example.com>.
+	ids := func(from, to int) []string {
+		var out []string
+		for i := from; i <= to; i++ {
+			out = append(out, "<r"+strconv.Itoa(i)+"@example.com>")
+		}
+		return out
+	}
+	tests := []struct {
+		name                       string
+		messageID, inReplyTo, refs string
+		byThread                   bool
+		wantInReplyTo, wantRefs    []string
+		wantNoMessageID            bool
+	}{
+		{"references, the parent appended", parent, "<b@example.com>", "<a@example.com> <b@example.com>", false,
+			[]string{parent}, []string{"<a@example.com>", "<b@example.com>", parent}, false},
+		{"no references: the one in-reply-to starts the chain", parent, "<b@example.com>", "", false,
+			[]string{parent}, []string{"<b@example.com>", parent}, false},
+		{"a one-message thread answered by thread", parent, "<b@example.com>", "", true,
+			[]string{parent}, []string{"<b@example.com>", parent}, false},
+		{"no references and two in-reply-to ids: neither is the chain", parent, "<b@example.com> <c@example.com>", "", false,
+			[]string{parent}, []string{parent}, false},
+		{"39 references and the parent fit", parent, "", strings.Join(ids(1, 39), " "), false,
+			[]string{parent}, append(ids(1, 39), parent), false},
+		{"40 references keep the first and the newest 38", parent, "", strings.Join(ids(1, 40), " "), false,
+			[]string{parent}, append(append(ids(1, 1), ids(3, 40)...), parent), false},
+		{"no message-id: no threading headers", "", "<b@example.com>", "<a@example.com> <b@example.com>", false,
+			nil, nil, true},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			h, fake := connectFake(t, config.Config{})
+			id := fake.AddThreadingParent(tc.messageID, tc.inReplyTo, tc.refs)
+			args := map[string]any{"reply_to": id, "body": "Booked."}
+			if tc.byThread {
+				args = map[string]any{"reply_to_thread": id, "body": "Booked."}
+			}
+			var out tools.DraftWriteOut
+			call(t, h, "create_draft", args, &out)
+			if out.Reply == nil || out.Reply.ParentID != id || out.Reply.NoMessageID != tc.wantNoMessageID {
+				t.Fatalf("reply %+v; want parent %s, no_message_id %v", out.Reply, id, tc.wantNoMessageID)
+			}
+			m := storedDraft(t, fake, out.MessageID)
+			if !slices.Equal(m.InReplyTo, tc.wantInReplyTo) {
+				t.Errorf("In-Reply-To %v; want %v", m.InReplyTo, tc.wantInReplyTo)
+			}
+			if !slices.Equal(m.References, tc.wantRefs) {
+				t.Errorf("References %v; want %v", m.References, tc.wantRefs)
+			}
+		})
+	}
+}
+
 func TestCreateDraftAttachments(t *testing.T) {
 	dir := t.TempDir()
 	must(t, os.WriteFile(filepath.Join(dir, "Отчёт.pdf"), []byte("%PDF fake"), 0o600))
@@ -274,6 +358,11 @@ func TestUpdateDraft(t *testing.T) {
 	}
 	if strings.Join(up.Changed, ",") != "cc,subject,attachments" || len(up.Removed) != 1 || up.Removed[0].UntrustedName != "a.txt" {
 		t.Fatalf("changed %v removed %+v", up.Changed, up.Removed)
+	}
+	// A new subject puts only a reply's threading at risk; this draft
+	// answers nothing.
+	if up.ThreadingAtRisk || string(up.UntrustedFrom) != gmailtest.Reader.Name+" <"+gmailtest.Account+">" {
+		t.Errorf("threading at risk %v, from %q; want false and the account's address", up.ThreadingAtRisk, up.UntrustedFrom)
 	}
 	m := storedDraft(t, fake, up.MessageID)
 	if m.Subject != "Draft, revised" || len(m.Cc) != 0 || len(m.To) != 1 || m.Body.Text != "one" ||
@@ -347,7 +436,8 @@ func TestDeleteDraft(t *testing.T) {
 	refused(t, h, "delete_draft", map[string]any{"draft_id": sc.DraftID}, gapi.ClassBlocked)
 	var dry tools.DraftWriteOut
 	call(t, h, "delete_draft", map[string]any{"draft_id": sc.DraftID, "dry_run": true}, &dry)
-	if !dry.DryRun || dry.Deleted || !slices.Contains(fake.DraftIDs(), sc.DraftID) || dry.MessageID != sc.MessageIDs[2] {
+	if !dry.DryRun || dry.Deleted || !slices.Contains(fake.DraftIDs(), sc.DraftID) || dry.MessageID != sc.MessageIDs[2] ||
+		string(dry.UntrustedFrom) != gmailtest.Reader.Name+" <"+gmailtest.Account+">" {
 		t.Fatalf("dry run %+v", dry)
 	}
 	var out tools.DraftWriteOut
@@ -414,6 +504,11 @@ func TestModifyLabels(t *testing.T) {
 	call(t, h, "modify_labels", map[string]any{"thread_ids": []any{plain.ThreadID}, "add": []any{"Projects"}}, &th)
 	if th.Items[0].Kind != "thread" || th.Items[0].Outcome != "changed" || !slices.Contains(labelIDs(th.Items[0].LabelsAfter), "Label_1") {
 		t.Fatalf("thread %+v", th.Items)
+	}
+	// The labels after come from Gmail's answer to the write, not a
+	// read again: labels.list 1, threads.get 40, threads.modify 10.
+	if th.Units != 51 {
+		t.Errorf("thread write spent %d units; want 51", th.Units)
 	}
 
 	var dry tools.ItemsOut
@@ -483,7 +578,7 @@ func TestTrashAndRestore(t *testing.T) {
 }
 
 func TestCreateAndUpdateLabel(t *testing.T) {
-	h, _ := connectFake(t, config.Config{})
+	h, fake := connectFake(t, config.Config{})
 	var made tools.LabelWriteOut
 	text := call(t, h, "create_label", map[string]any{"name": "Travel", "in_label_list": "show_if_unread",
 		"text_color": "#FFFFFF", "background_color": "#16a766"}, &made)
@@ -518,6 +613,27 @@ func TestCreateAndUpdateLabel(t *testing.T) {
 	refused(t, h, "update_label", map[string]any{"label": "Trips", "name": "Receipts"}, gapi.ClassConflict)
 	refused(t, h, "update_label", map[string]any{"label": "Nothing"}, gapi.ClassInvalid)
 	refused(t, h, "update_label", map[string]any{"label": "Nothing", "name": "x"}, gapi.ClassNotFound)
+
+	// A dry run answers what Gmail would: a taken name is refused, and
+	// the label shown is the label as it would be.
+	refused(t, h, "create_label", map[string]any{"name": "trips", "dry_run": true}, gapi.ClassConflict)
+	refused(t, h, "update_label", map[string]any{"label": "Trips", "name": "receipts", "dry_run": true}, gapi.ClassConflict)
+	var preview tools.LabelWriteOut
+	call(t, h, "update_label", map[string]any{"label": "Trips", "name": "Journeys", "in_label_list": "hide",
+		"in_message_list": "show", "text_color": "#000000", "background_color": "#fad165", "dry_run": true}, &preview)
+	wantPreview := tools.LabelLook{ID: up.Label.ID, Name: "Journeys", Type: "user", InLabelList: "hide", InMessageList: "show",
+		TextColor: "#000000", BackgroundColor: "#fad165"}
+	if !preview.DryRun || preview.Label != wantPreview || len(fake.CallsOf("gmail.users.labels.patch")) != 1 {
+		t.Fatalf("dry run label %+v; want %+v and no patch past the first", preview.Label, wantPreview)
+	}
+}
+
+// A label name is 1 to 225 characters, counted in runes.
+func TestLabelNameLength(t *testing.T) {
+	h, _ := connectFake(t, config.Config{})
+	var dry tools.LabelWriteOut
+	call(t, h, "create_label", map[string]any{"name": strings.Repeat("ä", 225), "dry_run": true}, &dry)
+	refused(t, h, "create_label", map[string]any{"name": strings.Repeat("ä", 226), "dry_run": true}, gapi.ClassInvalid)
 }
 
 // A dry run reports the labels each item would have, and the write that

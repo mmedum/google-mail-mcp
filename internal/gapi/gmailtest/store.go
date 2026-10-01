@@ -73,6 +73,9 @@ type spec struct {
 	thread     string // existing thread id, or "" for a new thread
 	inReplyTo  *message
 	extra      []gmail.MessagePartHeader
+	// messageID is the Message-ID as written when set; "" leaves the
+	// header out. nil means the generated one.
+	messageID *string
 }
 
 func (s *Server) add(sp spec) *message {
@@ -86,6 +89,9 @@ func (s *Server) add(sp spec) *message {
 		zone = time.UTC
 	}
 	rfcID := "<fixture." + id + "@mail.example.com>"
+	if sp.messageID != nil {
+		rfcID = *sp.messageID
+	}
 	var hs []gmail.MessagePartHeader
 	add := func(n, v string) {
 		if v != "" {

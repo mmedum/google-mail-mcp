@@ -1,12 +1,14 @@
 package model_test
 
 import (
+	"encoding/base64"
 	"slices"
 	"strings"
 	"testing"
 
 	"github.com/mmedum/google-mail-mcp/v2/internal/gapi/gmailtest"
 	"github.com/mmedum/google-mail-mcp/v2/internal/gmail"
+	"github.com/mmedum/google-mail-mcp/v2/internal/mime"
 	"github.com/mmedum/google-mail-mcp/v2/internal/model"
 )
 
@@ -186,6 +188,50 @@ func TestThread(t *testing.T) {
 	}
 	if (model.Message{}).Sender().Email != "" {
 		t.Fatal("empty sender")
+	}
+}
+
+// A participant is one address, whatever name or case it comes with;
+// two addresses under one name are two participants.
+func TestParticipantsAreDistinctAddresses(t *testing.T) {
+	th := model.Thread{Messages: []model.Message{
+		{From: []mime.Address{{Name: "Ada", Email: "ada@example.com"}}, To: []mime.Address{{Name: "Team", Email: "team@example.com"}}},
+		{From: []mime.Address{{Name: "Ada Quill", Email: "Ada@Example.com"}}, Cc: []mime.Address{{Name: "Team", Email: "team@example.org"}}},
+	}}
+	var got []string
+	for _, p := range th.Participants() {
+		got = append(got, p.Name+" <"+p.Email+">")
+	}
+	want := []string{"Ada <ada@example.com>", "Team <team@example.com>", "Team <team@example.org>"}
+	if !slices.Equal(got, want) {
+		t.Errorf("Participants() = %q, want %q", got, want)
+	}
+}
+
+// A reply's In-Reply-To and References reach the model; a message
+// without them has none.
+func TestAReplyKeepsItsThreadingHeaders(t *testing.T) {
+	x := model.NewLabelIndex(nil)
+	raw := "From: ada@example.com\r\nTo: reader@example.com\r\nSubject: Re: Plan\r\n" +
+		"In-Reply-To: <second.1@example.com>\r\nReferences: <first.1@example.com> <second.1@example.com>\r\n\r\nYes.\r\n"
+	m, err := model.NewMessage(&gmail.Message{Raw: base64.URLEncoding.EncodeToString([]byte(raw))}, x, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if want := []model.Untrusted{"<second.1@example.com>"}; !slices.Equal(m.InReplyTo, want) {
+		t.Errorf("InReplyTo = %q, want %q", m.InReplyTo, want)
+	}
+	if want := []model.Untrusted{"<first.1@example.com>", "<second.1@example.com>"}; !slices.Equal(m.References, want) {
+		t.Errorf("References = %q, want %q", m.References, want)
+	}
+
+	plain := "From: ada@example.com\r\nTo: reader@example.com\r\nSubject: Plan\r\n\r\nHello.\r\n"
+	m, err = model.NewMessage(&gmail.Message{Raw: base64.URLEncoding.EncodeToString([]byte(plain))}, x, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if m.InReplyTo != nil || m.References != nil {
+		t.Errorf("a message that answers nothing: InReplyTo %q, References %q; want none", m.InReplyTo, m.References)
 	}
 }
 

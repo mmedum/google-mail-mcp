@@ -4,6 +4,9 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"os/exec"
+	"path"
+	"path/filepath"
 	"regexp"
 	"slices"
 	"strings"
@@ -17,8 +20,9 @@ import (
 const changelogFile = "CHANGELOG.md"
 
 // changelogWatched are the trees a reader of the changelog expects to
-// see named there. Tests and fixtures under them are not: they change
-// nothing a user runs.
+// see named there. Tests and fixtures under them are not, and neither is
+// a Go package the binary does not link, such as the gmailtest fake:
+// they change nothing a user runs.
 var changelogWatched = []string{"cmd/", "internal/", "packaging/", "go.mod"}
 
 var (
@@ -27,18 +31,52 @@ var (
 )
 
 func changelog(out io.Writer, args []string) error {
-	return changelogCheck(out, ".", args[0], args[1])
+	shipped, err := shippedPackageDirs(".")
+	if err != nil {
+		return err
+	}
+	return changelogCheck(out, ".", args[0], args[1], shipped)
+}
+
+// shippedPackageDirs are the module's package directories the binary
+// links, relative to root and slash-separated.
+func shippedPackageDirs(root string) (map[string]bool, error) {
+	cmd := exec.Command("go", "list", "-deps", "-f", "{{if not .Standard}}{{.Dir}}{{end}}", "./cmd/google-mail-mcp")
+	cmd.Dir = root
+	out, err := cmd.Output()
+	if err != nil {
+		return nil, fmt.Errorf("go list the binary's packages: %w", err)
+	}
+	abs, err := filepath.Abs(root)
+	if err != nil {
+		return nil, err
+	}
+	dirs := map[string]bool{}
+	for _, d := range strings.Fields(string(out)) {
+		rel, err := filepath.Rel(abs, d)
+		if err != nil || rel == ".." || strings.HasPrefix(rel, ".."+string(filepath.Separator)) {
+			continue // a dependency outside the module
+		}
+		dirs[filepath.ToSlash(rel)] = true
+	}
+	// A listing that missed the server is not reading the binary, and
+	// would excuse every Go change from the changelog.
+	if !dirs["internal/server"] {
+		return nil, fmt.Errorf("go list named %d package(s) of the binary and not internal/server", len(dirs))
+	}
+	return dirs, nil
 }
 
 // changelogCheck fails when the diff from base to head touches watched
-// source without adding a line under [Unreleased].
-func changelogCheck(out io.Writer, root, base, head string) error {
+// source without adding a line under [Unreleased]. shipped holds the
+// package directories the binary links.
+func changelogCheck(out io.Writer, root, base, head string, shipped map[string]bool) error {
 	changed, err := gitOutput(root, "diff", "--name-only", base, head)
 	if err != nil {
 		return err
 	}
 	files := strings.Fields(changed)
-	watched := changelogTouched(files)
+	watched := changelogTouched(files, shipped)
 	if len(watched) == 0 {
 		_, _ = fmt.Fprintf(out, "changelog: %d files changed, none of them shipped source; no entry needed\n", len(files))
 		return nil
@@ -63,10 +101,13 @@ func changelogCheck(out io.Writer, root, base, head string) error {
 }
 
 // changelogTouched are the changed files a changelog reader cares about.
-func changelogTouched(files []string) []string {
+func changelogTouched(files []string, shipped map[string]bool) []string {
 	var out []string
 	for _, f := range files {
 		if strings.HasSuffix(f, "_test.go") || strings.Contains(f, "/testdata/") {
+			continue
+		}
+		if strings.HasSuffix(f, ".go") && !shipped[path.Dir(f)] {
 			continue
 		}
 		for _, p := range changelogWatched {

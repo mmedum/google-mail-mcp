@@ -19,6 +19,7 @@ import (
 	"time"
 
 	"golang.org/x/oauth2"
+	"golang.org/x/time/rate"
 )
 
 // fake is a Gmail stand-in: each request is answered by the next
@@ -620,12 +621,38 @@ func TestTheSendingLimitIsNotRetriedAndSaysSo(t *testing.T) {
 		}
 	}
 	// On a call that is not a send, the limit is still named when Google
-	// names it, and not retried.
-	f := newFake(t, reply(429, googleErr(429, "", "Daily user sending limit exceeded")))
-	c, _ := client(t, f)
+	// names it, and not retried: as 429, and as 403 with a rate reason
+	// that would otherwise be retried.
+	for _, tc := range []struct {
+		status int
+		reason string
+	}{
+		{429, ""},
+		{403, "rateLimitExceeded"},
+	} {
+		f := newFake(t, reply(tc.status, googleErr(tc.status, tc.reason, "Daily user sending limit exceeded")))
+		c, _ := client(t, f)
+		err := c.Do(context.Background(), listLabels, nil)
+		if classOf(t, err) != ClassRateLimited || !strings.Contains(err.Error(), "24 hours") || f.count() != 1 {
+			t.Errorf("late sending limit as %d: %v after %d attempts", tc.status, err, f.count())
+		}
+	}
+}
+
+// A Retry-After of up to maxRetryAfter (64 s) is waited for and the call
+// repeated; one second more is reported instead.
+func TestRetryAfterUpToTheLimitIsWaitedFor(t *testing.T) {
+	limited := googleErr(429, "rateLimitExceeded", "wait")
+	f := newFake(t, replyAfter(429, "64", limited), reply(200, `{}`))
+	c, sl := client(t, f)
+	if err := c.Do(context.Background(), listLabels, nil); err != nil || f.count() != 2 || len(sl.d) != 1 || sl.d[0] < 64*time.Second {
+		t.Errorf("Retry-After 64: %v after %d attempts, slept %v; want a wait of at least 64s, then a second attempt", err, f.count(), sl.d)
+	}
+	f = newFake(t, replyAfter(429, "65", limited))
+	c, sl = client(t, f)
 	err := c.Do(context.Background(), listLabels, nil)
-	if !strings.Contains(err.Error(), "sending limit") || f.count() != 1 {
-		t.Errorf("late sending limit: %v after %d attempts", err, f.count())
+	if classOf(t, err) != ClassRateLimited || f.count() != 1 || len(sl.d) != 0 || !strings.Contains(err.Error(), "1m5s") {
+		t.Errorf("Retry-After 65: %v after %d attempts, slept %v; want it reported, not retried", err, f.count(), sl.d)
 	}
 }
 
@@ -750,6 +777,9 @@ func TestTransportErrorsCarryNoURL(t *testing.T) {
 	if got := stripURL(`dial https://x/y?q=secret`); strings.Contains(got, "secret") {
 		t.Errorf("stripURL at the end = %q", got)
 	}
+	if got := stripURL(`https://x/y?q=secret: EOF`); got != "<url> EOF" {
+		t.Errorf("stripURL at the start = %q, want %q", got, "<url> EOF")
+	}
 	if got := withoutURL(&url.Error{Op: "Get", URL: "https://x?q=secret"}); strings.Contains(got.Error(), "secret") {
 		t.Errorf("withoutURL of a bare url.Error = %v", got)
 	}
@@ -780,17 +810,33 @@ func TestReasonFromErrorInfoDetails(t *testing.T) {
 	}
 }
 
+// A JSON answer of up to maxResponseBytes (32 MiB) is read; one byte
+// more is refused.
 func TestResponsesAreBounded(t *testing.T) {
-	big := func(w http.ResponseWriter, _ *http.Request) {
-		chunk := strings.Repeat("x", 1<<20)
-		for range 33 {
-			_, _ = fmt.Fprint(w, chunk)
+	// jsonOf answers a JSON object of exactly n bytes.
+	jsonOf := func(n int) func(http.ResponseWriter, *http.Request) {
+		return func(w http.ResponseWriter, _ *http.Request) {
+			_, _ = fmt.Fprint(w, `{"x":"`+strings.Repeat("x", n-len(`{"x":""}`))+`"}`)
 		}
 	}
-	f := newFake(t, big)
-	c, _ := client(t, f)
-	if err := c.Do(context.Background(), listLabels, nil); err == nil || !strings.Contains(err.Error(), "too large") {
-		t.Errorf("a 33 MiB body: %v", err)
+	for _, tc := range []struct {
+		name     string
+		size     int
+		tooLarge bool
+	}{
+		{"exactly the cap", 32 << 20, false},
+		{"one byte over", 32<<20 + 1, true},
+		{"33 MiB", 33 << 20, true},
+	} {
+		f := newFake(t, jsonOf(tc.size))
+		c, _ := client(t, f)
+		err := c.Do(context.Background(), listLabels, nil)
+		if tc.tooLarge && (err == nil || !strings.Contains(err.Error(), "too large")) {
+			t.Errorf("%s (%d bytes): err = %v, want it refused as too large", tc.name, tc.size, err)
+		}
+		if !tc.tooLarge && err != nil {
+			t.Errorf("%s (%d bytes): err = %v, want it read", tc.name, tc.size, err)
+		}
 	}
 }
 
@@ -907,6 +953,27 @@ func TestTheUnitBudgetWaitsAndCanBeCanceled(t *testing.T) {
 	}
 	if f.count() != 0 {
 		t.Error("a call without budget was sent")
+	}
+}
+
+// The budget spreads UnitsPerMinute over the minute, with a burst of a
+// quarter minute's units but never less than the dearest call (100).
+func TestTheUnitBudgetFollowsUnitsPerMinute(t *testing.T) {
+	for _, tc := range []struct {
+		perMinute int
+		perSecond rate.Limit
+		burst     int
+	}{
+		{60, 1, 100},
+		{6000, 100, 1500},
+	} {
+		c := New(Options{UnitsPerMinute: tc.perMinute})
+		if got := c.budget.Limit(); got != tc.perSecond {
+			t.Errorf("UnitsPerMinute %d: %v units a second, want %v", tc.perMinute, got, tc.perSecond)
+		}
+		if got := c.budget.Burst(); got != tc.burst {
+			t.Errorf("UnitsPerMinute %d: burst %d, want %d", tc.perMinute, got, tc.burst)
+		}
 	}
 }
 

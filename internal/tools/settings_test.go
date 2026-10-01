@@ -110,6 +110,7 @@ func TestUpdateSignature(t *testing.T) {
 		t.Errorf("clearing the alias's signature: %+v", out)
 	}
 	refused(t, h, "update_signature", map[string]any{"send_as": "someone@example.com", "signature": "x"}, gapi.ClassInvalid)
+	call(t, h, "update_signature", map[string]any{"signature": strings.Repeat("x", 10000), "dry_run": true}, &tools.SignatureOut{})
 	refused(t, h, "update_signature", map[string]any{"signature": strings.Repeat("x", 10001)}, gapi.ClassInvalid)
 
 	// Without the scope the call is refused, and the advice is to log in
@@ -259,9 +260,13 @@ func TestAmbiguousFilterCreateIsSettledByReading(t *testing.T) {
 		fail  gmailtest.Failure
 		want  string
 		saved bool
+		// none clears the filters first, so the one made is the first.
+		none bool
 	}{
 		{"created", gmailtest.Failure{Method: create, Status: 500, Reason: "backendError", Message: "Internal error", Served: true},
-			"verdict: created", true},
+			"verdict: created", true, false},
+		{"created as the only filter", gmailtest.Failure{Method: create, Status: 500, Reason: "backendError", Message: "Internal error",
+			Served: true}, "verdict: created", true, true},
 		// Gmail was seen adding SPAM to archiving filters after the fact
 		// (§18 row 56); the filter is still the one asked for.
 		{"created, SPAM added", gmailtest.Failure{Method: create, Status: 500, Reason: "backendError", Message: "Internal error",
@@ -271,15 +276,18 @@ func TestAmbiguousFilterCreateIsSettledByReading(t *testing.T) {
 					f.Action.RemoveLabelIDs = append(f.Action.RemoveLabelIDs, "SPAM")
 				})
 			}},
-			"verdict: created", true},
+			"verdict: created", true, false},
 		{"not created", gmailtest.Failure{Method: create, Status: 500, Reason: "backendError", Message: "Internal error"},
-			"verdict: not_created", false},
+			"verdict: not_created", false, false},
 		{"unknown", gmailtest.Failure{Method: create, Status: 500, Reason: "backendError", Message: "Internal error",
 			Then: func(s *gmailtest.Server) { s.Fail(gmailtest.Failure{Method: list, Status: 403, Reason: "forbidden"}) }},
-			"verdict: unknown", false},
+			"verdict: unknown", false, false},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			h, fake := connectSettings(t, settingsOn)
+			if tc.none {
+				fake.UpdateSettings(func(st *gmailtest.Settings) { st.Filters = nil })
+			}
 			before := len(fake.Settings().Filters)
 			fake.Fail(tc.fail)
 			text := refused(t, h, "create_filter", args, gapi.ClassAmbiguousOutcome)
@@ -448,6 +456,11 @@ func TestCreateFilterChecksItsCriteria(t *testing.T) {
 	refused(t, h, "create_filter", map[string]any{"exclude_chats": true, "star": true}, gapi.ClassInvalid)
 	refused(t, h, "create_filter", map[string]any{"from": "x@example.org", "star": true, "size": -5, "size_comparison": "larger"}, gapi.ClassInvalid)
 	refused(t, h, "create_filter", map[string]any{"from": "x@example.org", "star": true, "size": 5_000_000_000, "size_comparison": "larger"}, gapi.ClassInvalid)
+	// size is bytes up to 2^31-1, compared larger or smaller.
+	call(t, h, "create_filter", map[string]any{"from": "x@example.org", "star": true, "size": 2147483647, "size_comparison": "smaller",
+		"dry_run": true}, &out)
+	refused(t, h, "create_filter", map[string]any{"from": "x@example.org", "star": true, "size": 2147483648, "size_comparison": "larger"}, gapi.ClassInvalid)
+	refused(t, h, "create_filter", map[string]any{"from": "x@example.org", "star": true, "size": 1000, "size_comparison": "bigger"}, gapi.ClassInvalid)
 }
 
 // Runs of spaces in a signature survive the HTML Gmail stores.

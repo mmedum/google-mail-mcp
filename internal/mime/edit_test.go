@@ -57,12 +57,13 @@ func TestEditRawHeaders(t *testing.T) {
 	subject, _ := FormatText("new — Neu")
 	out, err := EditRaw(raw, Edit{Headers: []SetHeader{
 		{Name: "Subject", Value: subject}, {Name: "Cc", Value: ""}, {Name: "Bcc", Value: "b@example.com"},
+		{Name: "To", Value: "d@example.com"},
 	}})
 	if err != nil {
 		t.Fatal(err)
 	}
 	m := ParseRaw(out)
-	if m.Subject != "new — Neu" || len(m.Cc) != 0 || len(m.Bcc) != 1 || len(m.To) != 1 {
+	if m.Subject != "new — Neu" || len(m.Cc) != 0 || len(m.Bcc) != 1 || len(m.To) != 1 || m.To[0].Email != "d@example.com" {
 		t.Fatalf("subject %q cc %v bcc %v to %v", m.Subject, m.Cc, m.Bcc, m.To)
 	}
 	if strings.Join(m.InReplyTo, "") != "<p@example.com>" || m.MessageID != "<e@example.com>" {
@@ -239,6 +240,18 @@ func FuzzEditRaw(f *testing.F) {
 		}
 		checkMessage(t, ParseRaw(out))
 	})
+}
+
+// An edit finds the body where ParseRaw reads it: a multipart at the
+// nesting limit is text to both.
+func TestEditRawAgreesWithParseRawAtTheNestingLimit(t *testing.T) {
+	out, err := EditRaw([]byte(nestedToLimit(unsplitPart)), Edit{Text: ptrTo("new")})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := ParseRaw(out).Body.Text; got != "new" {
+		t.Fatalf("body after the edit %q, want %q", got, "new")
+	}
 }
 
 // A message with more parts than readEntity reads is refused, since

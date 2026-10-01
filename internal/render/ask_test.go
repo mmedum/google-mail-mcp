@@ -161,6 +161,15 @@ func TestAskSendNamesEveryRecipient(t *testing.T) {
 	}
 }
 
+// A trashing filter's question names a size criterion, which narrows
+// what the filter trashes.
+func TestAskCreateFilterNamesTheSize(t *testing.T) {
+	f := model.Filter{Criteria: gmail.FilterCriteria{Size: 5 << 20, SizeComparison: "larger"}, Add: []model.LabelRef{{ID: "TRASH"}}}
+	if q := AskCreateFilter(f); !strings.Contains(q.Text, "matches: size larger 5.0 MB\n") {
+		t.Errorf("no size criterion in\n%s", q.Text)
+	}
+}
+
 // A question with nothing quoted says nothing about quotes.
 func TestAskWithoutQuotes(t *testing.T) {
 	q := AskDeletePermanently(2, 0)

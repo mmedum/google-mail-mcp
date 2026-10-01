@@ -177,13 +177,28 @@ func TestAReplyCarriesBothHalves(t *testing.T) {
 	}
 }
 
+// dryFirstIn has dry_run as its first field, at index 0.
+type dryFirstIn struct {
+	DryRun bool   `json:"dry_run,omitempty"`
+	ID     string `json:"id"`
+}
+
 func TestDryRunEntersTheNoWritesContext(t *testing.T) {
-	h := testutil.Connect(t, func(s *mcp.Server) { registerProbes(s, Deps{Config: config.Config{}}) })
-	for _, dry := range []bool{true, false} {
-		var out probeOut
-		h.CallInto(t, "write", map[string]any{"id": "m1", "dry_run": dry}, &out)
-		if out.DryRun != dry {
-			t.Errorf("dry_run %t: handler saw %t", dry, out.DryRun)
+	h := testutil.Connect(t, func(s *mcp.Server) {
+		d := Deps{Config: config.Config{}}
+		registerProbes(s, d)
+		register(s, d, Spec{Name: "write_dry_first", Description: "probe", Kind: Write},
+			func(ctx context.Context, in dryFirstIn) (probeOut, error) {
+				return probeOut{Seen: in.ID, DryRun: gapi.WritesForbidden(ctx)}, nil
+			})
+	})
+	for _, tool := range []string{"write", "write_dry_first"} {
+		for _, dry := range []bool{true, false} {
+			var out probeOut
+			h.CallInto(t, tool, map[string]any{"id": "m1", "dry_run": dry}, &out)
+			if out.DryRun != dry {
+				t.Errorf("%s dry_run %t: handler saw %t", tool, dry, out.DryRun)
+			}
 		}
 	}
 	type noDry struct {

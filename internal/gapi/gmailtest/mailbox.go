@@ -448,6 +448,58 @@ func (s *Server) AddWidenedThread() (threadID, messageID string) {
 	return m1.threadID, m2.id
 }
 
+// AddThreadingParent adds a message from Bruno, alone in its thread,
+// whose Message-ID, In-Reply-To and References are exactly the values
+// given; "" leaves a header out. It returns the message id, which is
+// also the thread id. Tests use it for reply parents the generated
+// mailbox does not hold (§4.5).
+func (s *Server) AddThreadingParent(messageID, inReplyTo, references string) string {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.clock = s.clock.Add(time.Minute)
+	var extra []gmail.MessagePartHeader
+	if inReplyTo != "" {
+		extra = append(extra, gmail.MessagePartHeader{Name: "In-Reply-To", Value: inReplyTo})
+	}
+	if references != "" {
+		extra = append(extra, gmail.MessagePartHeader{Name: "References", Value: references})
+	}
+	b := "Is the room booked for Thursday?\n\nBruno\n"
+	m := s.add(spec{from: Bruno, to: []Person{Reader}, subject: "Room booking", at: s.clock, labels: []string{"INBOX"},
+		body: utf8Text(b), text: b, messageID: &messageID, extra: extra})
+	return m.id
+}
+
+// AddBackedThread adds a thread of two messages between Dmitri and the
+// reader, and a draft reply in it, each with a plain-text body Gmail
+// keeps behind an attachment id, as it does a large body part (§3.7).
+// The bodies are "Backed body 1.", "Backed body 2." and "Backed draft
+// body.". It returns the thread id and the draft id.
+func (s *Server) AddBackedThread() (threadID, draftID string) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	backed := func(text string) *Part {
+		p := utf8Text(text)
+		p.Backed = true
+		return p
+	}
+	s.clock = s.clock.Add(time.Minute)
+	b1 := "Backed body 1.\n"
+	m1 := s.add(spec{from: Dmitri, to: []Person{Reader}, subject: "Long notes", at: s.clock, labels: []string{"INBOX"},
+		body: backed(b1), text: b1})
+	s.clock = s.clock.Add(time.Minute)
+	b2 := "Backed body 2.\n"
+	m2 := s.add(spec{from: Dmitri, to: []Person{Reader}, subject: "Re: Long notes", at: s.clock, labels: []string{"INBOX"},
+		body: backed(b2), text: b2, thread: m1.threadID, inReplyTo: m1})
+	s.clock = s.clock.Add(time.Minute)
+	b3 := "Backed draft body.\n"
+	d := s.add(spec{from: Reader, to: []Person{Dmitri}, subject: "Re: Long notes", at: s.clock, labels: []string{"DRAFT"},
+		body: backed(b3), text: b3, thread: m1.threadID, inReplyTo: m2})
+	draftID = "r" + s.nextID()
+	s.drafts[draftID] = d.id
+	return m1.threadID, draftID
+}
+
 // AddBulkMail adds n single-message threads to the inbox, from the
 // generated people in turn, each with a subject, a Cc and a body long
 // enough to fill Gmail's snippet. It returns their ids, oldest first.

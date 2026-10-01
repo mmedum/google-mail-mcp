@@ -94,6 +94,25 @@ func TestDownloadAttachmentStreamsALargeFile(t *testing.T) {
 	}
 }
 
+// A part Gmail inlined in the message is written from the message
+// itself, with no attachment read.
+func TestDownloadAttachmentWritesAnInlinedPart(t *testing.T) {
+	s, fake := newService(t)
+	sc := fake.Scenario(gmailtest.ScenarioInvite)
+	d, err := s.DownloadAttachment(context.Background(), t.TempDir(), sc.MessageIDs[0], "0.2")
+	if err != nil {
+		t.Fatal(err)
+	}
+	got, _ := os.ReadFile(d.Path)
+	if d.Bytes != 271 || len(got) != 271 || !bytes.HasPrefix(got, []byte("BEGIN:VCALENDAR\r\n")) ||
+		!bytes.Contains(got, []byte("SUMMARY:Design review\r\n")) {
+		t.Fatalf("wrote %d bytes (reported %d): %q; want the 271-byte invitation", len(got), d.Bytes, got)
+	}
+	if n := len(calls(fake, "gmail.users.messages.attachments.get")); n != 0 {
+		t.Errorf("%d attachment reads; want none", n)
+	}
+}
+
 func TestDownloadAttachmentRefusals(t *testing.T) {
 	s, fake := newService(t)
 	dir := t.TempDir()
