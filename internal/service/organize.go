@@ -239,12 +239,13 @@ func (s *Service) move(restore bool) itemWrite {
 				return m.LabelIDs, err
 			}
 		},
+		// Gmail's trash takes a message out of the inbox, and its restore
+		// does not put it back (§18 row 70).
 		predict: func(labels map[string][]string) []string {
-			add, remove := []string{"TRASH"}, []string(nil)
 			if restore {
-				add, remove = nil, add
+				return applied(labels, nil, []string{"TRASH"}, false)
 			}
-			return applied(labels, add, remove, false)
+			return applied(labels, []string{"TRASH"}, []string{"INBOX"}, false)
 		},
 	}
 }
@@ -436,13 +437,12 @@ func applied(labels map[string][]string, add, remove []string, skipDrafts bool) 
 			all = append(all, ls...)
 			continue
 		}
-		a, r := needs(ls, add, remove)
 		for _, l := range ls {
-			if !slices.Contains(r, l) {
+			if !slices.Contains(remove, l) {
 				all = append(all, l)
 			}
 		}
-		all = append(all, a...)
+		all = append(all, add...)
 	}
 	slices.Sort(all)
 	return slices.Compact(all)

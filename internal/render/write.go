@@ -258,7 +258,7 @@ func ItemsWrite(iw model.ItemsWrite) string {
 				w.say("%s %s: failed · %s", kind, gmailID(it.ID), failure(it.Class, it.Error))
 			case o == model.Unchanged:
 				w.say("%s %s: unchanged, %s · labels: %s", kind, gmailID(it.ID), already(iw.Op), labelList(it.Before))
-			case o == model.WouldChange && len(it.After) > 0:
+			case o == model.WouldChange && it.After != nil:
 				w.say("%s %s: %s · labels now: %s · after: %s", kind, gmailID(it.ID), would,
 					labelList(it.Before), labelList(it.After))
 			case o == model.WouldChange:
