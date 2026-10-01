@@ -1,11 +1,14 @@
 # Architecture — google-mail-mcp
 
-**Status: 2.0.4 is tagged from `main`, 2026-10-01: a dry run of
-`modify_labels`, `trash` or `restore` reports each item's labels after,
-and trash's prediction takes the mail out of the inbox as Gmail does.
-2.0.3 was released, 2026-09-30, from `main`: a question also breaks a
-bare domain a fuzzy linkifier would link, and the live transcript masks
-label and filter ids. 2.0.2 was released, 2026-09-30, and verified from
+**Status: 2.0.4 is released, 2026-10-01, from `main`, and verified from
+outside: checksums, the cosign signature and the provenance attestation,
+each also against a tampered copy, the registry entry, and the Go proxy
+resolving the `/v2` module path. A dry run of `modify_labels`, `trash`
+or `restore` reports each item's labels after, and trash's prediction
+takes the mail out of the inbox as Gmail does. 2.0.3 was released,
+2026-09-30: a question also breaks a bare domain a fuzzy linkifier would
+link, and the live transcript masks label and filter ids. 2.0.2 was
+released, 2026-09-30, and verified from
 outside: checksums, the cosign signature and the provenance attestation,
 each also against a tampered copy, the registry entry, and the Go proxy
 resolving the `/v2` module path. A question breaks a link after an
