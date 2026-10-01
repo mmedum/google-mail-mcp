@@ -173,8 +173,25 @@ func TestListHistoryQueryAndExpiry(t *testing.T) {
 	if res.HistoryID != strconv.FormatUint(fake.HistoryID(), 10) {
 		t.Errorf("historyId = %s; want the mailbox's current %d", res.HistoryID, fake.HistoryID())
 	}
+	if q.Has("pageToken") {
+		t.Errorf("a first page sent a page token: %v", q)
+	}
+
+	first, err := c.ListHistory(ctx, gapi.HistoryOptions{StartHistoryID: start, Max: 1})
+	if err != nil || first.NextPageToken == "" {
+		t.Fatalf("first page = %+v, %v", first, err)
+	}
+	if _, err := c.ListHistory(ctx, gapi.HistoryOptions{StartHistoryID: start, Max: 1, PageToken: first.NextPageToken}); err != nil {
+		t.Fatal(err)
+	}
+	if q := lastQuery(t, fake, "gmail.users.history.list"); q.Get("pageToken") != first.NextPageToken {
+		t.Errorf("the page token did not reach the query: %v", q)
+	}
 
 	_, err = c.ListHistory(ctx, gapi.HistoryOptions{StartHistoryID: "1"})
+	if q := lastQuery(t, fake, "gmail.users.history.list"); q.Has("maxResults") {
+		t.Errorf("no Max sent maxResults: %v", q)
+	}
 	if cl, _ := gapi.ClassOf(err); cl != gapi.ClassNotFound {
 		t.Fatalf("an expired start = %v; want not_found for the service to read as expired", err)
 	}

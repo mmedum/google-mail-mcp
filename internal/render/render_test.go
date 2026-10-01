@@ -92,6 +92,14 @@ func TestCutBody(t *testing.T) {
 	if got, next := cutBody([]piece{{text: "short", srcEnd: 5}}, 100); got != "short" || next != 0 {
 		t.Fatalf("fits %q %d", got, next)
 	}
+	if got, next := cutBody([]piece{{text: "short", srcEnd: 5}}, 5); got != "short" || next != 0 {
+		t.Fatalf("fits exactly %q %d; want it whole and nothing to continue", got, next)
+	}
+	// After a whole piece, the next is cut within the room left.
+	two := []piece{{text: "0123456789", srcEnd: 10}, {text: "one two three four", srcStart: 10, srcEnd: 28}}
+	if got, next := cutBody(two, 18); got != "0123456789one two " || next != 18 {
+		t.Fatalf("cut in the second piece %q %d", got, next)
+	}
 	if cutPoint("abc", 0) != 0 {
 		t.Fatal("zero room")
 	}
@@ -108,6 +116,42 @@ func TestBodyPiecesFromInsideSpan(t *testing.T) {
 	ps, _ = bodyPieces(m.Body, 0, true)
 	if len(ps) != 1 || ps[0].text != body {
 		t.Fatalf("show quoted %+v", ps)
+	}
+}
+
+// A body read on from where a collapsed span ends does not collapse that
+// span again.
+func TestBodyPiecesFromASpansEnd(t *testing.T) {
+	body := "Reply.\n\nOn Mon, Ada wrote:\n> one\n> two\n\n-- \nAda"
+	m := plainMessage(body)
+	if len(m.Body.Spans) != 2 || m.Body.Spans[0].Kind != mime.SpanQuote {
+		t.Fatalf("the fixture's spans changed: %+v", m.Body.Spans)
+	}
+	ps, c := bodyPieces(m.Body, strings.Index(body, "\n\n-- "), false)
+	if c.quotes != 0 || c.sigs != 1 || len(ps) != 2 || ps[0].text != "\n\n" {
+		t.Fatalf("pieces %+v, collapsed %+v; want the blank lines and the signature only", ps, c)
+	}
+}
+
+// A quote the reply answers between its lines stays in the body; only a
+// trailing quote or a signature is collapsed.
+func TestAnInlineQuoteStays(t *testing.T) {
+	body := "On Mon, Ada wrote:\n> Can you come on Friday?\n\nYes, I can.\n\n> And bring the slides?\n\nI will.\n"
+	text := Message(plainMessage(body), Options{Tokens: seq("T")}).Text
+	if !strings.Contains(text, body) || strings.Contains(text, "collapsed") {
+		t.Errorf("the inline quotes were not kept:\n%s", text)
+	}
+}
+
+// Truncated and NextOffset say whether a message's body was cut.
+func TestAMessageIsTruncatedOnlyWhenItsBodyIsCut(t *testing.T) {
+	whole := Message(plainMessage("Short body."), Options{Tokens: seq("T")})
+	if whole.Truncated || whole.NextOffset != 0 {
+		t.Errorf("a whole body: truncated %t, next offset %d", whole.Truncated, whole.NextOffset)
+	}
+	cut := Message(plainMessage(strings.Repeat("A paragraph of words.\n\n", 500)), Options{Tokens: seq("T"), Budget: MinBudget})
+	if !cut.Truncated || cut.NextOffset == 0 {
+		t.Errorf("a cut body: truncated %t, next offset %d", cut.Truncated, cut.NextOffset)
 	}
 }
 
@@ -196,6 +240,16 @@ func TestThreadFirstMessageOverBudget(t *testing.T) {
 	if res := Thread(th, Options{Tokens: seq("T"), Cursor: 9}); res.Truncated {
 		t.Fatalf("cursor past the end: %+v", res)
 	}
+	// A newest message whose frame alone is over the budget, but whose
+	// short body is shown whole, is not said to be cut.
+	crowded := plainMessage("Short body.")
+	for i := range 200 {
+		crowded.Body.UnknownCharsets = append(crowded.Body.UnknownCharsets, fmt.Sprintf("x-made-up-charset-%03d", i))
+	}
+	res = Thread(model.Thread{ID: "0000000000000001", Messages: []model.Message{crowded}}, Options{Tokens: seq("T"), Budget: MinBudget})
+	if res.Truncated || res.NextOffset != 0 || strings.Contains(res.Text, "the rest of this body") || !strings.Contains(res.Text, "Short body.") {
+		t.Errorf("a whole body under a large frame: truncated %t, next offset %d:\n%s", res.Truncated, res.NextOffset, res.Text)
+	}
 }
 
 func TestListingsOverBudget(t *testing.T) {
@@ -219,6 +273,125 @@ func TestListingsOverBudget(t *testing.T) {
 		if !res.Truncated || len(res.Omitted) == 0 || !strings.Contains(res.Text, "not shown (over the budget), ") || !strings.Contains(res.Text, " from this page: ") {
 			t.Errorf("%s: %+v", name, res.Omitted)
 		}
+		// The rows that fit are shown, and the line counts the 60 rows
+		// less those.
+		shown := strings.Count(res.Text, " summary ")
+		if shown == 0 || shown+len(res.Omitted) != 60 {
+			t.Errorf("%s: %d rows shown and %d omitted of 60", name, shown, len(res.Omitted))
+		}
+		if want := fmt.Sprintf("not shown (over the budget), %d %s from this page: ", 60-shown, name); !strings.Contains(res.Text, want) {
+			t.Errorf("%s: no %q in\n%s", name, want, res.Text)
+		}
+	}
+}
+
+// The line naming a page's rows left out counts every row and names
+// each id once, saying how many rows were on messages named already.
+func TestRowsOmittedCountsEveryRow(t *testing.T) {
+	for _, tc := range []struct {
+		n    int
+		ids  []string
+		want string
+	}{
+		{0, nil, ""},
+		{3, nil, "\nnot shown (over the budget), 3 changes from this page, on messages named above\n"},
+		{5, []string{"0000000000000001", "0000000000000002"},
+			"\nnot shown (over the budget), 5 changes from this page: 0000000000000001, 0000000000000002, and 3 on messages named already\n"},
+		{1, []string{"0000000000000001"}, "\nnot shown (over the budget), 1 change from this page: 0000000000000001\n"},
+	} {
+		if got := plain(func(w *writer) { w.rowsOmitted(tc.n, "change", "changes", tc.ids) }); got != tc.want {
+			t.Errorf("rowsOmitted(%d, %q) = %q, want %q", tc.n, tc.ids, got, tc.want)
+		}
+	}
+}
+
+// A thread row shows the thread's snippet, and the newest message's
+// when the thread has none.
+func TestAThreadRowShowsTheThreadsSnippet(t *testing.T) {
+	m := plainMessage("body")
+	m.Snippet = "the newest message's snippet"
+	for _, tc := range []struct {
+		thread model.Untrusted
+		want   string
+	}{
+		{"the thread's snippet", "Snippet: the thread's snippet\n"},
+		{"", "Snippet: the newest message's snippet\n"},
+	} {
+		th := model.Thread{ID: "0000000000000001", Snippet: tc.thread, Messages: []model.Message{m}}
+		if text := Threads(ThreadList{Threads: []model.Thread{th}}, Options{Tokens: seq("T")}).Text; !strings.Contains(text, tc.want) {
+			t.Errorf("thread snippet %q: no %q in\n%s", tc.thread, tc.want, text)
+		}
+	}
+}
+
+// A send-as list longer than the budget holds shows the addresses that
+// fit, names how many it left out, and stays within the budget.
+func TestSendAsOverTheBudget(t *testing.T) {
+	var st model.Settings
+	for i := range 40 {
+		st.SendAs = append(st.SendAs, model.SendAs{Address: fmt.Sprintf("alias%02d@example.com", i),
+			Signature: model.Untrusted(strings.Repeat("Signature line. ", 90))})
+	}
+	res := Settings(st, Options{Tokens: seq("T")})
+	shown := strings.Count(res.Text, "@example.com · name ")
+	if n := utf8.RuneCountInString(res.Text); n > res.Budget {
+		t.Errorf("%d characters for a budget of %d", n, res.Budget)
+	}
+	if !res.Truncated || shown == 0 || shown == 40 {
+		t.Fatalf("truncated %t with %d of 40 addresses shown", res.Truncated, shown)
+	}
+	if want := fmt.Sprintf("not shown (over the budget): %d addresses;", 40-shown); !strings.Contains(res.Text, want) {
+		t.Errorf("no %q in\n%s", want, res.Text)
+	}
+}
+
+// A vacation reply set up with only a subject, or only a body, is shown.
+func TestAVacationReplyWithOneHalfIsShown(t *testing.T) {
+	for _, v := range []model.Vacation{
+		{Subject: "Away this week"},
+		{Body: "Back on Monday."},
+	} {
+		text := Settings(model.Settings{Vacation: v}, Options{Tokens: seq("T")}).Text
+		want := "Subject: " + string(v.Subject) + "\n\n" + string(v.Body)
+		if !strings.Contains(text, strings.TrimSpace(want)+"\n") {
+			t.Errorf("vacation %+v: no %q in\n%s", v, want, text)
+		}
+	}
+}
+
+// A value Google draws from a fixed set is shown as itself only when it
+// is one this server knows.
+func TestAnUnknownVerificationStatusIsOther(t *testing.T) {
+	st := model.Settings{ForwardingAddresses: []model.ForwardingAddress{
+		{Address: "backup@example.org", VerificationStatus: "accepted"},
+		{Address: "archive@example.org", VerificationStatus: "someFutureStatus"},
+	}}
+	text := Settings(st, Options{Tokens: seq("T")}).Text
+	for _, want := range []string{"  backup@example.org · accepted\n", "  archive@example.org · other\n"} {
+		if !strings.Contains(text, want) {
+			t.Errorf("no %q in\n%s", want, text)
+		}
+	}
+}
+
+// A send is said to have left its draft's thread only when it did.
+func TestASendOutsideTheDraftsThreadIsNoted(t *testing.T) {
+	const note = "note: Gmail filed the sent message in thread"
+	for _, tc := range []struct {
+		draftThread, sentThread string
+		want                    string
+	}{
+		{"0000000000000001", "0000000000000009",
+			"note: Gmail filed the sent message in thread 0000000000000009, not the draft's thread 0000000000000001.\n"},
+		{"0000000000000001", "0000000000000001", ""},
+		{"", "0000000000000009", ""},
+	} {
+		sw := model.SendWrite{DraftID: "r0000000000000021", MessageID: "0000000000000022", ThreadID: tc.draftThread,
+			SentID: "0000000000000030", SentThreadID: tc.sentThread}
+		text := SendDraft(sw, Options{Tokens: seq("T")}).Text
+		if tc.want == "" && strings.Contains(text, note) || tc.want != "" && !strings.Contains(text, tc.want) {
+			t.Errorf("draft thread %q, sent to %q: want %q in\n%s", tc.draftThread, tc.sentThread, tc.want, text)
+		}
 	}
 }
 
@@ -238,6 +411,19 @@ func TestAHeaderBlockLargerThanTheBudgetIsCut(t *testing.T) {
 	}
 	if !strings.Contains(res.Text, "Body paragraph.") {
 		t.Errorf("the body lost its share to the headers:\n%s", res.Text)
+	}
+	// Many short lines, as headers: all shows a long Received chain, are
+	// cut to half the budget too.
+	chain := plainMessage(strings.Repeat("Body paragraph. ", 200))
+	for i := range 2000 {
+		chain.Headers = append(chain.Headers, mime.Header{Name: "Received", Value: "from relay" + strconv.Itoa(i) + ".example.net"})
+	}
+	res = Message(chain, Options{Tokens: seq("T"), Budget: MinBudget * 2, AllHeaders: true})
+	if n := utf8.RuneCountInString(res.Text); n > res.Budget+minBody {
+		t.Errorf("all headers: %d characters for a budget of %d", n, res.Budget)
+	}
+	if !strings.Contains(res.Text, "of the header block over half the budget were left out") || !strings.Contains(res.Text, "Body paragraph.") {
+		t.Errorf("all headers: the cut is not stated, or the body lost its share:\n%s", res.Text)
 	}
 	head, cut := capHeaders("a: 1\nb: 2\nc: 3\n", 9)
 	if head != "a: 1\n" || cut != 10 {
@@ -267,6 +453,7 @@ func TestPOPIsOnOnlyForKnownWindows(t *testing.T) {
 func TestListingThatFitsExactlyIsWhole(t *testing.T) {
 	var ms []model.Message
 	var fs []model.Filter
+	th := model.Thread{ID: "0000000000000001"}
 	for i := range 60 {
 		m := plainMessage("body")
 		m.ID = fmt.Sprintf("%016x", i+1)
@@ -274,10 +461,14 @@ func TestListingThatFitsExactlyIsWhole(t *testing.T) {
 		ms = append(ms, m)
 		fs = append(fs, model.Filter{ID: fmt.Sprintf("ANe1BmgFit%03d", i),
 			Criteria: gmail.FilterCriteria{From: fmt.Sprintf("list%d@example.org", i), Query: strings.Repeat("words ", 25)}})
+		said := plainMessage(strings.Repeat("A sentence of the body. ", 40))
+		said.ID = m.ID
+		th.Messages = append(th.Messages, said)
 	}
 	for name, list := range map[string]func(Options) Result{
 		"messages": func(o Options) Result { return Messages(MessageList{Messages: ms}, o) },
 		"filters":  func(o Options) Result { return Filters(fs, o) },
+		"thread":   func(o Options) Result { return Thread(th, o) },
 	} {
 		// The same number of digits in the budget line either way.
 		wide := list(Options{Tokens: seq("T"), Budget: 99999})
