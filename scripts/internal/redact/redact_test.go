@@ -28,15 +28,15 @@ func TestRedactsIdsLinksAddressesAndTokens(t *testing.T) {
 		"draft " + plantedDraft,
 		"link: https://mail.google.com/mail/u/" + "0/#inbox/" + plantedID,
 		"From: A Person <someone@example.com>",
-		`To: "Åse Fiktivsen" <kim@example.org>`,
+		`To: "Åse Fiktivsen" <ase@example.org>`,
 		"Message-ID: <CAF=abc123@mail.example.com>",
 		"tokens " + plantedAccess + " " + plantedRefresh + " " + plantedSecret + " " + plantedClient,
 	}, "\n")
 	got := r.Do(in)
 
 	for _, secret := range []string{
-		plantedID, plantedDraft, "mail.google.com", "someone@example.com", "kim@example.org",
-		"CAF=abc123", "A Person", "Kim", "Fiktivsen",
+		plantedID, plantedDraft, "mail.google.com", "someone@example.com", "ase@example.org",
+		"CAF=abc123", "A Person", "Åse", "Fiktivsen",
 		plantedAccess, plantedRefresh, plantedSecret, plantedClient,
 	} {
 		if strings.Contains(got, secret) {
