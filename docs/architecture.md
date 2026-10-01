@@ -1,8 +1,11 @@
 # Architecture — google-mail-mcp
 
-**Status: 2.0.3 is tagged from `main`, 2026-09-30: a question also
-breaks a bare domain a fuzzy linkifier would link, and the live
-transcript masks label and filter ids. 2.0.2 was released, 2026-09-30, from `main`, and verified from
+**Status: 2.0.4 is built on a topic branch, unreleased: a dry run of
+`modify_labels`, `trash` or `restore` reports each item's labels after,
+and trash's prediction takes the mail out of the inbox as Gmail does.
+2.0.3 was released, 2026-09-30, from `main`: a question also breaks a
+bare domain a fuzzy linkifier would link, and the live transcript masks
+label and filter ids. 2.0.2 was released, 2026-09-30, and verified from
 outside: checksums, the cosign signature and the provenance attestation,
 each also against a tampered copy, the registry entry, and the Go proxy
 resolving the `/v2` module path. A question breaks a link after an
@@ -1745,6 +1748,25 @@ or filter id. The first run's count double-counted a filter id echoed in
 a step's arguments; review fixed that, and the second run is the one
 recorded below the review round.
 
+**2.0.4 — a dry run's labels after (unreleased).** Found in use, cleaning
+a personal mailbox: a dry run of `modify_labels`, `trash` or `restore`
+left `labels_after` empty, which read as every label being removed.
+
+- Each item write predicts its labels from the ones it read:
+  `modify_labels` applies the change to each message but a thread's
+  drafts; `trash` adds `TRASH` and removes `INBOX`; `restore` removes
+  `TRASH` only (§18 row 70). The text says the labels after too, "none"
+  when there would be none.
+- `gmailtest` trashes the same way, so the test that holds a dry run to
+  the write after it cannot agree by construction with a wrong fake.
+- The live driver holds each modify, trash and restore write to its dry
+  run's labels after.
+
+Run live 2026-10-01 without `-send-to`: every dry run's labels after
+matched the write that followed, for messages and threads. The run's
+own mail carries no `INBOX`, so the inbox half of trash rests on row 70's
+evidence, not on this run. Reviews in §16a.
+
 ### 16a. Found by review, and fixed
 
 Each phase's `/code-review high` and `/security-review` findings, with
@@ -2261,6 +2283,22 @@ what fixed them.
 - **2.0.3, security review: none at the bar.** It confirmed a break only
   inserts brackets, cannot close a code span, and that the @ exception
   reads one ASCII byte.
+- **2.0.4, `/code-review high`.** Fixed: the trash prediction kept
+  `INBOX`, copied from a fake that did the same, and a live check found
+  Gmail removes it (§18 row 70), so the prediction and `gmailtest` both
+  changed; an empty prediction rendered like an unreported one and now
+  says "after: none"; the test indexed items unchecked; the live driver
+  never compared a dry run with its write and now does. Declined: whether
+  adding `SPAM` or trashing a thread's draft does more, left unchecked in
+  row 70; carrying each write's label change as data so the check, the
+  write and the prediction share one rule, a larger change than a fix.
+- **2.0.4, `/simplify`.** `applied` drops a label in `remove`, adds
+  `add`, and sorts once, with a `skipDrafts` flag for relabel; `union`'s
+  doc comment is back above it. Declined: the same data-driven write as
+  above.
+- **2.0.4, security review: none at the bar.** The prediction runs only
+  under the dry-run context, makes no call, and renders label names
+  through the same path as the labels before.
 
 ### Closing a phase
 
