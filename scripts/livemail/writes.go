@@ -229,18 +229,21 @@ var writeSteps = []step{
 			return map[string]any{"message_ids": []any{e.seed.messages[0]}, "thread_ids": []any{e.seed.threads[1]},
 				"add": []any{"STARRED", "IMPORTANT"}, "dry_run": true}
 		},
-		check: func(_ *env, text string) error { return want(text, "2 would change") }},
+		check: func(e *env, text string) error { return e.predict(text, "2 would change") }},
 
 	{name: "star and mark important", tool: "modify_labels",
 		args: func(e *env) map[string]any {
 			return map[string]any{"message_ids": []any{e.seed.messages[0]}, "thread_ids": []any{e.seed.threads[1]},
 				"add": []any{"STARRED", "IMPORTANT"}}
 		},
-		check: func(_ *env, text string) error {
+		check: func(e *env, text string) error {
 			if err := want(text, "which is: star, mark important"); err != nil {
 				return err
 			}
-			return want(text, "2 changed · 0 unchanged · 0 failed")
+			if err := want(text, "2 changed · 0 unchanged · 0 failed"); err != nil {
+				return err
+			}
+			return e.asPredicted()
 		}},
 
 	{name: "unstar", tool: "modify_labels",
@@ -253,13 +256,18 @@ var writeSteps = []step{
 		args: func(e *env) map[string]any {
 			return map[string]any{"message_ids": []any{e.seed.messages[2]}, "thread_ids": []any{e.seed.threads[1]}, "dry_run": true}
 		},
-		check: func(_ *env, text string) error { return want(text, "2 would change") }},
+		check: func(e *env, text string) error { return e.predict(text, "2 would change") }},
 
 	{name: "trash", tool: "trash",
 		args: func(e *env) map[string]any {
 			return map[string]any{"message_ids": []any{e.seed.messages[2]}, "thread_ids": []any{e.seed.threads[1]}}
 		},
-		check: func(_ *env, text string) error { return want(text, "2 changed · 0 unchanged · 0 failed") }},
+		check: func(e *env, text string) error {
+			if err := want(text, "2 changed · 0 unchanged · 0 failed"); err != nil {
+				return err
+			}
+			return e.asPredicted()
+		}},
 
 	{name: "trash again leaves it where it is", tool: "trash",
 		args:  func(e *env) map[string]any { return map[string]any{"message_ids": []any{e.seed.messages[2]}} },
@@ -269,13 +277,18 @@ var writeSteps = []step{
 		args: func(e *env) map[string]any {
 			return map[string]any{"message_ids": []any{e.seed.messages[2]}, "thread_ids": []any{e.seed.threads[1]}, "dry_run": true}
 		},
-		check: func(_ *env, text string) error { return want(text, "2 would change") }},
+		check: func(e *env, text string) error { return e.predict(text, "2 would change") }},
 
 	{name: "restore", tool: "restore",
 		args: func(e *env) map[string]any {
 			return map[string]any{"message_ids": []any{e.seed.messages[2]}, "thread_ids": []any{e.seed.threads[1]}}
 		},
-		check: func(_ *env, text string) error { return want(text, "2 changed · 0 unchanged · 0 failed") }},
+		check: func(e *env, text string) error {
+			if err := want(text, "2 changed · 0 unchanged · 0 failed"); err != nil {
+				return err
+			}
+			return e.asPredicted()
+		}},
 
 	{name: "create a label, dry run", tool: "create_label",
 		args: func(e *env) map[string]any {

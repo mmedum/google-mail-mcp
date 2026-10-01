@@ -326,6 +326,51 @@ type env struct {
 	sent sentDraft
 	// person answers the server's questions to the person.
 	person *scriptedPerson
+	// predicted is each item's labels after, as the last dry run said,
+	// for the write that follows to match (§18 row 70).
+	predicted map[string][]string
+}
+
+// itemsAfter is each item's labels_after in the last multi-id write.
+func (e *env) itemsAfter() map[string][]string {
+	out := map[string][]string{}
+	items, _ := e.structured["items"].([]any)
+	for _, it := range items {
+		row, _ := it.(map[string]any)
+		id, _ := row["id"].(string)
+		labels, _ := row["labels_after"].([]any)
+		ids := []string{}
+		for _, l := range labels {
+			ref, _ := l.(map[string]any)
+			if s, ok := ref["id"].(string); ok {
+				ids = append(ids, s)
+			}
+		}
+		slices.Sort(ids)
+		out[id] = ids
+	}
+	return out
+}
+
+// predict records a dry run's labels after, once it says what it would do.
+func (e *env) predict(text, would string) error {
+	if err := want(text, would); err != nil {
+		return err
+	}
+	e.predicted = e.itemsAfter()
+	return nil
+}
+
+// asPredicted holds a write's labels after to what its dry run said.
+func (e *env) asPredicted() error {
+	got := e.itemsAfter()
+	for id, said := range e.predicted {
+		if !slices.Equal(got[id], said) {
+			return fmt.Errorf("item %s: the dry run said its labels would be %v, the write left %v", id, said, got[id])
+		}
+	}
+	e.predicted = nil
+	return nil
 }
 
 // sentDraft is a draft the run sent through send_draft: the draft, the

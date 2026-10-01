@@ -134,7 +134,7 @@ type ItemOut struct {
 	Outcome      string     `json:"outcome" jsonschema:"changed (for delete_permanently, deleted for good), unchanged (already as asked), would_change (dry run) or failed"`
 	Error        string     `json:"error,omitempty" jsonschema:"why it failed, as [class] message"`
 	LabelsBefore []LabelRef `json:"labels_before"`
-	LabelsAfter  []LabelRef `json:"labels_after"`
+	LabelsAfter  []LabelRef `json:"labels_after" jsonschema:"the labels after the write; on a dry run, the labels it would leave, and empty for delete_permanently"`
 }
 
 // ItemsOut is a multi-id write, item by item.

@@ -305,8 +305,10 @@ func (s *Server) modifyThread(w http.ResponseWriter, r *http.Request, args []str
 	s.threadOut(w, args[0])
 }
 
+// Trash takes mail out of the inbox and restore does not put it back, as
+// Gmail does (§18 row 70).
 func (s *Server) trashMessage(w http.ResponseWriter, _ *http.Request, args []string) {
-	s.moveMessage(w, args[0], []string{"TRASH"}, nil)
+	s.moveMessage(w, args[0], []string{"TRASH"}, []string{"INBOX"})
 }
 
 func (s *Server) untrashMessage(w http.ResponseWriter, _ *http.Request, args []string) {
@@ -324,7 +326,7 @@ func (s *Server) moveMessage(w http.ResponseWriter, id string, add, remove []str
 }
 
 func (s *Server) trashThread(w http.ResponseWriter, _ *http.Request, args []string) {
-	s.moveThread(w, args[0], []string{"TRASH"}, nil)
+	s.moveThread(w, args[0], []string{"TRASH"}, []string{"INBOX"})
 }
 
 func (s *Server) untrashThread(w http.ResponseWriter, _ *http.Request, args []string) {

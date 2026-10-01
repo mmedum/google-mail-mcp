@@ -1,8 +1,11 @@
 # Architecture — google-mail-mcp
 
-**Status: 2.0.3 is tagged from `main`, 2026-09-30: a question also
-breaks a bare domain a fuzzy linkifier would link, and the live
-transcript masks label and filter ids. 2.0.2 was released, 2026-09-30, from `main`, and verified from
+**Status: 2.0.4 is tagged from `main`, 2026-10-01: a dry run of
+`modify_labels`, `trash` or `restore` reports each item's labels after,
+and trash's prediction takes the mail out of the inbox as Gmail does.
+2.0.3 was released, 2026-09-30, from `main`: a question also breaks a
+bare domain a fuzzy linkifier would link, and the live transcript masks
+label and filter ids. 2.0.2 was released, 2026-09-30, and verified from
 outside: checksums, the cosign signature and the provenance attestation,
 each also against a tampered copy, the registry entry, and the Go proxy
 resolving the `/v2` module path. A question breaks a link after an
@@ -1745,6 +1748,25 @@ or filter id. The first run's count double-counted a filter id echoed in
 a step's arguments; review fixed that, and the second run is the one
 recorded below the review round.
 
+**2.0.4 — a dry run's labels after (released 2026-10-01).** Found in use, cleaning
+a personal mailbox: a dry run of `modify_labels`, `trash` or `restore`
+left `labels_after` empty, which read as every label being removed.
+
+- Each item write predicts its labels from the ones it read:
+  `modify_labels` applies the change to each message but a thread's
+  drafts; `trash` adds `TRASH` and removes `INBOX`; `restore` removes
+  `TRASH` only (§18 row 70). The text says the labels after too, "none"
+  when there would be none.
+- `gmailtest` trashes the same way, so the test that holds a dry run to
+  the write after it cannot agree by construction with a wrong fake.
+- The live driver holds each modify, trash and restore write to its dry
+  run's labels after.
+
+Run live 2026-10-01 without `-send-to`: every dry run's labels after
+matched the write that followed, for messages and threads. The run's
+own mail carries no `INBOX`, so the inbox half of trash rests on row 70's
+evidence, not on this run. Reviews in §16a.
+
 ### 16a. Found by review, and fixed
 
 Each phase's `/code-review high` and `/security-review` findings, with
@@ -2261,6 +2283,22 @@ what fixed them.
 - **2.0.3, security review: none at the bar.** It confirmed a break only
   inserts brackets, cannot close a code span, and that the @ exception
   reads one ASCII byte.
+- **2.0.4, `/code-review high`.** Fixed: the trash prediction kept
+  `INBOX`, copied from a fake that did the same, and a live check found
+  Gmail removes it (§18 row 70), so the prediction and `gmailtest` both
+  changed; an empty prediction rendered like an unreported one and now
+  says "after: none"; the test indexed items unchecked; the live driver
+  never compared a dry run with its write and now does. Declined: whether
+  adding `SPAM` or trashing a thread's draft does more, left unchecked in
+  row 70; carrying each write's label change as data so the check, the
+  write and the prediction share one rule, a larger change than a fix.
+- **2.0.4, `/simplify`.** `applied` drops a label in `remove`, adds
+  `add`, and sorts once, with a `skipDrafts` flag for relabel; `union`'s
+  doc comment is back above it. Declined: the same data-driven write as
+  above.
+- **2.0.4, security review: none at the bar.** The prediction runs only
+  under the dry-run context, makes no call, and renders label names
+  through the same path as the labels before.
 
 ### Closing a phase
 
@@ -2451,3 +2489,4 @@ live** — §15 exists to settle these, and they are marked.
 | 67 | A required choice naming the outcome confirms better than an empty form | Codex `codex-rs/codex-mcp/src/elicitation.rs` L415-458 and L552-571, `main` at c248f6d4, and VS Code `mcpElicitationService.ts` L111-119 and L237-297, read 2026-09-29; the maintainer's check in Claude Code 2.1.284, protocol 2025-11-25, 2026-09-29, against a throwaway probe with three forms of one `delete_label` question | **Declined, for now.** For: Codex accepts a form with no properties by itself under approval policy `never` with full access, and a VS Code chat question the person skips resolves as `accept` with no content. A required choice survives both, since Codex then declines and an answer without the choice is refused. Against: in Claude Code the choice list, "Keep the label" first and no default, took the maintainer 60 seconds, against 8 for the empty form and 10 for a typed name, and they found it confusing. The empty form stays, and both client behaviors are recorded as limits (§4.13). Revisit if either client changes, or a client is shown to draw a choice list clearly |
 | 68 | `\b` in a Go regular expression is a word boundary in any script | `go doc regexp/syntax`, Go 1.27.1, read 2026-09-29 | **Refuted.** `\b` is "at ASCII word boundary", and `\w` is `[0-9A-Za-z_]`. So `\b` finds no start inside a Cyrillic domain and none after an underscore. The link shapes in a question are now unanchored: a match starts as far left as its own characters reach, and a class before it would consume a separator the next link needs. A domain's letters may carry combining marks (`\p{M}`). A test holds an underscore, a Cyrillic and a Devanagari domain, a scheme after punctuation, and two links back to back (§4.13) |
 | 69 | A bare domain with nothing after it is drawn as a link | cmark-gfm `extensions/autolink.c`; linkify-it 5.0.0 and 6.1.0 as published on npm, and the markdown-it releases that use each; read 2026-09-30 | **By a fuzzy linkifier, which is common.** GitHub-flavored Markdown links a scheme (`http`, `https`, `ftp`), a `www.` host and an email address, never a bare domain. linkify-it links one when `fuzzyLink` is on, which is its default in 5.x (markdown-it 14) and not in 6.x (markdown-it 15), and then when the last label is two ASCII letters, punycode, or on its default list (biz, com, edu, gov, net, org, pro, web, xxx, aero, asia, coop, info, museum, name, shop, рф); a label is anything but space, punctuation or a control, so a symbol counts. `quoted()` breaks the last dot of exactly those, including one another break left, so `report.pdf` stays and a Markdown file name, a label like Clients.EU or a query naming a domain does not, `.md` and `.eu` being countries' codes. An address is left alone on both sides of its @, since the question means to show it and a client links it as mail at most. A client that loads the full IANA list links newer TLDs this does not break. Tier 1 |
+| 70 | Gmail's trash and restore change only `TRASH`, so a dry run can predict them by adding or removing it | Live, 2026-10-01, the maintainer's own personal mailbox: 438 `messages.trash` calls made while cleaning it up, read back from each result's labels before and after, and one `messages.untrash` probe followed by a `messages.trash` putting the message back | **Refuted for trash.** `messages.trash` adds `TRASH` and removes `INBOX` (86 of 86 messages that had it); `UNREAD`, `IMPORTANT`, the categories and user labels stay. `messages.untrash` removes `TRASH` only and does not restore `INBOX`. The dry-run prediction and `gmailtest` now follow this, and the live driver holds every modify, trash and restore write to its dry run's labels after. Not checked: whether `threads.trash` treats a thread's draft differently, and whether adding `SPAM` through `modify` makes Gmail drop `INBOX`; the prediction assumes neither |

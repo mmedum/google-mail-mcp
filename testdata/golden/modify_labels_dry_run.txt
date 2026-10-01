@@ -2,8 +2,8 @@ dry run: nothing was changed; each line says what the call would do.
 add: STARRED · remove: INBOX, UNREAD
 which is: archive, mark read, star
 2 would change · 1 unchanged · 2 failed
-message 0000000000000001: would change · labels now: INBOX, UNREAD, Projects/Offsite
+message 0000000000000001: would change · labels now: INBOX, UNREAD, Projects/Offsite · after: Projects/Offsite, STARRED
 message 0000000000000002: unchanged, already as asked · labels: Projects/Offsite, STARRED
-thread 0000000000000009: would change · labels now: INBOX
+thread 0000000000000009: would change · labels now: INBOX · after: STARRED
 message 0000000000000021: failed · [unsupported] message 0000000000000021 is a draft, and Gmail does not label drafts (§2.12)
 message 00000000000fffff: failed · [not_found] Google found nothing at that id (gmail.users.messages.get): Requested entity was not found.
