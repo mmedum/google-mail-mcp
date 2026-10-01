@@ -15,6 +15,10 @@ lifted verbatim.
 
 ## [Unreleased]
 
+### Fixed
+
+- A dry run of `modify_labels`, `trash` or `restore` reports the labels each item would have after the write, instead of an empty `labels_after` that read as every label being removed.
+
 ## [2.0.3] - 2026-09-30
 
 ### Fixed

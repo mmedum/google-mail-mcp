@@ -1,6 +1,7 @@
 package tools_test
 
 import (
+	"maps"
 	"os"
 	"path/filepath"
 	"slices"
@@ -517,4 +518,48 @@ func TestCreateAndUpdateLabel(t *testing.T) {
 	refused(t, h, "update_label", map[string]any{"label": "Trips", "name": "Receipts"}, gapi.ClassConflict)
 	refused(t, h, "update_label", map[string]any{"label": "Nothing"}, gapi.ClassInvalid)
 	refused(t, h, "update_label", map[string]any{"label": "Nothing", "name": "x"}, gapi.ClassNotFound)
+}
+
+// A dry run reports the labels each item would have, and the write that
+// follows leaves exactly those.
+func TestDryRunPredictsLabelsAfter(t *testing.T) {
+	h, fake := connectFake(t, config.Config{})
+	plain := fake.Scenario(gmailtest.ScenarioPlainThread)
+	reply := fake.Scenario(gmailtest.ScenarioDraftReply)
+
+	for _, c := range []struct {
+		name, tool string
+		args       map[string]any
+		want       []string
+	}{
+		{"modify a message", "modify_labels", map[string]any{"message_ids": []any{plain.MessageIDs[0]},
+			"add": []any{"STARRED"}, "remove": []any{"INBOX"}}, []string{"IMPORTANT", "Label_2", "STARRED"}},
+		{"modify a thread with a draft", "modify_labels", map[string]any{"thread_ids": []any{reply.ThreadID},
+			"add": []any{"STARRED"}, "remove": []any{"INBOX"}}, []string{"DRAFT", "SENT", "STARRED"}},
+		{"trash a message", "trash", map[string]any{"message_ids": []any{plain.MessageIDs[2]}},
+			[]string{"INBOX", "Label_2", "TRASH", "UNREAD"}},
+		{"restore it", "restore", map[string]any{"message_ids": []any{plain.MessageIDs[2]}},
+			[]string{"INBOX", "Label_2", "UNREAD"}},
+	} {
+		dryArgs := maps.Clone(c.args)
+		dryArgs["dry_run"] = true
+		var dry, real tools.ItemsOut
+		text := call(t, h, c.tool, dryArgs, &dry)
+		if dry.Items[0].Outcome != "would_change" || !slices.Equal(sorted(labelIDs(dry.Items[0].LabelsAfter)), c.want) {
+			t.Errorf("%s: dry run %+v", c.name, dry.Items[0])
+		}
+		if !strings.Contains(text, "after: ") {
+			t.Errorf("%s: dry-run text does not say the labels after:\n%s", c.name, text)
+		}
+		call(t, h, c.tool, c.args, &real)
+		if got := sorted(labelIDs(real.Items[0].LabelsAfter)); !slices.Equal(got, c.want) {
+			t.Errorf("%s: the write left %v, the dry run said %v", c.name, got, c.want)
+		}
+	}
+}
+
+func sorted(s []string) []string {
+	s = slices.Clone(s)
+	slices.Sort(s)
+	return s
 }
