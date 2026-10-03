@@ -1,0 +1,31 @@
+name: assign-issues
+
+# A new issue is assigned to the owner as it opens, so it shows up under
+# "Assigned" and nothing reported by someone else sits unseen.
+on:
+  issues:
+    types: [opened, reopened]
+
+permissions: {}
+
+# The pins gate wants this block in every workflow; see ci.yml for why.
+defaults:
+  run:
+    shell: bash
+
+jobs:
+  assign:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      issues: write
+    steps:
+      # gh is on the runner, so no third-party action and nothing to pin.
+      # The issue number and repository come in through env, never
+      # spliced into the script.
+      - run: gh issue edit "$NUMBER" --repo "$REPO" --add-assignee "$OWNER"
+        env:
+          GH_TOKEN: ${{ github.token }}
+          NUMBER: ${{ github.event.issue.number }}
+          REPO: ${{ github.repository }}
+          OWNER: ${{ github.repository_owner }}
