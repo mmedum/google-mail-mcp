@@ -1,0 +1,4 @@
+# Every pull request asks the owner for a review, so one opened by a
+# contributor or by Dependabot lands in the owner's review queue instead
+# of waiting for someone to notice it.
+* @mmedum
