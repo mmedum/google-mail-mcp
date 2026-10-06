@@ -7,6 +7,7 @@ import (
 	"encoding/hex"
 	"errors"
 	"fmt"
+	"html"
 	"mime/quotedprintable"
 	"path"
 	"strconv"
@@ -384,6 +385,47 @@ func textEntity(subtype, text string) *entity {
 		},
 		body: b.Bytes(),
 	}
+}
+
+// HTMLFromText is the HTML version of a plain-text body: the same words,
+// escaped, a paragraph per block of lines between blank lines, and a
+// line break for each line break inside one. Runs of spaces are kept,
+// and a tab is kept as four spaces.
+// It is "" for text with nothing to show. Gmail's web composer opens a
+// draft with no HTML part as plain text and wraps it at about 70
+// columns when the person sends it; an HTML part keeps each paragraph
+// whole (§7.4, §18 row 73). HTMLDerived compares this output byte for
+// byte with what a draft holds, so changing it makes the HTML of drafts
+// already written read as written by hand.
+func HTMLFromText(text string) string {
+	var b strings.Builder
+	var para []string
+	// The empty line added at the end closes the last paragraph.
+	for l := range strings.SplitSeq(normalizeNewlines(text)+"\n", "\n") {
+		if l = strings.TrimRight(l, " \t"); l != "" {
+			para = append(para, keepSpaces(html.EscapeString(strings.ReplaceAll(l, "\t", "    "))))
+		} else if len(para) > 0 {
+			b.WriteString("<p>" + strings.Join(para, "<br>\n") + "</p>\n")
+			para = nil
+		}
+	}
+	return b.String()
+}
+
+// keepSpaces writes a space that starts a line or follows another space
+// as a no-break space, which HTML does not collapse.
+func keepSpaces(l string) string {
+	var b strings.Builder
+	prev := ' '
+	for _, r := range l {
+		if r == ' ' && prev == ' ' {
+			b.WriteString("&nbsp;")
+		} else {
+			b.WriteRune(r)
+		}
+		prev = r
+	}
+	return b.String()
 }
 
 // bodyEntity is the plain part, or plain and HTML as alternatives.

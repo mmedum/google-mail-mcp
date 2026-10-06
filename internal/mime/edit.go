@@ -185,6 +185,30 @@ func swap(root, old, with *entity) *entity {
 	return with
 }
 
+// HTMLDerived reports whether raw has no HTML body, or has the one
+// HTMLFromText makes of its plain text. Either way a new plain text can
+// take a new HTML version without losing anything someone wrote. It
+// judges the parts EditRaw replaces, and decodes only those.
+func HTMLDerived(raw []byte) bool {
+	count := 0
+	plain, htm := readEntity(raw, "", 0, &count).bodies()
+	switch {
+	case htm == nil:
+		return true
+	case plain == nil:
+		return false
+	}
+	return normalizeNewlines(htmlText(htm.decoded())) == HTMLFromText(plainText(plain.decoded()))
+}
+
+// decoded is a body part as the read tree holds it, its transfer
+// encoding undone, for plainText and htmlText.
+func (e *entity) decoded() *node {
+	_, params := ParseMediaType(rawGet(e.headers, "Content-Type"))
+	return &node{mediaType: e.mediaType, params: params, hasData: true,
+		data: decodeTransfer(e.body, rawGet(e.headers, "Content-Transfer-Encoding"))}
+}
+
 // replaceBody applies new text and HTML to the body parts found before
 // any change. A part that is replaced is rebuilt; its siblings are kept.
 func replaceBody(root, plain, html *entity, text, htm *string) (*entity, error) {

@@ -92,6 +92,22 @@ var gatedSteps = []step{
 			return err
 		}},
 
+	// A new body alone must find the HTML version Gmail stored to be the
+	// one made from the old body, and replace it (§7.4, spike M).
+	{name: "give the draft to -send-to a long paragraph", tool: "update_draft", needs: needSendTo,
+		args: func(e *env) map[string]any {
+			return map[string]any{"draft_id": e.sent.draftID, "message_id": e.sent.draftMessage,
+				"body": "A synthetic message, sent by the live driver through send_draft.\n\n" + longParagraph + "\n"}
+		},
+		check: func(e *env, text string) error {
+			draft, msg, _, err := e.updated(text)
+			if err != nil || draft != e.sent.draftID {
+				return errors.New("the result names no update of the draft to -send-to")
+			}
+			e.sent.draftMessage = msg
+			return want(text, "changed: body, body_html")
+		}},
+
 	{name: "send the draft to -send-to", tool: "send_draft", needs: needSendTo,
 		args: func(e *env) map[string]any {
 			return map[string]any{"draft_id": e.sent.draftID, "message_id": e.sent.draftMessage,
@@ -197,6 +213,9 @@ var sendSpikes = []spike{
 			return "drafts.send " + kept + " the draft's Message-ID on the sent message. The received copy is in the " +
 				"second mailbox, under \"" + x.s.label.name + " send_draft\"."
 		}},
+	{name: "M (sent)", question: "Does the copy send_draft sends keep a plain-text line past 78 characters whole, beside " +
+		"the HTML version made from the body?",
+		ask: spikeMSent},
 	{name: "H", question: "What does a per-user rate limit look like: its status, its reason, and whether Retry-After " +
 		"comes with it?",
 		ask: spikeH},
@@ -253,4 +272,13 @@ func spikeH(ctx context.Context, x spikeRun) string {
 	}
 	return fmt.Sprintf("after %d reads (%d units): HTTP %d, reason %q, message %q, %s",
 		calls, calls*20, hit.status, hit.reason, hit.message, retry)
+}
+
+// spikeMSent reads the copy the send step sent.
+func spikeMSent(ctx context.Context, x spikeRun) string {
+	if x.sent.sentMessage == "" {
+		return "not run: the send step did not send (it needs -send-to)"
+	}
+	return "the copy send_draft sent " + readBack(ctx, x, x.sent.sentMessage) + ". The received copy is in the second " +
+		"mailbox, under \"" + x.s.label.name + " send_draft\""
 }

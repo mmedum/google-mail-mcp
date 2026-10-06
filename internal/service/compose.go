@@ -76,7 +76,13 @@ func (s *Service) CreateDraft(ctx context.Context, in Compose) (model.DraftWrite
 	if err != nil {
 		return out, err
 	}
-	o := mime.Outgoing{From: &from, Subject: in.Subject, Text: in.Body, HTML: in.HTML, Attachments: files,
+	htm := in.HTML
+	if htm == "" {
+		// Without an HTML part, Gmail's web composer wraps the text when
+		// the person sends the draft (§7.4).
+		htm = mime.HTMLFromText(in.Body)
+	}
+	o := mime.Outgoing{From: &from, Subject: in.Subject, Text: in.Body, HTML: htm, Attachments: files,
 		MessageID: mime.NewMessageID(from.Email)}
 	out.Recipients = callers
 	threadID := ""
@@ -536,6 +542,13 @@ func (s *Service) UpdateDraft(ctx context.Context, in Revise) (model.DraftWrite,
 		return out, gapi.Wrap(gapi.ClassUnavailable, err, "Gmail returned a draft that is not base64url")
 	}
 	before := mime.ParseRaw(raw)
+	if in.Body != nil && in.HTML == nil && mime.HTMLDerived(raw) {
+		// The HTML version is absent or this server's, made from the old
+		// body, so the new body takes a new one (§7.4).
+		htm := mime.HTMLFromText(*in.Body)
+		e.HTML = &htm
+		out.Changed = append(out.Changed, "body_html")
+	}
 	for _, id := range dedupe(in.Remove) {
 		if id == "" {
 			return out, gapi.Errf(gapi.ClassInvalid,

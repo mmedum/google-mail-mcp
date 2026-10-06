@@ -15,6 +15,14 @@ lifted verbatim.
 
 ## [Unreleased]
 
+### Fixed
+
+- A draft written without `body_html` also carries an HTML version made from its text, so when a person sends it from Gmail its paragraphs flow to the reader's screen instead of arriving wrapped at 70 columns; `update_draft` makes it again from a new body.
+
+### Changed
+
+- The `body` of `create_draft`, `update_draft` and `set_vacation` asks for each paragraph on one line, with a blank line between paragraphs.
+
 ## [2.0.4] - 2026-10-01
 
 ### Fixed

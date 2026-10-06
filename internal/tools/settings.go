@@ -83,7 +83,7 @@ func (o FilterWriteOut) Render() string { return o.text }
 type SetVacationIn struct {
 	Enable   bool   `json:"enable" jsonschema:"true turns the reply on; false turns it off and keeps its text"`
 	Subject  string `json:"subject,omitempty" jsonschema:"the reply's subject"`
-	Body     string `json:"body,omitempty" jsonschema:"the reply, plain text, sent exactly as given; required to turn it on"`
+	Body     string `json:"body,omitempty" jsonschema:"the reply, plain text, sent exactly as given: each paragraph on one line and a blank line between paragraphs, never broken to a width; required to turn it on"`
 	Audience string `json:"audience,omitempty" jsonschema:"who is answered, required to turn it on: contacts, or domain (Google Workspace accounts). Every sender is not offered"`
 	Start    string `json:"start,omitempty" jsonschema:"when the reply starts: an RFC 3339 time, or a YYYY-MM-DD date read as midnight UTC; default: now"`
 	End      string `json:"end,omitempty" jsonschema:"when it stops, as start; default: until turned off"`

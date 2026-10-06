@@ -19,8 +19,8 @@ type CreateDraftIn struct {
 	Cc       []string `json:"cc,omitempty" jsonschema:"copy recipients, one address per entry"`
 	Bcc      []string `json:"bcc,omitempty" jsonschema:"blind copy recipients, one address per entry"`
 	Subject  string   `json:"subject,omitempty" jsonschema:"the subject; leave it out of a reply, which takes its parent's"`
-	Body     string   `json:"body,omitempty" jsonschema:"the plain-text body, saved exactly as given"`
-	BodyHTML string   `json:"body_html,omitempty" jsonschema:"an HTML version of the body, saved beside the plain text; needs body"`
+	Body     string   `json:"body,omitempty" jsonschema:"the plain-text body, saved exactly as given, with an HTML version made from it unless body_html is given. Put each paragraph on one line and separate paragraphs with a blank line (\\n\\n); a single line break stays a line break. Never break a line to a width: the reader's mail client wraps it"`
+	BodyHTML string   `json:"body_html,omitempty" jsonschema:"an HTML version of the body, saved beside the plain text in place of the one made from body; needs body"`
 	// Attachments are base names, never paths: the directory is the
 	// person's choice, not the caller's (§3.15).
 	Attachments   []string `json:"attachments,omitempty" jsonschema:"names of files in the person's GMAIL_LOCAL_DIR to attach; a name, never a path"`
@@ -40,7 +40,7 @@ type UpdateDraftIn struct {
 	Cc        []string `json:"cc,omitempty" jsonschema:"replaces the Cc recipients; [] clears them; left out, they stay"`
 	Bcc       []string `json:"bcc,omitempty" jsonschema:"replaces the Bcc recipients; [] clears them; left out, they stay"`
 	Subject   *string  `json:"subject,omitempty" jsonschema:"replaces the subject; on a reply, a changed subject may take it out of its thread"`
-	Body      *string  `json:"body,omitempty" jsonschema:"replaces the plain-text body; if the draft also has HTML, give body_html too"`
+	Body      *string  `json:"body,omitempty" jsonschema:"replaces the plain-text body, written as for create_draft: each paragraph on one line, never broken to a width. An HTML version this server made from the old body is made again from the new one; HTML written another way needs body_html too"`
 	BodyHTML  *string  `json:"body_html,omitempty" jsonschema:"replaces the HTML body, or adds one beside the plain text"`
 	// AddAttachments are base names in GMAIL_LOCAL_DIR, as create_draft's.
 	AddAttachments    []string `json:"add_attachments,omitempty" jsonschema:"names of files in GMAIL_LOCAL_DIR to attach; a name, never a path"`

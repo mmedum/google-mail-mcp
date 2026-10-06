@@ -2,6 +2,7 @@ package mime
 
 import (
 	"bytes"
+	"encoding/base64"
 	"errors"
 	"strings"
 	"testing"
@@ -517,5 +518,85 @@ func TestBuildEncodesAnUnbreakableSubject(t *testing.T) {
 	}
 	if got := ParseRaw(raw).Subject; got != subject {
 		t.Fatalf("subject read back as %d characters", len(got))
+	}
+}
+
+// A paragraph sent as one line, however long, stays one line: the wire
+// carries it in quoted-printable lines of at most 76 (RFC 2045 §6.7),
+// whose soft breaks the reader never sees.
+func TestBuildSendsAParagraphAsOneLine(t *testing.T) {
+	paragraph := strings.Repeat("A sentence of plain words. ", 80) + "The end."
+	raw, err := Build(Outgoing{Text: paragraph + "\n\nNext.\n", MessageID: "<p@example.com>", Date: testDate})
+	if err != nil {
+		t.Fatalf("Build of a %d-character paragraph: %v", len(paragraph), err)
+	}
+	for line := range strings.SplitSeq(string(raw), "\r\n") {
+		if len(line) > 76 {
+			t.Fatalf("a wire line of %d characters: %q", len(line), line)
+		}
+	}
+	if got := string(leaves(raw)[0].data); got != paragraph+"\n\nNext.\n" {
+		t.Fatalf("read back as %q", got)
+	}
+}
+
+func TestHTMLFromText(t *testing.T) {
+	cases := []struct{ name, in, want string }{
+		{"empty", "", ""},
+		{"only blank lines", "\n  \n\t\n", ""},
+		{"one line", "Hi Ada.", "<p>Hi Ada.</p>\n"},
+		{"paragraphs and a line break",
+			"Hi Ada,\n\nThe totals look right.\nRae\n",
+			"<p>Hi Ada,</p>\n<p>The totals look right.<br>\nRae</p>\n"},
+		{"a run of blank lines is one break", "One.\n\n\n\nTwo.", "<p>One.</p>\n<p>Two.</p>\n"},
+		{"CRLF", "One.\r\n\r\nTwo.\r\nThree.", "<p>One.</p>\n<p>Two.<br>\nThree.</p>\n"},
+		{"escaped", `Tom & Jerry <tj@example.com> say "hi" 'twice'`,
+			"<p>Tom &amp; Jerry &lt;tj@example.com&gt; say &#34;hi&#34; &#39;twice&#39;</p>\n"},
+		{"markup stays text", "<script>alert(1)</script>", "<p>&lt;script&gt;alert(1)&lt;/script&gt;</p>\n"},
+		{"leading spaces kept", "  indented", "<p>&nbsp;&nbsp;indented</p>\n"},
+		{"a run of spaces kept", "a  b   c", "<p>a &nbsp;b &nbsp;&nbsp;c</p>\n"},
+		{"trailing spaces dropped", "end.   \nnext", "<p>end.<br>\nnext</p>\n"},
+		{"tabs kept as four spaces", "Totals:\n\tQ1\t100", "<p>Totals:<br>\n&nbsp;&nbsp;&nbsp;&nbsp;Q1 &nbsp;&nbsp;&nbsp;100</p>\n"},
+		{"a long paragraph stays one", strings.Repeat("word ", 60) + "end.",
+			"<p>" + strings.Repeat("word ", 60) + "end.</p>\n"},
+		{"other scripts", "Grüße · Отчёт · 会議", "<p>Grüße · Отчёт · 会議</p>\n"},
+	}
+	for _, c := range cases {
+		if got := HTMLFromText(c.in); got != c.want {
+			t.Errorf("%s: HTMLFromText(%q) = %q, want %q", c.name, c.in, got, c.want)
+		}
+	}
+}
+
+func TestHTMLDerived(t *testing.T) {
+	build := func(text, html string) []byte {
+		raw, err := Build(Outgoing{Text: text, HTML: html, MessageID: "<d@example.com>", Date: testDate})
+		if err != nil {
+			t.Fatal(err)
+		}
+		return raw
+	}
+	const text = "Hi Ada,\n\nThe totals look right.\n"
+	derivedB64 := "Content-Type: multipart/alternative; boundary=b\r\n\r\n--b\r\nContent-Type: text/plain; charset=utf-8\r\n\r\n" +
+		"Hi Ada,\r\n\r\nThe totals look right.\r\n--b\r\nContent-Type: text/html; charset=utf-8\r\nContent-Transfer-Encoding: base64\r\n\r\n" +
+		base64.StdEncoding.EncodeToString([]byte("<p>Hi Ada,</p>\r\n<p>The totals look right.</p>\r\n")) + "\r\n--b--\r\n"
+	cases := []struct {
+		name string
+		raw  []byte
+		want bool
+	}{
+		{"plain only", build(text, ""), true},
+		{"plain and the HTML made from it", build(text, "<p>Hi Ada,</p>\n<p>The totals look right.</p>\n"), true},
+		{"the same HTML, encoded another way", []byte(derivedB64), true},
+		{"plain with trailing spaces", build("Hi Ada,   \n\nThe totals look right.  \n", "<p>Hi Ada,</p>\n<p>The totals look right.</p>\n"), true},
+		{"HTML someone wrote", build(text, "<p>Hi <b>Ada</b>,</p><p>The totals look right.</p>"), false},
+		{"HTML one line off", build(text, "<p>Hi Ada,</p>\n<p>The totals look right!</p>\n"), false},
+		{"HTML only", []byte("Content-Type: text/html; charset=utf-8\r\n\r\n<p>Hi Ada,</p>\r\n"), false},
+		{"no body", []byte("Content-Type: application/pdf\r\nContent-Disposition: attachment; filename=a.pdf\r\n\r\n%PDF"), true},
+	}
+	for _, c := range cases {
+		if got := HTMLDerived(c.raw); got != c.want {
+			t.Errorf("%s: HTMLDerived = %v, want %v", c.name, got, c.want)
+		}
 	}
 }
