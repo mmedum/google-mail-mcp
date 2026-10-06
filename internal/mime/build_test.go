@@ -3,6 +3,8 @@ package mime
 import (
 	"bytes"
 	"errors"
+	"html"
+	"regexp"
 	"strings"
 	"testing"
 	"time"
@@ -518,4 +520,118 @@ func TestBuildEncodesAnUnbreakableSubject(t *testing.T) {
 	if got := ParseRaw(raw).Subject; got != subject {
 		t.Fatalf("subject read back as %d characters", len(got))
 	}
+}
+
+// A paragraph sent as one line, however long, stays one line: the wire
+// carries it in quoted-printable lines of at most 76 (RFC 2045 §6.7),
+// whose soft breaks the reader never sees.
+func TestBuildSendsAParagraphAsOneLine(t *testing.T) {
+	paragraph := strings.Repeat("A sentence of plain words. ", 80) + "The end."
+	raw, err := Build(Outgoing{Text: paragraph + "\n\nNext.\n", MessageID: "<p@example.com>", Date: testDate})
+	if err != nil {
+		t.Fatalf("Build of a %d-character paragraph: %v", len(paragraph), err)
+	}
+	for line := range strings.SplitSeq(string(raw), "\r\n") {
+		if len(line) > 76 {
+			t.Fatalf("a wire line of %d characters: %q", len(line), line)
+		}
+	}
+	if got := string(leaves(raw)[0].data); got != paragraph+"\n\nNext.\n" {
+		t.Fatalf("read back as %q", got)
+	}
+}
+
+func TestHTMLFromText(t *testing.T) {
+	cases := []struct{ name, in, want string }{
+		{"empty", "", ""},
+		{"only blank lines", "\n  \n\t\n", ""},
+		{"one line", "Hi Ada.", "<p>Hi Ada.</p>\n"},
+		{"paragraphs and a line break",
+			"Hi Ada,\n\nThe totals look right.\nRae\n",
+			"<p>Hi Ada,</p>\n<p>The totals look right.<br>\nRae</p>\n"},
+		{"a run of blank lines is one break", "One.\n\n\n\nTwo.", "<p>One.</p>\n<p>Two.</p>\n"},
+		{"CRLF", "One.\r\n\r\nTwo.\r\nThree.", "<p>One.</p>\n<p>Two.<br>\nThree.</p>\n"},
+		{"escaped", `Tom & Jerry <tj@example.com> say "hi" 'twice'`,
+			"<p>Tom &amp; Jerry &lt;tj@example.com&gt; say &#34;hi&#34; &#39;twice&#39;</p>\n"},
+		{"markup stays text", "<script>alert(1)</script>", "<p>&lt;script&gt;alert(1)&lt;/script&gt;</p>\n"},
+		{"leading spaces kept", "  indented", "<p>&nbsp;&nbsp;indented</p>\n"},
+		{"a run of spaces kept", "a  b   c", "<p>a &nbsp;b &nbsp;&nbsp;c</p>\n"},
+		{"trailing spaces dropped", "end.   \nnext", "<p>end.<br>\nnext</p>\n"},
+		{"tabs kept as four spaces", "Totals:\n\tQ1\t100", "<p>Totals:<br>\n&nbsp;&nbsp;&nbsp;&nbsp;Q1 &nbsp;&nbsp;&nbsp;100</p>\n"},
+		{"a long paragraph stays one", strings.Repeat("word ", 60) + "end.",
+			"<p>" + strings.Repeat("word ", 60) + "end.</p>\n"},
+		{"other scripts", "Grüße · Отчёт · 会議", "<p>Grüße · Отчёт · 会議</p>\n"},
+	}
+	for _, c := range cases {
+		if got := HTMLFromText(c.in); got != c.want {
+			t.Errorf("%s: HTMLFromText(%q) = %q, want %q", c.name, c.in, got, c.want)
+		}
+	}
+}
+
+func TestLineHTML(t *testing.T) {
+	a := func(u string) string { return `<a href="` + u + `">` + u + `</a>` }
+	cases := []struct{ name, in, want string }{
+		{"plain words", "Hi Ada.", "Hi Ada."},
+		{"a link ending a sentence", "See https://example.com/a?b=1&c=2.",
+			"See " + a("https://example.com/a?b=1&amp;c=2") + "."},
+		{"two links", "https://a.example and http://b.example", a("https://a.example") + " and " + a("http://b.example")},
+		{"scheme in capitals", "HTTPS://EXAMPLE.COM/X", a("HTTPS://EXAMPLE.COM/X")},
+		{"a host with no dot", "http://localhost:8080/x", a("http://localhost:8080/x")},
+		{"balanced parentheses kept", "(https://example.com/wiki/Foo_(bar))", "(" + a("https://example.com/wiki/Foo_(bar)") + ")"},
+		{"a closing parenthesis alone", "https://example.com/x),", a("https://example.com/x") + "),"},
+		{"a closing bracket alone", "[https://example.com/x]", "[" + a("https://example.com/x") + "]"},
+		{"angle brackets", "<https://example.com>", "&lt;" + a("https://example.com") + "&gt;"},
+		{"quotes", `'https://example.com' "https://example.org"`,
+			"&#39;" + a("https://example.com") + "&#39; &#34;" + a("https://example.org") + "&#34;"},
+		{"a quote cannot open an attribute", `https://example.com/"onmouseover="x`,
+			a("https://example.com/") + "&#34;onmouseover=&#34;x"},
+		{"an entity at the end", "https://example.com/x&amp;", a("https://example.com/x") + "&amp;amp;"},
+		{"a semicolon at the end", "https://example.com/x;", a("https://example.com/x") + ";"},
+		{"a bidi override inside: no link", "https://exa\u202emple.com", "https://exa\u202emple.com"},
+		{"a bidi override before: no link", "Portal: \u202e https://evil.example/x", "Portal: \u202e https://evil.example/x"},
+		{"a zero-width space ends it", "https://exa\u200bmple.com", a("https://exa") + "\u200bmple.com"},
+		{"after a no-break space", "https://a.example\u00a0https://b.example", a("https://a.example") + "\u00a0" + a("https://b.example")},
+		{"after an ideographic space", "見て\u3000https://example.com", "見て\u3000" + a("https://example.com")},
+		{"inside a word", "xhttps://example.com", "xhttps://example.com"},
+		{"after an equals sign", "url=https://example.com", "url=https://example.com"},
+		{"no host", "https:// and https://", "https:// and https://"},
+		{"other schemes", "javascript:alert(1) ftp://example.com mailto:a@example.com www.example.com",
+			"javascript:alert(1) ftp://example.com mailto:a@example.com www.example.com"},
+		{"spaces kept around a link", "  a  https://x.example  b", "&nbsp;&nbsp;a &nbsp;" + a("https://x.example") + " &nbsp;b"},
+		{"a tab", "\tQ1\t100", "&nbsp;&nbsp;&nbsp;&nbsp;Q1 &nbsp;&nbsp;&nbsp;100"},
+	}
+	for _, c := range cases {
+		if got := LineHTML(c.in); got != c.want {
+			t.Errorf("%s: LineHTML(%q) =\n %q, want\n %q", c.name, c.in, got, c.want)
+		}
+	}
+}
+
+// FuzzLineHTML holds that a line's HTML adds no markup but links whose
+// text is their target, and says exactly what the line says.
+func FuzzLineHTML(f *testing.F) {
+	for _, s := range []string{"See https://example.com/a?b=1&c=2.", "(https://e.example/x_(y))", `<a href="x">`,
+		"https://exa\u202emple.com", "  a\t b  ", "https://e.example/&amp;;", `"https://e.example/"x"`} {
+		f.Add(s)
+	}
+	tag := regexp.MustCompile(`<a href="([^"<>]*)">([^<>]*)</a>`)
+	f.Fuzz(func(t *testing.T, line string) {
+		if !utf8.ValidString(line) || strings.ContainsAny(line, "\r\n") {
+			t.Skip() // a line of valid text
+		}
+		got := LineHTML(line)
+		for _, m := range tag.FindAllStringSubmatch(got, -1) {
+			if m[1] != m[2] {
+				t.Fatalf("a link's text %q is not its target %q in %q", m[2], m[1], got)
+			}
+		}
+		text := tag.ReplaceAllString(got, "$2")
+		if strings.ContainsAny(text, "<>") {
+			t.Fatalf("markup in %q from %q", got, line)
+		}
+		if back := strings.ReplaceAll(html.UnescapeString(text), " ", " "); back != strings.ReplaceAll(line, "\t", "    ") {
+			t.Fatalf("%q reads back as %q", line, back)
+		}
+	})
 }

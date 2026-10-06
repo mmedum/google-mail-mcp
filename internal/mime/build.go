@@ -7,11 +7,14 @@ import (
 	"encoding/hex"
 	"errors"
 	"fmt"
+	"html"
 	"mime/quotedprintable"
 	"path"
+	"regexp"
 	"strconv"
 	"strings"
 	"time"
+	"unicode"
 	"unicode/utf8"
 
 	netmail "net/mail"
@@ -384,6 +387,139 @@ func textEntity(subtype, text string) *entity {
 		},
 		body: b.Bytes(),
 	}
+}
+
+// HTMLFromText is the HTML version of a plain-text body: the same words,
+// escaped, a paragraph per block of lines between blank lines, and a
+// line break for each line break inside one, each line as LineHTML
+// writes it.
+// It is "" for text with nothing to show. Gmail's web composer opens a
+// draft with no HTML part as plain text and wraps it at about 70
+// columns when the person sends it; an HTML part keeps each paragraph
+// whole (§7.4, §18 row 73). EditRaw recognizes what this writes by
+// reading it back (madeText), so any markup it ever writes must stay
+// among what madeText accepts.
+func HTMLFromText(text string) string {
+	var b strings.Builder
+	var para []string
+	// The empty line added at the end closes the last paragraph.
+	for l := range strings.SplitSeq(normalizeNewlines(text)+"\n", "\n") {
+		if l = strings.TrimRight(l, " \t"); l != "" {
+			para = append(para, LineHTML(l))
+		} else if len(para) > 0 {
+			b.WriteString("<p>" + strings.Join(para, "<br>\n") + "</p>\n")
+			para = nil
+		}
+	}
+	return b.String()
+}
+
+// LineHTML is one line of plain text as HTML: escaped, a tab as four
+// spaces, runs of spaces kept, which HTML would collapse, and each web
+// address a link whose text is the address itself (nextLink). A line
+// holding a bidi control gets no link: an override anywhere before an
+// address can draw its text as another address than its target.
+func LineHTML(l string) string {
+	l = strings.ReplaceAll(l, "\t", "    ")
+	var b strings.Builder
+	prev := ' ' // a space that starts the line is kept too
+	if strings.ContainsFunc(l, func(r rune) bool { return unicode.Is(unicode.Bidi_Control, r) }) {
+		writeText(&b, l, prev)
+		return b.String()
+	}
+	for l != "" {
+		start, end := nextLink(l)
+		writeText(&b, l[:start], prev)
+		if start == len(l) {
+			break
+		}
+		u := html.EscapeString(l[start:end])
+		b.WriteString(`<a href="` + u + `">` + u + `</a>`)
+		prev, l = 'a', l[end:]
+	}
+	return b.String()
+}
+
+// writeText writes s escaped, with a space that follows another space as
+// a no-break space; prev is the character before s.
+func writeText(b *strings.Builder, s string, prev rune) {
+	for _, r := range html.EscapeString(s) { // escaping adds no spaces
+		if r == ' ' && prev == ' ' {
+			b.WriteString("&nbsp;")
+		} else {
+			b.WriteRune(r)
+		}
+		prev = r
+	}
+}
+
+// linkStart finds where a web address may begin, as GitHub's autolinks
+// allow: at the start of a line, after a space, or after one of ( [ < "
+// ' * _ ~. Only http and https are linked (§18 row 75).
+var linkStart = regexp.MustCompile(`(?i)(^|[\s\p{Zs}(\[<"'*_~])(https?://)[\pL\pN]`)
+
+// nextLink returns the first web address in l as l[start:end], or
+// start == end == len(l) when there is none. An address runs to a space,
+// a control or bidi formatting character, '<', '>' or '"', and its end
+// is trimmed as trimLink says.
+func nextLink(l string) (start, end int) {
+	m := linkStart.FindStringSubmatchIndex(l)
+	if m == nil {
+		return len(l), len(l)
+	}
+	start, end = m[4], len(l)
+	if n := strings.IndexFunc(l[start:], endsLink); n >= 0 {
+		end = start + n
+	}
+	return start, start + trimLink(l[start:end])
+}
+
+// endsLink reports whether r ends a web address: RFC 3986 Appendix C
+// leaves quotes, angle brackets and space outside one, and a character a
+// reader cannot see, a bidi control among them, could make a link read
+// as another (§4.1.2).
+func endsLink(r rune) bool {
+	return unicode.IsSpace(r) || unicode.IsControl(r) || strings.ContainsRune(`<>"`, r) || isInvisible(r)
+}
+
+// trimLink returns the length of u without what GitHub's autolinks leave
+// out at its end: trailing punctuation, a closing parenthesis or bracket
+// with no opening one, and an entity or a semicolon. It counts the
+// brackets once, so a long run of them costs one pass.
+func trimLink(u string) int {
+	opened := map[byte]int{')': strings.Count(u, "("), ']': strings.Count(u, "[")}
+	closed := map[byte]int{')': strings.Count(u, ")"), ']': strings.Count(u, "]")}
+	n := len(u)
+	for {
+		switch last := u[n-1]; {
+		case strings.IndexByte("?!.,:*_~'", last) >= 0:
+			n--
+		case (last == ')' || last == ']') && closed[last] > opened[last]:
+			closed[last]--
+			n--
+		case last == ';':
+			n = entityStart(u[:n])
+		default:
+			return n
+		}
+	}
+}
+
+// entityStart returns where an entity such as &amp; ends u, or where its
+// final semicolon is when no entity does.
+func entityStart(u string) int {
+	i := len(u) - 1 // the semicolon
+	for i > 0 && isASCIIAlnum(u[i-1]) {
+		i--
+	}
+	if i < len(u)-1 && i > 0 && u[i-1] == '&' {
+		return i - 1
+	}
+	return len(u) - 1
+}
+
+func isASCIIAlnum(c byte) bool {
+	return c >= '0' && c <= '9' || c >= 'a' && c <= 'z' || c >= 'A' && c <= 'Z'
 }
 
 // bodyEntity is the plain part, or plain and HTML as alternatives.

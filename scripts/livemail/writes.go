@@ -9,8 +9,10 @@ import (
 	"os"
 	"path/filepath"
 	"regexp"
+	"slices"
 	"strings"
 
+	"github.com/mmedum/google-mail-mcp/v2/internal/gapi/gmailtest"
 	"github.com/mmedum/google-mail-mcp/v2/internal/mime"
 )
 
@@ -60,6 +62,27 @@ const (
 	rcptCc  = "Synthetic Copy <copy@example.com>"
 	rcptBcc = "Synthetic Blind <blind@example.invalid>"
 )
+
+// plainUpdated checks a plain_only step: the draft's new message is
+// kept for the next step, and the HTML version moved with the body.
+func plainUpdated(e *env, text string) error {
+	var err error
+	if _, e.plainMessage, _, err = e.updated(text); err != nil {
+		return err
+	}
+	return want(text, "changed: body, body_html")
+}
+
+// updated reads an updated draft's ids from a result and makes its new
+// message the run's own, so the guard allows it.
+func (e *env) updated(text string) (draftID, messageID, was string, err error) {
+	m := updatedDraftIn.FindStringSubmatch(text)
+	if m == nil {
+		return "", "", "", errors.New("the result names no updated draft")
+	}
+	e.seed.draftMessages = append(e.seed.draftMessages, m[2])
+	return m[1], m[2], m[3], nil
+}
 
 // composed reads a created draft's ids from a result and makes them the
 // run's own, so the guard allows them and cleanup deletes the draft.
@@ -127,15 +150,14 @@ var writeSteps = []step{
 				"add_attachments": []any{secondName(e.seed.label)}, "remove_attachments": []any{"1"}}
 		},
 		check: func(e *env, text string) error {
-			m := updatedDraftIn.FindStringSubmatch(text)
-			if m == nil {
-				return errors.New("the result names no updated draft")
+			_, msg, was, err := e.updated(text)
+			if err != nil {
+				return err
 			}
-			if m[2] == m[3] {
+			if msg == was {
 				return errors.New("the draft holds the same message id after an update")
 			}
-			e.staleMessage, e.draftMessage = m[3], m[2]
-			e.seed.draftMessages = append(e.seed.draftMessages, m[2])
+			e.staleMessage, e.draftMessage = was, msg
 			return want(text, "changed: to, cc, bcc, subject, body, body_html, attachments")
 		}},
 
@@ -144,6 +166,33 @@ var writeSteps = []step{
 			return map[string]any{"draft_id": e.draftID, "message_id": e.staleMessage, "subject": "not saved"}
 		},
 		check: func(_ *env, text string) error { return want(text, "changed since it was read") }},
+
+	{name: "compose a plain-text-only draft", tool: "create_draft",
+		args: func(e *env) map[string]any {
+			return map[string]any{"to": []any{rcptTo}, "subject": e.seed.label.name + " plain",
+				"body": longParagraph + "\n", "plain_only": true}
+		},
+		check: func(e *env, text string) error {
+			var err error
+			e.plainDraft, e.plainMessage, err = e.composed(text)
+			return err
+		}},
+
+	{name: "give the plain draft the HTML version", tool: "update_draft",
+		args: func(e *env) map[string]any {
+			return map[string]any{"draft_id": e.plainDraft, "message_id": e.plainMessage,
+				"body": longParagraph + "\nWith HTML, and a link: https://example.com/a?b=1&c=2.\n", "plain_only": false}
+		},
+		check: plainUpdated},
+
+	// Dropping the HTML version needs EditRaw to find the one Gmail
+	// stored, link included, to be the one made from the text (§7.4).
+	{name: "make the draft plain again", tool: "update_draft",
+		args: func(e *env) map[string]any {
+			return map[string]any{"draft_id": e.plainDraft, "message_id": e.plainMessage,
+				"body": longParagraph + "\n", "plain_only": true}
+		},
+		check: plainUpdated},
 
 	{name: "labeling a draft is refused for that item", tool: "modify_labels",
 		args: func(e *env) map[string]any {
@@ -346,7 +395,7 @@ var (
 		"draft_id": true, "message_id": true, "reply_to": true, "reply_to_thread": true, "confirm_recipients": true,
 		// Carry no id, address or file: text, flags, part ids of the run's
 		// own drafts, and the system labels STARRED and IMPORTANT.
-		"dry_run": true, "confirm": true, "reply_all": true, "subject": true, "body": true, "body_html": true,
+		"dry_run": true, "confirm": true, "reply_all": true, "subject": true, "body": true, "body_html": true, "plain_only": true,
 		"remove_attachments": true, "add": true, "remove": true, "in_label_list": true, "in_message_list": true,
 		"text_color": true, "background_color": true,
 	}
@@ -478,6 +527,9 @@ var writeSpikes = []spike{
 	{name: "E", question: "Do a subject, display names, a body and an attachment name in four scripts, built by internal/mime, " +
 		"come back from Gmail as they went in?",
 		ask: spikeE},
+	{name: "M (stored)", question: "Does Gmail keep a plain-text line past 78 characters whole in a draft, with no HTML part " +
+		"and with the one made from its text, and keep that HTML as it was?",
+		ask: spikeMStored},
 }
 
 // sendable reports why a sending spike cannot run, or "".
@@ -602,4 +654,63 @@ func spikeE(ctx context.Context, x spikeRun) string {
 	}
 	return "draft side: " + draft + ". Send side, one message sent to -send-to and its sent copy read back: " + verdict +
 		". How a non-Gmail receiver shows it is in the second mailbox, under \"" + x.s.label.name + " spike E\"."
+}
+
+// longParagraph is one paragraph on one line, past the 78 characters
+// beyond which Gmail's web composer wraps a draft that has no HTML part
+// (§18 row 73).
+const longParagraph = "This paragraph is a single line of plain words, written by the live driver to see whether Gmail " +
+	"keeps a line this long whole when it stores a draft and when it sends one, rather than wrapping it at seventy columns."
+
+// spikeMStored saves two drafts and reads their bytes back: one with no
+// HTML part, as this server wrote every draft until it made HTML from the
+// text, and one with the HTML version made from its text. Whether Gmail's web composer
+// wraps a draft when a person sends it cannot be driven from here (§15).
+func spikeMStored(ctx context.Context, x spikeRun) string {
+	text := longParagraph + "\n"
+	var out []string
+	for _, v := range []struct{ name, html string }{
+		{"with no HTML part", ""}, {"with the HTML made from its text", mime.HTMLFromText(text)},
+	} {
+		o := mime.Outgoing{Subject: x.s.label.name + " spike M", Text: text, HTML: v.html, MessageID: mime.NewMessageID(x.account)}
+		raw, err := mime.Build(o)
+		if err != nil {
+			return "not built: " + err.Error()
+		}
+		id, err := x.box.CreateDraft(ctx, raw)
+		if err != nil {
+			out = append(out, "a draft "+v.name+" was not saved: "+err.Error())
+			continue
+		}
+		x.s.drafts = append(x.s.drafts, id) // cleanup deletes it
+		msg, err := x.box.DraftMessageID(ctx, id)
+		if err != nil {
+			out = append(out, "a draft "+v.name+": its message could not be found ("+err.Error()+")")
+			continue
+		}
+		out = append(out, "a draft "+v.name+", read back raw, "+readBack(ctx, x, msg))
+	}
+	return strings.Join(out, "; ")
+}
+
+// readBack reads a message the run made and says whether its plain text
+// holds longParagraph as one line, and whether it carries the HTML
+// version made from that text.
+func readBack(ctx context.Context, x spikeRun, messageID string) string {
+	_, raw, err := x.box.SentCopy(ctx, messageID)
+	if err != nil {
+		return "could not be read (" + err.Error() + ")"
+	}
+	m := mime.ParseRaw(raw)
+	line := fmt.Sprintf("keeps the %d-character line whole", len(longParagraph))
+	if !slices.Contains(strings.Split(m.Body.Text, "\n"), longParagraph) {
+		line = fmt.Sprintf("does not hold the %d-character line whole", len(longParagraph))
+	}
+	switch htm, ok := gmailtest.HTMLPart(raw); {
+	case !ok:
+		return line + ", with no HTML part"
+	case strings.TrimSpace(htm) == strings.TrimSpace(mime.HTMLFromText(m.Body.Text)):
+		return line + ", beside the HTML made from it"
+	}
+	return line + ", beside HTML not made from it"
 }

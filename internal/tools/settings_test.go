@@ -463,12 +463,13 @@ func TestCreateFilterChecksItsCriteria(t *testing.T) {
 	refused(t, h, "create_filter", map[string]any{"from": "x@example.org", "star": true, "size": 1000, "size_comparison": "bigger"}, gapi.ClassInvalid)
 }
 
-// Runs of spaces in a signature survive the HTML Gmail stores.
+// Runs of spaces in a signature survive the HTML Gmail stores, an odd
+// run included.
 func TestUpdateSignatureKeepsSpacing(t *testing.T) {
 	h, fake := connectSettings(t, settingsOn)
-	call(t, h, "update_signature", map[string]any{"signature": "Rae\n    Title  here"}, &tools.SignatureOut{})
-	if got := fake.Settings().SendAs[0].Signature; got != "Rae<br>&nbsp; &nbsp; Title&nbsp; here" {
-		t.Errorf("stored %q", got)
+	call(t, h, "update_signature", map[string]any{"signature": "Rae\n    Title  here\nA   B"}, &tools.SignatureOut{})
+	if got, want := fake.Settings().SendAs[0].Signature, "Rae<br>&nbsp;&nbsp;&nbsp;&nbsp;Title &nbsp;here<br>A &nbsp;&nbsp;B"; got != want {
+		t.Errorf("stored %q, want %q", got, want)
 	}
 }
 

@@ -20,7 +20,7 @@ import (
 // UpdateSignatureIn is what update_signature changes.
 type UpdateSignatureIn struct {
 	SendAs    string `json:"send_as,omitempty" jsonschema:"one of the account's send-as addresses, as get_settings lists them; default: the account's default address"`
-	Signature string `json:"signature" jsonschema:"the signature as plain text, line breaks kept; markup is shown as written, not applied. Empty clears the signature"`
+	Signature string `json:"signature" jsonschema:"the signature as plain text, line breaks kept; markup is shown as written, not applied, and a web address becomes a link. Empty clears the signature"`
 	DryRun    bool   `json:"dry_run,omitempty" jsonschema:"read the current signature and report the change without making it"`
 }
 
@@ -83,7 +83,7 @@ func (o FilterWriteOut) Render() string { return o.text }
 type SetVacationIn struct {
 	Enable   bool   `json:"enable" jsonschema:"true turns the reply on; false turns it off and keeps its text"`
 	Subject  string `json:"subject,omitempty" jsonschema:"the reply's subject"`
-	Body     string `json:"body,omitempty" jsonschema:"the reply, plain text, sent exactly as given; required to turn it on"`
+	Body     string `json:"body,omitempty" jsonschema:"the reply, plain text, sent exactly as given: each paragraph on one line and a blank line between paragraphs, never broken to a width; required to turn it on"`
 	Audience string `json:"audience,omitempty" jsonschema:"who is answered, required to turn it on: contacts, or domain (Google Workspace accounts). Every sender is not offered"`
 	Start    string `json:"start,omitempty" jsonschema:"when the reply starts: an RFC 3339 time, or a YYYY-MM-DD date read as midnight UTC; default: now"`
 	End      string `json:"end,omitempty" jsonschema:"when it stops, as start; default: until turned off"`
@@ -105,7 +105,7 @@ func registerSettings(s *mcp.Server, d Deps) {
 
 	register(s, d, Spec{Name: "update_signature", Kind: Settings, Description: "Set the signature of one of the " +
 		"account's send-as addresses, the default one unless send_as names another. The text is plain: line breaks " +
-		"are kept and markup is not applied. An empty signature clears it. Gmail adds the signature to mail written " +
+		"are kept, markup is not applied, and a web address becomes a link. An empty signature clears it. Gmail adds the signature to mail written " +
 		"in Gmail itself; drafts this server writes carry none. The result shows the signature before and after. " +
 		"101 units." + dryRunNote + untrustedNote},
 		func(ctx context.Context, in UpdateSignatureIn) (SignatureOut, error) {

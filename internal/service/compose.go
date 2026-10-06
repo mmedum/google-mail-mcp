@@ -21,8 +21,11 @@ import (
 type Compose struct {
 	To, Cc, Bcc []string
 	Subject     string
-	// Body is the plain text; HTML, when set, goes beside it.
+	// Body is the plain text; HTML, when set, goes beside it. Without
+	// HTML, the version made from the text goes beside it, unless
+	// PlainOnly keeps the text alone (§7.4).
 	Body, HTML string
+	PlainOnly  bool
 	// Attachments are file names inside LocalDir.
 	Attachments []string
 	// From is one of the account's send-as addresses; "" is its default.
@@ -76,7 +79,13 @@ func (s *Service) CreateDraft(ctx context.Context, in Compose) (model.DraftWrite
 	if err != nil {
 		return out, err
 	}
-	o := mime.Outgoing{From: &from, Subject: in.Subject, Text: in.Body, HTML: in.HTML, Attachments: files,
+	htm := in.HTML
+	if htm == "" && !in.PlainOnly {
+		// Without an HTML part, Gmail's web composer wraps the text when
+		// the person sends the draft (§7.4).
+		htm = mime.HTMLFromText(in.Body)
+	}
+	o := mime.Outgoing{From: &from, Subject: in.Subject, Text: in.Body, HTML: htm, Attachments: files,
 		MessageID: mime.NewMessageID(from.Email)}
 	out.Recipients = callers
 	threadID := ""
@@ -139,6 +148,8 @@ func (in Compose) check() ([]model.Recipient, error) {
 			"a reply takes its parent's subject, which is one of the three things Gmail threads by; leave subject out")
 	case in.HTML != "" && in.Body == "":
 		return nil, gapi.Errf(gapi.ClassInvalid, "body_html needs body as well: the plain text is what a reader without HTML sees")
+	case in.HTML != "" && in.PlainOnly:
+		return nil, gapi.Errf(gapi.ClassInvalid, "give plain_only or body_html, not both")
 	}
 	if _, err := mime.FormatText(in.Subject); err != nil {
 		return nil, gapi.Errf(gapi.ClassInvalid, "subject may not contain line breaks or control characters")
@@ -495,6 +506,9 @@ type Revise struct {
 	To, Cc, Bcc []string
 	Subject     *string
 	Body, HTML  *string
+	// PlainOnly, with Body, drops (true) or adds (false) the HTML version
+	// made from the text; nil keeps the draft's shape (§7.4).
+	PlainOnly *bool
 	// Attach adds files from LocalDir; Remove drops attachments by part id.
 	Attach, Remove []string
 	LocalDir       string
@@ -549,12 +563,16 @@ func (s *Service) UpdateDraft(ctx context.Context, in Revise) (model.DraftWrite,
 		out.Removed = append(out.Removed, model.File{Name: model.Untrusted(a.Filename),
 			MediaType: model.Untrusted(a.MimeType), Size: a.Size, PartID: a.PartID})
 	}
-	if len(e.Remove) > 0 || len(e.Add) > 0 {
-		out.Changed = append(out.Changed, "attachments")
-	}
-	edited, err := mime.EditRaw(raw, e)
+	edited, htmlChanged, err := mime.EditRaw(raw, e)
 	if err != nil {
 		return out, editError(err)
+	}
+	if htmlChanged && in.HTML == nil {
+		// The HTML version made from the text moved with the body.
+		out.Changed = append(out.Changed, "body_html")
+	}
+	if len(e.Remove) > 0 || len(e.Add) > 0 {
+		out.Changed = append(out.Changed, "attachments")
 	}
 	if err := checkSize(len(edited)); err != nil {
 		return out, err
@@ -609,6 +627,18 @@ func (in Revise) edit(out *model.DraftWrite) (mime.Edit, []model.Recipient, erro
 		out.Changed = append(out.Changed, "subject")
 	}
 	e.Text, e.HTML = in.Body, in.HTML
+	if p := in.PlainOnly; p != nil {
+		switch {
+		case in.Body == nil:
+			return e, nil, gapi.Errf(gapi.ClassInvalid, "plain_only needs body: it says what the new body does to the HTML version")
+		case in.HTML != nil:
+			return e, nil, gapi.Errf(gapi.ClassInvalid, "give plain_only or body_html, not both")
+		case *p:
+			e.HTMLMode = mime.PlainOnly
+		default:
+			e.HTMLMode = mime.WithHTML
+		}
+	}
 	if in.Body != nil {
 		out.Changed = append(out.Changed, "body")
 	}
@@ -658,6 +688,10 @@ func editError(err error) error {
 		return gapi.Errf(gapi.ClassInvalid, "the draft has a plain-text and an HTML version; give body and body_html together so they agree")
 	case errors.Is(err, mime.ErrHTMLOnly):
 		return gapi.Errf(gapi.ClassInvalid, "the draft's only text is HTML; give body_html as well as body")
+	case errors.Is(err, mime.ErrDropsHTML):
+		return gapi.Errf(gapi.ClassConflict, "the draft's HTML version was not made from its text, so plain_only would delete what it says; edit the draft in Gmail to drop it")
+	case errors.Is(err, mime.ErrTextLayout):
+		return gapi.Errf(gapi.ClassConflict, "the draft's plain and HTML versions are not one pair this server can make plain; edit the draft in Gmail")
 	case errors.Is(err, mime.ErrNoPlainBody):
 		return gapi.Errf(gapi.ClassInvalid, "the draft has no text yet; give body as well as body_html")
 	case errors.Is(err, mime.ErrTooManyParts):

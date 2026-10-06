@@ -3,7 +3,6 @@ package service
 import (
 	"context"
 	"fmt"
-	"html"
 	"slices"
 	"strconv"
 	"strings"
@@ -12,6 +11,7 @@ import (
 
 	"github.com/mmedum/google-mail-mcp/v2/internal/gapi"
 	"github.com/mmedum/google-mail-mcp/v2/internal/gmail"
+	"github.com/mmedum/google-mail-mcp/v2/internal/mime"
 	"github.com/mmedum/google-mail-mcp/v2/internal/model"
 	"github.com/mmedum/google-mail-mcp/v2/internal/render"
 )
@@ -85,8 +85,8 @@ func sender(senders []gmail.SendAs, address string) (int, error) {
 	return 0, gapi.Errf(gapi.ClassInvalid, "send_as is not one of this account's send-as addresses; get_settings lists them")
 }
 
-// signatureHTML is plain text as a signature: escaped, lines joined
-// with <br>, and runs of spaces kept, which HTML would collapse.
+// signatureHTML is plain text as a signature: each line as a draft's
+// HTML version writes it (mime.LineHTML), joined with <br>.
 func signatureHTML(text string) string {
 	text = strings.TrimSpace(strings.ReplaceAll(text, "\r\n", "\n"))
 	if text == "" {
@@ -94,11 +94,7 @@ func signatureHTML(text string) string {
 	}
 	lines := strings.Split(text, "\n")
 	for i, l := range lines {
-		l = strings.ReplaceAll(html.EscapeString(l), "  ", "&nbsp; ")
-		if strings.HasPrefix(l, " ") {
-			l = "&nbsp;" + l[1:]
-		}
-		lines[i] = l
+		lines[i] = mime.LineHTML(l)
 	}
 	return strings.Join(lines, "<br>")
 }

@@ -1,6 +1,11 @@
 # Architecture — google-mail-mcp
 
-**Status: 2.0.4 is released, 2026-10-01, from `main`, and verified from
+**Status: 2.1.0 is tagged from `main`, 2026-10-06: a draft written
+without `body_html` also carries an HTML version made from its text, so
+Gmail keeps its paragraphs whole when a person sends it; `plain_only`
+keeps a draft plain for a list that refuses HTML; a web address in that
+HTML or in a signature is a link; a signature keeps every space of a
+run. 2.0.4 was released, 2026-10-01, from `main`, and verified from
 outside: checksums, the cosign signature and the provenance attestation,
 each also against a tampered copy, the registry entry, and the Go proxy
 resolving the `/v2` module path. A dry run of `modify_labels`, `trash`
@@ -262,7 +267,9 @@ an annotation is not a control and a registered tool can run unattended.
    leaves this server existed first as a draft the person could open in
    Gmail. Replying is `create_draft` with `reply_to`, then `send_draft`.
 2. **The body is exactly what the caller gave.** No signature, prefix,
-   footer or "sent by" line is added server-side, ever.
+   footer or "sent by" line is added server-side, ever. When the caller
+   gives no HTML, the same words also go as an HTML version made from
+   the text (§7.4), so a reader sees the caller's words either way.
 3. **`send_draft` shows before it sends.** Its result names every
    recipient (To, Cc, Bcc), the subject, the attachment names and sizes,
    and the thread it joins. `dry_run: true` returns that without
@@ -816,6 +823,34 @@ and `reply_to`/`reply_to_thread`/`reply_all` (§4.5). The server writes a
 5 MB it uses the JSON `raw` path; above it, multipart media upload;
 above 35 MB it refuses before sending (§2.6).
 
+The plain text goes out as given (§4.2), as quoted-printable UTF-8,
+whose soft breaks keep every encoded line within 76 characters and
+vanish on decoding (RFC 2045 §6.7), so a paragraph is one line however
+long (§18 row 71). Without `body_html`, the draft also carries an HTML
+version made from that text: the same words, escaped, a `<p>` per block
+of lines and a `<br>` per line break inside one, runs of spaces kept, and
+each `http` or `https` address a link whose text is the address itself
+(§18 row 75), after the plain part in `multipart/alternative`. Gmail's web composer opens a draft with no HTML
+part as plain text and, when the person sends it, wraps every line over
+78 characters at 70 and sends nothing else (§18 row 73). With the HTML
+part it sends both, as it does any mail written in it: the HTML is what
+readers show, and the plain part Gmail delivers is wrapped at 75, as in
+any mail Gmail sends.
+
+`plain_only: true` on `create_draft` keeps the text alone, for a mailing
+list that refuses HTML (§17.9). `update_draft` given `body` alone keeps
+the draft's shape: plain text alone stays alone, and an HTML version
+made from the old body is made again, or goes with the text when the
+body is emptied; a draft with no text yet has no shape and takes the
+HTML version. `plain_only` on `update_draft` changes the shape: `true`
+drops the made version, `false` adds one. The made version is
+recognized by reading it back: HTML holding only paragraphs, line
+breaks and links whose text is their target, which reads as the stored
+text, says nothing the text does not, whatever rules made it. HTML
+written another way still needs `body_html` beside `body`, and
+`plain_only: true` will not delete it. `update_signature` writes each
+line of a signature as the HTML version does.
+
 `update_draft` per §4.4, as a tree edit of the draft's own bytes:
 headers the call names are replaced, parts it names are rebuilt or
 removed, and every other header and part is written back byte for byte.
@@ -910,8 +945,9 @@ after that read.
 
 - `update_signature` sets the signature of one of the account's own
   send-as addresses, the default unless `send_as` names another. The
-  text is plain: it is escaped and its line breaks become `<br>`, so no
-  markup a caller passes is applied. Empty clears it. Gmail adds the
+  text is plain: each line is written as a draft's HTML version writes
+  it (§7.4) and line breaks become `<br>`, so no markup a caller passes
+  is applied. Empty clears it. Gmail adds the
   signature to mail written in Gmail itself; drafts this server writes
   carry none (§4.2). It patches the signature and nothing else.
 - `create_filter` takes Gmail's criteria and actions as labels added or
@@ -1383,6 +1419,28 @@ All have run; what is still owed is named under each.
   expired, so `list_changes` reads any 404 from `history.list` as expiry
   (§7.6).
 
+- **Spike M — does Gmail keep a long plain-text line whole?** Drafts the
+  server saved with each paragraph on one line reached their readers
+  wrapped at 70 columns after the person sent them from Gmail (§18 row
+  73). `M (stored)` saves a draft with no HTML part and one with the HTML
+  made from its text, and reads their bytes back; `M (sent)` reads the
+  copy `send_draft` sent of a draft whose HTML a body-only `update_draft`
+  made again. What Gmail's web composer does when a person presses Send
+  cannot be driven: a run given `-send-to`, `-keep` and
+  `-run 'compose a draft to|long paragraph'` leaves that draft unsent,
+  and a person sends it from Gmail to the second mailbox, then removes
+  the run with `-clean`.
+
+  **Answered 2026-10-06, live.** Gmail stores both drafts as built: the
+  214-character line came back whole, and the HTML part came back as the
+  one made from the text, so a body-only update recognizes it. What
+  Gmail delivers is not what it keeps in Sent. The copy `send_draft` left
+  in Sent held the line whole, but the received copy, read in the second
+  mailbox, was rebuilt as `multipart/alternative` under Gmail's own
+  boundary, its plain part wrapped at 75. The draft a person sent from
+  Gmail's web composer arrived the same way, where a draft with no HTML
+  part arrives as plain text alone, wrapped at 70 (§18 row 73).
+
 Spikes B, C, D and E send real mail and need the maintainer's second
 address; they are the "ask before doing" of `CLAUDE.md`. D and E were
 approved on 2026-09-26 to send in phase 2 (§14), to that address only,
@@ -1769,6 +1827,45 @@ Run live 2026-10-01 without `-send-to`: every dry run's labels after
 matched the write that followed, for messages and threads. The run's
 own mail carries no `INBOX`, so the inbox half of trash rests on row 70's
 evidence, not on this run. Reviews in §16a.
+
+**2.1.0 — HTML made from the plain text (released 2026-10-06).** Found in use:
+drafts the server wrote, which the person opened in Gmail and sent,
+reached their readers with every paragraph wrapped at 70 columns. The
+model had written each paragraph on one line and the server had saved it
+as given; Gmail's web composer wrapped it on send, as it does any draft
+with no HTML part (§18 rows 73 and 74).
+
+- `create_draft` saves an HTML version made from `body` when no
+  `body_html` is given, and `update_draft` makes it again from a new
+  body (§7.4).
+- `plain_only` keeps a draft plain for a list that refuses HTML, and
+  `update_draft` keeps a draft's shape unless `plain_only` changes it
+  (§17.9). An emptied body drops the made HTML version with it.
+- `mime.EditRaw` decides whether the HTML version moves, with the parts
+  it replaces in hand, and reports it, so the decision and the edit are
+  one step on one parse. It recognizes the made version by reading it
+  back, not by remaking it, so a later change to the line rules strands
+  no draft; a fuzz test holds that every version it makes reads back.
+- `update_signature` keeps every space of a run: a run of three had lost
+  one. A signature line and a line of the HTML version share one rule.
+- A web address in the HTML version, or in a signature, is a link whose
+  text is the address (§18 row 75); a fuzz test holds that a line adds
+  no other markup and reads back as written.
+
+Run live 2026-10-06: one full run with `-send-to`, one send, and later
+runs without it, 81 steps each, every option driven but the send's
+`confirm_recipients` when not sending. A draft made plain, given the
+HTML version with a link in it, and made plain again shows Gmail keeps
+that HTML as the server made it. Two copies reached the second mailbox,
+one from `send_draft` and one a person sent from Gmail's web composer;
+both showed the paragraph flowing in Gmail's web reader (§18 row 73).
+- The `body` descriptions ask for a paragraph per line and a blank line
+  between paragraphs, which is what the HTML version is made from.
+- A build test holds that a paragraph of any length goes out as one
+  line, in quoted-printable lines of at most 76.
+- The live driver gives the draft it sends a long paragraph through a
+  body-only update, and spike M reads the stored and the sent bytes
+  (§15).
 
 ### 16a. Found by review, and fixed
 
@@ -2302,6 +2399,78 @@ what fixed them.
 - **2.0.4, security review: none at the bar.** The prediction runs only
   under the dry-run context, makes no call, and renders label names
   through the same path as the labels before.
+- **2.1.0, `/simplify`.** `HTMLDerived` judges the parts `EditRaw`
+  replaces, found by the edit tree's `bodies()`, and decodes those two
+  alone, never an attachment; `HTMLFromText` closes its last paragraph
+  with an added empty line; the live driver reads a message back in one
+  place, leaves its drafts to the run's cleanup, and reads an update's
+  ids with `updated`, as `composed` does. Declined: one line escaper
+  shared with `signatureHTML`, whose output it would change (that one
+  drops a space from a run of three); a `DeriveHTML` flag on `mime.Edit`,
+  which would change `EditRaw`'s signature for one caller.
+- **2.1.0, `/code-review high`.** Fixed: spike M called a multipart copy
+  with no HTML part "beside the HTML made from it", and now finds the
+  part with the standard library; a tab collapsed in the HTML version
+  and is kept as four spaces; §15 now says how a run leaves the draft a
+  person sends; a code comment named the release; `set_vacation`'s
+  description now asks for the blank line the changelog says it does.
+  Declined: an input that keeps a draft plain, for a list that refuses
+  HTML, which is a new input for the maintainer to decide (§17.9); a
+  body cleared on a draft with the HTML version leaves both parts empty
+  rather than the plain part alone, which shows the same nothing; the
+  `DeriveHTML` flag above.
+- **2.1.0, before release, at the maintainer's request:** the declined
+  items were fixed. The HTML decision moved into `mime.EditRaw` as
+  `HTMLMode`, which reports whether the HTML version moved; an emptied
+  body drops the made version; `signatureHTML` and `HTMLFromText` share
+  `mime.LineHTML`, which keeps an odd run of spaces whole; `plain_only`
+  answers §17.9 (§18 row 76). Comparing the stored HTML with the made one
+  now ignores space around it, which a multipart boundary can take. Web
+  addresses became links, which no reader is documented to do itself
+  (§18 row 75).
+- **2.1.0, second `/simplify`.** A link ends at any character
+  `isInvisible` names, not a list of its own; `trimLink` counts brackets
+  once and finds an entity by stepping back, so a run of them is one
+  pass, not quadratic; `writeText` escapes a segment once; `htmlFor`
+  makes HTML only when it keeps it; the attachments field is named after
+  the edit, so the made HTML follows the body without an insert; the
+  live driver's plain_only steps share one check. Declined: an enum for
+  `update_draft`'s `plain_only`, since the flag keeps `create_draft`'s
+  name and sense and the default keeps a draft made plain on purpose
+  plain; one sort of the changed fields, which the order already holds.
+- **2.1.0, second `/code-review high`.** Fixed: a draft created with no
+  body, or emptied, stayed plain once given one, so Gmail wrapped it
+  again; a draft with no text now takes the HTML version. `madeText`
+  dropped every line break in the HTML, so `a` and `b` on two source
+  lines, shown as "a b", passed as made from "ab"; only the breaks
+  `HTMLFromText` writes after its tags are dropped. A no-break or
+  ideographic space ended a link but could not start one. The live
+  driver's read-back ignored base64; it and the tests now share
+  `gmailtest.HTMLPart`. The two new refusals are `[conflict]`, the state
+  refusing, not `[invalid]` or `[unsupported]`. Stale text in §7.4 and in
+  `HTMLFromText`'s comment. Left to the maintainer: hard rule 5 of
+  `CLAUDE.md` still says a sent body is exactly what the caller gave,
+  which §4.2 now qualifies for the HTML version.
+- **2.1.0, second security review: none at the bar.** About 3 million
+  fuzzed lines, parsed back with an HTML parser, held only text, `<p>`,
+  `<br>` and links with one `href` equal to their text and starting with
+  `http` or `https`; no scheme other than those can start a link, and no
+  quote or bracket can leave the attribute. `plain_only` and the shape
+  rules drop or replace HTML only when it reads back as the text, and
+  refuse a third alternative part. Fixed below the bar: an override
+  character earlier on a line could draw a link as another address, so
+  a line holding a bidi control gets no link (§18 row 75). Left as is:
+  `html.UnescapeString` reads a numeric reference past Unicode as a
+  character where a browser shows U+FFFD, so HTML showing only such
+  characters can count as made; nothing readable is lost.
+- **2.1.0, security review: none at the bar.** Each line is escaped
+  before the only markup the server adds, attribute-free `<p>` and
+  `<br>`, so a body can neither inject markup nor hide or add words
+  against the plain part; a caller could already give any HTML through
+  `body_html`. `HTMLDerived` judges the part `EditRaw` replaces and
+  answers yes only for HTML holding nothing beyond the plain text, so
+  HTML a person wrote still needs `body_html`. Fuzzed on a scratch copy,
+  both held; no new log line or output carries the body.
 
 ### Closing a phase
 
@@ -2376,6 +2545,15 @@ what fixed them.
    mail says the opposite — an address someone else wrote is untrusted
    data, and it must not choose a send's recipients. The cost is one
    `confirm_recipients` entry per address a correspondent added.
+9. **A plain-text-only draft on request.** Since 2.1.0 a draft written
+   without `body_html` carries the HTML version made from its text
+   (§7.4). A mailing list that refuses HTML, such as one that takes
+   patches, needs the plain part alone. **Decided 2026-10-06, when the
+   maintainer asked for the open items fixed before release:**
+   `plain_only` on `create_draft` and `update_draft`, at the cost of
+   Gmail's web composer wrapping such a draft when a person sends it
+   (§18 row 73), and `update_draft` keeps a draft's shape unless told
+   otherwise, so a draft made plain stays plain.
 
 ### 17a. Deferred cleanups
 
@@ -2493,3 +2671,9 @@ live** — §15 exists to settle these, and they are marked.
 | 68 | `\b` in a Go regular expression is a word boundary in any script | `go doc regexp/syntax`, Go 1.27.1, read 2026-09-29 | **Refuted.** `\b` is "at ASCII word boundary", and `\w` is `[0-9A-Za-z_]`. So `\b` finds no start inside a Cyrillic domain and none after an underscore. The link shapes in a question are now unanchored: a match starts as far left as its own characters reach, and a class before it would consume a separator the next link needs. A domain's letters may carry combining marks (`\p{M}`). A test holds an underscore, a Cyrillic and a Devanagari domain, a scheme after punctuation, and two links back to back (§4.13) |
 | 69 | A bare domain with nothing after it is drawn as a link | cmark-gfm `extensions/autolink.c`; linkify-it 5.0.0 and 6.1.0 as published on npm, and the markdown-it releases that use each; read 2026-09-30 | **By a fuzzy linkifier, which is common.** GitHub-flavored Markdown links a scheme (`http`, `https`, `ftp`), a `www.` host and an email address, never a bare domain. linkify-it links one when `fuzzyLink` is on, which is its default in 5.x (markdown-it 14) and not in 6.x (markdown-it 15), and then when the last label is two ASCII letters, punycode, or on its default list (biz, com, edu, gov, net, org, pro, web, xxx, aero, asia, coop, info, museum, name, shop, рф); a label is anything but space, punctuation or a control, so a symbol counts. `quoted()` breaks the last dot of exactly those, including one another break left, so `report.pdf` stays and a Markdown file name, a label like Clients.EU or a query naming a domain does not, `.md` and `.eu` being countries' codes. An address is left alone on both sides of its @, since the question means to show it and a client links it as mail at most. A client that loads the full IANA list links newer TLDs this does not break. Tier 1 |
 | 70 | Gmail's trash and restore change only `TRASH`, so a dry run can predict them by adding or removing it | Live, 2026-10-01, the maintainer's own personal mailbox: 438 `messages.trash` calls made while cleaning it up, read back from each result's labels before and after, and one `messages.untrash` probe followed by a `messages.trash` putting the message back | **Refuted for trash.** `messages.trash` adds `TRASH` and removes `INBOX` (86 of 86 messages that had it); `UNREAD`, `IMPORTANT`, the categories and user labels stay. `messages.untrash` removes `TRASH` only and does not restore `INBOX`. The dry-run prediction and `gmailtest` now follow this, and the live driver holds every modify, trash and restore write to its dry run's labels after. Not checked: whether `threads.trash` treats a thread's draft differently, and whether adding `SPAM` through `modify` makes Gmail drop `INBOX`; the prediction assumes neither |
+| 71 | Mail a program writes should be wrapped to 78 columns, or 72 | RFC 5322 §2.1.1, RFC 2045 §6.7, RFC 2046 §4.1.3 and RFC 3676 §3, read at rfc-editor.org 2026-10-06; `internal/mime`'s build test | **Refuted for the text.** RFC 5322's lines "MUST be no more than 998 characters, and SHOULD be no more than 78" are the message's lines, and it is "incumbent upon implementations that display messages to handle an arbitrarily large number of characters in a line". Quoted-printable meets the limit for any text: encoded lines are "no more than 76 characters", and its "soft" line breaks are undone on decoding. The build test sends a paragraph of 2,168 characters in lines of at most 76 and reads it back as one line. Text cut to a width is RFC 3676 §3.2's "embarrassing line wrap": its example is a paragraph wrapped at 72 and shown on a 30-character screen. So a paragraph is one line (§7.4). Against it: RFC 3676 §3.1 (2004) calls paragraph text labeled Text/Plain an error, because some readers then scrolled a long line rather than wrapping it (§3); RFC 5322 (2008) puts wrapping on the reader, as quoted above |
+| 72 | format=flowed (RFC 3676) is the better fix: lines of 72 with soft breaks that readers reflow | RFC 3676 §4.2 and §5; Thunderbird's source (`mailnews/mailnews.js`, `mail/app/StaticPrefList.yaml`); Microsoft Learn KB 287816; Gmail's and Apple Mail's help pages; read 2026-10-06 | **Rejected.** A reader without support "treats flowed lines as normal Text/Plain" (§5) and shows every break, which is the defect itself. Only Thunderbird is documented to support it (`mailnews.send_plaintext_flowed` on by default). Google and Apple document nothing either way; that Gmail, Outlook and Apple Mail ignore it is a 2016 vendor blog's claim, not theirs. Classic Outlook for Windows has "Remove extra line breaks in plain text messages" on by default, a guess its reader can turn off; the server makes no such guess (§4.2). **Tier 3, not probed live:** how Gmail and Apple Mail draw a long plain-text line. A message sent to a second mailbox and opened there would settle it |
+| 73 | Gmail sends a draft the API saved as the API saved it | Found in use 2026-10-06, in the maintainer's own mail: a message sent from Gmail's web composer, from a draft this server saved with each paragraph on one line, read in the receiving mailbox, and its first ARC signature's body hash, written before the mailing list it went through, recomputed over the text. Two public reports from other Gmail API clients, github.com/openclaw/gogcli issue 1058 and github.com/magoz/yolk-sdk pull 186, read 2026-10-06. Live, spike M (§15) | **Refuted for the web composer.** The message left Gmail re-serialized, `charset="UTF-8"` with no quoted-printable where the server writes quoted-printable, and every line over 78 characters was wrapped greedily at 70 while shorter lines were left alone; the body hash matches that wrapped text exactly. Both reports describe the same for a plain-text-only draft a person sends from Gmail web, "around 70 characters"; the second fixed it with "exact text/plain + derived text/html" and saw a paragraph of over 300 characters arrive on one line. Gmail's storage keeps the line whole (spike M). So a draft carries the HTML version made from its text (§7.4), as `<p>` and `<br>`: caniemail's `white-space` tests never tried `pre-wrap`, and classic Outlook ignores `white-space`. Sending services advise both parts, SendGrid's words being "Include both plaintext and HTML versions of your email", and SpamAssassin's `MPART_ALT_DIFF`, "HTML and text parts are different", cannot fire on HTML made from the same words. Checked live after the fix, 2026-10-06: a draft carrying the HTML version, sent by a person from the web composer, arrived as `multipart/alternative`, as Gmail sends any mail it composes, with the HTML part readers show; the plain part was wrapped at 75, which only a reader that cannot show HTML displays. `drafts.send` delivered the same shape, although its copy in Sent kept the line whole. Opened by the maintainer in Gmail's web reader, both showed the paragraph flowing to the window's width |
+| 74 | A model writing mail through the server wraps its text to a width | The session that wrote the drafts of row 73, read 2026-10-06; the evals harness, 18 trials of a task drafting three paragraphs, `claude-opus-5-5` at high effort, on `main`'s descriptions and on these: plain, with notes wrapped at 70 columns in the prompt, and with the maintainer's own instructions loaded | **Refuted.** The drafting session passed paragraphs of 185 to 564 characters on one line, and no trial wrapped. The `body` descriptions still ask for a paragraph per line and a blank line between paragraphs, which the HTML version is made from; the task was not kept, having nothing to catch |
+| 75 | A web address in the HTML version needs no link: readers link it | Microsoft's Outlook help, Apple's WebKit and Mail help, Gmail Help 8260 and 8253, the GFM spec 0.29 §6.9 and cmark-gfm's `extensions/autolink.c`, Mozilla's `mozTXTToHTMLConv.cpp`, RFC 3986 Appendix C, the OWASP XSS Prevention Cheat Sheet, SpamAssassin's `70_phishing.cf` and `HTTPSMismatch.pm`, read 2026-10-06 | **Refuted.** No vendor documents that a reader links a bare address in HTML; Outlook's help covers its composer, "Every time you type a web address, Outlook creates a hyperlink for you", and one report has new Outlook showing such addresses as plain text. So the HTML version links each address itself, with text equal to its target, which SpamAssassin's mismatch rules cannot fire on: they flag a link whose text names another domain. Only `http` and `https`, as OWASP advises ("Allow-list http and HTTPS URLs only"). Where an address starts and ends follows GitHub's autolinks: after a space or one of `( [ < " ' * _ ~`, never inside a word; trailing `? ! . , : * _ ~ '` left out, a `)` or `]` only when unmatched, an entity or `;` at the end left out. It also stops at quotes and angle brackets, which RFC 3986 leaves outside an address, and at any character a reader cannot see; a line holding a bidi control gets no link at all, since an override anywhere before an address can draw its text as another address than its target, which a rendering of such a line in Chromium showed. A fuzz test holds that a line adds no markup but such links and reads back as written |
+| 76 | Every draft can carry an HTML version | The kernel's mailing-list etiquette (subspace.kernel.org/etiquette.html) and email-clients guide, git's `MyFirstContribution`, the Mailman 3 filtering docs, read 2026-10-06 | **Refuted.** "almost all kernel mailing lists will reject HTML email", and "the Git list rejects HTML email"; Mailman can strip an HTML part, but these lists refuse the message. So `plain_only` keeps a draft plain (§17.9). The kernel's guide also says Gmail's web interface "Does not work for sending patches", which row 73 explains: such a draft is better sent with `send_draft` than from Gmail |

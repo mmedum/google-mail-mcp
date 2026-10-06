@@ -15,12 +15,13 @@ const dryRunNote = " dry_run shows what the call would do and changes nothing."
 
 // CreateDraftIn is a new draft or a reply.
 type CreateDraftIn struct {
-	To       []string `json:"to,omitempty" jsonschema:"recipients, one address per entry: ada@example.com or Ada Quill <ada@example.com>"`
-	Cc       []string `json:"cc,omitempty" jsonschema:"copy recipients, one address per entry"`
-	Bcc      []string `json:"bcc,omitempty" jsonschema:"blind copy recipients, one address per entry"`
-	Subject  string   `json:"subject,omitempty" jsonschema:"the subject; leave it out of a reply, which takes its parent's"`
-	Body     string   `json:"body,omitempty" jsonschema:"the plain-text body, saved exactly as given"`
-	BodyHTML string   `json:"body_html,omitempty" jsonschema:"an HTML version of the body, saved beside the plain text; needs body"`
+	To        []string `json:"to,omitempty" jsonschema:"recipients, one address per entry: ada@example.com or Ada Quill <ada@example.com>"`
+	Cc        []string `json:"cc,omitempty" jsonschema:"copy recipients, one address per entry"`
+	Bcc       []string `json:"bcc,omitempty" jsonschema:"blind copy recipients, one address per entry"`
+	Subject   string   `json:"subject,omitempty" jsonschema:"the subject; leave it out of a reply, which takes its parent's"`
+	Body      string   `json:"body,omitempty" jsonschema:"the plain-text body, saved exactly as given, with an HTML version made from it unless body_html or plain_only is given. Put each paragraph on one line and separate paragraphs with a blank line (\\n\\n); a single line break stays a line break. Never break a line to a width: the reader's mail client wraps it"`
+	BodyHTML  string   `json:"body_html,omitempty" jsonschema:"an HTML version of the body, saved beside the plain text in place of the one made from body; needs body"`
+	PlainOnly bool     `json:"plain_only,omitempty" jsonschema:"true saves the body as plain text alone, with no HTML version: for a mailing list that refuses HTML. Gmail's web composer wraps such a draft at 70 columns when a person sends it"`
 	// Attachments are base names, never paths: the directory is the
 	// person's choice, not the caller's (§3.15).
 	Attachments   []string `json:"attachments,omitempty" jsonschema:"names of files in the person's GMAIL_LOCAL_DIR to attach; a name, never a path"`
@@ -40,8 +41,9 @@ type UpdateDraftIn struct {
 	Cc        []string `json:"cc,omitempty" jsonschema:"replaces the Cc recipients; [] clears them; left out, they stay"`
 	Bcc       []string `json:"bcc,omitempty" jsonschema:"replaces the Bcc recipients; [] clears them; left out, they stay"`
 	Subject   *string  `json:"subject,omitempty" jsonschema:"replaces the subject; on a reply, a changed subject may take it out of its thread"`
-	Body      *string  `json:"body,omitempty" jsonschema:"replaces the plain-text body; if the draft also has HTML, give body_html too"`
+	Body      *string  `json:"body,omitempty" jsonschema:"replaces the plain-text body, written as for create_draft: each paragraph on one line, never broken to a width. The draft keeps its shape: plain text alone stays alone, and an HTML version made from the old body is made again (plain_only changes that); HTML written another way needs body_html too"`
 	BodyHTML  *string  `json:"body_html,omitempty" jsonschema:"replaces the HTML body, or adds one beside the plain text"`
+	PlainOnly *bool    `json:"plain_only,omitempty" jsonschema:"with body: true drops the HTML version made from the old body, false adds one made from the new; left out, the draft keeps its shape"`
 	// AddAttachments are base names in GMAIL_LOCAL_DIR, as create_draft's.
 	AddAttachments    []string `json:"add_attachments,omitempty" jsonschema:"names of files in GMAIL_LOCAL_DIR to attach; a name, never a path"`
 	RemoveAttachments []string `json:"remove_attachments,omitempty" jsonschema:"part_ids of attachments to remove, as get_draft lists them; attachments not named stay"`
@@ -210,7 +212,7 @@ func registerWrite(s *mcp.Server, d Deps) {
 		"About 11 units, plus 20 for reply_to or 40 for reply_to_thread." + dryRunNote + untrustedNote},
 		func(ctx context.Context, in CreateDraftIn) (DraftWriteOut, error) {
 			dw, err := svc.CreateDraft(ctx, service.Compose{To: in.To, Cc: in.Cc, Bcc: in.Bcc, Subject: in.Subject,
-				Body: in.Body, HTML: in.BodyHTML, Attachments: in.Attachments, From: in.From, ReplyTo: in.ReplyTo,
+				Body: in.Body, HTML: in.BodyHTML, PlainOnly: in.PlainOnly, Attachments: in.Attachments, From: in.From, ReplyTo: in.ReplyTo,
 				ReplyToThread: in.ReplyToThread, ReplyAll: in.ReplyAll, LocalDir: d.Config.LocalDir})
 			if err != nil {
 				return DraftWriteOut{}, err
@@ -225,7 +227,7 @@ func registerWrite(s *mcp.Server, d Deps) {
 		"35 units." + dryRunNote + untrustedNote},
 		func(ctx context.Context, in UpdateDraftIn) (DraftWriteOut, error) {
 			dw, err := svc.UpdateDraft(ctx, service.Revise{DraftID: in.DraftID, Witness: in.MessageID, To: in.To, Cc: in.Cc,
-				Bcc: in.Bcc, Subject: in.Subject, Body: in.Body, HTML: in.BodyHTML, Attach: in.AddAttachments,
+				Bcc: in.Bcc, Subject: in.Subject, Body: in.Body, HTML: in.BodyHTML, PlainOnly: in.PlainOnly, Attach: in.AddAttachments,
 				Remove: in.RemoveAttachments, LocalDir: d.Config.LocalDir})
 			if err != nil {
 				return DraftWriteOut{}, err
