@@ -1,6 +1,11 @@
 # Architecture — google-mail-mcp
 
-**Status: 2.0.4 is released, 2026-10-01, from `main`, and verified from
+**Status: 2.1.0 is tagged from `main`, 2026-10-06: a draft written
+without `body_html` also carries an HTML version made from its text, so
+Gmail keeps its paragraphs whole when a person sends it; `plain_only`
+keeps a draft plain for a list that refuses HTML; a web address in that
+HTML or in a signature is a link; a signature keeps every space of a
+run. 2.0.4 was released, 2026-10-01, from `main`, and verified from
 outside: checksums, the cosign signature and the provenance attestation,
 each also against a tampered copy, the registry entry, and the Go proxy
 resolving the `/v2` module path. A dry run of `modify_labels`, `trash`
@@ -1823,7 +1828,7 @@ matched the write that followed, for messages and threads. The run's
 own mail carries no `INBOX`, so the inbox half of trash rests on row 70's
 evidence, not on this run. Reviews in §16a.
 
-**2.1.0 — HTML made from the plain text (unreleased).** Found in use:
+**2.1.0 — HTML made from the plain text (released 2026-10-06).** Found in use:
 drafts the server wrote, which the person opened in Gmail and sent,
 reached their readers with every paragraph wrapped at 70 columns. The
 model had written each paragraph on one line and the server had saved it
