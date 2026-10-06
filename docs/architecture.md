@@ -1,12 +1,15 @@
 # Architecture — google-mail-mcp
 
-**Status: 2.1.0 is tagged from `main`, 2026-10-06: a draft written
-without `body_html` also carries an HTML version made from its text, so
-Gmail keeps its paragraphs whole when a person sends it; `plain_only`
-keeps a draft plain for a list that refuses HTML; a web address in that
-HTML or in a signature is a link; a signature keeps every space of a
-run. 2.0.4 was released, 2026-10-01, from `main`, and verified from
+**Status: 2.1.0 is released, 2026-10-06, from `main`, and verified from
 outside: checksums, the cosign signature and the provenance attestation,
+each also against a tampered copy, the version in all five places, the
+registry entry, and the Go proxy resolving the `/v2` module path. A
+draft written without `body_html` also carries an HTML version made from
+its text, so Gmail keeps its paragraphs whole when a person sends it;
+`plain_only` keeps a draft plain for a list that refuses HTML; a web
+address in that HTML or in a signature is a link; a signature keeps
+every space of a run. 2.0.4 was released, 2026-10-01, from `main`, and
+verified from outside: checksums, the cosign signature and the provenance attestation,
 each also against a tampered copy, the registry entry, and the Go proxy
 resolving the `/v2` module path. A dry run of `modify_labels`, `trash`
 or `restore` reports each item's labels after, and trash's prediction
