@@ -3,20 +3,16 @@
 package main
 
 import (
-	"bytes"
 	"context"
 	"errors"
 	"fmt"
-	"io"
-	stdmime "mime"
-	"mime/multipart"
-	"net/mail"
 	"os"
 	"path/filepath"
 	"regexp"
 	"slices"
 	"strings"
 
+	"github.com/mmedum/google-mail-mcp/v2/internal/gapi/gmailtest"
 	"github.com/mmedum/google-mail-mcp/v2/internal/mime"
 )
 
@@ -66,6 +62,16 @@ const (
 	rcptCc  = "Synthetic Copy <copy@example.com>"
 	rcptBcc = "Synthetic Blind <blind@example.invalid>"
 )
+
+// plainUpdated checks a plain_only step: the draft's new message is
+// kept for the next step, and the HTML version moved with the body.
+func plainUpdated(e *env, text string) error {
+	var err error
+	if _, e.plainMessage, _, err = e.updated(text); err != nil {
+		return err
+	}
+	return want(text, "changed: body, body_html")
+}
 
 // updated reads an updated draft's ids from a result and makes its new
 // message the run's own, so the guard allows it.
@@ -160,6 +166,33 @@ var writeSteps = []step{
 			return map[string]any{"draft_id": e.draftID, "message_id": e.staleMessage, "subject": "not saved"}
 		},
 		check: func(_ *env, text string) error { return want(text, "changed since it was read") }},
+
+	{name: "compose a plain-text-only draft", tool: "create_draft",
+		args: func(e *env) map[string]any {
+			return map[string]any{"to": []any{rcptTo}, "subject": e.seed.label.name + " plain",
+				"body": longParagraph + "\n", "plain_only": true}
+		},
+		check: func(e *env, text string) error {
+			var err error
+			e.plainDraft, e.plainMessage, err = e.composed(text)
+			return err
+		}},
+
+	{name: "give the plain draft the HTML version", tool: "update_draft",
+		args: func(e *env) map[string]any {
+			return map[string]any{"draft_id": e.plainDraft, "message_id": e.plainMessage,
+				"body": longParagraph + "\nWith HTML, and a link: https://example.com/a?b=1&c=2.\n", "plain_only": false}
+		},
+		check: plainUpdated},
+
+	// Dropping the HTML version needs EditRaw to find the one Gmail
+	// stored, link included, to be the one made from the text (§7.4).
+	{name: "make the draft plain again", tool: "update_draft",
+		args: func(e *env) map[string]any {
+			return map[string]any{"draft_id": e.plainDraft, "message_id": e.plainMessage,
+				"body": longParagraph + "\n", "plain_only": true}
+		},
+		check: plainUpdated},
 
 	{name: "labeling a draft is refused for that item", tool: "modify_labels",
 		args: func(e *env) map[string]any {
@@ -362,7 +395,7 @@ var (
 		"draft_id": true, "message_id": true, "reply_to": true, "reply_to_thread": true, "confirm_recipients": true,
 		// Carry no id, address or file: text, flags, part ids of the run's
 		// own drafts, and the system labels STARRED and IMPORTANT.
-		"dry_run": true, "confirm": true, "reply_all": true, "subject": true, "body": true, "body_html": true,
+		"dry_run": true, "confirm": true, "reply_all": true, "subject": true, "body": true, "body_html": true, "plain_only": true,
 		"remove_attachments": true, "add": true, "remove": true, "in_label_list": true, "in_message_list": true,
 		"text_color": true, "background_color": true,
 	}
@@ -673,42 +706,11 @@ func readBack(ctx context.Context, x spikeRun, messageID string) string {
 	if !slices.Contains(strings.Split(m.Body.Text, "\n"), longParagraph) {
 		line = fmt.Sprintf("does not hold the %d-character line whole", len(longParagraph))
 	}
-	switch htm, ok := htmlPart(raw); {
+	switch htm, ok := gmailtest.HTMLPart(raw); {
 	case !ok:
 		return line + ", with no HTML part"
-	case htm == mime.HTMLFromText(m.Body.Text):
+	case strings.TrimSpace(htm) == strings.TrimSpace(mime.HTMLFromText(m.Body.Text)):
 		return line + ", beside the HTML made from it"
 	}
 	return line + ", beside HTML not made from it"
-}
-
-// htmlPart is a message's text/html part, decoded by the standard
-// library rather than by internal/mime, whose answer it checks.
-func htmlPart(raw []byte) (string, bool) {
-	msg, err := mail.ReadMessage(bytes.NewReader(raw))
-	if err != nil {
-		return "", false
-	}
-	var find func(contentType string, body io.Reader) (string, bool)
-	find = func(contentType string, body io.Reader) (string, bool) {
-		mt, params, _ := stdmime.ParseMediaType(contentType)
-		if mt == "text/html" {
-			b, err := io.ReadAll(body)
-			return strings.ReplaceAll(string(b), "\r\n", "\n"), err == nil
-		}
-		if !strings.HasPrefix(mt, "multipart/") {
-			return "", false
-		}
-		r := multipart.NewReader(body, params["boundary"])
-		for {
-			p, err := r.NextPart() // undoes quoted-printable itself
-			if err != nil {
-				return "", false
-			}
-			if htm, ok := find(p.Header.Get("Content-Type"), p); ok {
-				return htm, true
-			}
-		}
-	}
-	return find(msg.Header.Get("Content-Type"), msg.Body)
 }

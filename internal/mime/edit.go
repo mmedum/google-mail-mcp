@@ -4,6 +4,9 @@ import (
 	"bytes"
 	"errors"
 	"fmt"
+	"html"
+	"regexp"
+	"slices"
 	"strings"
 )
 
@@ -17,14 +20,32 @@ type Edit struct {
 	// FormatAddresses.
 	Headers []SetHeader
 	// Text and HTML replace the body's plain and HTML parts. When the
-	// message has both, both must be given, so the two cannot disagree.
+	// message has both, both must be given, so the two cannot disagree,
+	// unless the HTML is the version HTMLFromText makes of the text:
+	// HTMLMode says what Text alone does to that.
 	Text, HTML *string
+	HTMLMode   HTMLMode
 	// Remove drops attachments by part id, as the unedited message
 	// numbers them.
 	Remove []string
 	// Add appends attachments.
 	Add []OutAttachment
 }
+
+// HTMLMode is what new plain text, given without HTML, does to the
+// HTML version HTMLFromText makes of a message's text (§7.4).
+type HTMLMode int
+
+const (
+	// KeepShape makes the HTML version again from the new text when the
+	// message has one, and keeps a message without one plain, unless it
+	// has no text yet.
+	KeepShape HTMLMode = iota
+	// PlainOnly drops the HTML version, leaving the plain text alone.
+	PlainOnly
+	// WithHTML gives the message the HTML version, whether it had one.
+	WithHTML
+)
 
 // SetHeader is one header to write.
 type SetHeader struct {
@@ -40,6 +61,12 @@ var (
 	ErrNoPlainBody = errors.New("the message has no body yet; give the plain text too")
 	// ErrHTMLOnly is plain text for a message whose only text is HTML.
 	ErrHTMLOnly = errors.New("the message's only text is HTML; give the HTML too")
+	// ErrDropsHTML is PlainOnly on a message whose HTML was written
+	// another way, which dropping it would lose.
+	ErrDropsHTML = errors.New("the message's HTML was not made from its text; dropping it would lose what it says")
+	// ErrTextLayout is a plain and HTML version that are not one
+	// multipart/alternative pair, which PlainOnly cannot fold into one.
+	ErrTextLayout = errors.New("the message's plain and HTML versions are not one pair")
 	// ErrNotAttachment is a part id that names no attachment.
 	ErrNotAttachment = errors.New("no attachment has that part id")
 	// ErrTooManyParts is a message with more parts than this package
@@ -47,14 +74,15 @@ var (
 	ErrTooManyParts = errors.New("the message has more MIME parts than this server edits")
 )
 
-// EditRaw applies e to raw RFC 5322 bytes.
-func EditRaw(raw []byte, e Edit) ([]byte, error) {
+// EditRaw applies e to raw RFC 5322 bytes, and reports whether it
+// changed the HTML version, as given or as e.HTMLMode made it.
+func EditRaw(raw []byte, e Edit) (out []byte, htmlChanged bool, err error) {
 	count := 0
 	root := readEntity(raw, "", 0, &count)
 	if count >= maxParts {
 		// readEntity stopped reading parts at the cap, and a multipart
 		// rewritten from what was read would drop the rest silently.
-		return nil, ErrTooManyParts
+		return nil, false, ErrTooManyParts
 	}
 
 	// Every part is found by its original id before anything moves.
@@ -62,7 +90,7 @@ func EditRaw(raw []byte, e Edit) ([]byte, error) {
 	for _, id := range e.Remove {
 		n, parent := root.find(id)
 		if n == nil || parent == nil || n.isMultipart() || n.isBody() {
-			return nil, fmt.Errorf("%w: %q", ErrNotAttachment, id)
+			return nil, false, fmt.Errorf("%w: %q", ErrNotAttachment, id)
 		}
 		removals = append(removals, n)
 	}
@@ -70,28 +98,36 @@ func EditRaw(raw []byte, e Edit) ([]byte, error) {
 
 	for _, h := range e.Headers {
 		if isContentHeader(h.Name) {
-			return nil, fmt.Errorf("header %s describes the content and is not set by name", h.Name)
+			return nil, false, fmt.Errorf("header %s describes the content and is not set by name", h.Name)
 		}
 		if HasControl(h.Value) {
-			return nil, fmt.Errorf("header %s: %w", h.Name, ErrControl)
+			return nil, false, fmt.Errorf("header %s: %w", h.Name, ErrControl)
 		}
 		root.headers = setHeader(root.headers, h.Name, h.Value)
 	}
 	for _, n := range removals {
 		if !root.remove(n) {
-			return nil, fmt.Errorf("part %q is the only part of its multipart, so removing it would leave an empty one", n.partID)
+			return nil, false, fmt.Errorf("part %q is the only part of its multipart, so removing it would leave an empty one", n.partID)
 		}
 	}
-	var err error
-	if root, err = replaceBody(root, plain, html, e.Text, e.HTML); err != nil {
-		return nil, err
+	htm, drop, err := e.htmlFor(plain, html)
+	if err != nil {
+		return nil, false, err
+	}
+	if drop {
+		root, err = dropHTML(root, plain, html, *e.Text)
+	} else {
+		root, err = replaceBody(root, plain, html, e.Text, htm)
+	}
+	if err != nil {
+		return nil, false, err
 	}
 	if len(e.Add) > 0 {
 		var atts []*entity
 		for _, a := range e.Add {
 			att, err := attachmentEntity(a)
 			if err != nil {
-				return nil, err
+				return nil, false, err
 			}
 			atts = append(atts, att)
 		}
@@ -100,7 +136,7 @@ func EditRaw(raw []byte, e Edit) ([]byte, error) {
 	var b bytes.Buffer
 	b.Grow(root.size())
 	root.write(&b)
-	return b.Bytes(), nil
+	return b.Bytes(), drop || htm != nil, nil
 }
 
 // setHeader replaces every line of name with one line of value, where
@@ -185,20 +221,103 @@ func swap(root, old, with *entity) *entity {
 	return with
 }
 
-// HTMLDerived reports whether raw has no HTML body, or has the one
-// HTMLFromText makes of its plain text. Either way a new plain text can
-// take a new HTML version without losing anything someone wrote. It
-// judges the parts EditRaw replaces, and decodes only those.
-func HTMLDerived(raw []byte) bool {
-	count := 0
-	plain, htm := readEntity(raw, "", 0, &count).bodies()
-	switch {
-	case htm == nil:
-		return true
-	case plain == nil:
-		return false
+// htmlFor is the HTML an edit writes beside new text: the caller's, or
+// the version made from the text as e.HTMLMode says. drop is set when a
+// made version goes and the text stays alone. HTML written another way
+// is left to replaceBody, which refuses text alone beside it.
+func (e Edit) htmlFor(plain, html *entity) (htm *string, drop bool, err error) {
+	if e.Text == nil || e.HTML != nil {
+		return e.HTML, false, nil
 	}
-	return normalizeNewlines(htmlText(htm.decoded())) == HTMLFromText(plainText(plain.decoded()))
+	if html != nil && (plain == nil || !isMade(plain, html)) {
+		if e.HTMLMode == PlainOnly {
+			return nil, false, ErrDropsHTML
+		}
+		return nil, false, nil
+	}
+	if e.HTMLMode == PlainOnly || e.HTMLMode == KeepShape && html == nil && hasText(plain) {
+		return nil, html != nil, nil
+	}
+	if h := HTMLFromText(*e.Text); h != "" {
+		return &h, false, nil
+	}
+	return nil, html != nil, nil
+}
+
+// hasText reports whether a plain part says anything: a draft with no
+// text yet has no shape to keep, and takes the HTML version.
+func hasText(plain *entity) bool {
+	return plain != nil && strings.TrimSpace(plainText(plain.decoded())) != ""
+}
+
+// isMade reports whether html says nothing the plain text does not: it
+// holds only paragraphs, line breaks and links whose text is their
+// target, and it reads back as the text. Every HTML version this server
+// makes is such HTML, whatever its line rules were when it was made.
+func isMade(plain, html *entity) bool {
+	text, ok := madeText(htmlText(html.decoded()))
+	return ok && text == madeNormal(plainText(plain.decoded()))
+}
+
+// madeTag is the markup HTMLFromText writes.
+var madeTag = regexp.MustCompile(`<a href="([^"<>]*)">([^"<>]*)</a>|<br>|</?p>`)
+
+// madeText reads HTML made from plain text back as that text, or reports
+// that it holds other markup or a link whose text is not its target.
+func madeText(h string) (string, bool) {
+	// The line breaks HTMLFromText writes after its tags show nothing; one
+	// anywhere else shows as a space, so it stays and must match.
+	h = strings.NewReplacer("<br>\n", "<br>", "</p>\n", "</p>").Replace(normalizeNewlines(h))
+	var b strings.Builder
+	last := 0
+	for _, m := range madeTag.FindAllStringSubmatchIndex(h, -1) {
+		b.WriteString(h[last:m[0]])
+		switch tag := h[m[0]:m[1]]; {
+		case tag == "<br>":
+			b.WriteString("\n")
+		case tag == "</p>":
+			b.WriteString("\n\n")
+		case tag == "<p>":
+		case h[m[2]:m[3]] != h[m[4]:m[5]]:
+			return "", false
+		default:
+			b.WriteString(h[m[4]:m[5]])
+		}
+		last = m[1]
+	}
+	b.WriteString(h[last:])
+	if strings.ContainsAny(b.String(), "<>") {
+		return "", false
+	}
+	return madeNormal(html.UnescapeString(b.String())), true
+}
+
+// madeNormal is text as the HTML version shows it: a no-break space and a
+// tab as spaces, no space ending a line, and one blank line between
+// paragraphs, none around them.
+func madeNormal(s string) string {
+	s = strings.NewReplacer("\u00a0", " ", "\t", "    ").Replace(normalizeNewlines(s))
+	var out []string
+	for l := range strings.SplitSeq(s, "\n") {
+		l = strings.TrimRight(l, " ")
+		if l == "" && (len(out) == 0 || out[len(out)-1] == "") {
+			continue
+		}
+		out = append(out, l)
+	}
+	return strings.TrimRight(strings.Join(out, "\n"), "\n")
+}
+
+// dropHTML leaves text as the message's only version of its text: the
+// multipart/alternative holding the plain and HTML pair becomes the
+// plain part.
+func dropHTML(root, plain, html *entity, text string) (*entity, error) {
+	_, pair := root.find(html.partID)
+	if pair == nil || pair.mediaType != "multipart/alternative" || len(pair.children) != 2 ||
+		!slices.Contains(pair.children, plain) {
+		return nil, ErrTextLayout
+	}
+	return swap(root, pair, textEntity("plain", text)), nil
 }
 
 // decoded is a body part as the read tree holds it, its transfer

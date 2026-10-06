@@ -295,6 +295,9 @@ type env struct {
 	// draftID and draftMessage are the draft the write steps compose
 	// and update; staleMessage is its message before the last update.
 	draftID, draftMessage, staleMessage string
+	// plainDraft and plainMessage are the draft the plain_only steps
+	// make plain, give the HTML version and make plain again.
+	plainDraft, plainMessage string
 	// replyDraft is the reply the delete steps delete.
 	replyDraft string
 	// replyAll and replyAllMessage are the reply-all draft the recipient

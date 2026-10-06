@@ -1,12 +1,7 @@
 package tools_test
 
 import (
-	"bytes"
-	"io"
 	"maps"
-	stdmime "mime"
-	"mime/multipart"
-	"net/mail"
 	"os"
 	"path/filepath"
 	"slices"
@@ -429,38 +424,14 @@ func storedHTML(t *testing.T, fake *gmailtest.Server, messageID string) string {
 	if !ok {
 		t.Fatalf("no stored message %s", messageID)
 	}
-	m, err := mail.ReadMessage(bytes.NewReader(raw))
-	if err != nil {
-		t.Fatal(err)
-	}
-	var find func(contentType string, body io.Reader) string
-	find = func(contentType string, body io.Reader) string {
-		mt, params, _ := stdmime.ParseMediaType(contentType)
-		if mt == "text/html" {
-			b, _ := io.ReadAll(body)
-			return strings.ReplaceAll(string(b), "\r\n", "\n")
-		}
-		if !strings.HasPrefix(mt, "multipart/") {
-			return ""
-		}
-		r := multipart.NewReader(body, params["boundary"])
-		for {
-			p, err := r.NextPart()
-			if err != nil {
-				return ""
-			}
-			// NextPart undoes quoted-printable itself.
-			if got := find(p.Header.Get("Content-Type"), p); got != "" {
-				return got
-			}
-		}
-	}
-	return find(m.Header.Get("Content-Type"), m.Body)
+	html, _ := gmailtest.HTMLPart(raw)
+	return html
 }
 
 // A body given without body_html is saved beside HTML made from it, which
-// a new body replaces; a draft with no HTML part gains one. HTML written
-// another way is not replaced (TestUpdateDraftKeepsTheTwoBodiesInStep).
+// a new body makes again; a draft keeps its shape unless plain_only
+// changes it. HTML written another way is not replaced
+// (TestUpdateDraftKeepsTheTwoBodiesInStep).
 func TestADraftCarriesHTMLMadeFromItsBody(t *testing.T) {
 	h, fake := connectFake(t, config.Config{})
 	var made tools.DraftWriteOut
@@ -476,24 +447,67 @@ func TestADraftCarriesHTMLMadeFromItsBody(t *testing.T) {
 
 	var up tools.DraftWriteOut
 	call(t, h, "update_draft", map[string]any{"draft_id": made.DraftID, "message_id": made.MessageID,
-		"body": "Revised: Tom & Jerry <tj@example.com>."}, &up)
+		"body": "Revised: Tom & Jerry <tj@example.com>.", "subject": "Totals"}, &up)
 	if got, want := storedHTML(t, fake, up.MessageID), "<p>Revised: Tom &amp; Jerry &lt;tj@example.com&gt;.</p>\n"; got != want {
 		t.Errorf("update_draft stored HTML %q, want %q", got, want)
 	}
-	if strings.Join(up.Changed, ",") != "body,body_html" {
-		t.Errorf("update_draft changed %v, want body,body_html", up.Changed)
+	if strings.Join(up.Changed, ",") != "subject,body,body_html" {
+		t.Errorf("update_draft changed %v, want subject,body,body_html", up.Changed)
 	}
 
-	budget := fake.Scenario(gmailtest.ScenarioDraftReply)
-	before := budget.MessageIDs[len(budget.MessageIDs)-1]
-	if got := storedHTML(t, fake, before); got != "" {
-		t.Fatalf("the scenario's draft already has HTML %q", got)
+	var plain tools.DraftWriteOut
+	call(t, h, "update_draft", map[string]any{"draft_id": made.DraftID, "message_id": up.MessageID,
+		"body": "Plain now.", "plain_only": true}, &plain)
+	if got := storedHTML(t, fake, plain.MessageID); got != "" || strings.Join(plain.Changed, ",") != "body,body_html" {
+		t.Errorf("plain_only true: stored HTML %q, changed %v; want none, body,body_html", got, plain.Changed)
 	}
-	var gained tools.DraftWriteOut
-	call(t, h, "update_draft", map[string]any{"draft_id": budget.DraftID, "message_id": before, "body": "Approved."}, &gained)
-	if got := storedHTML(t, fake, gained.MessageID); got != "<p>Approved.</p>\n" {
-		t.Errorf("a draft with no HTML, given a body, stored HTML %q, want <p>Approved.</p>", got)
+	var still tools.DraftWriteOut
+	call(t, h, "update_draft", map[string]any{"draft_id": made.DraftID, "message_id": plain.MessageID, "body": "Still plain."}, &still)
+	if got := storedHTML(t, fake, still.MessageID); got != "" || strings.Join(still.Changed, ",") != "body" {
+		t.Errorf("a plain draft given a body: stored HTML %q, changed %v; want none, body", got, still.Changed)
 	}
+	var again tools.DraftWriteOut
+	call(t, h, "update_draft", map[string]any{"draft_id": made.DraftID, "message_id": still.MessageID,
+		"body": "Approved.", "plain_only": false}, &again)
+	if got := storedHTML(t, fake, again.MessageID); got != "<p>Approved.</p>\n" {
+		t.Errorf("plain_only false stored HTML %q, want <p>Approved.</p>", got)
+	}
+
+	var bare tools.DraftWriteOut
+	call(t, h, "create_draft", map[string]any{"to": []any{"a@example.com"}, "body": "For the list.", "plain_only": true}, &bare)
+	if got := storedHTML(t, fake, bare.MessageID); got != "" {
+		t.Errorf("create_draft plain_only stored HTML %q, want none", got)
+	}
+	refused(t, h, "create_draft", map[string]any{"body": "x", "body_html": "<p>x</p>", "plain_only": true}, gapi.ClassInvalid)
+	refused(t, h, "update_draft", map[string]any{"draft_id": made.DraftID, "message_id": again.MessageID,
+		"subject": "x", "plain_only": true}, gapi.ClassInvalid)
+	refused(t, h, "update_draft", map[string]any{"draft_id": made.DraftID, "message_id": again.MessageID,
+		"body": "x", "body_html": "<p>x</p>", "plain_only": false}, gapi.ClassInvalid)
+}
+
+// The HTML version made again is named right after the body, in the
+// order the fields are listed.
+func TestTheMadeHTMLIsNamedAfterTheBody(t *testing.T) {
+	dir := t.TempDir()
+	must(t, os.WriteFile(filepath.Join(dir, "a.txt"), []byte("file"), 0o600))
+	h, _ := connectFake(t, config.Config{LocalDir: dir})
+	var made tools.DraftWriteOut
+	call(t, h, "create_draft", map[string]any{"body": "One.", "attachments": []any{"a.txt"}}, &made)
+	var up tools.DraftWriteOut
+	call(t, h, "update_draft", map[string]any{"draft_id": made.DraftID, "message_id": made.MessageID,
+		"body": "Two.", "remove_attachments": []any{"1"}}, &up)
+	if strings.Join(up.Changed, ",") != "body,body_html,attachments" {
+		t.Errorf("changed %v, want body,body_html,attachments", up.Changed)
+	}
+}
+
+// plain_only does not delete HTML written another way.
+func TestPlainOnlyKeepsHTMLWrittenByHand(t *testing.T) {
+	h, _ := connectFake(t, config.Config{})
+	var made tools.DraftWriteOut
+	call(t, h, "create_draft", map[string]any{"body": "plain", "body_html": "<p><b>bold</b></p>"}, &made)
+	refused(t, h, "update_draft", map[string]any{"draft_id": made.DraftID, "message_id": made.MessageID,
+		"body": "new", "plain_only": true}, gapi.ClassConflict)
 }
 
 func TestUpdateDraftWarnsWhenAReplyLosesItsSubject(t *testing.T) {

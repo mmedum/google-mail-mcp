@@ -2,8 +2,9 @@ package mime
 
 import (
 	"bytes"
-	"encoding/base64"
 	"errors"
+	"html"
+	"regexp"
 	"strings"
 	"testing"
 	"time"
@@ -568,35 +569,69 @@ func TestHTMLFromText(t *testing.T) {
 	}
 }
 
-func TestHTMLDerived(t *testing.T) {
-	build := func(text, html string) []byte {
-		raw, err := Build(Outgoing{Text: text, HTML: html, MessageID: "<d@example.com>", Date: testDate})
-		if err != nil {
-			t.Fatal(err)
-		}
-		return raw
-	}
-	const text = "Hi Ada,\n\nThe totals look right.\n"
-	derivedB64 := "Content-Type: multipart/alternative; boundary=b\r\n\r\n--b\r\nContent-Type: text/plain; charset=utf-8\r\n\r\n" +
-		"Hi Ada,\r\n\r\nThe totals look right.\r\n--b\r\nContent-Type: text/html; charset=utf-8\r\nContent-Transfer-Encoding: base64\r\n\r\n" +
-		base64.StdEncoding.EncodeToString([]byte("<p>Hi Ada,</p>\r\n<p>The totals look right.</p>\r\n")) + "\r\n--b--\r\n"
-	cases := []struct {
-		name string
-		raw  []byte
-		want bool
-	}{
-		{"plain only", build(text, ""), true},
-		{"plain and the HTML made from it", build(text, "<p>Hi Ada,</p>\n<p>The totals look right.</p>\n"), true},
-		{"the same HTML, encoded another way", []byte(derivedB64), true},
-		{"plain with trailing spaces", build("Hi Ada,   \n\nThe totals look right.  \n", "<p>Hi Ada,</p>\n<p>The totals look right.</p>\n"), true},
-		{"HTML someone wrote", build(text, "<p>Hi <b>Ada</b>,</p><p>The totals look right.</p>"), false},
-		{"HTML one line off", build(text, "<p>Hi Ada,</p>\n<p>The totals look right!</p>\n"), false},
-		{"HTML only", []byte("Content-Type: text/html; charset=utf-8\r\n\r\n<p>Hi Ada,</p>\r\n"), false},
-		{"no body", []byte("Content-Type: application/pdf\r\nContent-Disposition: attachment; filename=a.pdf\r\n\r\n%PDF"), true},
+func TestLineHTML(t *testing.T) {
+	a := func(u string) string { return `<a href="` + u + `">` + u + `</a>` }
+	cases := []struct{ name, in, want string }{
+		{"plain words", "Hi Ada.", "Hi Ada."},
+		{"a link ending a sentence", "See https://example.com/a?b=1&c=2.",
+			"See " + a("https://example.com/a?b=1&amp;c=2") + "."},
+		{"two links", "https://a.example and http://b.example", a("https://a.example") + " and " + a("http://b.example")},
+		{"scheme in capitals", "HTTPS://EXAMPLE.COM/X", a("HTTPS://EXAMPLE.COM/X")},
+		{"a host with no dot", "http://localhost:8080/x", a("http://localhost:8080/x")},
+		{"balanced parentheses kept", "(https://example.com/wiki/Foo_(bar))", "(" + a("https://example.com/wiki/Foo_(bar)") + ")"},
+		{"a closing parenthesis alone", "https://example.com/x),", a("https://example.com/x") + "),"},
+		{"a closing bracket alone", "[https://example.com/x]", "[" + a("https://example.com/x") + "]"},
+		{"angle brackets", "<https://example.com>", "&lt;" + a("https://example.com") + "&gt;"},
+		{"quotes", `'https://example.com' "https://example.org"`,
+			"&#39;" + a("https://example.com") + "&#39; &#34;" + a("https://example.org") + "&#34;"},
+		{"a quote cannot open an attribute", `https://example.com/"onmouseover="x`,
+			a("https://example.com/") + "&#34;onmouseover=&#34;x"},
+		{"an entity at the end", "https://example.com/x&amp;", a("https://example.com/x") + "&amp;amp;"},
+		{"a semicolon at the end", "https://example.com/x;", a("https://example.com/x") + ";"},
+		{"a bidi override inside: no link", "https://exa\u202emple.com", "https://exa\u202emple.com"},
+		{"a bidi override before: no link", "Portal: \u202e https://evil.example/x", "Portal: \u202e https://evil.example/x"},
+		{"a zero-width space ends it", "https://exa\u200bmple.com", a("https://exa") + "\u200bmple.com"},
+		{"after a no-break space", "https://a.example\u00a0https://b.example", a("https://a.example") + "\u00a0" + a("https://b.example")},
+		{"after an ideographic space", "見て\u3000https://example.com", "見て\u3000" + a("https://example.com")},
+		{"inside a word", "xhttps://example.com", "xhttps://example.com"},
+		{"after an equals sign", "url=https://example.com", "url=https://example.com"},
+		{"no host", "https:// and https://", "https:// and https://"},
+		{"other schemes", "javascript:alert(1) ftp://example.com mailto:a@example.com www.example.com",
+			"javascript:alert(1) ftp://example.com mailto:a@example.com www.example.com"},
+		{"spaces kept around a link", "  a  https://x.example  b", "&nbsp;&nbsp;a &nbsp;" + a("https://x.example") + " &nbsp;b"},
+		{"a tab", "\tQ1\t100", "&nbsp;&nbsp;&nbsp;&nbsp;Q1 &nbsp;&nbsp;&nbsp;100"},
 	}
 	for _, c := range cases {
-		if got := HTMLDerived(c.raw); got != c.want {
-			t.Errorf("%s: HTMLDerived = %v, want %v", c.name, got, c.want)
+		if got := LineHTML(c.in); got != c.want {
+			t.Errorf("%s: LineHTML(%q) =\n %q, want\n %q", c.name, c.in, got, c.want)
 		}
 	}
+}
+
+// FuzzLineHTML holds that a line's HTML adds no markup but links whose
+// text is their target, and says exactly what the line says.
+func FuzzLineHTML(f *testing.F) {
+	for _, s := range []string{"See https://example.com/a?b=1&c=2.", "(https://e.example/x_(y))", `<a href="x">`,
+		"https://exa\u202emple.com", "  a\t b  ", "https://e.example/&amp;;", `"https://e.example/"x"`} {
+		f.Add(s)
+	}
+	tag := regexp.MustCompile(`<a href="([^"<>]*)">([^<>]*)</a>`)
+	f.Fuzz(func(t *testing.T, line string) {
+		if !utf8.ValidString(line) || strings.ContainsAny(line, "\r\n") {
+			t.Skip() // a line of valid text
+		}
+		got := LineHTML(line)
+		for _, m := range tag.FindAllStringSubmatch(got, -1) {
+			if m[1] != m[2] {
+				t.Fatalf("a link's text %q is not its target %q in %q", m[2], m[1], got)
+			}
+		}
+		text := tag.ReplaceAllString(got, "$2")
+		if strings.ContainsAny(text, "<>") {
+			t.Fatalf("markup in %q from %q", got, line)
+		}
+		if back := strings.ReplaceAll(html.UnescapeString(text), " ", " "); back != strings.ReplaceAll(line, "\t", "    ") {
+			t.Fatalf("%q reads back as %q", line, back)
+		}
+	})
 }

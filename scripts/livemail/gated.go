@@ -101,8 +101,11 @@ var gatedSteps = []step{
 		},
 		check: func(e *env, text string) error {
 			draft, msg, _, err := e.updated(text)
-			if err != nil || draft != e.sent.draftID {
-				return errors.New("the result names no update of the draft to -send-to")
+			switch {
+			case err != nil:
+				return err
+			case draft != e.sent.draftID:
+				return fmt.Errorf("the result names draft %s, not the draft to -send-to", draft)
 			}
 			e.sent.draftMessage = msg
 			return want(text, "changed: body, body_html")

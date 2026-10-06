@@ -20,7 +20,7 @@ import (
 // UpdateSignatureIn is what update_signature changes.
 type UpdateSignatureIn struct {
 	SendAs    string `json:"send_as,omitempty" jsonschema:"one of the account's send-as addresses, as get_settings lists them; default: the account's default address"`
-	Signature string `json:"signature" jsonschema:"the signature as plain text, line breaks kept; markup is shown as written, not applied. Empty clears the signature"`
+	Signature string `json:"signature" jsonschema:"the signature as plain text, line breaks kept; markup is shown as written, not applied, and a web address becomes a link. Empty clears the signature"`
 	DryRun    bool   `json:"dry_run,omitempty" jsonschema:"read the current signature and report the change without making it"`
 }
 
@@ -105,7 +105,7 @@ func registerSettings(s *mcp.Server, d Deps) {
 
 	register(s, d, Spec{Name: "update_signature", Kind: Settings, Description: "Set the signature of one of the " +
 		"account's send-as addresses, the default one unless send_as names another. The text is plain: line breaks " +
-		"are kept and markup is not applied. An empty signature clears it. Gmail adds the signature to mail written " +
+		"are kept, markup is not applied, and a web address becomes a link. An empty signature clears it. Gmail adds the signature to mail written " +
 		"in Gmail itself; drafts this server writes carry none. The result shows the signature before and after. " +
 		"101 units." + dryRunNote + untrustedNote},
 		func(ctx context.Context, in UpdateSignatureIn) (SignatureOut, error) {

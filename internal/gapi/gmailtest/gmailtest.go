@@ -23,12 +23,18 @@
 package gmailtest
 
 import (
+	"bytes"
+	"encoding/base64"
 	"encoding/json"
 	"fmt"
+	"io"
 	"maps"
+	"mime"
+	stdmultipart "mime/multipart"
 	"net"
 	"net/http"
 	"net/http/httptest"
+	"net/mail"
 	"net/url"
 	"slices"
 	"sort"
@@ -557,4 +563,56 @@ func (s *Server) Raw(id string) ([]byte, bool) {
 		return nil, false
 	}
 	return slices.Clone(m.raw), true
+}
+
+// HTMLPart returns a message's first text/html part, decoded by the
+// standard library rather than by internal/mime, whose answers the tests
+// and the live driver check with it. Quoted-printable and base64 are
+// undone and line endings made LF; ok is false when there is no such
+// part.
+func HTMLPart(raw []byte) (html string, ok bool) {
+	msg, err := mail.ReadMessage(bytes.NewReader(raw))
+	if err != nil {
+		return "", false
+	}
+	return htmlIn(msg.Header.Get("Content-Type"), msg.Header.Get("Content-Transfer-Encoding"), msg.Body)
+}
+
+func htmlIn(contentType, encoding string, body io.Reader) (string, bool) {
+	mt, params, _ := mime.ParseMediaType(contentType)
+	if mt == "text/html" {
+		if strings.EqualFold(strings.TrimSpace(encoding), "base64") {
+			body = base64.NewDecoder(base64.StdEncoding, newlineStripper{body})
+		}
+		b, err := io.ReadAll(body)
+		return strings.ReplaceAll(string(b), "\r\n", "\n"), err == nil
+	}
+	if !strings.HasPrefix(mt, "multipart/") {
+		return "", false
+	}
+	r := stdmultipart.NewReader(body, params["boundary"])
+	for {
+		p, err := r.NextPart() // undoes quoted-printable itself
+		if err != nil {
+			return "", false
+		}
+		if html, ok := htmlIn(p.Header.Get("Content-Type"), p.Header.Get("Content-Transfer-Encoding"), p); ok {
+			return html, true
+		}
+	}
+}
+
+// newlineStripper drops the line breaks base64 bodies are written in.
+type newlineStripper struct{ r io.Reader }
+
+func (s newlineStripper) Read(p []byte) (int, error) {
+	n, err := s.r.Read(p)
+	k := 0
+	for _, c := range p[:n] {
+		if c != '\r' && c != '\n' {
+			p[k] = c
+			k++
+		}
+	}
+	return k, err
 }

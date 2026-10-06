@@ -15,9 +15,15 @@ lifted verbatim.
 
 ## [Unreleased]
 
+### Added
+
+- `plain_only` on `create_draft` and `update_draft` keeps a draft as plain text alone, for a mailing list that refuses HTML; `update_draft` otherwise keeps a draft's shape.
+
 ### Fixed
 
 - A draft written without `body_html` also carries an HTML version made from its text, so when a person sends it from Gmail its paragraphs flow to the reader's screen instead of arriving wrapped at 70 columns; `update_draft` makes it again from a new body.
+- `update_signature` keeps every space of a run of spaces; a run of three lost one.
+- A web address in a signature, or in the HTML version of a draft, is a link whose text is the address.
 
 ### Changed
 
