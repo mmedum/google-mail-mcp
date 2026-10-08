@@ -614,7 +614,7 @@ sibling.** Three siblings' newest pins already trailed upstream:
 
 | Tool | Version |
 |---|---|
-| Go | 1.27.1 (`go-version-file: go.mod` in CI) |
+| Go | 1.27.2 (`go-version-file: go.mod` in CI) |
 | MCP Go SDK | v1.8.0 |
 | golangci-lint | v2.14.0 |
 | goreleaser | v2.18.2 |

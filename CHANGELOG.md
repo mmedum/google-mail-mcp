@@ -19,6 +19,10 @@ lifted verbatim.
 
 - `send_draft`, `delete_permanently` and `delete_label` ask once in Claude Code, not twice: for a client that can ask, they drop the `requiresUserInteraction` mark, and the server's question is the confirmation. Every other write keeps the mark. A Claude Code `Elicitation` hook that accepts now confirms these alone.
 
+### Security
+
+- Built with Go 1.27.2 and `golang.org/x/net` v0.60.0, which fix ten advisories in `net/http`, its HTTP/2 code, `crypto/tls` and `net/textproto` that `govulncheck` found reachable from this server.
+
 ## [2.1.0] - 2026-10-06
 
 ### Added
