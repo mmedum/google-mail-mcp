@@ -15,6 +15,10 @@ lifted verbatim.
 
 ## [Unreleased]
 
+### Changed
+
+- `send_draft`, `delete_permanently` and `delete_label` ask once in Claude Code, not twice: for a client that can ask, they drop the `requiresUserInteraction` mark, and the server's question is the confirmation. Every other write keeps the mark. A Claude Code `Elicitation` hook that accepts now confirms these alone.
+
 ## [2.1.0] - 2026-10-06
 
 ### Added

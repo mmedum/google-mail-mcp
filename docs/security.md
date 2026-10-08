@@ -152,7 +152,9 @@ pasted — a debug log, `doctor` and `status` — are the ones that mask.
   are read-only or absent, and a filter cannot forward.
 
 Tool annotations and `requiresUserInteraction` are set, and are hints: a
-host in an auto-approve mode runs an annotated tool without asking. Every
+host in an auto-approve mode runs an annotated tool without asking. For a
+client that can ask, the tools that ask before every write go without
+the mark, so the person answers once. Every
 control above is server-side, and client-side approval is not counted as
 one of them.
 

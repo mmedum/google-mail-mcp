@@ -69,6 +69,13 @@ var (
 // answers with p, on protocol. opts adjust the client further.
 func connectAsking(t *testing.T, cfg config.Config, protocol string, p *person, opts ...func(*mcp.ClientOptions)) (*testutil.Harness, *gmailtest.Server) {
 	t.Helper()
+	srv, fake := askingServer(t, cfg)
+	return connectTo(t, srv, protocol, p, opts...), fake
+}
+
+// askingServer is a server over a fake mailbox with every scope granted.
+func askingServer(t *testing.T, cfg config.Config) (*mcp.Server, *gmailtest.Server) {
+	t.Helper()
 	fake := gmailtest.New()
 	t.Cleanup(fake.Close)
 	fake.FullScope, fake.SettingsScope = true, true
@@ -77,7 +84,12 @@ func connectAsking(t *testing.T, cfg config.Config, protocol string, p *person, 
 		TokenSource: oauth2.StaticTokenSource(&oauth2.Token{AccessToken: "test"}),
 		Sleep:       func(context.Context, time.Duration) error { return nil },
 	})
-	srv := server.New(server.Deps{Deps: tools.Deps{Config: cfg, Client: client}, Version: "test"})
+	return server.New(server.Deps{Deps: tools.Deps{Config: cfg, Client: client}, Version: "test"}), fake
+}
+
+// connectTo connects one more client to srv, as connectAsking does.
+func connectTo(t *testing.T, srv *mcp.Server, protocol string, p *person, opts ...func(*mcp.ClientOptions)) *testutil.Harness {
+	t.Helper()
 	o := &mcp.ClientOptions{}
 	if p != nil {
 		o.ElicitationHandler = p.handle
@@ -90,7 +102,7 @@ func connectAsking(t *testing.T, cfg config.Config, protocol string, p *person, 
 		t.Fatal(err)
 	}
 	t.Cleanup(h.Close)
-	return h, fake
+	return h
 }
 
 // confirmCase is a call that clears a tool's own guards and reaches its
@@ -612,5 +624,51 @@ func TestAReplyLostAfterTheSendIsAmbiguous(t *testing.T) {
 	if !res.IsError || !strings.HasPrefix(text, "[ambiguous_outcome]") || !strings.Contains(text, "verdict: written") ||
 		strings.Contains(text, "Nothing was written") || sends(fake) != 1 {
 		t.Fatalf("%s; %d sends", text, sends(fake))
+	}
+}
+
+// A tool that asks the person before every write carries Claude Code's
+// requiresUserInteraction mark only for a client that cannot ask; with
+// both, the person would answer twice for one call. set_vacation asks
+// only when it turns the reply on, so it keeps the mark: there the mark
+// is the only per-call prompt. Each protocol lists on one server, the
+// client that can ask first, so a mark dropped from the server's own
+// tool rather than from a copy shows up for the clients after it.
+func TestTheMarkIsDroppedOnlyWhereTheServerAlwaysAsks(t *testing.T) {
+	always := []string{"delete_label", "delete_permanently", "send_draft"}
+	sometimes := []string{"set_vacation"}
+	urlAlone := func(o *mcp.ClientOptions) {
+		o.Capabilities = &mcp.ClientCapabilities{Elicitation: &mcp.ElicitationCapabilities{URL: &mcp.URLElicitationCapabilities{}}}
+	}
+	for _, protocol := range protocols {
+		srv, _ := askingServer(t, everything)
+		for _, tc := range []struct {
+			name   string
+			p      *person
+			opts   []func(*mcp.ClientOptions)
+			canAsk bool
+		}{
+			{"form", &person{answer: accepts}, nil, true},
+			{"url alone", &person{answer: accepts}, []func(*mcp.ClientOptions){urlAlone}, false},
+			{"no elicitation", nil, nil, false},
+		} {
+			t.Run(protocol+"/"+tc.name, func(t *testing.T) {
+				h := connectTo(t, srv, protocol, tc.p, tc.opts...)
+				marked := map[string]bool{}
+				for _, tool := range h.Tools(t) {
+					marked[tool.Name] = tool.Meta["anthropic/requiresUserInteraction"] == true
+				}
+				for _, name := range always {
+					if marked[name] == tc.canAsk {
+						t.Errorf("%s marked %t", name, marked[name])
+					}
+				}
+				for _, name := range sometimes {
+					if !marked[name] {
+						t.Errorf("%s lost the mark", name)
+					}
+				}
+			})
+		}
 	}
 }

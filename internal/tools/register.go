@@ -133,7 +133,8 @@ func (k Kind) annotations() *mcp.ToolAnnotations {
 // requiresUserInteraction asks a client to put a person in front of the
 // call. A signal, not a control: a host in an auto-approve mode runs the
 // tool anyway, which is why Send and Destructive are unregistered by
-// default rather than relying on this.
+// default rather than relying on this. For a client that can ask, the
+// asksEveryCall kinds go without it (interactionHint).
 func (k Kind) requiresUserInteraction() bool { return k == Send || k == Destructive || k == AutoReply }
 
 // asksPerson says a kind's writes that take confirm are also put to the
@@ -146,6 +147,13 @@ func (k Kind) asksPerson() bool {
 	}
 	return false
 }
+
+// asksEveryCall says a kind's tools put every write to the person, when
+// the client can ask, so the requiresUserInteraction mark is dropped for
+// such a client (interactionHint). AutoReply is left out: set_vacation
+// asks only when it turns the reply on. register refuses a tool of these
+// kinds that does not take confirm, since one would never ask.
+func (k Kind) asksEveryCall() bool { return k == Send || k == Destructive }
 
 // Renderer is the readable half of a reply. Every output type has one,
 // so a tool cannot be added without it: a client may show only content
@@ -183,6 +191,10 @@ func register[In any, Out Renderer](s *mcp.Server, d Deps, sp Spec, h Handler[In
 		panic("tools: " + sp.Name + " takes confirm, and its kind " + sp.Kind.String() + " does not ask the person, " +
 			"or its Spec does not say what asking costs")
 	}
+	if sp.Kind.asksEveryCall() && !takesConfirm[In]() {
+		panic("tools: " + sp.Name + " is " + sp.Kind.String() + ", which asks the person before every write, and " +
+			"takes no confirm, so it would never ask")
+	}
 	if d.registered != nil {
 		*d.registered = append(*d.registered, sp.Name)
 	}
@@ -208,11 +220,14 @@ func register[In any, Out Renderer](s *mcp.Server, d Deps, sp Spec, h Handler[In
 		OutputSchema: out,
 	}
 	if sp.Kind.requiresUserInteraction() {
-		tool.Meta = mcp.Meta{"anthropic/requiresUserInteraction": true}
+		tool.Meta = mcp.Meta{interactionKey: true}
 	}
 	var a *asking
 	if sp.Kind.asksPerson() {
 		a = d.asking
+		if sp.Kind.asksEveryCall() {
+			a.always[sp.Name] = true
+		}
 	}
 	mcp.AddTool(s, tool, wrap(h, dryRunField[In](), sp.Name, a, d.Config.RequirePrompt))
 }

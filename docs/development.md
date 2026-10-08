@@ -117,9 +117,9 @@ scorers without a model.
   call. A task passes only when every trial does. `-model` and `-effort`
   default to `claude-opus-5-5` at `high`, `-budget` caps each trial in
   dollars, and `-task` picks a subset.
-- `send_draft` asks the client for a person before each call, so the
-  CLI refuses it with nobody there. `send-draft` scores reaching the send
-  with the right witness, held or not.
+- `send_draft` cannot be confirmed with nobody there: the CLI cancels
+  the server's question, so the send is `[blocked]`. `send-draft` scores
+  reaching the send with the right witness.
 - A trial the CLI stopped, on turns or budget, is `UNFINISHED`; one that
   never produced an answer is `ERROR`. Neither is a verdict on the
   tools.

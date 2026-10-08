@@ -585,6 +585,15 @@ when it turns the reply on, and `send_draft`.
     reached with no way to ask is refused. A test finds every such tool
     from the published schemas and holds each: declined, nothing
     written; accepted, one write.
+15. **One question per call.** `send_draft`, `delete_permanently` and
+    `delete_label` ask before every write, so for a client that can ask,
+    `tools/list` drops their `requiresUserInteraction` mark (§18 row 77).
+    Claude Code prompts for the mark even under an allow rule (§18 row
+    49), so with both the person would answer twice. `set_vacation` keeps the mark,
+    since it asks only when it turns the reply on, and so does every tool
+    for a client that cannot ask: there the mark is the only per-call
+    prompt. The kind decides it: `register` refuses a Send or Destructive
+    tool without `confirm`, which would lose the mark and never ask.
 
 ## 5. Module layout
 
@@ -1024,7 +1033,9 @@ Annotations come from `Kind` in one place (`CLAUDE.md` rule 11);
 "Write, for good" is registered as a Write is and annotated destructive,
 because Gmail deletes a draft rather than trashing it.
 `_meta["anthropic/requiresUserInteraction"]` is set on the Send,
-Auto-reply and Destructive kinds, as a signal and not a control. A tool
+Auto-reply and Destructive kinds, as a signal and not a control. For a
+client that can ask, `tools/list` drops it from the Send and
+Destructive tools, which ask the person before every write (§4.13). A tool
 that takes `confirm` also asks the person, and only a kind that can ask
 may take it (§4.13). The
 schema dump names each tool's kind, since Settings looks like Write to a
@@ -2474,6 +2485,19 @@ what fixed them.
   answers yes only for HTML holding nothing beyond the plain text, so
   HTML a person wrote still needs `body_html`. Fuzzed on a scratch copy,
   both held; no new log line or output carries the body.
+- **One question per call, code review: two fixed, one recorded.**
+  Fixed: row 77 said nothing changes unattended, but an `Elicitation`
+  hook that accepts now confirms a send or a permanent delete alone,
+  where the mark used to refuse it first; the row and the CHANGELOG say
+  so. Fixed: no test showed `tools/list` drops the mark from a copy, so
+  one server now lists for a client that can ask and then for one that
+  cannot. Recorded: on 2026-07-28 capabilities travel per request, so a
+  client can declare form elicitation to `tools/list` and none to
+  `tools/call`, and get neither the mark nor a question. That gives a
+  misbehaving client nothing it lacked, since it answers the question
+  itself and can accept without a person (row 61). The list result
+  depends on the request and goes out with the SDK's default cache
+  scope, public, but with a TTL of 0.
 
 ### Closing a phase
 
@@ -2680,3 +2704,4 @@ live** — §15 exists to settle these, and they are marked.
 | 74 | A model writing mail through the server wraps its text to a width | The session that wrote the drafts of row 73, read 2026-10-06; the evals harness, 18 trials of a task drafting three paragraphs, `claude-opus-5-5` at high effort, on `main`'s descriptions and on these: plain, with notes wrapped at 70 columns in the prompt, and with the maintainer's own instructions loaded | **Refuted.** The drafting session passed paragraphs of 185 to 564 characters on one line, and no trial wrapped. The `body` descriptions still ask for a paragraph per line and a blank line between paragraphs, which the HTML version is made from; the task was not kept, having nothing to catch |
 | 75 | A web address in the HTML version needs no link: readers link it | Microsoft's Outlook help, Apple's WebKit and Mail help, Gmail Help 8260 and 8253, the GFM spec 0.29 §6.9 and cmark-gfm's `extensions/autolink.c`, Mozilla's `mozTXTToHTMLConv.cpp`, RFC 3986 Appendix C, the OWASP XSS Prevention Cheat Sheet, SpamAssassin's `70_phishing.cf` and `HTTPSMismatch.pm`, read 2026-10-06 | **Refuted.** No vendor documents that a reader links a bare address in HTML; Outlook's help covers its composer, "Every time you type a web address, Outlook creates a hyperlink for you", and one report has new Outlook showing such addresses as plain text. So the HTML version links each address itself, with text equal to its target, which SpamAssassin's mismatch rules cannot fire on: they flag a link whose text names another domain. Only `http` and `https`, as OWASP advises ("Allow-list http and HTTPS URLs only"). Where an address starts and ends follows GitHub's autolinks: after a space or one of `( [ < " ' * _ ~`, never inside a word; trailing `? ! . , : * _ ~ '` left out, a `)` or `]` only when unmatched, an entity or `;` at the end left out. It also stops at quotes and angle brackets, which RFC 3986 leaves outside an address, and at any character a reader cannot see; a line holding a bidi control gets no link at all, since an override anywhere before an address can draw its text as another address than its target, which a rendering of such a line in Chromium showed. A fuzz test holds that a line adds no markup but such links and reads back as written |
 | 76 | Every draft can carry an HTML version | The kernel's mailing-list etiquette (subspace.kernel.org/etiquette.html) and email-clients guide, git's `MyFirstContribution`, the Mailman 3 filtering docs, read 2026-10-06 | **Refuted.** "almost all kernel mailing lists will reject HTML email", and "the Git list rejects HTML email"; Mailman can strip an HTML part, but these lists refuse the message. So `plain_only` keeps a draft plain (§17.9). The kernel's guide also says Gmail's web interface "Does not work for sending patches", which row 73 explains: such a draft is better sent with `send_draft` than from Gmail |
+| 77 | A tool the server confirms itself should carry the mark too | The owner's report of 2026-10-09 that one delete asked twice in Claude Code in a sibling server built the same way, and the decision that followed; GitHub's MCP server (`delete_repository`) and Supabase's, which confirm with `destructiveHint` plus a form elicitation; Claude Code's documentation, which scopes the mark to "tools whose permission prompt is itself the point"; rows 49 and 60 | **Refuted, 2026-10-09.** No source recommends two hard gates for one call. Claude Code prompts for the mark even under an allow rule (row 49), and then the server asks. So `tools/list` drops the mark from the tools that ask before every write when the request declares form elicitation (§4.13 item 15); `destructiveHint` stays as the client's soft gate. Unattended, `claude -p` declares elicitation and answers `cancel` (row 60), so a send or delete is still `[blocked]`, though a dry run now reaches the server. An `Elicitation` hook that accepts (row 61) now confirms one alone, where the mark used to refuse the call first. Owed: the maintainer's check that a confirmed `send_draft` asks once in interactive Claude Code |

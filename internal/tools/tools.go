@@ -45,6 +45,9 @@ func Register(s *mcp.Server, d Deps) []string {
 	names := []string{}
 	d.registered = &names
 	d.asking = newAsking(d.Logger)
+	if s != nil {
+		s.AddReceivingMiddleware(interactionHint(d.asking))
+	}
 	for _, add := range registrations {
 		add(s, d)
 	}
