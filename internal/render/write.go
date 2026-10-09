@@ -141,7 +141,7 @@ func (w *writer) replyLines(d model.DraftWrite, r *model.Reply) {
 			w.say("note: the parent's text was converted from its HTML, so each link in the quote keeps only its host.")
 		}
 		if r.QuoteFetched > 0 {
-			w.say("read %s of the parent's text that Gmail stored apart, 20 units each.",
+			w.say("read %s of the parent's text that Gmail stored apart.",
 				plural(r.QuoteFetched, "part", "parts"))
 		}
 	}

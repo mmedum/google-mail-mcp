@@ -91,7 +91,7 @@ type ReplyOut struct {
 // ForwardOut is the message a draft carries attached.
 type ForwardOut struct {
 	MessageID  string `json:"message_id"`
-	ThreadID   string `json:"thread_id" jsonschema:"the original's thread, which the draft is filed in; the draft's own thread_id says where Gmail put it"`
+	ThreadID   string `json:"thread_id" jsonschema:"the original's thread, which the server asks Gmail to file the draft in; the draft's own thread_id says whether it did"`
 	Bytes      int    `json:"bytes" jsonschema:"the size of the attached copy"`
 	BccRemoved bool   `json:"bcc_removed" jsonschema:"the original's Bcc header was left out of the attached copy, so the copy does not show who got a blind copy"`
 }
@@ -222,7 +222,8 @@ func registerWrite(s *mcp.Server, d Deps) {
 		"thread id); the server writes the recipients, the subject and the threading headers from the parent, and says " +
 		"whether Gmail filed the draft in the parent's thread. reply_all adds the parent's other recipients, and quote " +
 		"puts the parent's text below the body. To forward, " +
-		"give forward (a message id): the message goes attached as an .eml file, and the draft is filed in its thread. " +
+		"give forward (a message id): the message goes attached as an .eml file, and the server asks Gmail to file the " +
+		"draft in the original's thread; the result says whether it did. " +
 		"Addresses you add are extra recipients. Attachments are files the person put in GMAIL_LOCAL_DIR, named, never a " +
 		"path. About 11 units, plus 20 for reply_to or forward, or 40 for reply_to_thread, and 20 for each part of a " +
 		"quoted parent's text Gmail stored apart." + dryRunNote + untrustedNote},
