@@ -35,6 +35,7 @@ lifted verbatim.
 - A `search_threads` row's date, snippet and sender are its newest message that is not a draft or in the trash. A draft reply made the row show the draft's date and credit its text to this account.
 - An address in a result quotes its name unless the name is plain words, so it can be given back as one recipient. A name with a comma split in two, and a name holding an address could pass for it.
 - `download_attachment` refuses, as `[unsupported]`, a part whose content Gmail gives neither inline nor by an attachment id, as it may serve an attached message. It wrote such a part as an empty file.
+- A message or attachment read stays within `budget_chars` when the mail holds thousands of links whose text names another site: the note pairs as many as fit an eighth of the budget and counts the rest. Such mail made a read many times its budget.
 - On Windows, `time_zone` and an invitation's time zone work without Go installed. Every zone was refused there; the binary now carries the zone database, about 400 KB, and reads it only when the system has none.
 
 ### Security

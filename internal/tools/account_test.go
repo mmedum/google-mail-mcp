@@ -8,6 +8,7 @@ import (
 	"strconv"
 	"strings"
 	"testing"
+	"unicode/utf8"
 
 	"github.com/modelcontextprotocol/go-sdk/jsonrpc"
 	"github.com/modelcontextprotocol/go-sdk/mcp"
@@ -315,6 +316,53 @@ func TestReadAttachmentContinuesWithOffset(t *testing.T) {
 	if !strings.Contains(text, "(content from character "+strconv.Itoa(first.NextOffset)+" of ") ||
 		!strings.Contains(text, "Paragraph 60 ") || strings.Contains(text, "Paragraph 1 ") {
 		t.Errorf("the second read does not continue where the first stopped:\n%s", text)
+	}
+}
+
+// A body or an attachment with thousands of links whose text names
+// another site still reads within its budget: the note counts every
+// link, the block pairs the first that fit an eighth of the budget, and
+// the rest are counted after it (§4.8).
+func TestManyMisleadingLinksStayWithinTheBudget(t *testing.T) {
+	h, fake := connectFake(t, config.Config{ReadOnly: true})
+	var page strings.Builder
+	for range 3000 {
+		page.WriteString(`<a href="https://lure.example/">www.bank.example</a> `)
+	}
+	body := fake.AddPartsMessage(&gmailtest.Part{ContentType: "text/html; charset=utf-8", CTE: "base64", Content: []byte(page.String())})
+	file := fake.AddPartsMessage(gmailtest.File("text/html; charset=utf-8", "page.html", []byte(page.String())))
+	for _, tc := range []struct {
+		tool string
+		args map[string]any
+	}{
+		{"get_message", map[string]any{"message_id": body, "budget_chars": 2000}},
+		{"read_attachment", map[string]any{"message_id": file, "part_id": "1", "budget_chars": 2000}},
+	} {
+		var out struct {
+			Message struct {
+				LinkMismatches int `json:"link_mismatches"`
+			} `json:"message"`
+			LinkMismatches int `json:"link_mismatches"`
+			Budget         int `json:"budget_chars"`
+		}
+		text := call(t, h, tc.tool, tc.args, &out)
+		if n := utf8.RuneCountInString(text); n > 2000 || out.Budget != 2000 {
+			t.Errorf("%s: %d characters for a budget of %d", tc.tool, n, out.Budget)
+		}
+		if out.LinkMismatches+out.Message.LinkMismatches != 3000 {
+			t.Errorf("%s: link_mismatches %d, %d; want 3000", tc.tool, out.LinkMismatches, out.Message.LinkMismatches)
+		}
+		for _, want := range []string{
+			"note: 3000 links whose text names a different site from the one it points to; the block below pairs the first 4.\n",
+			"\n… and 2996 more\n",
+		} {
+			if !strings.Contains(text, want) {
+				t.Errorf("%s: no %q in\n%s", tc.tool, want, text)
+			}
+		}
+		if n := strings.Count(text, "text names www.bank.example, link points to lure.example\n"); n != 4 {
+			t.Errorf("%s: %d pairs listed; want 4", tc.tool, n)
+		}
 	}
 }
 

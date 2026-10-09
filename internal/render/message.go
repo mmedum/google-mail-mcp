@@ -294,8 +294,9 @@ func (w *writer) draftLine(m model.Message, pos, n int) {
 
 // notes states, outside the blocks, what the server found and did. What
 // it found in the sender's words — a link's hosts, a charset's label —
-// goes in a block of its own after the note that counts it.
-func (w *writer) notes(m model.Message, c collapsed) {
+// goes in a block of its own after the note that counts it, each block
+// at most room characters (noteShare).
+func (w *writer) notes(m model.Message, c collapsed, room int) {
 	origin := m.Sender().Email
 	if n := m.Body.HiddenChars(); n > 0 {
 		w.say("note: %s a reader would not see were removed from the body (%s).",
@@ -305,17 +306,25 @@ func (w *writer) notes(m model.Message, c collapsed) {
 		w.say("note: %s were removed from the subject, names and addresses.",
 			plural(m.HeaderHidden, "invisible character", "invisible characters"))
 	}
-	w.linkNote(m.Body, origin, m.ID)
+	w.linkNote(m.Body, origin, m.ID, room)
 	if m.Body.PlaceholderSkipped {
 		w.say("note: the plain-text part only pointed to the HTML version, so the HTML was read.")
 	}
 	if m.Body.Source == mime.SourceHTML || m.Body.Source == mime.SourceBoth {
 		w.say("note: the body was converted from HTML; no image or link was fetched.")
 	}
+	renamed := 0
 	for _, a := range m.Attachments {
 		if a.Renamed {
-			w.say("note: an attachment's declared name was unsafe as a file name; the header block shows it renamed.")
+			renamed++
 		}
+	}
+	switch {
+	case renamed == 1:
+		w.say("note: an attachment's declared name was unsafe as a file name; the header block shows it renamed.")
+	case renamed > 1:
+		w.say("note: %s attachments' declared names were unsafe as file names; the header block shows them renamed.",
+			num(renamed))
 	}
 	if len(m.LenientHeaders) > 0 {
 		w.say("note: malformed address headers were read leniently: %s.", headerNames(m.LenientHeaders))
@@ -323,7 +332,7 @@ func (w *writer) notes(m model.Message, c collapsed) {
 	if cs := m.Body.UnknownCharsets; len(cs) > 0 {
 		w.say("note: unknown charsets were read as UTF-8 or windows-1252 in %s; the block below names them.",
 			plural(len(cs), "body part", "body parts"))
-		w.block("unknown charset labels", origin, m.ID, strings.Join(cs, "\n"))
+		w.listBlock("unknown charset labels", origin, m.ID, cs, room)
 	}
 	if len(m.Body.Missing) > 0 {
 		w.say("note: body parts not fetched: %s.", partIDs(m.Body.Missing))
@@ -331,21 +340,70 @@ func (w *writer) notes(m model.Message, c collapsed) {
 	w.collapsedNote(c)
 }
 
+// noteShare bounds one list in the notes to 1/noteShare of a read's
+// budget. A list's entries are the sender's, as many and as long as they
+// like; what does not fit is counted, not listed (§4.8).
+const noteShare = 8
+
+// noteRoom is the characters one list in the notes may take.
+func noteRoom(o Options) int { return o.budget() / noteShare }
+
 // linkNote counts the links whose text names a different site from the
-// one they point to, and pairs each in a block, since the hosts are the
-// sender's.
-func (w *writer) linkNote(b mime.Body, origin, id string) {
+// one they point to, and pairs them in a block, since the hosts are the
+// sender's: each if they fit in room characters, else the first.
+func (w *writer) linkNote(b mime.Body, origin, id string, room int) {
 	links := b.Mismatches()
 	if len(links) == 0 {
 		return
 	}
-	w.say("note: %s whose text names a different site from the one it points to; the block below pairs each.",
-		plural(len(links), "link", "links"))
-	var s strings.Builder
-	for _, l := range links {
-		s.WriteString("text names " + l.TextHost + ", link points to " + l.Host + "\n")
+	pairs := make([]string, len(links))
+	for i, l := range links {
+		pairs[i] = "text names " + l.TextHost + ", link points to " + l.Host
 	}
-	w.block("links whose text names another site", origin, id, s.String())
+	if n := listed(pairs, room); n < len(pairs) {
+		w.say("note: %s whose text names a different site from the one it points to; the block below pairs the first %s.",
+			plural(len(links), "link", "links"), num(n))
+	} else {
+		w.say("note: %s whose text names a different site from the one it points to; the block below pairs each.",
+			plural(len(links), "link", "links"))
+	}
+	w.listBlock("links whose text names another site", origin, id, pairs, room)
+}
+
+// listBlock writes the lines that fit in room characters in a block, and
+// says how many more there are after it.
+func (w *writer) listBlock(what phrase, origin, id string, lines []string, room int) {
+	n := listed(lines, room)
+	var s strings.Builder
+	for _, l := range lines[:n] {
+		s.WriteString(cutRunes(l, max(room-1, 1)) + "\n")
+	}
+	w.block(what, origin, id, s.String())
+	if rest := len(lines) - n; rest > 0 {
+		w.say("… and %s more", num(rest))
+	}
+}
+
+// listed is how many of lines, one per line, fit in room characters: at
+// least one, which listBlock cuts to fit when it alone is over.
+func listed(lines []string, room int) int {
+	used := 0
+	for i, l := range lines {
+		used += utf8.RuneCountInString(l) + 1
+		if used > room {
+			return max(i, 1)
+		}
+	}
+	return len(lines)
+}
+
+// cutRunes is s cut to n characters, the last an ellipsis when it was
+// cut.
+func cutRunes(s string, n int) string {
+	if utf8.RuneCountInString(s) <= n {
+		return s
+	}
+	return string([]rune(s)[:n-1]) + "…"
 }
 
 // collapsedNote says what a view folded away, and how to see it.
@@ -385,30 +443,31 @@ func (w *writer) messageBody(m model.Message, o Options, startRune, end int) int
 	}
 	if m.Body.Text == "" {
 		w.say("(no readable body)")
-		w.notes(m, collapsed{})
+		w.notes(m, collapsed{}, noteRoom(o))
 		return 0
 	}
 	total := utf8.RuneCountInString(m.Body.Text)
 	startRune = min(startRune, total)
 	ps, c := bodyPieces(m.Body, byteIndexOfRune(m.Body.Text, startRune), o.ShowQuoted)
-	frame := w.sub(func(s *writer) { s.bodyFrame(m, c, startRune, total, "", total) })
+	room := noteRoom(o)
+	frame := w.sub(func(s *writer) { s.bodyFrame(m, c, room, startRune, total, "", total) })
 	text, next := cutBody(ps, max(end-w.len()-frame.len(), minBody))
 	at := 0
 	if next > 0 {
 		at = runeOffset(m.Body.Text, next)
 	}
-	w.bodyFrame(m, c, startRune, total, text, at)
+	w.bodyFrame(m, c, room, startRune, total, text, at)
 	return at
 }
 
 // bodyFrame writes a body block and what the server says about it; at
 // is where a cut body continues, or 0.
-func (w *writer) bodyFrame(m model.Message, c collapsed, startRune, total int, text string, at int) {
+func (w *writer) bodyFrame(m model.Message, c collapsed, room, startRune, total int, text string, at int) {
 	if startRune > 0 {
 		w.say("(body from character %s of %s)", num(startRune), num(total))
 	}
 	w.block("body", m.Sender().Email, m.ID, text)
-	w.notes(m, c)
+	w.notes(m, c, room)
 	if at > 0 {
 		w.say("cut: the body continues at character %s of %s; offset=%s reads on.", num(at), num(total), num(at))
 	}
@@ -501,50 +560,51 @@ func (w *writer) attachmentContent(a AttachmentRead, o Options, end int) int {
 	b := a.Body
 	if b.Text == "" {
 		w.say("(no readable text)")
-		w.attachmentNotes(a, collapsed{})
+		w.attachmentNotes(a, collapsed{}, noteRoom(o))
 		return 0
 	}
 	total := utf8.RuneCountInString(b.Text)
 	start := min(max(o.Offset, 0), total)
 	ps, c := bodyPieces(b, byteIndexOfRune(b.Text, start), o.ShowQuoted)
-	frame := w.sub(func(s *writer) { s.attachmentFrame(a, c, start, total, "", total) })
+	room := noteRoom(o)
+	frame := w.sub(func(s *writer) { s.attachmentFrame(a, c, room, start, total, "", total) })
 	text, next := cutBody(ps, max(end-w.len()-frame.len(), minBody))
 	at := 0
 	if next > 0 {
 		at = runeOffset(b.Text, next)
 	}
-	w.attachmentFrame(a, c, start, total, text, at)
+	w.attachmentFrame(a, c, room, start, total, text, at)
 	return at
 }
 
 // attachmentFrame writes an attachment's content block and what the
 // server says about it; at is where cut content continues, or 0.
-func (w *writer) attachmentFrame(a AttachmentRead, c collapsed, start, total int, text string, at int) {
+func (w *writer) attachmentFrame(a AttachmentRead, c collapsed, room, start, total int, text string, at int) {
 	if start > 0 {
 		w.say("(content from character %s of %s)", num(start), num(total))
 	}
 	w.block("attachment content", a.From.Email, a.MessageID, text)
-	w.attachmentNotes(a, c)
+	w.attachmentNotes(a, c, room)
 	if at > 0 {
 		w.say("cut: the content continues at character %s of %s; offset=%s reads on.", num(at), num(total), num(at))
 	}
 }
 
 // attachmentNotes states what the server found in an attachment's text
-// and did to it.
-func (w *writer) attachmentNotes(a AttachmentRead, c collapsed) {
+// and did to it, each list at most room characters, as notes does.
+func (w *writer) attachmentNotes(a AttachmentRead, c collapsed, room int) {
 	b := a.Body
 	if n := b.HiddenChars(); n > 0 {
 		w.say("note: %s a reader would not see were removed from the attachment (%s).",
 			plural(n, "character", "characters"), hiddenList(b.Hidden))
 	}
-	w.linkNote(b, a.From.Email, a.MessageID)
+	w.linkNote(b, a.From.Email, a.MessageID, room)
 	if a.Attachment.Renamed {
 		w.say("note: the attachment's declared name was unsafe as a file name; the block above shows it renamed.")
 	}
 	if cs := b.UnknownCharsets; len(cs) > 0 {
 		w.say("note: the attachment's charset is unknown, so it was read as UTF-8 or windows-1252; the block below names it.")
-		w.block("unknown charset label", a.From.Email, a.MessageID, strings.Join(cs, "\n"))
+		w.listBlock("unknown charset label", a.From.Email, a.MessageID, cs, room)
 	}
 	w.collapsedNote(c)
 }

@@ -429,6 +429,12 @@ cursor. A long body is cut at a paragraph boundary with a marker and the
 offset to continue from. Listings use `format=metadata` with a fixed
 header set, never `full`.
 
+The notes after a body count against the budget too. A list in them of
+what the sender made, such as the links whose text names another site
+or unknown charset labels, takes at most an eighth of the budget, and
+the rest are counted after it. Parts are named thirty at most, and
+renamed attachments are counted in one note.
+
 A listing's budget bounds its text, in `content` and again in
 `untrusted_text`; the structured rows carry every item on the page in
 full, as 1.1.0 did, and are not counted against it. A page that fits

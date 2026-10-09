@@ -155,6 +155,48 @@ func TestAMessageIsTruncatedOnlyWhenItsBodyIsCut(t *testing.T) {
 	}
 }
 
+// Notes that list what a sender made — unknown charset labels, parts
+// not fetched, attachments renamed — stay within the budget however many
+// there are: each list takes at most an eighth of it and counts the rest.
+func TestNotesStayWithinTheBudget(t *testing.T) {
+	m := plainMessage("Body text.")
+	for i := range 500 {
+		m.Body.UnknownCharsets = append(m.Body.UnknownCharsets, fmt.Sprintf("x-made-up-%03d", i))
+	}
+	for i := range 100 {
+		m.Body.Missing = append(m.Body.Missing, strconv.Itoa(i+1))
+	}
+	for i := range 3 {
+		m.Attachments = append(m.Attachments, mime.Attachment{PartID: strconv.Itoa(i + 101), Filename: "attachment.bin",
+			DeclaredName: "../escape.bin", Renamed: true, Size: 10})
+	}
+	res := Message(m, Options{Tokens: seq("T"), Budget: MinBudget})
+	if n := utf8.RuneCountInString(res.Text); n > res.Budget {
+		t.Errorf("%d characters for a budget of %d:\n%s", n, res.Budget, res.Text)
+	}
+	for _, want := range []string{
+		"note: unknown charsets were read as UTF-8 or windows-1252 in 500 body parts; the block below names them.\n",
+		"x-made-up-000\nx-made-up-001\n",
+		"\n… and 483 more\n",
+		"note: body parts not fetched: 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23, 24, 25, 26, 27, 28, 29, 30 and 70 more.\n",
+		"note: 3 attachments' declared names were unsafe as file names; the header block shows them renamed.\n",
+	} {
+		if !strings.Contains(res.Text, want) {
+			t.Errorf("no %q in\n%s", want, res.Text)
+		}
+	}
+	if n := strings.Count(res.Text, "unsafe as"); n != 1 {
+		t.Errorf("%d notes on renamed attachments; want one that counts them", n)
+	}
+	// One label longer than the room is listed cut, not left out.
+	long := plainMessage("Body text.")
+	long.Body.UnknownCharsets = []string{strings.Repeat("x", 5000)}
+	res = Message(long, Options{Tokens: seq("T"), Budget: MinBudget})
+	if n := utf8.RuneCountInString(res.Text); n > res.Budget || !strings.Contains(res.Text, "\n"+strings.Repeat("x", 248)+"…\n") {
+		t.Errorf("a long label: %d characters for a budget of %d, or not cut to fit 250 with its line break:\n%s", n, res.Budget, res.Text)
+	}
+}
+
 func TestMessageNotes(t *testing.T) {
 	m := plainMessage("Body text.")
 	m.HeaderHidden = 2

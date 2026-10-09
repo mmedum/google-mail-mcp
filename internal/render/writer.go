@@ -437,10 +437,10 @@ func headerNames(ns []string) part {
 // partIDShape is a MIME part id: dotted decimals.
 var partIDShape = regexp.MustCompile(`^[0-9]{1,6}(\.[0-9]{1,6}){0,20}$`)
 
-// partIDs names MIME parts by id.
+// partIDs names MIME parts by id, at most maxListed of them.
 func partIDs(ids []string) part {
-	out := make([]string, len(ids))
-	for i, id := range ids {
+	out := make([]string, min(len(ids), maxListed))
+	for i, id := range ids[:len(out)] {
 		switch {
 		case id == "":
 			out[i] = "top-level"
@@ -450,7 +450,11 @@ func partIDs(ids []string) part {
 			out[i] = "(unreadable part id)"
 		}
 	}
-	return part{strings.Join(out, ", ")}
+	s := strings.Join(out, ", ")
+	if len(ids) > maxListed {
+		s += fmt.Sprintf(" and %d more", len(ids)-maxListed)
+	}
+	return part{s}
 }
 
 // colorShape is a label color as Gmail's palette writes it.
