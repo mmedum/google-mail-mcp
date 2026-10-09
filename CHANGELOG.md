@@ -40,6 +40,7 @@ lifted verbatim.
 
 ### Security
 
+- A malformed `From` or other address header never shows an address written inside its quoted name or a comment as the address. `"Boss <boss@bank.example>" <attacker@evil.example> x` read as from the boss; it now reads as from the attacker, and a header with two candidates shows none.
 - `rfc822:` takes exactly one Message-ID, written `<local@domain>`, and refuses anything else as `[invalid]` before searching. Text after the id went into Gmail's search, so a forward, reply or quote could take a message the caller never saw.
 - Built with Go 1.27.2 and `golang.org/x/net` v0.60.0, which fix ten advisories in `net/http`, its HTTP/2 code, `crypto/tls` and `net/textproto` that `govulncheck` found reachable from this server.
 

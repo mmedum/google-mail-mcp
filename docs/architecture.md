@@ -761,6 +761,14 @@ Parsed with `net/mail`. A display name with non-ASCII is RFC 2047
 encoded when building and decoded when reading. An address the parser
 refuses is `[invalid]` naming which argument, never passed through.
 
+A header in mail that `net/mail` refuses is read leniently, and the
+result says so. An address written inside a quoted name or a comment is
+never taken, since a sender writes one there to pass it off as the
+sender: the one angle address outside them is, else the one bare
+address. With none, or more than one, the text is kept as a name with
+no address. A fuzz test holds that a shown address lies outside every
+quoted string and comment.
+
 A result shows an address as `Name <address>`, with the name quoted
 unless it is plain words, as the header writer quotes it, but never
 encoded. So every address a result shows reads back with `net/mail` as

@@ -114,6 +114,43 @@ func FuzzAddressStringReadsBack(f *testing.F) {
 	})
 }
 
+// FuzzLenientAddressIsOutsideQuotes holds that an address read from a
+// list the standard parser refused was written outside every quoted
+// string and comment, where a sender would write one to pass it off as
+// the sender. Space is ignored, since net/mail reads "a @ b" as a@b, and
+// a local part net/mail unquotes, "a"@b, is held by its domain.
+func FuzzLenientAddressIsOutsideQuotes(f *testing.F) {
+	for _, v := range []string{
+		`"Boss <boss@bank.example>" <attacker@evil.example> x`,
+		"(boss@bank.example) attacker@evil.example;;",
+		`"boss@bank.example" <attacker@evil.example`,
+		"(x <a, boss@bank.example) attacker@evil.example x",
+		`"a\" <boss@bank.example>" <attacker@evil.example> x`,
+		`Ada <ada@example.com, "Bo <bo@example.com>" bo@example.org`,
+		`"x"@evil.example (boss@bank.example) y`,
+	} {
+		f.Add(v)
+	}
+	f.Fuzz(func(t *testing.T, v string) {
+		list, strict := ParseAddressList(v)
+		if strict {
+			return
+		}
+		squash := func(s string) string { return strings.Join(strings.Fields(s), "") }
+		open := squash(outsideQuotes(v))
+		for _, a := range list {
+			if a.Email == "" {
+				continue
+			}
+			domain := squash(a.Email[max(strings.LastIndexByte(a.Email, '@'), 0):])
+			unquoted := strings.Contains(open, domain) && strings.Contains(squash(v), `"`+domain)
+			if !strings.Contains(open, squash(a.Email)) && !unquoted {
+				t.Fatalf("%q shows %q, written inside a quoted string or a comment", v, a.Email)
+			}
+		}
+	})
+}
+
 func FuzzDecodeHeader(f *testing.F) {
 	// The last two are earlier fuzz failures, kept as seeds.
 	for _, s := range []string{"=?UTF-8?Q?a?=", "=?x?B?////?= =?x?B?AA==?=", "\xff\xfe", "=?utf-8?q?=0A?=", ". .00000000000", ";0=\x9b"} {

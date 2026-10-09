@@ -163,8 +163,10 @@ type Address struct {
 // String renders an address for reading: `Name <email>`, or either half
 // alone. A name that is not plain words is quoted, as the header writer
 // quotes it, so the text reads back with net/mail as the same mailbox: a
-// comma cannot split it in two, and a name holding `<x@y>` cannot pass
-// for the address. Unlike the header writer, it never encodes a name.
+// comma cannot split it in two, and `<x@y>` in a name stays in the name.
+// Which address it shows is ParseAddressList's, which never takes one
+// from inside a quoted name or a comment. Unlike the header writer, it
+// never encodes a name.
 func (a Address) String() string {
 	name := displayName(a.Name)
 	switch {
@@ -260,53 +262,80 @@ func decodeName(n string) string {
 }
 
 // splitAddressList splits on commas outside quotes, angle brackets and
-// comments, and drops group syntax.
+// comments, and drops group syntax. It reads quotes and comments as
+// outsideQuotes does, so each piece starts outside both.
 func splitAddressList(v string) []string {
 	var parts []string
 	var cur strings.Builder
-	inQuote, angle, comment := false, 0, 0
+	var q quoteState
+	angle := 0
 	for i := 0; i < len(v); i++ {
 		c := v[i]
-		switch {
-		case inQuote:
-			if c == '\\' && i+1 < len(v) {
-				cur.WriteByte(c)
-				i++
-				c = v[i]
-			} else if c == '"' {
-				inQuote = false
+		if !q.inside(c) {
+			switch {
+			case c == '<':
+				angle++
+			case c == '>' && angle > 0:
+				angle--
+			case (c == ',' || c == ';') && (angle == 0 || !strings.Contains(v[i:], ">")):
+				// An angle bracket that never closes does not swallow the
+				// rest of the list.
+				angle = 0
+				parts = append(parts, cur.String())
+				cur.Reset()
+				continue
+			case c == ':' && angle == 0:
+				// "undisclosed-recipients:" — the group name is not a mailbox.
+				cur.Reset()
+				continue
 			}
-		case c == '"':
-			inQuote = true
-		case c == '<':
-			angle++
-		case c == '>' && angle > 0:
-			angle--
-		case c == '(':
-			comment++
-		case c == ')' && comment > 0:
-			comment--
-		case (c == ',' || c == ';') && angle > 0 && !strings.Contains(v[i:], ">"):
-			// An angle bracket that never closes does not swallow the
-			// rest of the list.
-			angle = 0
-			parts = append(parts, cur.String())
-			cur.Reset()
-			continue
-		case (c == ',' || c == ';') && angle == 0 && comment == 0:
-			parts = append(parts, cur.String())
-			cur.Reset()
-			continue
-		case c == ':' && angle == 0 && comment == 0:
-			// "undisclosed-recipients:" — the group name is not a mailbox.
-			cur.Reset()
-			continue
 		}
 		cur.WriteByte(c)
 	}
 	return append(parts, cur.String())
 }
 
+// quoteState follows a header value's quoted strings and comments (RFC
+// 5322 §3.2.2, §3.2.4) one byte at a time.
+type quoteState struct {
+	quoted, escaped bool
+	comment         int
+}
+
+// inside reads c and reports whether it lies in a quoted string or a
+// comment, its delimiters included. A comment nests, and a backslash
+// in either escapes the next byte.
+func (q *quoteState) inside(c byte) bool {
+	switch {
+	case q.escaped:
+		q.escaped = false
+	case q.quoted || q.comment > 0:
+		switch {
+		case c == '\\':
+			q.escaped = true
+		case q.quoted && c == '"':
+			q.quoted = false
+		case !q.quoted && c == '(':
+			q.comment++
+		case !q.quoted && c == ')':
+			q.comment--
+		}
+	case c == '"':
+		q.quoted = true
+	case c == '(':
+		q.comment++
+	default:
+		return false
+	}
+	return true
+}
+
+// lenientAddress reads one mailbox of a list the standard parser
+// refused. An address inside a quoted string or a comment is never
+// taken: a sender writes one there to pass it off as the sender. It
+// takes the one angle address outside them, else the one bare address;
+// with none, or more than one, the text is kept as a name with no
+// address.
 func lenientAddress(piece string) (Address, bool) {
 	piece = strings.TrimSpace(piece)
 	if piece == "" {
@@ -315,16 +344,35 @@ func lenientAddress(piece string) (Address, bool) {
 	if a, err := addrParser.Parse(piece); err == nil {
 		return Address{Name: decodeName(a.Name), Email: a.Address}, true
 	}
-	if m := angleAddr.FindStringSubmatchIndex(piece); m != nil {
+	open := outsideQuotes(piece)
+	angles := angleAddr.FindAllStringSubmatchIndex(open, 2)
+	if len(angles) == 1 {
+		m := angles[0]
 		name := strings.TrimSpace(piece[:m[0]] + " " + piece[m[1]:])
 		return Address{Name: unquote(DecodeHeader(name)), Email: piece[m[2]:m[3]]}, true
 	}
-	if m := bareAddr.FindStringIndex(piece); m != nil {
+	if bare := bareAddr.FindAllStringIndex(open, 2); len(angles) == 0 && len(bare) == 1 {
+		m := bare[0]
 		name := strings.TrimSpace(piece[:m[0]] + " " + piece[m[1]:])
 		name = strings.Trim(name, "()<> ")
 		return Address{Name: unquote(DecodeHeader(name)), Email: piece[m[0]:m[1]]}, true
 	}
 	return Address{Name: unquote(DecodeHeader(piece))}, true
+}
+
+// outsideQuotes is s with every quoted string and comment blanked to
+// spaces, delimiters included, so what a pattern finds in it lies
+// outside both, at the same offsets as in s. A quote or comment that
+// never closes runs to the end.
+func outsideQuotes(s string) string {
+	b := []byte(s)
+	var q quoteState
+	for i, c := range b {
+		if q.inside(c) {
+			b[i] = ' '
+		}
+	}
+	return string(b)
 }
 
 func unquote(s string) string {
