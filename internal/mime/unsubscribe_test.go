@@ -48,7 +48,7 @@ func TestParseListUnsubscribe(t *testing.T) {
 			[]string{"https://1.example", "https://2.example", "https://3.example", "https://4.example"}, nil},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
-			u := ParseListUnsubscribe(tc.v)
+			u := parseListUnsubscribe(tc.v)
 			if !slices.Equal(u.URLs, tc.urls) || !slices.Equal(u.Mailto, tc.mailto) || u.OneClick {
 				t.Errorf("got urls %q mailto %q one-click %v; want %q and %q", u.URLs, u.Mailto, u.OneClick, tc.urls, tc.mailto)
 			}
@@ -108,7 +108,7 @@ func FuzzListUnsubscribe(f *testing.F) {
 		f.Add(s)
 	}
 	f.Fuzz(func(t *testing.T, v string) {
-		u := ParseListUnsubscribe(v)
+		u := parseListUnsubscribe(v)
 		if len(u.URLs) > maxUnsubURIs || len(u.Mailto) > maxUnsubURIs || u.OneClick {
 			t.Fatalf("over the caps or one-click from the header alone: %+v", u)
 		}
@@ -129,7 +129,7 @@ func FuzzListUnsubscribe(f *testing.F) {
 			}
 		}
 		if len(u.URLs) > 0 {
-			again := ParseListUnsubscribe("<" + strings.Join(u.URLs, ">, <") + ">")
+			again := parseListUnsubscribe("<" + strings.Join(u.URLs, ">, <") + ">")
 			if !slices.Equal(again.URLs, u.URLs) {
 				t.Fatalf("written out and read again: %q, was %q", again.URLs, u.URLs)
 			}

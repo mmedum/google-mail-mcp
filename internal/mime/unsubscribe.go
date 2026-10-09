@@ -21,9 +21,6 @@ type Unsubscribe struct {
 	OneClick bool
 }
 
-// Empty reports whether the header offered nothing usable.
-func (u Unsubscribe) Empty() bool { return len(u.URLs) == 0 && len(u.Mailto) == 0 }
-
 // Limits a hostile header cannot exceed: a URI longer than maxUnsubURI
 // is skipped, and each list keeps its first maxUnsubURIs.
 const (
@@ -51,7 +48,7 @@ func parseUnsubscribe(hs []Header) Unsubscribe {
 	if len(lists) == 0 {
 		return Unsubscribe{}
 	}
-	u := ParseListUnsubscribe(lists[0])
+	u := parseListUnsubscribe(lists[0])
 	if len(lists) == 1 && len(posts) == 1 && strings.TrimSpace(posts[0]) == oneClickPost {
 		for _, l := range u.URLs {
 			if strings.HasPrefix(strings.ToLower(l), "https:") {
@@ -63,13 +60,13 @@ func parseUnsubscribe(hs []Header) Unsubscribe {
 	return u
 }
 
-// ParseListUnsubscribe reads a List-Unsubscribe value as RFC 2369 §2
+// parseListUnsubscribe reads a List-Unsubscribe value as RFC 2369 §2
 // tells a client to: angle-bracketed URIs separated by commas, comments
 // and whitespace between them ignored, whitespace inside the brackets
 // removed. The first item that is not an angle-bracketed URI ends the
 // reading, and so does anything but a comma after one. Only http, https
 // and mailto URIs are kept; OneClick is left false.
-func ParseListUnsubscribe(v string) Unsubscribe {
+func parseListUnsubscribe(v string) Unsubscribe {
 	var u Unsubscribe
 	i := skipCFWS(v, 0)
 	for i < len(v) && v[i] == '<' {

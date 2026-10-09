@@ -57,12 +57,7 @@ func (n *node) isMultipart() bool { return strings.HasPrefix(n.mediaType, "multi
 // an attachment id.
 func fromPayload(p *gmail.MessagePart, fetched map[string][]byte, depth int, count *int) *node {
 	*count++
-	n := &node{partID: p.PartID, gmailName: p.Filename}
-	for _, h := range p.Headers {
-		n.headers = append(n.headers, Header{Name: h.Name, Value: h.Value})
-	}
-	n.mediaType = strings.ToLower(strings.TrimSpace(p.MimeType))
-	n.setContentHeaders()
+	n := payloadNode(p)
 	if p.Body != nil {
 		n.size = int(p.Body.Size)
 		n.attachmentID = p.Body.AttachmentID
@@ -82,6 +77,19 @@ func fromPayload(p *gmail.MessagePart, fetched map[string][]byte, depth int, cou
 		}
 		n.children = append(n.children, fromPayload(&p.Parts[i], fetched, depth+1, count))
 	}
+	return n
+}
+
+// payloadNode is one part of a payload as a node: its headers, its
+// media type and what its content headers say, without content or
+// children.
+func payloadNode(p *gmail.MessagePart) *node {
+	n := &node{partID: p.PartID, gmailName: p.Filename}
+	for _, h := range p.Headers {
+		n.headers = append(n.headers, Header{Name: h.Name, Value: h.Value})
+	}
+	n.mediaType = strings.ToLower(strings.TrimSpace(p.MimeType))
+	n.setContentHeaders()
 	return n
 }
 

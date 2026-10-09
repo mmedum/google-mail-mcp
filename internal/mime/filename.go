@@ -62,6 +62,27 @@ func SafeBaseName(name string) string {
 	return name
 }
 
+// ForwardName names a forward's attached original after its subject, as
+// Gmail does: "<subject>.eml". A slash or backslash is written as "_",
+// so the name stays a base name, and a control character as a space;
+// the subject is cut to maxNameBytes at a character, and one with
+// nothing left is "forwarded message".
+func ForwardName(subject string) string {
+	name := strings.TrimSpace(strings.Map(func(r rune) rune {
+		switch {
+		case r == '/' || r == '\\':
+			return '_'
+		case isControl(r):
+			return ' '
+		}
+		return r
+	}, subject))
+	if name = strings.TrimSpace(truncateUTF8(name, maxNameBytes)); name == "" {
+		name = "forwarded message"
+	}
+	return name + ".eml"
+}
+
 func truncateUTF8(s string, n int) string {
 	if len(s) <= n {
 		return s

@@ -148,7 +148,6 @@ func TestThread(t *testing.T) {
 	sc := s.Scenario(gmailtest.ScenarioPlainThread)
 	var g gmail.Thread
 	g.ID = sc.ThreadID
-	g.Snippet = "a &amp; b"
 	for _, id := range sc.MessageIDs {
 		m, _ := s.Message(id, "full")
 		g.Messages = append(g.Messages, m)
@@ -157,7 +156,7 @@ func TestThread(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if th.Subject() != "Offsite venue" || th.Latest().ID != sc.MessageIDs[2] || th.Unread() != 1 || th.Snippet != "a & b" {
+	if th.Subject() != "Offsite venue" || th.Latest().ID != sc.MessageIDs[2] || th.Unread() != 1 {
 		t.Fatalf("thread %+v", th)
 	}
 	var emails []string

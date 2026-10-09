@@ -310,10 +310,7 @@ func (w *writer) draftLine(m model.Message, pos, n int) {
 // at most room characters (noteShare).
 func (w *writer) notes(m model.Message, c collapsed, room int) {
 	origin := m.Sender().Email
-	if n := m.Body.HiddenChars(); n > 0 {
-		w.say("note: %s a reader would not see were removed from the body (%s).",
-			plural(n, "character", "characters"), hiddenList(m.Body.Hidden))
-	}
+	w.hiddenNote(m.Body, false)
 	if m.HeaderHidden > 0 {
 		w.say("note: %s were removed from the subject, names, addresses and attachment types.",
 			plural(m.HeaderHidden, "invisible character", "invisible characters"))
@@ -341,15 +338,35 @@ func (w *writer) notes(m model.Message, c collapsed, room int) {
 	if len(m.LenientHeaders) > 0 {
 		w.say("note: malformed address headers were read leniently: %s.", headerNames(m.LenientHeaders))
 	}
-	if cs := m.Body.UnknownCharsets; len(cs) > 0 {
-		w.say("note: unknown charsets were read as UTF-8 or windows-1252 in %s; the block below names them.",
-			plural(len(cs), "body part", "body parts"))
-		w.listBlock("unknown charset labels", origin, m.ID, cs, room)
-	}
+	w.charsetNote(m.Body, "body part", "body parts", origin, m.ID, room)
 	if len(m.Body.Missing) > 0 {
 		w.say("note: body parts not fetched: %s.", partIDs(m.Body.Missing))
 	}
 	w.collapsedNote(c)
+}
+
+// hiddenNote says how much of a body, or of an attachment's text, a
+// reader would not see was removed from it, and why.
+func (w *writer) hiddenNote(b mime.Body, attachment bool) {
+	n, why := b.HiddenChars(), hiddenList(b.Hidden)
+	switch {
+	case n == 0:
+	case attachment:
+		w.say("note: %s a reader would not see were removed from the attachment (%s).", plural(n, "character", "characters"), why)
+	default:
+		w.say("note: %s a reader would not see were removed from the body (%s).", plural(n, "character", "characters"), why)
+	}
+}
+
+// charsetNote counts the parts of a text whose charset no table knew,
+// one or many of them, and names the labels in a block, since they are
+// the sender's.
+func (w *writer) charsetNote(b mime.Body, one, many phrase, origin, id string, room int) {
+	if cs := b.UnknownCharsets; len(cs) > 0 {
+		w.say("note: unknown charsets were read as UTF-8 or windows-1252 in %s; the block below names them.",
+			plural(len(cs), one, many))
+		w.listBlock("unknown charset labels", origin, id, cs, room)
+	}
 }
 
 // noteShare bounds one list in the notes to 1/noteShare of a read's
@@ -606,10 +623,7 @@ func (w *writer) attachmentFrame(a AttachmentRead, c collapsed, room, start, tot
 // and did to it, each list at most room characters, as notes does.
 func (w *writer) attachmentNotes(a AttachmentRead, c collapsed, room int) {
 	b := a.Body
-	if n := b.HiddenChars(); n > 0 {
-		w.say("note: %s a reader would not see were removed from the attachment (%s).",
-			plural(n, "character", "characters"), hiddenList(b.Hidden))
-	}
+	w.hiddenNote(b, true)
 	if a.Attachment.Hidden > 0 {
 		w.say("note: %s were removed from the attachment's type.",
 			plural(a.Attachment.Hidden, "invisible character", "invisible characters"))
@@ -618,9 +632,6 @@ func (w *writer) attachmentNotes(a AttachmentRead, c collapsed, room int) {
 	if a.Attachment.Renamed {
 		w.say("note: the attachment's declared name was unsafe as a file name; the block above shows it renamed.")
 	}
-	if cs := b.UnknownCharsets; len(cs) > 0 {
-		w.say("note: the attachment's charset is unknown, so it was read as UTF-8 or windows-1252; the block below names it.")
-		w.listBlock("unknown charset label", a.From.Email, a.MessageID, cs, room)
-	}
+	w.charsetNote(b, "attachment", "attachments", a.From.Email, a.MessageID, room)
 	w.collapsedNote(c)
 }

@@ -247,8 +247,8 @@ func TestSenderTextNeverReachesTheServersVoice(t *testing.T) {
 			}
 			meta = append(meta, md)
 		}
-		th := model.Thread{ID: "00000000000000aa", Messages: msgs, Snippet: model.Untrusted(h.mark())}
-		mt := model.Thread{ID: "00000000000000ab", Messages: meta, Snippet: model.Untrusted(h.mark())}
+		th := model.Thread{ID: "00000000000000aa", Messages: msgs}
+		mt := model.Thread{ID: "00000000000000ab", Messages: meta}
 		drafts := []model.Draft{{ID: "r-1", Message: msgs[0]}, {ID: "r-2", Message: meta[1]}}
 		budget := MinBudget + h.rng.IntN(8000)
 		o := Options{Tokens: seq("TOKEN"), Budget: budget, AllHeaders: seed%2 == 0, ShowQuoted: seed%3 == 0,
@@ -346,8 +346,8 @@ func hostileDraftWrite(h *hostile, m model.Message, op string) model.DraftWrite 
 // class or a hash would be.
 func hostileDownloads(h *hostile, m model.Message) Downloads {
 	d := Downloads{MessageID: m.ID,
-		Passed:   []Passed{{PartID: h.mark(), Reason: "inline"}, {PartID: "3", Reason: h.mark()}},
-		NotSaved: []NotSaved{{PartID: h.mark(), Class: h.mark(), Message: "the attachment could not be written"}}}
+		Skipped: []Skipped{{PartID: h.mark(), Reason: SkipInline}, {PartID: "3", Reason: h.mark()}},
+		Failed:  []Failed{{PartID: h.mark(), Class: h.mark(), Message: "the attachment could not be written"}}}
 	for _, a := range m.Attachments {
 		d.Files = append(d.Files, Saved{MessageID: m.ID, PartID: a.PartID, Path: "/saved/" + a.Filename,
 			DeclaredName: a.DeclaredName, MimeType: a.MimeType, Suffixed: true, Bytes: int64(a.Size), SHA256: h.mark()})

@@ -173,7 +173,7 @@ func (s *Service) composeReads(ctx context.Context, in Compose) ([]gmail.SendAs,
 // It returns the thread the draft is filed in, the original's.
 func asForward(o *mime.Outgoing, out *model.DraftWrite, f original) string {
 	out.Forward = &model.Forward{MessageID: f.m.ID, ThreadID: f.m.ThreadID, Bytes: len(f.raw), BccRemoved: f.bccRemoved}
-	o.Attachments = append([]mime.OutAttachment{{Filename: forwardName(string(f.m.Subject)), MediaType: "message/rfc822",
+	o.Attachments = append([]mime.OutAttachment{{Filename: mime.ForwardName(string(f.m.Subject)), MediaType: "message/rfc822",
 		Content: f.raw}}, o.Attachments...)
 	if o.Subject == "" {
 		o.Subject = strings.TrimSpace("Fwd: " + string(f.m.Subject))
@@ -468,47 +468,17 @@ func (s *Service) original(ctx context.Context, ref string) (original, error) {
 	if err != nil {
 		return original{}, err
 	}
-	m, err := model.NewMessage(g, model.NewLabelIndex(nil), nil)
-	if err != nil {
-		return original{}, gapi.Wrap(gapi.ClassUnavailable, err, "Gmail returned a message this server could not read")
-	}
-	if why := unrepliable(m); why != "" {
-		return original{}, gapi.Errf(gapi.ClassInvalid, "forward %s; forward a message that was sent or received", why)
-	}
 	raw, err := mime.DecodeBase64URL(g.Raw)
 	if err != nil || len(raw) == 0 {
 		return original{}, gapi.Errf(gapi.ClassUnavailable, "Gmail returned message %s without its content", id)
 	}
+	m := model.NewRawMessage(g, model.NewLabelIndex(nil), raw)
+	if why := unrepliable(m); why != "" {
+		return original{}, gapi.Errf(gapi.ClassInvalid, "forward %s; forward a message that was sent or received", why)
+	}
 	out := original{m: m}
 	out.raw, out.bccRemoved = mime.ForwardCopy(raw)
 	return out, nil
-}
-
-// maxForwardName bounds the subject in an attached original's name, in
-// bytes, well under every file system's 255.
-const maxForwardName = 200
-
-// forwardName names the attached original after its subject, as Gmail
-// does: "<subject>.eml", with a slash or backslash written as "_" so the
-// name stays a base name.
-func forwardName(subject string) string {
-	name := strings.TrimSpace(strings.Map(func(r rune) rune {
-		switch {
-		case r == '/' || r == '\\':
-			return '_'
-		case mime.HasControl(string(r)):
-			return ' '
-		}
-		return r
-	}, subject))
-	for len(name) > maxForwardName {
-		_, n := utf8.DecodeLastRuneInString(name)
-		name = name[:len(name)-n]
-	}
-	if name = strings.TrimSpace(name); name == "" {
-		name = "forwarded message"
-	}
-	return name + ".eml"
 }
 
 // unrepliable says why a message is not a parent, or "".

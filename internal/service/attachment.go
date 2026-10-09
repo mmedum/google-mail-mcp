@@ -3,7 +3,6 @@ package service
 import (
 	"context"
 	"crypto/sha256"
-	"encoding/base64"
 	"encoding/hex"
 	"errors"
 	"hash"
@@ -67,54 +66,26 @@ func (s *Service) DownloadAttachment(ctx context.Context, dir, messageID, partID
 	return s.writeFile(ctx, root, dir, id, att, g.Payload)
 }
 
-// MaxDownloads is the most attachments one download_attachments call
-// writes, as a write names at most 100 items (§4.7).
-const MaxDownloads = 100
-
-// Reasons an attachment is passed over when the caller names none.
-const (
-	// SkipInline is a part shown in the body, such as an image.
-	SkipInline = "inline"
-	// SkipReaction is an emoji reaction's part, which is not a file.
-	SkipReaction = "reaction"
-	// SkipInvitationCopy is an invitation's calendar version of the
-	// body, when the message also carries the invitation as a file.
-	SkipInvitationCopy = "invitation_copy"
-	// SkipLimit is a part past the MaxDownloads one call writes.
-	SkipLimit = "limit"
-)
-
-// Skipped is an attachment passed over, and why: one of the Skip*
-// reasons.
-type Skipped struct {
-	PartID string
-	Reason string
-}
-
-// Failed is an attachment that was not written, and why, as §6.5's
-// class and message.
-type Failed struct {
-	PartID         string
-	Class, Message string
+// Saved is the download as a result shows it.
+func (d Download) Saved() render.Saved {
+	a := d.Attachment
+	s := render.Saved{MessageID: d.MessageID, PartID: a.PartID, Path: d.Path, MimeType: a.MimeType,
+		Suffixed: d.Suffixed, Bytes: d.Bytes, SHA256: d.SHA256}
+	if a.Renamed {
+		s.DeclaredName = a.DeclaredName
+	}
+	return s
 }
 
 // failed records why a part was not written. An error with no class is
 // this server's own, and is said as unavailable without its text.
-func failed(partID string, err error) Failed {
-	f := Failed{PartID: partID, Class: string(gapi.ClassUnavailable), Message: "the attachment could not be written"}
+func failed(partID string, err error) render.Failed {
+	f := render.Failed{PartID: partID, Class: string(gapi.ClassUnavailable), Message: "the attachment could not be written"}
 	var e *gapi.Error
 	if errors.As(err, &e) {
 		f.Class, f.Message = string(e.Class), e.Message
 	}
 	return f
-}
-
-// Downloads is what one download_attachments call did with each part.
-type Downloads struct {
-	MessageID string
-	Files     []Download
-	Skipped   []Skipped
-	Failed    []Failed
 }
 
 // DownloadAttachments writes several attachments of one message into dir
@@ -123,23 +94,24 @@ type Downloads struct {
 // and inline parts are written when includeInline is set. A part that
 // fails is reported in Failed and leaves no file; the files written
 // before it stay.
-func (s *Service) DownloadAttachments(ctx context.Context, dir, messageID string, partIDs []string, includeInline bool) (Downloads, error) {
+func (s *Service) DownloadAttachments(ctx context.Context, dir, messageID string, partIDs []string, includeInline bool) (render.Downloads, error) {
 	if dir == "" {
-		return Downloads{}, errNoLocalDir
+		return render.Downloads{}, errNoLocalDir
 	}
-	if len(partIDs) > MaxDownloads {
-		return Downloads{}, gapi.Errf(gapi.ClassInvalid, "part_ids names %d parts; one call saves at most %d", len(partIDs), MaxDownloads)
+	if len(partIDs) > render.MaxDownloads {
+		return render.Downloads{}, gapi.Errf(gapi.ClassInvalid, "part_ids names %d parts; one call saves at most %d",
+			len(partIDs), render.MaxDownloads)
 	}
 	for i, p := range partIDs {
 		if slices.Contains(partIDs[:i], p) {
-			return Downloads{}, gapi.Errf(gapi.ClassInvalid, "part_ids names part %q twice", p)
+			return render.Downloads{}, gapi.Errf(gapi.ClassInvalid, "part_ids names part %q twice", p)
 		}
 	}
 	id, g, parsed, err := s.readParts(ctx, messageID)
 	if err != nil {
-		return Downloads{}, err
+		return render.Downloads{}, err
 	}
-	out := Downloads{MessageID: id}
+	out := render.Downloads{MessageID: id}
 	var chosen []mime.Attachment
 	if len(partIDs) > 0 {
 		for _, p := range partIDs {
@@ -158,7 +130,7 @@ func (s *Service) DownloadAttachments(ctx context.Context, dir, messageID string
 	}
 	root, err := openLocalDir(dir)
 	if err != nil {
-		return Downloads{}, err
+		return render.Downloads{}, err
 	}
 	defer func() { _ = root.Close() }()
 	for _, att := range chosen {
@@ -167,7 +139,7 @@ func (s *Service) DownloadAttachments(ctx context.Context, dir, messageID string
 			out.Failed = append(out.Failed, failed(att.PartID, err))
 			continue
 		}
-		out.Files = append(out.Files, dl)
+		out.Files = append(out.Files, dl.Saved())
 	}
 	return out, nil
 }
@@ -213,19 +185,13 @@ func (s *Service) ReadAttachment(ctx context.Context, messageID, partID string) 
 		out.From = parsed.From[0]
 	}
 	if as != mime.ReadMessage {
-		part := findPart(g.Payload, att.PartID)
-		if part == nil {
-			part = &gmail.MessagePart{PartID: att.PartID, MimeType: att.MimeType}
-		}
-		out.Body = mime.PartText(part, data)
+		// The attachment was found in this payload, so its part is there.
+		out.Body = mime.PartText(findPart(g.Payload, att.PartID), data)
 		return out, nil
 	}
 	out.Message = model.Message{Complete: true}
 	if len(data) > 0 {
-		raw := &gmail.Message{Raw: base64.RawURLEncoding.EncodeToString(data)}
-		if out.Message, err = model.NewMessage(raw, model.LabelIndex{}, nil); err != nil {
-			return render.AttachmentRead{}, gapi.Wrap(gapi.ClassUnavailable, err, "the attached message could not be read")
-		}
+		out.Message = model.NewRawMessage(&gmail.Message{}, model.LabelIndex{}, data)
 	}
 	// Its parts are not in the mailbox, so no part id names them there.
 	for i := range out.Message.Attachments {
@@ -273,26 +239,26 @@ func decodePart(data string) ([]byte, error) {
 // names no part: every attachment but an emoji reaction, an invitation's
 // calendar version of the body when the invitation is attached as a file
 // too, an inline part unless includeInline, and any past MaxDownloads.
-func chooseAttachments(as []mime.Attachment, includeInline bool) ([]mime.Attachment, []Skipped) {
+func chooseAttachments(as []mime.Attachment, includeInline bool) ([]mime.Attachment, []render.Skipped) {
 	attachedInvitation := slices.ContainsFunc(as, func(a mime.Attachment) bool {
 		return a.CalendarMethod != "" && !a.Alternative
 	})
 	var chosen []mime.Attachment
-	var skipped []Skipped
+	var skipped []render.Skipped
 	for _, a := range as {
 		reason := ""
 		switch {
-		case strings.EqualFold(a.MimeType, model.ReactionType):
-			reason = SkipReaction
+		case model.IsReactionPart(a):
+			reason = render.SkipReaction
 		case a.CalendarMethod != "" && a.Alternative && attachedInvitation:
-			reason = SkipInvitationCopy
+			reason = render.SkipInvitationCopy
 		case a.Inline && !includeInline:
-			reason = SkipInline
-		case len(chosen) == MaxDownloads:
-			reason = SkipLimit
+			reason = render.SkipInline
+		case len(chosen) == render.MaxDownloads:
+			reason = render.SkipLimit
 		}
 		if reason != "" {
-			skipped = append(skipped, Skipped{PartID: a.PartID, Reason: reason})
+			skipped = append(skipped, render.Skipped{PartID: a.PartID, Reason: reason})
 			continue
 		}
 		chosen = append(chosen, a)

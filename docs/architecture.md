@@ -883,9 +883,13 @@ test holds the parser, and another holds that a title and UID survive
 escaping and folding exactly.
 
 Gmail often keeps one copy of an invitation inline and stores an
-`invite.ics` apart. Reading the details of a part stored apart costs one
-`attachments.get`, 20 units, and a message spends at most one: on the
-first part whose Content-Type does not state the method, else the first.
+`invite.ics` apart. The stored copy is read even when the inline one
+was. The sender wrote both and can make them differ, and `invite.ics` is
+the copy `download_attachments` saves, so its entry says what the saved
+file says, or that it is the same as the inline copy. Reading the
+details of a part stored apart costs one `attachments.get`, 20 units,
+and a message spends at most one: on the first part whose Content-Type
+does not state the method, else the first.
 Before this, every part stored apart without a stated method was
 fetched for its method alone (§18 row 81).
 

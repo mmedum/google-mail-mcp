@@ -368,15 +368,15 @@ func TestRowsOmittedCountsEveryRow(t *testing.T) {
 }
 
 // A thread row's snippet is the one of the message whose sender the
-// block names, never the thread's: Gmail's snippet for a thread may be
-// a draft's text, which the row would then credit to someone else.
+// block names. Gmail's snippet for a thread may be a draft's text, which
+// the row would then credit to someone else, so the model keeps none.
 func TestAThreadRowShowsItsMessagesSnippet(t *testing.T) {
 	m := plainMessage("body")
 	m.Snippet = "the newest message's snippet"
-	th := model.Thread{ID: "0000000000000001", Snippet: "the thread's snippet", Messages: []model.Message{m}}
+	th := model.Thread{ID: "0000000000000001", Messages: []model.Message{m}}
 	text := Threads(ThreadList{Threads: []model.Thread{th}}, Options{Tokens: seq("T")}).Text
-	if !strings.Contains(text, "Snippet: the newest message's snippet\n") || strings.Contains(text, "the thread's snippet") {
-		t.Errorf("the row does not show its message's snippet alone:\n%s", text)
+	if !strings.Contains(text, "Snippet: the newest message's snippet\n") {
+		t.Errorf("the row does not show its message's snippet:\n%s", text)
 	}
 }
 

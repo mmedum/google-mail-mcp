@@ -142,7 +142,7 @@ func TestDownloadAttachmentWritesIntoTheLocalDir(t *testing.T) {
 }
 
 // download_attachments lists each file as download_attachment does,
-// says why a part was passed over or failed, and keeps the sender's file
+// says why a part was skipped or failed, and keeps the sender's file
 // names inside a block.
 func TestDownloadAttachmentsReportsEachPart(t *testing.T) {
 	dir := t.TempDir()
@@ -155,12 +155,12 @@ func TestDownloadAttachmentsReportsEachPart(t *testing.T) {
 		filepath.Base(string(out.Files[0].UntrustedPath)) != "invite.ics" || out.Files[0].Bytes != 271 || out.Units != 40 {
 		t.Fatalf("out = %+v; want invite.ics from part 1, 271 bytes, for 40 units", out)
 	}
-	if len(out.Skipped) != 1 || out.Skipped[0] != (tools.PassedPart{PartID: "0.2", Reason: "invitation_copy"}) ||
+	if len(out.Skipped) != 1 || out.Skipped[0] != (tools.SkippedPart{PartID: "0.2", Reason: "invitation_copy"}) ||
 		len(out.Failed) != 0 {
-		t.Fatalf("skipped %+v, failed %+v; want part 0.2 passed over as invitation_copy", out.Skipped, out.Failed)
+		t.Fatalf("skipped %+v, failed %+v; want part 0.2 skipped as invitation_copy", out.Skipped, out.Failed)
 	}
-	if !strings.Contains(text, "passed over part 0.2: it is an invitation's calendar version of the body") {
-		t.Errorf("the text does not say why part 0.2 was passed over:\n%s", text)
+	if !strings.Contains(text, "skipped part 0.2: it is an invitation's calendar version of the body") {
+		t.Errorf("the text does not say why part 0.2 was skipped:\n%s", text)
 	}
 	if strings.Contains(outside(text), "invite.ics") {
 		t.Errorf("the file name reached the server's own lines:\n%s", text)

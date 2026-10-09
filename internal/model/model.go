@@ -230,9 +230,13 @@ const ReactionType = "text/vnd.google.email-reaction+json"
 // read with the parts can tell: a read with headers only never reports
 // one.
 func (m Message) IsReaction() bool {
-	return slices.ContainsFunc(m.Attachments, func(a mime.Attachment) bool {
-		return strings.EqualFold(a.MimeType, ReactionType)
-	})
+	return slices.ContainsFunc(m.Attachments, IsReactionPart)
+}
+
+// IsReactionPart reports whether a part is the one an emoji reaction
+// carries.
+func IsReactionPart(a mime.Attachment) bool {
+	return strings.EqualFold(a.MimeType, ReactionType)
 }
 
 // Answerable reports whether the message was sent or received and can
@@ -257,18 +261,7 @@ func NewMessage(g *gmail.Message, labels LabelIndex, fetched map[string][]byte) 
 	if g == nil {
 		return Message{}, errors.New("no message")
 	}
-	m := Message{
-		ID: g.ID, ThreadID: g.ThreadID, HistoryID: g.HistoryID,
-		Labels:         labels.Refs(g.LabelIDs),
-		SizeEstimate:   int(g.SizeEstimate),
-		Classification: g.ClassificationLabelValues,
-	}
-	snippet, hidden := mime.StripInvisible(html.UnescapeString(g.Snippet))
-	m.Snippet, m.SnippetHidden = Untrusted(snippet), hidden
-	if ms, ok := g.InternalDateMillis(); ok {
-		m.Date = time.UnixMilli(ms).UTC()
-	}
-
+	m := gmailFields(g, labels)
 	var parsed *mime.Message
 	var err error
 	switch {
@@ -284,6 +277,41 @@ func NewMessage(g *gmail.Message, labels LabelIndex, fetched map[string][]byte) 
 	if err != nil {
 		return m, err
 	}
+	m.fill(parsed)
+	return m, nil
+}
+
+// NewRawMessage converts a message read with format=raw whose raw field
+// the caller has decoded, so a large message is decoded once. raw is
+// read in place of g.Raw. An attached message, which is not in the
+// mailbox, has a zero g and labels.
+func NewRawMessage(g *gmail.Message, labels LabelIndex, raw []byte) Message {
+	m := gmailFields(g, labels)
+	m.Complete = true
+	m.fill(mime.ParseRaw(raw))
+	return m
+}
+
+// gmailFields is what Gmail says about a message, apart from its
+// content: ids, labels, size, snippet and the date it received it.
+func gmailFields(g *gmail.Message, labels LabelIndex) Message {
+	m := Message{
+		ID: g.ID, ThreadID: g.ThreadID, HistoryID: g.HistoryID,
+		Labels:         labels.Refs(g.LabelIDs),
+		SizeEstimate:   int(g.SizeEstimate),
+		Classification: g.ClassificationLabelValues,
+	}
+	snippet, hidden := mime.StripInvisible(html.UnescapeString(g.Snippet))
+	m.Snippet, m.SnippetHidden = Untrusted(snippet), hidden
+	if ms, ok := g.InternalDateMillis(); ok {
+		m.Date = time.UnixMilli(ms).UTC()
+	}
+	return m
+}
+
+// fill takes what the message's content says: headers, and body and
+// attachments when the read was complete.
+func (m *Message) fill(parsed *mime.Message) {
 	m.Subject = Untrusted(parsed.Subject)
 	m.From, m.To, m.Cc, m.Bcc, m.ReplyTo = parsed.From, parsed.To, parsed.Cc, parsed.Bcc, parsed.ReplyTo
 	m.RFC822MessageID = Untrusted(parsed.MessageID)
@@ -309,7 +337,6 @@ func NewMessage(g *gmail.Message, labels LabelIndex, fetched map[string][]byte) 
 	} else {
 		m.HasAttachments = parsed.ContentType == "multipart/mixed"
 	}
-	return m, nil
 }
 
 // isFull tells a format=full payload from a format=metadata one: only
@@ -325,7 +352,6 @@ func isFull(p *gmail.MessagePart) bool {
 type Thread struct {
 	ID        string
 	HistoryID string
-	Snippet   Untrusted
 	Messages  []Message
 }
 
@@ -336,8 +362,6 @@ func NewThread(g *gmail.Thread, labels LabelIndex, fetched map[string]map[string
 		return Thread{}, errors.New("no thread")
 	}
 	t := Thread{ID: g.ID, HistoryID: g.HistoryID}
-	snippet, _ := mime.StripInvisible(html.UnescapeString(g.Snippet))
-	t.Snippet = Untrusted(snippet)
 	for i := range g.Messages {
 		m, err := NewMessage(&g.Messages[i], labels, fetched[g.Messages[i].ID])
 		if err != nil {
@@ -381,6 +405,10 @@ func (t Thread) Latest() Message {
 	}
 	return t.Messages[len(t.Messages)-1]
 }
+
+// LatestSent reports whether this account sent the thread's latest
+// message, as Latest picks it.
+func (t Thread) LatestSent() bool { return t.Latest().HasLabel("SENT") }
 
 // LatestAnswerable is the newest answerable message, and false when the
 // thread has none.

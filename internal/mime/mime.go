@@ -336,7 +336,9 @@ func (n *node) isCalendar() bool {
 // prefers a part whose Content-Type does not state the method, as an
 // invite.ics attachment often does not, and then the first. Nothing is
 // fetched once one of them has its content, or for a part over
-// maxICSBytes.
+// maxICSBytes. A copy kept inline does not stop the fetch: the sender
+// can make the two differ, and the stored one is the file
+// download_attachments saves.
 func calendarFetch(parts []*node) (PartRef, bool) {
 	var pick *node
 	for _, n := range parts {

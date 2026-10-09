@@ -139,21 +139,13 @@ func buildBody(root *node) Body {
 		if unknown := p.n.unknownCharset(); unknown != "" {
 			b.UnknownCharsets = append(b.UnknownCharsets, unknown)
 		}
-		var t string
 		if p.n.mediaType == "text/html" {
 			htm = true
-			h := HTMLToText([]byte(htmlText(p.n)))
-			for _, c := range h.Hidden {
-				hidden[c.Reason] += c.Chars
-			}
-			b.Links = append(b.Links, h.Links...)
-			t = h.Text
 		} else {
 			plain = true
-			var n int
-			t, n = StripInvisible(p.text)
-			hidden[HiddenInvisible] += n
 		}
+		t, links := bodyText(p.n, p.text, hidden)
+		b.Links = append(b.Links, links...)
 		if t = strings.TrimSpace(t); t != "" {
 			texts = append(texts, t)
 		}
@@ -208,12 +200,7 @@ func ReadAs(mediaType string) string {
 // dropped and its links read. Any other type keeps every line as
 // written. data is the part's content, from the payload or fetched.
 func PartText(p *gmail.MessagePart, data []byte) Body {
-	n := &node{partID: p.PartID, gmailName: p.Filename}
-	for _, h := range p.Headers {
-		n.headers = append(n.headers, Header{Name: h.Name, Value: h.Value})
-	}
-	n.mediaType = strings.ToLower(strings.TrimSpace(p.MimeType))
-	n.setContentHeaders()
+	n := payloadNode(p)
 	n.data, n.hasData = data, true
 
 	b := Body{PartIDs: []string{p.PartID}}
@@ -223,14 +210,10 @@ func PartText(p *gmail.MessagePart, data []byte) Body {
 	hidden := map[string]int{}
 	switch n.mediaType {
 	case "text/html":
-		h := HTMLToText([]byte(htmlText(n)))
-		for _, c := range h.Hidden {
-			hidden[c.Reason] += c.Chars
-		}
-		b.Text, b.Links, b.Source = strings.TrimSpace(h.Text), h.Links, SourceHTML
+		t, links := bodyText(n, "", hidden)
+		b.Text, b.Links, b.Source = strings.TrimSpace(t), links, SourceHTML
 	case "text/plain":
-		t, k := StripInvisible(plainText(n))
-		hidden[HiddenInvisible] += k
+		t, _ := bodyText(n, plainText(n), hidden)
 		b.Text, b.Source = strings.TrimSpace(t), SourcePlain
 	default:
 		s, _ := decodeCharset(n.data, n.params["charset"])
@@ -243,6 +226,23 @@ func PartText(p *gmail.MessagePart, data []byte) Body {
 		b.Spans = FindSpans(b.Text)
 	}
 	return b
+}
+
+// bodyText is a text/plain or text/html part's text as a body part is
+// read (§4.1): HTML converted, its hidden text dropped and its links
+// read; plain text, already decoded by plainText, with invisible
+// characters removed. What was removed is counted into hidden.
+func bodyText(n *node, plain string, hidden map[string]int) (string, []Link) {
+	if n.mediaType == "text/html" {
+		h := HTMLToText([]byte(htmlText(n)))
+		for _, c := range h.Hidden {
+			hidden[c.Reason] += c.Chars
+		}
+		return h.Text, h.Links
+	}
+	t, k := StripInvisible(plain)
+	hidden[HiddenInvisible] += k
+	return t, nil
 }
 
 // plainText decodes a text/plain part: charset, line endings, and

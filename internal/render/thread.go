@@ -185,7 +185,7 @@ func Threads(l ThreadList, o Options) Result {
 				count = fill("%s (%s)", count, plural(d, "draft", "drafts"))
 			}
 			when := w.when(latest.Date)
-			if latest.HasLabel("SENT") {
+			if t.LatestSent() {
 				when = fill("%s · you sent the latest", when)
 			}
 			w.say("thread %s · %s · %s · labels: %s · attachments: %s", gmailID(t.ID), count,

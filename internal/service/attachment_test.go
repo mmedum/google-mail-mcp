@@ -17,6 +17,7 @@ import (
 
 	"github.com/mmedum/google-mail-mcp/v2/internal/gapi"
 	"github.com/mmedum/google-mail-mcp/v2/internal/gapi/gmailtest"
+	"github.com/mmedum/google-mail-mcp/v2/internal/render"
 	"github.com/mmedum/google-mail-mcp/v2/internal/service"
 )
 
@@ -175,7 +176,7 @@ const attachedMessage = "From: Bruno Fennick <bruno.fennick@example.org>\r\nTo: 
 	"Subject: The venue\r\nDate: Mon, 2 Mar 2026 09:00:00 +0000\r\nMIME-Version: 1.0\r\n" +
 	"Content-Type: text/plain; charset=utf-8\r\n\r\nThe lake house is booked.\r\n"
 
-func names(ds []service.Download) []string {
+func names(ds []render.Saved) []string {
 	out := make([]string, len(ds))
 	for i, d := range ds {
 		out[i] = filepath.Base(d.Path)
@@ -184,8 +185,8 @@ func names(ds []service.Download) []string {
 }
 
 // With no part named, an invitation's calendar version of the body is
-// passed over: the same invitation is attached as invite.ics.
-func TestDownloadAttachmentsPassesOverAnInvitationsCalendarBody(t *testing.T) {
+// skipped: the same invitation is attached as invite.ics.
+func TestDownloadAttachmentsSkipsAnInvitationsCalendarBody(t *testing.T) {
 	s, fake := newService(t)
 	dir := t.TempDir()
 	sc := fake.Scenario(gmailtest.ScenarioInvite)
@@ -193,9 +194,9 @@ func TestDownloadAttachmentsPassesOverAnInvitationsCalendarBody(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if !slices.Equal(names(got.Files), []string{"invite.ics"}) || got.Files[0].Attachment.PartID != "1" ||
-		!slices.Equal(got.Skipped, []service.Skipped{{PartID: "0.2", Reason: service.SkipInvitationCopy}}) || len(got.Failed) != 0 {
-		t.Fatalf("got %+v; want invite.ics from part 1, and part 0.2 passed over as the invitation's copy", got)
+	if !slices.Equal(names(got.Files), []string{"invite.ics"}) || got.Files[0].PartID != "1" ||
+		!slices.Equal(got.Skipped, []render.Skipped{{PartID: "0.2", Reason: render.SkipInvitationCopy}}) || len(got.Failed) != 0 {
+		t.Fatalf("got %+v; want invite.ics from part 1, and part 0.2 skipped as the invitation's copy", got)
 	}
 	if b, _ := os.ReadFile(got.Files[0].Path); !bytes.HasPrefix(b, []byte("BEGIN:VCALENDAR\r\n")) {
 		t.Errorf("invite.ics holds %q", b)
@@ -220,8 +221,8 @@ func TestDownloadAttachmentsSavesAnInvitationsOnlyCopy(t *testing.T) {
 	}
 }
 
-// Inline parts are passed over unless include_inline, and an emoji
-// reaction is passed over either way.
+// Inline parts are skipped unless include_inline, and an emoji
+// reaction is skipped either way.
 func TestDownloadAttachmentsInlineAndReactions(t *testing.T) {
 	s, fake := newService(t)
 	image := &gmailtest.Part{ContentType: "image/png", Disposition: "inline", CTE: "base64", ContentID: "logo@example.com",
@@ -234,9 +235,9 @@ func TestDownloadAttachmentsInlineAndReactions(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	wantSkipped := []service.Skipped{{PartID: "2", Reason: service.SkipInline}, {PartID: "3", Reason: service.SkipReaction}}
+	wantSkipped := []render.Skipped{{PartID: "2", Reason: render.SkipInline}, {PartID: "3", Reason: render.SkipReaction}}
 	if !slices.Equal(names(got.Files), []string{"notes.txt"}) || !slices.Equal(got.Skipped, wantSkipped) {
-		t.Fatalf("got %+v; want notes.txt, the image passed over as inline, the reaction passed over", got)
+		t.Fatalf("got %+v; want notes.txt, the image skipped as inline, the reaction skipped", got)
 	}
 
 	got, err = s.DownloadAttachments(context.Background(), t.TempDir(), id, nil, true)
@@ -244,8 +245,8 @@ func TestDownloadAttachmentsInlineAndReactions(t *testing.T) {
 		t.Fatal(err)
 	}
 	if !slices.Equal(names(got.Files), []string{"notes.txt", "logo.png"}) ||
-		!slices.Equal(got.Skipped, []service.Skipped{{PartID: "3", Reason: service.SkipReaction}}) {
-		t.Fatalf("include_inline: got %+v; want notes.txt and logo.png, the reaction passed over", got)
+		!slices.Equal(got.Skipped, []render.Skipped{{PartID: "3", Reason: render.SkipReaction}}) {
+		t.Fatalf("include_inline: got %+v; want notes.txt and logo.png, the reaction skipped", got)
 	}
 }
 
@@ -329,14 +330,14 @@ func TestDownloadAttachmentsAttachedMessages(t *testing.T) {
 }
 
 // One call saves at most 100 parts; with none named, the rest are
-// passed over and named.
+// skipped and named.
 func TestDownloadAttachmentsStopsAtOneHundred(t *testing.T) {
 	fake := gmailtest.New()
 	t.Cleanup(fake.Close)
 	// A quota this test cannot reach, so 102 reads do not wait for it.
 	s := service.New(gapi.New(gapi.Options{BaseURL: fake.URL(), UnitsPerMinute: 1 << 20,
 		TokenSource: oauth2.StaticTokenSource(&oauth2.Token{AccessToken: "test"})}))
-	parts := make([]*gmailtest.Part, service.MaxDownloads+2)
+	parts := make([]*gmailtest.Part, render.MaxDownloads+2)
 	for i := range parts {
 		parts[i] = gmailtest.File("text/plain", fmt.Sprintf("f%03d.txt", i), []byte("x"))
 	}
@@ -345,9 +346,9 @@ func TestDownloadAttachmentsStopsAtOneHundred(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	want := []service.Skipped{{PartID: "101", Reason: service.SkipLimit}, {PartID: "102", Reason: service.SkipLimit}}
-	if len(got.Files) != service.MaxDownloads || !slices.Equal(got.Skipped, want) {
-		t.Fatalf("saved %d, skipped %+v; want 100 saved and parts 101 and 102 passed over", len(got.Files), got.Skipped)
+	want := []render.Skipped{{PartID: "101", Reason: render.SkipLimit}, {PartID: "102", Reason: render.SkipLimit}}
+	if len(got.Files) != render.MaxDownloads || !slices.Equal(got.Skipped, want) {
+		t.Fatalf("saved %d, skipped %+v; want 100 saved and parts 101 and 102 skipped", len(got.Files), got.Skipped)
 	}
 }
 
@@ -360,7 +361,7 @@ func TestDownloadAttachmentsRefusals(t *testing.T) {
 	wantClass(t, err, gapi.ClassBlocked)
 	_, err = s.DownloadAttachments(ctx, t.TempDir(), sc.MessageIDs[0], []string{"1", "2", "1"}, false)
 	wantClass(t, err, gapi.ClassInvalid)
-	many := make([]string, service.MaxDownloads+1)
+	many := make([]string, render.MaxDownloads+1)
 	for i := range many {
 		many[i] = strconv.Itoa(i)
 	}

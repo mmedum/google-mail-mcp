@@ -375,7 +375,7 @@ func threadSummary(t model.Thread) ThreadSummary {
 	latest := t.Latest()
 	return ThreadSummary{
 		ID: t.ID, MessageCount: len(t.Messages), Unread: t.Unread(), Drafts: t.Drafts(),
-		Latest: latest.Date, LatestFromMe: latest.HasLabel("SENT"),
+		Latest: latest.Date, LatestFromMe: t.LatestSent(),
 		Labels: labelRefs(t.Labels()), HasAttachments: t.HasAttachments(), UntrustedSubject: t.Subject(),
 		UntrustedParticipants: model.UntrustedAddresses(t.Participants()), UntrustedSnippet: latest.Snippet,
 	}

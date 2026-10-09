@@ -641,8 +641,13 @@ func messageBody(b []byte) (cte string, body []byte, err error) {
 }
 
 // withCRLF writes every line ending as CRLF, which RFC 5322 requires:
-// a bare LF or a bare CR becomes one.
+// a bare LF or a bare CR becomes one. Bytes that need no change are
+// returned as they are, not copied: a forward's copy, made CRLF once,
+// passes through again as an attachment is built.
 func withCRLF(b []byte) []byte {
+	if !hasBareCR(b) && !hasBareLF(b) {
+		return b
+	}
 	out := make([]byte, 0, len(b)+len(b)/64)
 	for i := 0; i < len(b); i++ {
 		switch b[i] {
@@ -702,6 +707,16 @@ func ForwardCopy(raw []byte) (out []byte, bccRemoved bool) {
 func hasBareCR(b []byte) bool {
 	for i, c := range b {
 		if c == '\r' && (i+1 == len(b) || b[i+1] != '\n') {
+			return true
+		}
+	}
+	return false
+}
+
+// hasBareLF reports an LF that does not end a CRLF.
+func hasBareLF(b []byte) bool {
+	for i, c := range b {
+		if c == '\n' && (i == 0 || b[i-1] != '\r') {
 			return true
 		}
 	}

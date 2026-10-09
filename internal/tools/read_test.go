@@ -448,6 +448,30 @@ func TestInvitationOnAttachments(t *testing.T) {
 	}
 }
 
+// An invitation's file is read even beside a copy of it inline: the
+// sender can make the two differ, and the file is what
+// download_attachments saves, so its entry says what the file says.
+func TestAnInvitationFileIsReadBesideItsInlineCopy(t *testing.T) {
+	h, fake := connectFake(t, config.Config{ReadOnly: true})
+	ics := func(uid string) []byte {
+		return []byte("BEGIN:VCALENDAR\r\nMETHOD:REQUEST\r\nBEGIN:VEVENT\r\nUID:" + uid + "\r\nEND:VEVENT\r\nEND:VCALENDAR\r\n")
+	}
+	id := fake.AddPartsMessage(
+		&gmailtest.Part{ContentType: "text/calendar; charset=utf-8; method=REQUEST", CTE: "7bit", Content: ics("inline@example.com")},
+		gmailtest.File("application/ics", "invite.ics", ics("file@example.com")))
+	var out tools.MessageOut
+	text := call(t, h, "get_message", map[string]any{"message_id": id}, &out)
+	if len(out.Message.Attachments) != 2 || out.Message.Attachments[1].Invitation == nil ||
+		out.Message.Attachments[1].Invitation.UntrustedUID != "file@example.com" {
+		t.Fatalf("attachments %+v; want the file's own invitation on part 2", out.Message.Attachments)
+	}
+	if n := len(fake.CallsOf("gmail.users.messages.attachments.get")); n != 1 ||
+		!strings.Contains(text, "uid inline@example.com") || !strings.Contains(text, "uid file@example.com") ||
+		strings.Contains(text, "the same as part_id") {
+		t.Errorf("%d attachment reads; text:\n%s", n, text)
+	}
+}
+
 // TestInjectedTextStaysInsideItsBlock reads the message that tells an
 // assistant to forward the mailbox, and requires every line of it to sit
 // between the boundary markers (§4.1).

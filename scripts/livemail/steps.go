@@ -298,7 +298,7 @@ var steps = []step{
 			return map[string]any{"message_id": e.seed.messages[0], "include_inline": true}
 		},
 		check: func(e *env, text string) error {
-			if err := want(text, "saved 2, passed over 0, failed 0"); err != nil {
+			if err := want(text, "saved 2, skipped 0, failed 0"); err != nil {
 				return err
 			}
 			return e.checkDownload(text, "livemail-synthetic-2.txt")
@@ -311,7 +311,7 @@ var steps = []step{
 			return map[string]any{"message_id": e.seed.messages[2], "part_ids": []any{"1"}}
 		},
 		check: func(e *env, text string) error {
-			if err := want(text, "saved 1, passed over 0, failed 0"); err != nil {
+			if err := want(text, "saved 1, skipped 0, failed 0"); err != nil {
 				return err
 			}
 			got, err := os.ReadFile(filepath.Join(e.localDir, syntheticAttachedName))
