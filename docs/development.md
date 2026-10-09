@@ -31,7 +31,7 @@ with no argument lists them.
 | `api-coverage` | every published API method is used, planned for a named phase, or written off with a reason | check |
 | `api-fields` | every published field is modeled or left out with a reason | check |
 | `smoke` | the built binary over stdio, signed out, at two protocol revisions, and a clean exit on an abrupt disconnect | check |
-| `schema-diff` | the tool and resource surface against `testdata/schema-baseline.json`, the newest release's; fails on a removed tool or resource, a field removed or retyped at any depth, a newly required input, or a baseline that is not the newest release's | check |
+| `schema-diff` | the tool and resource surface against `testdata/schema-baseline.json`, the newest release's; fails on a removed tool or resource, a field removed or retyped at any depth, a newly required input, an input enum that takes fewer values, an output field no longer required, or a baseline that is not the newest release's; the schema `true` is any value and `false` none | check |
 | `staleness` | README, `docs/` and `CLAUDE.md` against the code, including the generated scope lists in `gcp-setup.md` | check |
 | `checklist` | `CLAUDE.md`'s definition of done against `make check` | check |
 | `changelog` | a pull request adds a CHANGELOG entry, unless it is a release cut | CI |

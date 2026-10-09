@@ -30,7 +30,8 @@ const schemaDiffMinTools = 27
 //
 // Breaking, and failed: a tool, resource or template removed; an input
 // or output field lost or retyped, at any depth; an input newly
-// required. Reported: what was added, and any other change to a tool
+// required, or taking fewer values of an enum; an output no longer
+// required, so no longer always there. Reported: what was added, and any other change to a tool
 // (description, annotations, _meta, a schema reshaped), so a reviewer
 // looks at it.
 //
@@ -263,7 +264,9 @@ func schemaDiffTool(name string, was, now map[string]any) []string {
 
 // schemaDiffFields walks two object schemas together. A property lost
 // or retyped at any depth is breaking; for inputs, so is a property
-// newly required, including a nested one under a property that existed.
+// newly required, including a nested one under a property that existed;
+// for outputs, a property no longer required, which a caller read as
+// always there.
 //
 // A path names a field the way a caller reaches it: `opts.deep`, and
 // `messages[].id` for a field of each element of a list.
@@ -280,26 +283,63 @@ func schemaDiffFields(where, prefix string, was, now map[string]any, input bool)
 			out = append(out, fmt.Sprintf("%s: field %s%s removed", where, prefix, p))
 			continue
 		}
-		wc, _ := wasProps[p].(map[string]any)
-		nc, _ := child.(map[string]any)
-		out = append(out, schemaDiffField(where, prefix+p, wc, nc, input)...)
+		out = append(out, schemaDiffField(where, prefix+p, schemaDiffNode(wasProps[p]), schemaDiffNode(child), input)...)
 	}
+	wasRequired, nowRequired := schemaDiffSet(was["required"]), schemaDiffSet(now["required"])
 	if input {
-		required := map[string]bool{}
-		for _, r := range schemaDiffStrings(was["required"]) {
-			required[r] = true
-		}
 		for _, r := range schemaDiffStrings(now["required"]) {
-			if !required[r] {
+			if !wasRequired[r] {
 				out = append(out, fmt.Sprintf("%s: field %s%s newly required", where, prefix, r))
 			}
+		}
+		return out
+	}
+	for _, r := range schemaDiffStrings(was["required"]) {
+		// A field removed is reported as removed.
+		if _, kept := nowProps[r]; kept && !nowRequired[r] {
+			out = append(out, fmt.Sprintf("%s: field %s%s no longer always there", where, prefix, r))
 		}
 	}
 	return out
 }
 
+func schemaDiffSet(v any) map[string]bool {
+	set := map[string]bool{}
+	for _, s := range schemaDiffStrings(v) {
+		set[s] = true
+	}
+	return set
+}
+
+// schemaDiffEnumBreaks says how an input's enum change breaks a caller,
+// or "" when it does not: a value it took and no longer takes, or a
+// limit to a list where it took any value.
+func schemaDiffEnumBreaks(was, now any) string {
+	nowList, limited := now.([]any)
+	if !limited {
+		return ""
+	}
+	wasList, _ := was.([]any)
+	if wasList == nil {
+		b, _ := json.Marshal(nowList)
+		return "now takes only " + string(b)
+	}
+	var lost []any
+	for _, v := range wasList {
+		if !slices.ContainsFunc(nowList, func(w any) bool { return reflect.DeepEqual(v, w) }) {
+			lost = append(lost, v)
+		}
+	}
+	if len(lost) == 0 {
+		return ""
+	}
+	b, _ := json.Marshal(lost)
+	return "no longer takes " + string(b)
+}
+
 // schemaDiffField compares one field both schemas have: its type, then
-// the fields inside it, then a list's elements.
+// the fields inside it, then a list's elements. A list with no schema
+// for its elements takes any, as the schema `true` does.
 func schemaDiffField(where, path string, was, now map[string]any, input bool) []string {
 	if was == nil || now == nil {
 		return nil
@@ -308,16 +348,54 @@ func schemaDiffField(where, path string, was, now map[string]any, input bool) []
 	if b := schemaDiffTypeBreaks(was["type"], now["type"], input); b != "" {
 		out = append(out, fmt.Sprintf("%s: field %s %s", where, path, b))
 	}
+	if input && schemaDiffAny(now) {
+		// An input that takes any value breaks no caller, whatever was
+		// inside it before.
+		return out
+	}
+	if b := schemaDiffEnumBreaks(was["enum"], now["enum"]); input && b != "" {
+		out = append(out, fmt.Sprintf("%s: field %s %s", where, path, b))
+	}
 	out = append(out, schemaDiffFields(where, path+".", was, now, input)...)
-	wasItems, _ := was["items"].(map[string]any)
-	nowItems, _ := now["items"].(map[string]any)
-	switch {
-	case wasItems != nil && nowItems == nil:
-		out = append(out, fmt.Sprintf("%s: field %s[] removed", where, path))
-	case wasItems != nil:
+	wasItems, nowItems := schemaDiffNode(was["items"]), schemaDiffNode(now["items"])
+	if wasItems != nil || nowItems != nil {
+		if wasItems == nil {
+			wasItems = map[string]any{}
+		}
+		if nowItems == nil {
+			nowItems = map[string]any{}
+		}
 		out = append(out, schemaDiffField(where, path+"[]", wasItems, nowItems, input)...)
 	}
 	return out
+}
+
+// schemaDiffNode is a schema as an object. JSON Schema lets a schema be
+// a boolean: `true` takes any value and reads as an object with no type,
+// `false` takes none and reads as one whose type list is empty. Anything
+// else is nil.
+func schemaDiffNode(v any) map[string]any {
+	switch s := v.(type) {
+	case map[string]any:
+		return s
+	case bool:
+		if s {
+			return map[string]any{}
+		}
+		return map[string]any{"type": []any{}}
+	}
+	return nil
+}
+
+// schemaDiffAny reports a schema that takes any value: no type, enum,
+// fields or elements of its own.
+func schemaDiffAny(s map[string]any) bool {
+	for _, k := range []string{"type", "enum", "properties", "items"} {
+		if _, ok := s[k]; ok {
+			return false
+		}
+	}
+	return true
 }
 
 // schemaDiffTypeBreaks says how a field's type change breaks a caller,
@@ -338,8 +416,11 @@ func schemaDiffTypeBreaks(was, now any, input bool) string {
 		return ""
 	}
 	spell := func(t any) string {
-		if t == nil {
+		switch {
+		case t == nil:
 			return "any"
+		case len(schemaDiffTypeList(t)) == 0:
+			return "none"
 		}
 		b, _ := json.Marshal(t)
 		return string(b)

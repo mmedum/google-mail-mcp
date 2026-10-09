@@ -21,11 +21,14 @@ func schemaDiffFixture(t *testing.T, edit func(d map[string]any)) []byte {
 				"properties": map[string]any{
 					"id":   map[string]any{"type": "string"},
 					"max":  map[string]any{"type": "integer"},
+					"mode": map[string]any{"type": "string", "enum": []any{"a", "b"}},
 					"opts": map[string]any{"type": "object", "properties": map[string]any{"deep": map[string]any{}}},
+					"tags": map[string]any{"type": "array", "items": true},
 				}},
-			"outputSchema": map[string]any{"type": "object", "properties": map[string]any{
+			"outputSchema": map[string]any{"type": "object", "required": []any{"subject"}, "properties": map[string]any{
 				"subject": map[string]any{"type": "string"},
-				"items": map[string]any{"type": "array", "items": map[string]any{"type": "object",
+				"meta":    true,
+				"items": map[string]any{"type": "array", "items": map[string]any{"type": "object", "required": []any{"message_id"},
 					"properties": map[string]any{"message_id": map[string]any{"type": "string"}}}},
 			}},
 		})
@@ -106,9 +109,31 @@ func TestSchemaDiffFailsEachBreakingChange(t *testing.T) {
 			schemaDiffProps(d, "outputSchema")["items"] = map[string]any{"type": "array",
 				"items": map[string]any{"type": "object", "properties": map[string]any{}}}
 		}, "tool_0 output: field items[].message_id removed"},
+		"output field no longer required": {func(d map[string]any) {
+			delete(schemaDiffTool0(d)["outputSchema"].(map[string]any), "required")
+		}, "tool_0 output: field subject no longer always there"},
+		"output field inside a list no longer required": {func(d map[string]any) {
+			schemaDiffProps(d, "outputSchema")["items"] = map[string]any{"type": "array", "items": map[string]any{"type": "object",
+				"properties": map[string]any{"message_id": map[string]any{"type": "string"}}}}
+		}, "tool_0 output: field items[].message_id no longer always there"},
+		"input enum loses a value": {func(d map[string]any) {
+			schemaDiffProps(d, "inputSchema")["mode"] = map[string]any{"type": "string", "enum": []any{"a"}}
+		}, `tool_0 input: field mode no longer takes ["b"]`},
+		"input limited to an enum": {func(d map[string]any) {
+			schemaDiffProps(d, "inputSchema")["id"] = map[string]any{"type": "string", "enum": []any{"x"}}
+		}, `tool_0 input: field id now takes only ["x"]`},
 		"output list loses its elements' schema": {func(d map[string]any) {
 			schemaDiffProps(d, "outputSchema")["items"] = map[string]any{"type": "array"}
-		}, "tool_0 output: field items[] removed"},
+		}, `tool_0 output: field items[] changed type from "object" to any`},
+		"output may now be any value": {func(d map[string]any) {
+			schemaDiffProps(d, "outputSchema")["subject"] = true
+		}, `tool_0 output: field subject changed type from "string" to any`},
+		"input takes no value": {func(d map[string]any) {
+			schemaDiffProps(d, "inputSchema")["id"] = false
+		}, `tool_0 input: field id changed type from "string" to none`},
+		"input list of any values limited": {func(d map[string]any) {
+			schemaDiffProps(d, "inputSchema")["tags"] = map[string]any{"type": "array", "items": map[string]any{"type": "string"}}
+		}, `tool_0 input: field tags[] changed type from any to "string"`},
 		"output schema lost": {func(d map[string]any) {
 			delete(schemaDiffTool0(d), "outputSchema")
 		}, "tool_0: output schema removed"},
@@ -144,8 +169,9 @@ func TestSchemaDiffFailsEachBreakingChange(t *testing.T) {
 	}
 }
 
-// A type change breaks a caller only in one direction: an input that
-// takes more, or an output that returns less, breaks nobody.
+// A change breaks a caller only in one direction: an input that takes
+// more, or an output that returns fewer types or is always there, breaks
+// nobody.
 func TestSchemaDiffTypeChangesThatBreakNobody(t *testing.T) {
 	cases := map[string]func(d map[string]any){
 		"input may now be null": func(d map[string]any) {
@@ -159,6 +185,30 @@ func TestSchemaDiffTypeChangesThatBreakNobody(t *testing.T) {
 		},
 		"output no longer null": func(d map[string]any) {
 			schemaDiffProps(d, "outputSchema")["subject"] = map[string]any{"type": "string"}
+		},
+		"input enum gains a value": func(d map[string]any) {
+			schemaDiffProps(d, "inputSchema")["mode"] = map[string]any{"type": "string", "enum": []any{"a", "b", "c"}}
+		},
+		"input enum lifted": func(d map[string]any) {
+			schemaDiffProps(d, "inputSchema")["mode"] = map[string]any{"type": "string"}
+		},
+		"input now any value": func(d map[string]any) {
+			schemaDiffProps(d, "inputSchema")["id"] = true
+		},
+		"input object now any value": func(d map[string]any) {
+			schemaDiffProps(d, "inputSchema")["opts"] = true
+		},
+		"input list loses its elements' schema": func(d map[string]any) {
+			schemaDiffProps(d, "inputSchema")["tags"] = map[string]any{"type": "array"}
+		},
+		"output of any value now a string": func(d map[string]any) {
+			schemaDiffProps(d, "outputSchema")["meta"] = map[string]any{"type": "string"}
+		},
+		"output limited to an enum": func(d map[string]any) {
+			schemaDiffProps(d, "outputSchema")["subject"] = map[string]any{"type": "string", "enum": []any{"x"}}
+		},
+		"output newly required": func(d map[string]any) {
+			schemaDiffTool0(d)["outputSchema"].(map[string]any)["required"] = []any{"subject", "items"}
 		},
 	}
 	nullable := func(d map[string]any) {

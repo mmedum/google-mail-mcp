@@ -126,6 +126,22 @@ type jsonSchema struct {
 	Enum       []any                  `json:"enum,omitempty"`
 }
 
+// UnmarshalJSON takes a boolean schema too, as JSON Schema allows: `true`
+// takes any value, so it has no type, and `false` takes none, so its
+// type list is empty.
+func (s *jsonSchema) UnmarshalJSON(data []byte) error {
+	switch string(bytes.TrimSpace(data)) {
+	case "true":
+		*s = jsonSchema{}
+		return nil
+	case "false":
+		*s = jsonSchema{Type: []any{}}
+		return nil
+	}
+	type plain jsonSchema
+	return json.Unmarshal(data, (*plain)(s))
+}
+
 // parseDump decodes a schema dump. source names where it came from.
 func parseDump(b []byte, source string) (*schemaDump, error) {
 	var d schemaDump
