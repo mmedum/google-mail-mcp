@@ -13,6 +13,7 @@ import (
 	"github.com/mmedum/google-mail-mcp/v2/internal/gapi"
 	"github.com/mmedum/google-mail-mcp/v2/internal/gapi/gmailtest"
 	"github.com/mmedum/google-mail-mcp/v2/internal/mime"
+	"github.com/mmedum/google-mail-mcp/v2/internal/model"
 	"github.com/mmedum/google-mail-mcp/v2/internal/server/testutil"
 	"github.com/mmedum/google-mail-mcp/v2/internal/tools"
 )
@@ -120,6 +121,25 @@ func TestCreateDraft(t *testing.T) {
 	call(t, h, "create_draft", map[string]any{"from": gmailtest.AliasAddress, "body": "x"}, &from)
 	if !strings.Contains(string(from.UntrustedFrom), gmailtest.AliasAddress) {
 		t.Errorf("from alias: %q", from.UntrustedFrom)
+	}
+}
+
+// An address a result shows can be passed back as one recipient: a name
+// with a comma or an address in it comes back quoted, not as text that
+// splits in two or names the wrong address.
+func TestARecipientShownCanBeGivenBack(t *testing.T) {
+	h, _ := connectFake(t, config.Config{})
+	for _, give := range []string{`"Quill, Ada" <ada@example.com>`, `"Boss <boss@example.org>" <ada@example.com>`} {
+		var first, again tools.DraftWriteOut
+		call(t, h, "create_draft", map[string]any{"to": []any{give}, "body": "x", "dry_run": true}, &first)
+		if len(first.Recipients) != 1 || first.Recipients[0].UntrustedAddress != model.Untrusted(give) {
+			t.Fatalf("given %s, the result shows %+v", give, first.Recipients)
+		}
+		shown := string(first.Recipients[0].UntrustedAddress)
+		call(t, h, "create_draft", map[string]any{"to": []any{shown}, "body": "x", "dry_run": true}, &again)
+		if len(again.Recipients) != 1 || again.Recipients[0].UntrustedAddress != model.Untrusted(give) {
+			t.Errorf("given back %s, the result shows %+v", shown, again.Recipients)
+		}
 	}
 }
 

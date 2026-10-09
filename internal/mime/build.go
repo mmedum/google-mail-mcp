@@ -202,8 +202,7 @@ func formatAddress(a Address) (string, error) {
 	case isPhrase(a.Name):
 		return a.Name + " <" + a.Email + ">", nil
 	default:
-		r := strings.NewReplacer(`\`, `\\`, `"`, `\"`)
-		return `"` + r.Replace(a.Name) + `" <` + a.Email + ">", nil
+		return quotedString(a.Name) + " <" + a.Email + ">", nil
 	}
 }
 
@@ -224,9 +223,12 @@ func validEmail(s string) bool {
 }
 
 // isPhrase reports a display name made only of atoms and single spaces,
-// which needs no quoting and which net/mail reads back unchanged.
+// which needs no quoting and which net/mail reads back unchanged. A
+// character beyond ASCII is atext, as RFC 6532 and net/mail read it; the
+// header writer encodes such a name before it asks. "=?" would be read
+// as the start of an encoded-word.
 func isPhrase(s string) bool {
-	if s != strings.TrimSpace(s) || strings.Contains(s, "  ") {
+	if s != strings.TrimSpace(s) || strings.Contains(s, "  ") || strings.Contains(s, "=?") {
 		return false
 	}
 	for _, r := range s {
@@ -239,7 +241,7 @@ func isPhrase(s string) bool {
 
 func isAtext(r rune) bool {
 	switch {
-	case r >= 'a' && r <= 'z', r >= 'A' && r <= 'Z', r >= '0' && r <= '9':
+	case r >= 'a' && r <= 'z', r >= 'A' && r <= 'Z', r >= '0' && r <= '9', r >= utf8.RuneSelf:
 		return true
 	}
 	return strings.ContainsRune("!#$%&'*+-/=?^_`{|}~", r)
@@ -247,9 +249,9 @@ func isAtext(r rune) bool {
 
 // HasControl reports a character that would break a header or a line:
 // C0 and C1 controls and DEL, tab included.
-func HasControl(s string) bool {
-	return strings.IndexFunc(s, func(r rune) bool { return r < 0x20 || r == 0x7f || (r >= 0x80 && r <= 0x9f) }) >= 0
-}
+func HasControl(s string) bool { return strings.IndexFunc(s, isControl) >= 0 }
+
+func isControl(r rune) bool { return r < 0x20 || r == 0x7f || (r >= 0x80 && r <= 0x9f) }
 
 func needsEncoding(s string) bool {
 	for i := 0; i < len(s); i++ {

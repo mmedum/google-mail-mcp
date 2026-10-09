@@ -161,16 +161,67 @@ type Address struct {
 }
 
 // String renders an address for reading: `Name <email>`, or either half
-// alone.
+// alone. A name that is not plain words is quoted, as the header writer
+// quotes it, so the text reads back with net/mail as the same mailbox: a
+// comma cannot split it in two, and a name holding `<x@y>` cannot pass
+// for the address. Unlike the header writer, it never encodes a name.
 func (a Address) String() string {
+	name := displayName(a.Name)
 	switch {
 	case a.Name == "":
-		return a.Email
+		return addrSpec(a.Email)
 	case a.Email == "":
-		return a.Name
+		return name
 	default:
-		return a.Name + " <" + a.Email + ">"
+		return name + " <" + addrSpec(a.Email) + ">"
 	}
+}
+
+// displayName is a name as String writes it: quoted unless it is plain
+// words. A control character, which no quoted string can hold, becomes
+// a space; strings.Map also turns invalid UTF-8 into the replacement
+// character.
+func displayName(s string) string {
+	s = strings.Map(func(r rune) rune {
+		if isControl(r) {
+			return ' '
+		}
+		return r
+	}, s)
+	if isPhrase(s) {
+		return s
+	}
+	return quotedString(s)
+}
+
+// addrSpec writes an address so it reads back whole. net/mail returns a
+// quoted local part without its quotes, `john doe@example.com` for
+// `"john doe"@example.com`; such a local part is quoted again.
+func addrSpec(email string) string {
+	at := strings.LastIndexByte(email, '@')
+	if at < 0 || isDotAtom(email[:at]) {
+		return email
+	}
+	return quotedString(email[:at]) + email[at:]
+}
+
+// isDotAtom reports a local part net/mail reads unquoted: atoms joined by
+// single dots.
+func isDotAtom(s string) bool {
+	if s == "" || strings.HasPrefix(s, ".") || strings.HasSuffix(s, ".") || strings.Contains(s, "..") {
+		return false
+	}
+	for _, r := range s {
+		if r != '.' && !isAtext(r) {
+			return false
+		}
+	}
+	return true
+}
+
+// quotedString writes s as an RFC 5322 quoted string.
+func quotedString(s string) string {
+	return `"` + strings.NewReplacer(`\`, `\\`, `"`, `\"`).Replace(s) + `"`
 }
 
 var (

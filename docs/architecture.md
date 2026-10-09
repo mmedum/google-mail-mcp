@@ -743,6 +743,13 @@ Parsed with `net/mail`. A display name with non-ASCII is RFC 2047
 encoded when building and decoded when reading. An address the parser
 refuses is `[invalid]` naming which argument, never passed through.
 
+A result shows an address as `Name <address>`, with the name quoted
+unless it is plain words, as the header writer quotes it, but never
+encoded. So every address a result shows reads back with `net/mail` as
+the same mailbox, and can be given back as one recipient: a name with a
+comma does not split in two, and a name holding `<x@y>` stays a name.
+A fuzz test holds the round trip.
+
 ### 6.5 Error classes
 
 Closed vocabulary, derived from the code by `scripts/gates classes` and

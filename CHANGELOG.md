@@ -27,6 +27,7 @@ lifted verbatim.
 ### Fixed
 
 - A `search_threads` row's date, snippet and sender are its newest message that is not a draft or in the trash. A draft reply made the row show the draft's date and credit its text to this account.
+- An address in a result quotes its name unless the name is plain words, so it can be given back as one recipient. A name with a comma split in two, and a name holding an address could pass for it.
 
 ### Security
 

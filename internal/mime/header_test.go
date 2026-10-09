@@ -125,14 +125,31 @@ func TestParseAddressList(t *testing.T) {
 	}
 }
 
+// A name that is not plain words is quoted, so the text reads back as
+// the one mailbox it is: a comma does not split it, and an address in
+// the name does not pass for the real one.
 func TestAddressString(t *testing.T) {
 	for _, c := range []struct {
 		a    Address
 		want string
 	}{
 		{Address{"Ada", "ada@example.com"}, "Ada <ada@example.com>"},
+		{Address{"Ada Quill", "ada@example.com"}, "Ada Quill <ada@example.com>"},
+		{Address{"Zoë Ångström", "zoe@example.org"}, "Zoë Ångström <zoe@example.org>"},
 		{Address{Email: "ada@example.com"}, "ada@example.com"},
 		{Address{Name: "Ada"}, "Ada"},
+		{Address{"Quill, Ada", "ada@example.com"}, `"Quill, Ada" <ada@example.com>`},
+		{Address{"Boss <boss@example.org>", "mallory@example.net"}, `"Boss <boss@example.org>" <mallory@example.net>`},
+		{Address{`Ada "Q" \ Quill`, "ada@example.com"}, `"Ada \"Q\" \\ Quill" <ada@example.com>`},
+		{Address{"A. Quill", "ada@example.com"}, `"A. Quill" <ada@example.com>`},
+		{Address{"=?utf-8?q?Boss?=", "ada@example.com"}, `"=?utf-8?q?Boss?=" <ada@example.com>`},
+		{Address{" Ada", "ada@example.com"}, `" Ada" <ada@example.com>`},
+		{Address{"Ada\tQuill\x7f", "ada@example.com"}, `"Ada Quill " <ada@example.com>`},
+		{Address{"Ada\xffQuill", "ada@example.com"}, "Ada\uFFFDQuill <ada@example.com>"},
+		{Address{Email: "ada quill@example.com"}, `"ada quill"@example.com`},
+		{Address{"Ada", `a"b@example.com`}, `Ada <"a\"b"@example.com>`},
+		{Address{Email: ".ada@example.com"}, `".ada"@example.com`},
+		{Address{Name: "Quill, Ada"}, `"Quill, Ada"`},
 	} {
 		if got := c.a.String(); got != c.want {
 			t.Errorf("%+v = %q", c.a, got)
