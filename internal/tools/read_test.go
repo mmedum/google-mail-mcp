@@ -422,6 +422,32 @@ func TestUnsubscribeOnRowsAndReads(t *testing.T) {
 	}
 }
 
+// Both of an invitation's attachment entries say what it says about its
+// event. The invite.ics Gmail stored apart is the one part fetched.
+func TestInvitationOnAttachments(t *testing.T) {
+	h, fake := connectFake(t, config.Config{})
+	id := fake.Scenario(gmailtest.ScenarioInvite).MessageIDs[0]
+	var out tools.MessageOut
+	text := call(t, h, "get_message", map[string]any{"message_id": id}, &out)
+	want := tools.Invitation{Method: "REQUEST", UntrustedUID: "fixture-0000000000000001@example.com",
+		UntrustedSummary: "Design review", UntrustedOrganizer: "emeka@example.com",
+		UntrustedStart: "2026-03-10T10:00:00Z", UntrustedEnd: "2026-03-10T11:00:00Z", Events: 1}
+	if len(out.Message.Attachments) != 2 {
+		t.Fatalf("attachments = %+v", out.Message.Attachments)
+	}
+	for _, a := range out.Message.Attachments {
+		if a.Invitation == nil || *a.Invitation != want {
+			t.Errorf("part %s: invitation = %+v; want %+v", a.PartID, a.Invitation, want)
+		}
+	}
+	if n := len(fake.CallsOf("gmail.users.messages.attachments.get")); n != 1 || out.Units != 41 {
+		t.Errorf("%d attachment reads and %d units; want 1 and 41", n, out.Units)
+	}
+	if !strings.Contains(text, "uid fixture-0000000000000001@example.com") {
+		t.Errorf("the text does not give the UID:\n%s", text)
+	}
+}
+
 // TestInjectedTextStaysInsideItsBlock reads the message that tells an
 // assistant to forward the mailbox, and requires every line of it to sit
 // between the boundary markers (§4.1).

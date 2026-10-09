@@ -38,8 +38,9 @@ The server works **inside one mailbox**: finding mail, reading threads
 and messages, attachments, labels, drafts, and — only when the person
 opts in — sending and the signature, filters and vacation reply (§7.9).
 It stops at the edge of the message. A calendar
-invitation is an `.ics` attachment here; the event belongs to a server
-built on the Calendar API. A linked Drive file is a URL here; the file
+invitation is an `.ics` attachment here, read for the UID and times a
+calendar server finds its event by; the event belongs to a server built
+on the Calendar API. A linked Drive file is a URL here; the file
 belongs to a Drive server. Mailbox administration — delegation,
 forwarding, send-as identities beyond a signature, S/MIME and client-side-encryption keys —
 is out of scope, and §8a says why method by method.
@@ -825,10 +826,40 @@ Reply-To, Date, Subject, `Message-ID`, and `List-Unsubscribe` when
 present, and the message's line says how it offers to unsubscribe
 (§7.1); `all_headers: true` shows the rest. Budget and collapsing per §4.8.
 Calendar invitations are listed as attachments with their method
-(`REQUEST`, `CANCEL`) and no further parsing. A thread's drafts follow its conversation in a
+(`REQUEST`, `CANCEL`). A thread's drafts follow its conversation in a
 section of their own, "drafts in this thread, not sent", on the first
 read; the cursor counts only what was sent or received, and drafts over
 the budget are listed by message id (§17.2).
+
+An invitation's attachment entry also says what it says about its
+event: `invitation` gives the UID, the sequence, the recurrence id of
+one occurrence, the start and end, the organizer's address, the title,
+whether the event is all day, and how many events the calendar holds.
+This reverses "no further parsing": a calendar server finds an event by
+its UID (the Calendar API's `iCalUID`), so a hand-off from mail to
+calendar needs it, and the times say which meeting it is. The fields
+describe the first event that is not one occurrence's change, else the
+first. A time is RFC 3339 when it is UTC or its `TZID` names an IANA
+zone, a date when the event is all day, and otherwise as written, with
+the zone it names. `method` is the calendar's `METHOD` when RFC 5546
+defines it; every other field is the sender's text and named
+`untrusted_*`.
+
+The part is read as RFC 5545 §3.1 asks: lines unfolded before the
+charset is decoded, since a fold may split a character; parameter
+values quoted or not; text unescaped. Only properties directly in an
+event count, so a time zone's or an alarm's are never the event's.
+The caps are 1 MB of calendar, 8 levels of nesting, 256 characters of
+title and 1,024 bytes of UID, which is left out rather than cut. A fuzz
+test holds the parser, and another holds that a title and UID survive
+escaping and folding exactly.
+
+Gmail often keeps one copy of an invitation inline and stores an
+`invite.ics` apart. Reading the details of a part stored apart costs one
+`attachments.get`, 20 units, and a message spends at most one: on the
+first part whose Content-Type does not state the method, else the first.
+Before this, every part stored apart without a stated method was
+fetched for its method alone (§18 row 81).
 
 ### 7.3 Attachments
 
@@ -1340,6 +1371,7 @@ generated from `internal/scopes` and gated (§5a, `staleness`).
 | The person confirms, through MCP form elicitation, each write that takes `confirm` or `confirm_recipients`, on top of those arguments; only an accept writes, and anything else is `[blocked]` as "not confirmed by the person", never "declined" | maintainer, 2026-09-28 | §4.13; an unattended client that declares elicitation cannot make these writes |
 | Accepting the question is the confirmation; the form has no checkbox | maintainer, 2026-09-28, after the interactive check | §4.13, §18 row 64 |
 | A client that cannot ask falls back to `confirm` and `confirm_recipients`; `GMAIL_REQUIRE_PROMPT=true` refuses instead | maintainer, 2026-09-28 | §4.13, §9.4 |
+| An invitation's identifiers and times are read from its calendar part, reversing §7.2's "no further parsing" | maintainer, 2026-10-09 | §7.2, §18 row 81 |
 | Spikes D and E send in phase 2, from the live driver's run, to a second address the maintainer passes on the command line and never commits | maintainer, 2026-09-26 | §15; the transcript records the address redacted only |
 
 ## 15. What must be verified live
@@ -2750,3 +2782,4 @@ live** — §15 exists to settle these, and they are marked.
 | 78 | A search row can name a thread's newest sent or received message, passing over drafts, trash and emoji reactions, with no call beyond the `threads.get` it already makes | Discovery document revision 20261005, `users.threads.get` parameter `format`, read 2026-10-09: `metadata` "Returns only email message IDs, labels, and email headers"; the `DRAFT`, `TRASH` and `SENT` system labels | **Confirmed for drafts and trash, refuted for reactions.** Labels arrive with every message, so a row passes over a draft or a trashed message and says whether the account sent the latest from `SENT`. A reaction is told only by its `text/vnd.google.email-reaction+json` part, which a headers-only read does not carry, so a row may still name one as the latest. Telling it would cost a full read per thread. Owed: the live step "a thread row passes over the draft in it" |
 | 79 | A per-user OAuth login can call every settings method its scopes allow | Discovery document revision 20261005, read 2026-10-09: `delegates.create`, `delete`, `get` and `list`, `forwardingAddresses.create` and `delete`, `sendAs.create`, `delete` and `verify`, and `updateAutoForwarding` each say "This method is only available to service account clients that have been delegated domain-wide authority"; `sendAs.update` says "Addresses other than the primary address for the account can only be updated by service account clients that have been delegated domain-wide authority"; `sendAs.patch` says neither | **Refuted for those methods.** Their rows in `testdata/api-coverage.tsv` quote it. The server calls none of them, so none was probed. `sendAs.patch`, behind `update_signature`, names no such limit, yet it changes the resource `update` does. Whether a per-user login can patch the signature of an address other than the primary is unproven, tier 3: the live driver writes only the default address's signature, which is the primary on most accounts. Owed: a live run on an account whose default send-as address is an alias, or a step that saves, sets and restores an alias's signature |
 | 80 | A row can carry `List-Unsubscribe` at no cost, and the header says what it offers | Discovery document revision 20261005, read 2026-10-09: `users.messages.get` and `users.threads.get` parameter `metadataHeaders`, "When given and format is `METADATA`, only include headers specified"; Gmail's quota reference, read 2026-10-09, one cost per method; RFC 2369 §2 and §3.2; RFC 8058 §3.1 and §4 | **Confirmed.** A read costs 20 or 40 units whatever headers it names, so the listing names `List-Unsubscribe` and `List-Unsubscribe-Post` for free. RFC 2369: "The URLs have order of preference from left to right"; a field that does not start with `<`, and the rest of one after an item that is not a bracketed URL, "SHOULD be ignored". RFC 8058 §3.1: `List-Unsubscribe` "MUST contain one HTTPS URI", and the Post header "MUST contain the single key/value pair "List-Unsubscribe=One-Click"". §4 says a receiver SHOULD NOT offer one-click without a DKIM signature covering both headers. The server checks no signature, so `one_click` is the sender's claim and says so. Owed: the live step "a row reads the List-Unsubscribe the driver wrote", which shows Gmail keeps both headers on an inserted message and returns them to a headers-only read |
+| 81 | An invitation's calendar part can be read for the identifiers and times a calendar server finds its event by, for one more read at most | RFC 5545 §3.1 ("implementations need to unfold lines in such a way to properly restore the original sequence"), §3.1.4 ("The default charset for an iCalendar stream is UTF-8"), §3.3.5, §3.3.11, §3.8.4.3 and §3.8.7.4 ("When a calendar component is created, its sequence number is 0"); RFC 5546 §1.4, the eight methods, and §2.1.5, UID then SEQUENCE as the keys; Calendar API discovery document revision 20261005, `events.list` parameter `iCalUID`, "Use this if you want to search for an event by its iCalendar ID"; Gmail's quota reference, `attachments.get` 20 units; all read 2026-10-09 | **Confirmed from the documents; unverified live.** The UID is the key, and the Calendar API looks an event up by it. Unfolding comes before decoding, as §3.1 asks. A time with an IANA `TZID` reads as RFC 3339; a Windows zone name does not, so it stays as written beside its zone. Owed: the live step "an attachment entry reads the invitation the driver wrote", which settles whether Gmail keeps an inserted calendar part inline (21 units) or apart (41), and that the parse of a part Gmail returns matches the one written |

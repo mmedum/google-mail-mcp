@@ -32,6 +32,23 @@ type Attachment struct {
 	// UntrustedCalendarMethod is an invitation's METHOD as its sender
 	// wrote it: REQUEST, CANCEL, REPLY, or anything else.
 	UntrustedCalendarMethod model.Untrusted `json:"untrusted_calendar_method,omitempty"`
+	Invitation              *Invitation     `json:"invitation,omitempty" jsonschema:"what a calendar invitation says about its event, read from this part; absent when its content was not read"`
+}
+
+// Invitation is what a calendar part says about its event (RFC 5545).
+// Method is from a fixed set; every other string is the sender's.
+type Invitation struct {
+	Method                string          `json:"method,omitempty" jsonschema:"the calendar's METHOD when it is one RFC 5546 defines: PUBLISH, REQUEST, REPLY, ADD, CANCEL, REFRESH, COUNTER or DECLINECOUNTER"`
+	UntrustedUID          model.Untrusted `json:"untrusted_uid,omitempty" jsonschema:"the event's iCalendar UID, which a calendar server finds the event by (the Google Calendar API's iCalUID)"`
+	Sequence              int             `json:"sequence" jsonschema:"the event's revision (SEQUENCE); 0 when the calendar gives none"`
+	UntrustedRecurrenceID model.Untrusted `json:"untrusted_recurrence_id,omitempty" jsonschema:"set when the invitation is for one occurrence of a repeating event: that occurrence's original start, written as untrusted_start is"`
+	UntrustedSummary      model.Untrusted `json:"untrusted_summary,omitempty" jsonschema:"the event's title"`
+	UntrustedOrganizer    model.Untrusted `json:"untrusted_organizer,omitempty" jsonschema:"the organizer's address, when the calendar gives a mailto address"`
+	UntrustedStart        model.Untrusted `json:"untrusted_start,omitempty" jsonschema:"RFC 3339 when the time is in UTC or its time zone is an IANA zone; YYYY-MM-DD for an all-day event; otherwise the time as written, in untrusted_time_zone"`
+	UntrustedEnd          model.Untrusted `json:"untrusted_end,omitempty" jsonschema:"written as untrusted_start is; absent when the calendar gives a duration instead"`
+	UntrustedTimeZone     model.Untrusted `json:"untrusted_time_zone,omitempty" jsonschema:"the time zone the start names (its TZID), as written"`
+	AllDay                bool            `json:"all_day" jsonschema:"true when the start is a date with no time of day"`
+	Events                int             `json:"events" jsonschema:"how many events the calendar holds; the fields describe the first that is not one occurrence's change, or else the first"`
 }
 
 // MessageMeta is one message's headers and what the server noticed.
@@ -140,7 +157,20 @@ func attachment(a mime.Attachment) Attachment {
 	return Attachment{
 		PartID: a.PartID, UntrustedFilename: model.Untrusted(a.Filename), UntrustedMimeType: model.Untrusted(a.MimeType),
 		Size: a.Size, AttachmentID: a.AttachmentID, Inline: a.Inline,
-		UntrustedCalendarMethod: model.Untrusted(a.CalendarMethod),
+		UntrustedCalendarMethod: model.Untrusted(a.CalendarMethod), Invitation: invitation(a.Invitation),
+	}
+}
+
+func invitation(i *mime.Invitation) *Invitation {
+	if i == nil {
+		return nil
+	}
+	return &Invitation{
+		Method: i.Method, UntrustedUID: model.Untrusted(i.UID), Sequence: i.Sequence,
+		UntrustedRecurrenceID: model.Untrusted(i.RecurrenceID), UntrustedSummary: model.Untrusted(i.Summary),
+		UntrustedOrganizer: model.Untrusted(i.Organizer), UntrustedStart: model.Untrusted(i.Start),
+		UntrustedEnd: model.Untrusted(i.End), UntrustedTimeZone: model.Untrusted(i.TimeZone),
+		AllDay: i.AllDay, Events: i.Events,
 	}
 }
 

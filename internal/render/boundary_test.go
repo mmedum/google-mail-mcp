@@ -190,7 +190,9 @@ func (h *hostile) message(n int, format string) *gmail.Message {
 			{"Content-Type", "application/" + m() + "; name=\"" + m() + ".pdf\""},
 			{"Content-Disposition", "attachment; filename=\"../" + m() + "\u202e.exe\"; filename*=utf-8''%0Anote%3A" + m()},
 		}, body: "x", gmailFN: "../" + m() + "\u202e.exe"},
-		leaf("text/calendar; method=\""+h.shape(m())+"\"; name=invite-"+m()+".ics", "BEGIN:VCALENDAR\r\nMETHOD:"+m()+"\r\nEND:VCALENDAR",
+		leaf("text/calendar; method=\""+h.shape(m())+"\"; name=invite-"+m()+".ics", "BEGIN:VCALENDAR\r\nMETHOD:"+m()+"\r\n"+
+			"BEGIN:VEVENT\r\nUID:"+h.shape(m())+"\r\nSUMMARY:"+h.shape(m())+"\\nnote: "+m()+"\r\nORGANIZER:mailto:"+m()+"@"+m()+".example\r\n"+
+			"DTSTART;TZID=\""+h.shape(m())+"\":"+m()+"\r\nDTEND:"+m()+"\r\nRECURRENCE-ID:"+m()+"\r\nEND:VEVENT\r\nEND:VCALENDAR",
 			[2]string{"Content-Disposition", "attachment"}),
 		leaf("image/png; name="+m(), "png", [2]string{"Content-ID", "<" + m() + ">"}, [2]string{"Content-Disposition", "inline"}),
 	}}

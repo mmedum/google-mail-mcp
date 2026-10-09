@@ -156,10 +156,56 @@ func headerBlock(m model.Message, all bool) string {
 		add("In-Reply-To", joinUntrusted(m.InReplyTo, " "))
 		add("List-Unsubscribe", m.ListUnsubscribe)
 	}
-	for _, a := range m.Attachments {
+	for i, a := range m.Attachments {
 		b.WriteString("Attachment: " + attachmentLine(a) + "\n")
+		if a.Invitation != nil {
+			b.WriteString("  Invitation: " + invitationLine(*a.Invitation, m.Attachments[:i]) + "\n")
+		}
 	}
 	return b.String()
+}
+
+// invitationLine is what a calendar part says about its event, or which
+// earlier part says the same: a message often carries one invitation
+// twice, inline and as invite.ics.
+func invitationLine(inv mime.Invitation, before []mime.Attachment) string {
+	for _, p := range before {
+		if p.Invitation != nil && *p.Invitation == inv {
+			return `the same as part_id "` + p.PartID + `"`
+		}
+	}
+	var out []string
+	if inv.Summary != "" {
+		out = append(out, `"`+inv.Summary+`"`)
+	}
+	if when := inv.Start; when != "" {
+		if inv.End != "" {
+			when += " to " + inv.End
+		}
+		if inv.AllDay {
+			when = "all day " + when
+		}
+		if inv.TimeZone != "" {
+			when += " (" + inv.TimeZone + ")"
+		}
+		out = append(out, when)
+	}
+	if inv.RecurrenceID != "" {
+		out = append(out, "one occurrence, originally at "+inv.RecurrenceID)
+	}
+	if inv.Organizer != "" {
+		out = append(out, "organizer "+inv.Organizer)
+	}
+	if inv.UID != "" {
+		out = append(out, "uid "+inv.UID)
+	}
+	out = append(out, fmt.Sprintf("sequence %d", inv.Sequence))
+	if inv.Events == 1 {
+		out = append(out, "1 event")
+	} else {
+		out = append(out, fmt.Sprintf("%d events", inv.Events))
+	}
+	return strings.Join(out, " · ")
 }
 
 // capHeaders keeps a header block to at most limit characters, cut at a

@@ -184,6 +184,23 @@ var steps = []step{
 			return e.unsubscribeIs(e.seed.messages[1], syntheticUnsubscribeURL(e.seed.label), syntheticUnsubscribeMail)
 		}},
 
+	// The first message carries a calendar part. Its entry gives the
+	// event's UID and times. Gmail may keep the part inline or apart; one
+	// apart costs one more read, so the units say which it did.
+	{name: "an attachment entry reads the invitation the driver wrote", tool: "get_message",
+		args: func(e *env) map[string]any { return map[string]any{"message_id": e.seed.messages[0]} },
+		check: func(e *env, text string) error {
+			if err := want(text, "uid "+syntheticInviteUID(e.seed.label)); err != nil {
+				return err
+			}
+			return e.invitationIs("2", map[string]any{
+				"method": "PUBLISH", "untrusted_uid": syntheticInviteUID(e.seed.label), "sequence": float64(1),
+				"untrusted_summary": "Synthetic event, written by the live driver", "untrusted_organizer": "sender-1@example.com",
+				"untrusted_start": "2026-09-24T12:00:00+02:00", "untrusted_end": "2026-09-24T13:00:00+02:00",
+				"untrusted_time_zone": "Europe/Copenhagen", "all_day": false, "events": float64(1),
+			})
+		}},
+
 	{name: "read an inserted message by its Message-ID", tool: "get_message",
 		args: func(e *env) map[string]any {
 			return map[string]any{"message_id": "rfc822:<" + e.seed.label.name + ".3@livemail.invalid>"}
@@ -364,6 +381,31 @@ func (e *env) unsubscribeIs(id, url, mailto string) error {
 		return nil
 	}
 	return fmt.Errorf("no row for message %s", id)
+}
+
+// invitationIs holds the invitation on one attachment entry of the last
+// get_message to want, field by field, and its units to a read with the
+// part inline (21) or one fetched apart (41).
+func (e *env) invitationIs(partID string, want map[string]any) error {
+	if u := e.structured["units"]; u != float64(21) && u != float64(41) {
+		return fmt.Errorf("the read spent %v units; want 21, or 41 with the calendar part fetched", u)
+	}
+	msg, _ := e.structured["message"].(map[string]any)
+	atts, _ := msg["attachments"].([]any)
+	for _, a := range atts {
+		att, _ := a.(map[string]any)
+		if att["part_id"] != partID {
+			continue
+		}
+		inv, _ := att["invitation"].(map[string]any)
+		for k, v := range want {
+			if inv[k] != v {
+				return fmt.Errorf("the invitation's %s is %v; want %v", k, inv[k], v)
+			}
+		}
+		return nil
+	}
+	return fmt.Errorf("no attachment entry for part %s", partID)
 }
 
 // itemsAfter is each item's labels_after in the last multi-id write.
