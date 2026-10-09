@@ -15,6 +15,8 @@ lifted verbatim.
 
 ## [Unreleased]
 
+## [2.2.0] - 2026-10-09
+
 ### Added
 
 - `--dump-schemas` names the build's version, so a recorded tool surface says which release it is.
@@ -168,7 +170,8 @@ lifted verbatim.
 - Repository gates run by `make check` and CI: leaks, pins, error classes, API coverage, schema diff, smoke, staleness and more.
 - Signed release archives for six platforms with SBOMs, build provenance, a Claude Desktop bundle and an MCP registry entry.
 
-[Unreleased]: https://github.com/mmedum/google-mail-mcp/compare/v2.1.0...HEAD
+[Unreleased]: https://github.com/mmedum/google-mail-mcp/compare/v2.2.0...HEAD
+[2.2.0]: https://github.com/mmedum/google-mail-mcp/compare/v2.1.0...v2.2.0
 [2.1.0]: https://github.com/mmedum/google-mail-mcp/compare/v2.0.4...v2.1.0
 [2.0.4]: https://github.com/mmedum/google-mail-mcp/compare/v2.0.3...v2.0.4
 [2.0.3]: https://github.com/mmedum/google-mail-mcp/compare/v2.0.2...v2.0.3
