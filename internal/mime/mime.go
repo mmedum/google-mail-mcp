@@ -134,6 +134,15 @@ type Attachment struct {
 	// Invitation is what a calendar part says about its event, when its
 	// content was read; nil otherwise.
 	Invitation *Invitation
+	// Alternative is set when the part is one version of a body, inside
+	// a multipart/alternative: an invitation's calendar version beside
+	// its text and HTML, for one.
+	Alternative bool
+	// ContentMissing is set when Gmail gave neither the part's content
+	// nor an attachment id to fetch it by, though the part has parts of
+	// its own or a size. An attached message Gmail serves as its parts
+	// would read this way (§18 row 83); an empty part does not.
+	ContentMissing bool
 }
 
 // PartRef names a part whose content must be fetched.
@@ -181,14 +190,14 @@ func analyze(root *node) *Message {
 	m.decodeHeaders()
 
 	var candidates, calendars []*node
-	var walk func(n *node, depth int)
-	walk = func(n *node, depth int) {
+	var walk func(n *node, depth int, alternative bool)
+	walk = func(n *node, depth int, alternative bool) {
 		if depth > maxNesting {
 			return
 		}
 		if n.isMultipart() {
 			for _, ch := range n.children {
-				walk(ch, depth+1)
+				walk(ch, depth+1, n.mediaType == "multipart/alternative")
 			}
 			return
 		}
@@ -199,10 +208,12 @@ func analyze(root *node) *Message {
 			if n.isCalendar() && n.attachmentID != "" {
 				calendars = append(calendars, n)
 			}
-			m.Attachments = append(m.Attachments, n.attachment())
+			a := n.attachment()
+			a.Alternative = alternative
+			m.Attachments = append(m.Attachments, a)
 		}
 	}
-	walk(root, 0)
+	walk(root, 0, false)
 	if ref, ok := calendarFetch(calendars); ok {
 		m.NeedsFetch = append(m.NeedsFetch, ref)
 	}
@@ -283,6 +294,7 @@ func (n *node) attachment() Attachment {
 	if n.hasData && a.Size == 0 {
 		a.Size = len(n.data)
 	}
+	a.ContentMissing = !n.hasData && n.attachmentID == "" && (len(n.children) > 0 || n.size > 0)
 	a.Inline = n.disposition == "inline" || (n.disposition == "" && a.ContentID != "")
 	a.Filename = SafeBaseName(declared)
 	switch {

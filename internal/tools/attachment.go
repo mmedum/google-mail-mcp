@@ -16,8 +16,8 @@ type DownloadAttachmentIn struct {
 	PartID    string `json:"part_id" jsonschema:"the attachment's part_id as get_message lists it; \"\" is the message's own top-level part"`
 }
 
-// DownloadOut is the file written.
-type DownloadOut struct {
+// SavedFile is one attachment written to disk.
+type SavedFile struct {
 	MessageID string `json:"message_id"`
 	PartID    string `json:"part_id"`
 	// UntrustedPath is where the file was written. Its base name is the
@@ -32,32 +32,102 @@ type DownloadOut struct {
 	// Suffixed is set when a file of that name was already there, left
 	// alone, and a number was added to this one's name.
 	Suffixed bool `json:"suffixed"`
+}
+
+// DownloadOut is the file written.
+type DownloadOut struct {
+	SavedFile
 	Rendered
 	Cost
 }
 
+// DownloadAttachmentsIn names the attachments of one message to save.
+type DownloadAttachmentsIn struct {
+	MessageID     string   `json:"message_id" jsonschema:"message id, or rfc822: followed by a Message-ID header value"`
+	PartIDs       []string `json:"part_ids,omitempty" jsonschema:"the attachments' part_ids as get_message lists them, at most 100; left out, every attachment that is not inline, an emoji reaction or an invitation's calendar version of the body"`
+	IncludeInline bool     `json:"include_inline,omitempty" jsonschema:"with part_ids left out, also save inline parts, such as images shown in the body"`
+}
+
+// PassedPart is an attachment download_attachments passed over.
+type PassedPart struct {
+	PartID string `json:"part_id"`
+	Reason string `json:"reason" jsonschema:"inline (shown in the body; include_inline saves it), reaction (an emoji reaction), invitation_copy (an invitation's calendar version of the body, when the message also carries the invitation as a file) or limit (past the 100 parts one call saves)"`
+}
+
+// FailedPart is an attachment that was not saved.
+type FailedPart struct {
+	PartID string `json:"part_id"`
+	Error  string `json:"error" jsonschema:"why it was not saved, as [class] message; no file of it is left"`
+}
+
+// DownloadsOut is what download_attachments did with each attachment.
+type DownloadsOut struct {
+	MessageID string       `json:"message_id"`
+	Files     []SavedFile  `json:"files" jsonschema:"the files written, in the message's order; each stays written whatever failed after it"`
+	Skipped   []PassedPart `json:"skipped"`
+	Failed    []FailedPart `json:"failed"`
+	Rendered
+	Cost
+}
+
+// downloadNote ends both download descriptions.
+const downloadNote = " Files go into the directory the person configured as GMAIL_LOCAL_DIR, and nowhere else. Each is " +
+	"named after the attachment, made safe as a file name; an existing file is never overwritten, a number is added " +
+	"instead. The content is written to disk, not returned: open a file only if the person asks."
+
 func registerAttachment(s *mcp.Server, d Deps) {
 	svc := service.New(d.Client)
 
-	register(s, d, Spec{Name: "download_attachment", Kind: ReadWritesLocally, Description: "Save one attachment " +
-		"into the directory the person configured as GMAIL_LOCAL_DIR, and nowhere else. The file is named after the " +
-		"attachment, made safe as a file name; an existing file is never overwritten, a number is added instead. The " +
-		"content is written to disk, not returned: open the file only if the person asks. Take message_id and " +
-		"part_id from get_message. About 40 units." + untrustedNote},
+	register(s, d, Spec{Name: "download_attachment", Kind: ReadWritesLocally, Description: "Save one attachment." +
+		downloadNote + " Take message_id and part_id from get_message. About 40 units." + untrustedNote},
 		func(ctx context.Context, in DownloadAttachmentIn) (DownloadOut, error) {
 			dl, err := svc.DownloadAttachment(ctx, d.Config.LocalDir, in.MessageID, in.PartID)
 			if err != nil {
 				return DownloadOut{}, err
 			}
-			a := dl.Attachment
-			saved := render.Saved{MessageID: dl.MessageID, PartID: a.PartID, Path: dl.Path, MimeType: a.MimeType,
-				Suffixed: dl.Suffixed, Bytes: dl.Bytes, SHA256: dl.SHA256}
-			if a.Renamed {
-				saved.DeclaredName = a.DeclaredName
-			}
-			return DownloadOut{MessageID: dl.MessageID, PartID: a.PartID, UntrustedPath: model.Untrusted(dl.Path),
-				UntrustedDeclaredName: model.Untrusted(saved.DeclaredName), UntrustedMimeType: model.Untrusted(a.MimeType),
-				Bytes: dl.Bytes, SHA256: dl.SHA256, Suffixed: saved.Suffixed,
-				Rendered: readOf(render.Download(saved, render.Options{}))}, nil
+			return DownloadOut{SavedFile: savedFile(dl), Rendered: readOf(render.Download(saved(dl), render.Options{}))}, nil
 		})
+
+	register(s, d, Spec{Name: "download_attachments", Kind: ReadWritesLocally, Description: "Save several " +
+		"attachments of one message: those part_ids names, or every attachment but inline parts, emoji reactions and " +
+		"an invitation's calendar version of the body." + downloadNote + " Each attachment is saved or fails on its " +
+		"own: the files saved before a failure are kept, and the result lists each file, each part passed over and " +
+		"each failure. Take message_id and part_ids from get_message. About 20 units, and 20 more for each attachment " +
+		"Gmail stores apart from the message." + untrustedNote},
+		func(ctx context.Context, in DownloadAttachmentsIn) (DownloadsOut, error) {
+			dls, err := svc.DownloadAttachments(ctx, d.Config.LocalDir, in.MessageID, in.PartIDs, in.IncludeInline)
+			if err != nil {
+				return DownloadsOut{}, err
+			}
+			out := DownloadsOut{MessageID: dls.MessageID, Files: mapSlice(dls.Files, savedFile),
+				Skipped: []PassedPart{}, Failed: []FailedPart{}}
+			r := render.Downloads{MessageID: dls.MessageID, Files: mapSlice(dls.Files, saved)}
+			for _, p := range dls.Skipped {
+				out.Skipped = append(out.Skipped, PassedPart(p))
+				r.Passed = append(r.Passed, render.Passed(p))
+			}
+			for _, f := range dls.Failed {
+				out.Failed = append(out.Failed, FailedPart{PartID: f.PartID, Error: "[" + f.Class + "] " + f.Message})
+				r.NotSaved = append(r.NotSaved, render.NotSaved(f))
+			}
+			out.Rendered = readOf(render.DownloadsWritten(r, render.Options{}))
+			return out, nil
+		})
+}
+
+func savedFile(dl service.Download) SavedFile {
+	s := saved(dl)
+	return SavedFile{MessageID: s.MessageID, PartID: s.PartID, UntrustedPath: model.Untrusted(s.Path),
+		UntrustedDeclaredName: model.Untrusted(s.DeclaredName), UntrustedMimeType: model.Untrusted(s.MimeType),
+		Bytes: s.Bytes, SHA256: s.SHA256, Suffixed: s.Suffixed}
+}
+
+func saved(dl service.Download) render.Saved {
+	a := dl.Attachment
+	s := render.Saved{MessageID: dl.MessageID, PartID: a.PartID, Path: dl.Path, MimeType: a.MimeType,
+		Suffixed: dl.Suffixed, Bytes: dl.Bytes, SHA256: dl.SHA256}
+	if a.Renamed {
+		s.DeclaredName = a.DeclaredName
+	}
+	return s
 }

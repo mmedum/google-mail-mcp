@@ -143,6 +143,11 @@ func TestSeedingAndCleanUp(t *testing.T) {
 	if !strings.Contains(box.inserted[0], "filename=\""+syntheticAttachmentName+"\"") {
 		t.Error("the first synthetic message carries no attachment for download_attachment")
 	}
+	if attached := mime.ParseRaw([]byte(box.inserted[2])).Attachments; len(attached) != 1 ||
+		attached[0].PartID != "1" || attached[0].MimeType != "message/rfc822" ||
+		!strings.Contains(mime.ParseRaw([]byte(box.inserted[2])).Body.Text, "Synthetic body 3") {
+		t.Errorf("the third synthetic message does not carry one attached message, part 1, beside its body: %+v", attached)
+	}
 	s.extraLabels = []string{"Label_9"}
 	if err := cleanUp(context.Background(), box, s); err != nil {
 		t.Fatal(err)
@@ -220,7 +225,8 @@ func TestProfileIsRequired(t *testing.T) {
 
 func TestEveryReadToolHasAStep(t *testing.T) {
 	want := []string{"get_profile", "search_threads", "search_messages", "get_thread", "get_message",
-		"list_labels", "list_drafts", "get_draft", "list_changes", "get_settings", "list_filters", "download_attachment"}
+		"list_labels", "list_drafts", "get_draft", "list_changes", "get_settings", "list_filters", "download_attachment",
+		"download_attachments"}
 	have := map[string]bool{}
 	for _, s := range steps {
 		have[s.tool] = true

@@ -103,7 +103,7 @@ type Config struct {
 	// cannot put the question to the person (§4.13).
 	RequirePrompt bool
 	// LocalDir is the one directory attachments are written to. Empty
-	// means no file transfer, and download_attachment is not registered.
+	// means no file transfer, and the download tools are not registered.
 	LocalDir    string
 	LogLevel    LogLevel
 	LogFormat   LogFormat

@@ -142,6 +142,7 @@ be saved to; `GMAIL_PROFILE` lets one machine hold several accounts.
 | `get_settings` | Forwarding, vacation reply, send-as addresses, IMAP and POP, read-only |
 | `list_filters` | The account's filters, with any that forward mail flagged |
 | `download_attachment` | Save an attachment into `GMAIL_LOCAL_DIR`, never overwriting; only when that is set |
+| `download_attachments` | Save several attachments of one message, or all of them, the same way; only when `GMAIL_LOCAL_DIR` is set |
 | `create_draft` | Save a new draft or a reply, threaded by the server; nothing is sent |
 | `update_draft` | Change only the fields given, refusing a draft that changed since it was read |
 | `delete_draft` | Delete a draft for good, with `confirm: true` |
@@ -202,9 +203,9 @@ For clients that attach rather than call, `gmail://threads/{id}`,
   answer, such as `claude -p`, cannot make these writes. A client that
   cannot ask falls back to `confirm`; `GMAIL_REQUIRE_PROMPT=true` refuses
   instead. See [docs/configuration.md](docs/configuration.md#confirming-a-write).
-- **Files go to one directory.** `download_attachment` writes only into
-  `GMAIL_LOCAL_DIR`, under a name made safe, and never over an existing
-  file.
+- **Files go to one directory.** `download_attachment` and
+  `download_attachments` write only into `GMAIL_LOCAL_DIR`, under a name
+  made safe, and never over an existing file.
 - **Logs never carry mail.** No address, subject, body, label name or
   query; ids are cut to six characters. A test drives every tool with
   marker values and fails if one reaches a log, which is what makes a debug

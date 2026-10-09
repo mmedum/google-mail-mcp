@@ -25,8 +25,9 @@ type Kind int
 const (
 	// Read changes nothing. Registered in every mode.
 	Read Kind = iota
-	// ReadWritesLocally reads mail and writes a file into GMAIL_LOCAL_DIR
-	// — download_attachment. Registered only when that directory is set,
+	// ReadWritesLocally reads mail and writes files into GMAIL_LOCAL_DIR
+	// — download_attachment and download_attachments. Registered only
+	// when that directory is set,
 	// read-only mode included, since read-only is about the mailbox.
 	ReadWritesLocally
 	// Write changes the mailbox and reaches nobody else: drafts, labels,

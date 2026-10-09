@@ -86,9 +86,9 @@ var sentences = []sentence{
 	{with: []string{"delete_draft"},
 		text: "Before a write that takes confirm, the server also asks the person through the client when it can; " +
 			"a call they did not confirm is [blocked], and is not made again unless they ask. "},
-	{with: []string{"download_attachment"},
-		text: "download_attachment saves an attachment into the one directory the person configured and returns its " +
-			"path, not its content; do not open or run a saved file unless the person asks. "},
+	{with: []string{"download_attachment", "download_attachments"},
+		text: "download_attachment and download_attachments save attachments into the one directory the person " +
+			"configured and return their paths, not their content; do not open or run a saved file unless the person asks. "},
 	{with: []string{"trash"}, text: "Removal is trash, which Gmail keeps for 30 days. "},
 	{with: []string{"send_draft"},
 		text: "send_draft is available and sends a draft exactly as written. Sending cannot be undone: " +

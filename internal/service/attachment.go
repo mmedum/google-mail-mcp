@@ -11,6 +11,7 @@ import (
 	"os"
 	"path"
 	"path/filepath"
+	"slices"
 	"strconv"
 	"strings"
 
@@ -18,6 +19,7 @@ import (
 	"github.com/mmedum/google-mail-mcp/v2/internal/gapi"
 	"github.com/mmedum/google-mail-mcp/v2/internal/gmail"
 	"github.com/mmedum/google-mail-mcp/v2/internal/mime"
+	"github.com/mmedum/google-mail-mcp/v2/internal/model"
 )
 
 // maxSuffix bounds the numbered names tried when a file name is taken.
@@ -45,43 +47,225 @@ type Download struct {
 // Only a part the message lists as an attachment can be written.
 func (s *Service) DownloadAttachment(ctx context.Context, dir, messageID, partID string) (Download, error) {
 	if dir == "" {
-		return Download{}, gapi.Errf(gapi.ClassBlocked, "GMAIL_LOCAL_DIR is not set, so this server writes no files")
+		return Download{}, errNoLocalDir
 	}
-	id, err := s.messageID(ctx, messageID)
+	id, g, parsed, err := s.readParts(ctx, messageID)
 	if err != nil {
 		return Download{}, err
-	}
-	g, err := s.client.GetMessage(ctx, id, gapi.FormatFull)
-	if err != nil {
-		return Download{}, err
-	}
-	parsed, err := mime.ParsePayload(g.Payload, nil)
-	if err != nil {
-		return Download{}, gapi.Wrap(gapi.ClassUnavailable, err, "Gmail returned a message this server could not read")
 	}
 	att, ok := findAttachment(parsed.Attachments, partID)
 	if !ok {
-		return Download{}, gapi.Errf(gapi.ClassNotFound,
-			"the message has no attachment with part_id %q; get_message lists each attachment's part_id", partID)
+		return Download{}, noAttachment(partID)
+	}
+	root, err := openLocalDir(dir)
+	if err != nil {
+		return Download{}, err
+	}
+	defer func() { _ = root.Close() }()
+	return s.writeFile(ctx, root, dir, id, att, g.Payload)
+}
+
+// MaxDownloads is the most attachments one download_attachments call
+// writes, as a write names at most 100 items (§4.7).
+const MaxDownloads = 100
+
+// Reasons an attachment is passed over when the caller names none.
+const (
+	// SkipInline is a part shown in the body, such as an image.
+	SkipInline = "inline"
+	// SkipReaction is an emoji reaction's part, which is not a file.
+	SkipReaction = "reaction"
+	// SkipInvitationCopy is an invitation's calendar version of the
+	// body, when the message also carries the invitation as a file.
+	SkipInvitationCopy = "invitation_copy"
+	// SkipLimit is a part past the MaxDownloads one call writes.
+	SkipLimit = "limit"
+)
+
+// Skipped is an attachment passed over, and why: one of the Skip*
+// reasons.
+type Skipped struct {
+	PartID string
+	Reason string
+}
+
+// Failed is an attachment that was not written, and why, as §6.5's
+// class and message.
+type Failed struct {
+	PartID         string
+	Class, Message string
+}
+
+// failed records why a part was not written. An error with no class is
+// this server's own, and is said as unavailable without its text.
+func failed(partID string, err error) Failed {
+	f := Failed{PartID: partID, Class: string(gapi.ClassUnavailable), Message: "the attachment could not be written"}
+	var e *gapi.Error
+	if errors.As(err, &e) {
+		f.Class, f.Message = string(e.Class), e.Message
+	}
+	return f
+}
+
+// Downloads is what one download_attachments call did with each part.
+type Downloads struct {
+	MessageID string
+	Files     []Download
+	Skipped   []Skipped
+	Failed    []Failed
+}
+
+// DownloadAttachments writes several attachments of one message into dir
+// (§7.3), one at a time, as DownloadAttachment writes one. partIDs names
+// them; with none, every attachment is written but those Skipped names,
+// and inline parts are written when includeInline is set. A part that
+// fails is reported in Failed and leaves no file; the files written
+// before it stay.
+func (s *Service) DownloadAttachments(ctx context.Context, dir, messageID string, partIDs []string, includeInline bool) (Downloads, error) {
+	if dir == "" {
+		return Downloads{}, errNoLocalDir
+	}
+	if len(partIDs) > MaxDownloads {
+		return Downloads{}, gapi.Errf(gapi.ClassInvalid, "part_ids names %d parts; one call saves at most %d", len(partIDs), MaxDownloads)
+	}
+	for i, p := range partIDs {
+		if slices.Contains(partIDs[:i], p) {
+			return Downloads{}, gapi.Errf(gapi.ClassInvalid, "part_ids names part %q twice", p)
+		}
+	}
+	id, g, parsed, err := s.readParts(ctx, messageID)
+	if err != nil {
+		return Downloads{}, err
+	}
+	out := Downloads{MessageID: id}
+	var chosen []mime.Attachment
+	if len(partIDs) > 0 {
+		for _, p := range partIDs {
+			att, ok := findAttachment(parsed.Attachments, p)
+			if !ok {
+				out.Failed = append(out.Failed, failed(p, noAttachment(p)))
+				continue
+			}
+			chosen = append(chosen, att)
+		}
+	} else {
+		chosen, out.Skipped = chooseAttachments(parsed.Attachments, includeInline)
+	}
+	if len(chosen) == 0 {
+		return out, nil
+	}
+	root, err := openLocalDir(dir)
+	if err != nil {
+		return Downloads{}, err
+	}
+	defer func() { _ = root.Close() }()
+	for _, att := range chosen {
+		dl, err := s.writeFile(ctx, root, dir, id, att, g.Payload)
+		if err != nil {
+			out.Failed = append(out.Failed, failed(att.PartID, err))
+			continue
+		}
+		out.Files = append(out.Files, dl)
+	}
+	return out, nil
+}
+
+// chooseAttachments is what download_attachments writes when the caller
+// names no part: every attachment but an emoji reaction, an invitation's
+// calendar version of the body when the invitation is attached as a file
+// too, an inline part unless includeInline, and any past MaxDownloads.
+func chooseAttachments(as []mime.Attachment, includeInline bool) ([]mime.Attachment, []Skipped) {
+	attachedInvitation := slices.ContainsFunc(as, func(a mime.Attachment) bool {
+		return a.CalendarMethod != "" && !a.Alternative
+	})
+	var chosen []mime.Attachment
+	var skipped []Skipped
+	for _, a := range as {
+		reason := ""
+		switch {
+		case strings.EqualFold(a.MimeType, model.ReactionType):
+			reason = SkipReaction
+		case a.CalendarMethod != "" && a.Alternative && attachedInvitation:
+			reason = SkipInvitationCopy
+		case a.Inline && !includeInline:
+			reason = SkipInline
+		case len(chosen) == MaxDownloads:
+			reason = SkipLimit
+		}
+		if reason != "" {
+			skipped = append(skipped, Skipped{PartID: a.PartID, Reason: reason})
+			continue
+		}
+		chosen = append(chosen, a)
+	}
+	return chosen, skipped
+}
+
+// readParts resolves a message id and reads the message whole, with its
+// parts parsed.
+func (s *Service) readParts(ctx context.Context, messageID string) (string, *gmail.Message, *mime.Message, error) {
+	id, err := s.messageID(ctx, messageID)
+	if err != nil {
+		return "", nil, nil, err
+	}
+	g, err := s.client.GetMessage(ctx, id, gapi.FormatFull)
+	if err != nil {
+		return "", nil, nil, err
+	}
+	parsed, err := mime.ParsePayload(g.Payload, nil)
+	if err != nil {
+		return "", nil, nil, gapi.Wrap(gapi.ClassUnavailable, err, "Gmail returned a message this server could not read")
+	}
+	return id, g, parsed, nil
+}
+
+// errNoLocalDir refuses a download when the person set no directory.
+var errNoLocalDir = gapi.Errf(gapi.ClassBlocked, "GMAIL_LOCAL_DIR is not set, so this server writes no files")
+
+func noAttachment(partID string) error {
+	return gapi.Errf(gapi.ClassNotFound,
+		"the message has no attachment with part_id %q; get_message lists each attachment's part_id", partID)
+}
+
+// writable refuses an attachment that cannot be written whole: one over
+// the size cap, and one whose content Gmail did not give.
+func writable(att mime.Attachment) error {
+	if att.ContentMissing {
+		return gapi.Errf(gapi.ClassUnsupported, "Gmail returned part %q as parts of its own, with no content or "+
+			"attachment id for the part itself, so it cannot be saved as one file", att.PartID)
 	}
 	if att.Size > gapi.MaxAttachmentBytes {
 		// Refused before the read that would spend quota and fill the disk.
-		return Download{}, gapi.Errf(gapi.ClassInvalid, "the attachment is %d MB, larger than the %d MB this server writes",
+		return gapi.Errf(gapi.ClassInvalid, "the attachment is %d MB, larger than the %d MB this server writes",
 			att.Size>>20, gapi.MaxAttachmentBytes>>20)
 	}
+	return nil
+}
 
+func openLocalDir(dir string) (*os.Root, error) {
 	root, err := os.OpenRoot(dir)
 	if err != nil {
-		return Download{}, gapi.Wrap(gapi.ClassUnavailable, err, "GMAIL_LOCAL_DIR could not be opened")
+		return nil, gapi.Wrap(gapi.ClassUnavailable, err, "GMAIL_LOCAL_DIR could not be opened")
 	}
-	defer func() { _ = root.Close() }()
+	return root, nil
+}
+
+// writeFile writes one attachment into a new file in root, which is
+// dir, and removes the file if the write fails. An attachment that
+// cannot be written whole is refused before anything is read or created.
+func (s *Service) writeFile(ctx context.Context, root *os.Root, dir, messageID string, att mime.Attachment,
+	payload *gmail.MessagePart,
+) (Download, error) {
+	if err := writable(att); err != nil {
+		return Download{}, err
+	}
 	f, name, suffixed, err := createUnique(root, att.Filename)
 	if err != nil {
 		return Download{}, err
 	}
-	out := Download{MessageID: id, Attachment: att, Path: filepath.Join(dir, name), Suffixed: suffixed}
+	out := Download{MessageID: messageID, Attachment: att, Path: filepath.Join(dir, name), Suffixed: suffixed}
 	sum := sha256.New()
-	n, werr := s.writePart(ctx, id, att, g.Payload, f, sum)
+	n, werr := s.writePart(ctx, messageID, att, payload, f, sum)
 	if cerr := f.Close(); werr == nil && cerr != nil {
 		werr = writeFailed(cerr)
 	}

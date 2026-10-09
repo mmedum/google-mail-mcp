@@ -429,6 +429,20 @@ func (s *Server) AddAttachmentMessage(filename string, content []byte) (messageI
 	return m.id, "1"
 }
 
+// AddPartsMessage adds a message from Ada whose body is a short text
+// part followed by parts, in a multipart/mixed, and returns its id. The
+// text is part "0" and parts are "1", "2"… in order. Tests use it for
+// attachment shapes the generated mailbox does not hold.
+func (s *Server) AddPartsMessage(parts ...*Part) string {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.clock = s.clock.Add(time.Minute)
+	text := "The files are attached.\n"
+	m := s.add(spec{from: Ada, to: []Person{Reader}, subject: "Files", at: s.clock, labels: []string{"INBOX"},
+		body: multipart("mixed", "mix-parts", append([]*Part{utf8Text(text)}, parts...)...), text: text})
+	return m.id
+}
+
 // AddWidenedThread adds a thread in which a correspondent widened the
 // conversation: the reader wrote to Freya with Bruno in Cc, and Freya
 // answered with Ada added to Cc and Reply-To set to Chiara. It returns

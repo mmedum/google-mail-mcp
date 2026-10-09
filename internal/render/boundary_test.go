@@ -273,6 +273,7 @@ func TestSenderTextNeverReachesTheServersVoice(t *testing.T) {
 			"reply written":   DraftWrite(hostileDraftWrite(h, msgs[1], "create"), small),
 			"send":            SendDraft(hostileSendWrite(h, msgs[2], false), o),
 			"send dry run":    SendDraft(hostileSendWrite(h, msgs[3], true), small),
+			"downloads":       DownloadsWritten(hostileDownloads(h, msgs[0]), o),
 			"signature": SignatureWrite(model.SignatureWrite{Address: "reader@example.com",
 				Before: model.Untrusted(h.mark()), After: model.Untrusted(h.mark())}, o),
 			"vacation": VacationWrite(model.VacationWrite{
@@ -333,6 +334,20 @@ func hostileDraftWrite(h *hostile, m model.Message, op string) model.DraftWrite 
 	d.Removed = append(d.Removed, model.File{Name: model.Untrusted(h.mark()), PartID: h.mark()})
 	if op == "create" {
 		d.Reply = &model.Reply{ParentID: m.ID, ParentThreadID: m.ThreadID, ReplyAll: true, DroppedOwn: 1, Unwritable: 2}
+	}
+	return d
+}
+
+// hostileDownloads is a download_attachments result made of a hostile
+// message's attachments, with markers where a part id, a reason, a
+// class or a hash would be.
+func hostileDownloads(h *hostile, m model.Message) Downloads {
+	d := Downloads{MessageID: m.ID,
+		Passed:   []Passed{{PartID: h.mark(), Reason: "inline"}, {PartID: "3", Reason: h.mark()}},
+		NotSaved: []NotSaved{{PartID: h.mark(), Class: h.mark(), Message: "the attachment could not be written"}}}
+	for _, a := range m.Attachments {
+		d.Files = append(d.Files, Saved{MessageID: m.ID, PartID: a.PartID, Path: "/saved/" + a.Filename,
+			DeclaredName: a.DeclaredName, MimeType: a.MimeType, Suffixed: true, Bytes: int64(a.Size), SHA256: h.mark()})
 	}
 	return d
 }

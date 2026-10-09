@@ -290,6 +290,39 @@ var steps = []step{
 			}
 			return e.checkDownload(text, "livemail-synthetic-1.txt")
 		}},
+
+	// The first message carries a text file and a calendar part, neither
+	// inline, so both are saved; the text file under a third name.
+	{name: "save every attachment of the run's first message", tool: "download_attachments",
+		args: func(e *env) map[string]any {
+			return map[string]any{"message_id": e.seed.messages[0], "include_inline": true}
+		},
+		check: func(e *env, text string) error {
+			if err := want(text, "saved 2, passed over 0, failed 0"); err != nil {
+				return err
+			}
+			return e.checkDownload(text, "livemail-synthetic-2.txt")
+		}},
+
+	// The third message carries an attached message. If Gmail serves it
+	// as its own parts, the part fails as [unsupported] (§18 row 83).
+	{name: "save the attached message by its part id", tool: "download_attachments",
+		args: func(e *env) map[string]any {
+			return map[string]any{"message_id": e.seed.messages[2], "part_ids": []any{"1"}}
+		},
+		check: func(e *env, text string) error {
+			if err := want(text, "saved 1, passed over 0, failed 0"); err != nil {
+				return err
+			}
+			got, err := os.ReadFile(filepath.Join(e.localDir, syntheticAttachedName))
+			if err != nil {
+				return fmt.Errorf("the attached message is not where the result says: %w", err)
+			}
+			if !bytes.Contains(got, []byte(syntheticAttachedBody(e.seed.label))) {
+				return fmt.Errorf("the saved message, %d bytes, does not hold the attached message's text", len(got))
+			}
+			return nil
+		}},
 }
 
 // checkDownload holds a download to what the run inserted: the file is in

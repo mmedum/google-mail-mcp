@@ -78,7 +78,7 @@ func TestListFiltersFlagsForwarding(t *testing.T) {
 	}
 }
 
-func TestDownloadAttachmentIsRegisteredOnlyWithALocalDir(t *testing.T) {
+func TestDownloadsAreRegisteredOnlyWithALocalDir(t *testing.T) {
 	for _, tc := range []struct {
 		cfg  config.Config
 		want bool
@@ -89,18 +89,18 @@ func TestDownloadAttachmentIsRegisteredOnlyWithALocalDir(t *testing.T) {
 		{config.Config{ReadOnly: true, LocalDir: t.TempDir()}, true},
 	} {
 		h, _ := connectFake(t, tc.cfg)
-		got := false
+		got := map[string]bool{}
 		for _, tool := range h.Tools(t) {
-			if tool.Name == "download_attachment" {
-				got = true
+			if tool.Name == "download_attachment" || tool.Name == "download_attachments" {
+				got[tool.Name] = true
 				if tool.Annotations.ReadOnlyHint || tool.Annotations.DestructiveHint == nil || *tool.Annotations.DestructiveHint {
-					t.Errorf("annotations = %+v; want not read-only (it writes a file) and not destructive (it never overwrites)",
-						tool.Annotations)
+					t.Errorf("%s: annotations = %+v; want not read-only (it writes a file) and not destructive (it never overwrites)",
+						tool.Name, tool.Annotations)
 				}
 			}
 		}
-		if got != tc.want {
-			t.Errorf("config %+v: registered %v; want %v", tc.cfg, got, tc.want)
+		if got["download_attachment"] != tc.want || got["download_attachments"] != tc.want {
+			t.Errorf("config %+v: registered %v; want both %v", tc.cfg, got, tc.want)
 		}
 	}
 }
@@ -136,6 +136,38 @@ func TestDownloadAttachmentWritesIntoTheLocalDir(t *testing.T) {
 	call(t, h, "download_attachment", map[string]any{"message_id": sc.MessageIDs[2], "part_id": "1"}, &second)
 	if !second.Suffixed || second.UntrustedPath == out.UntrustedPath {
 		t.Errorf("second download = %+v; want a new, numbered name", second)
+	}
+}
+
+// download_attachments lists each file as download_attachment does,
+// says why a part was passed over or failed, and keeps the sender's file
+// names inside a block.
+func TestDownloadAttachmentsReportsEachPart(t *testing.T) {
+	dir := t.TempDir()
+	h, fake := connectFake(t, config.Config{LocalDir: dir})
+	sc := fake.Scenario(gmailtest.ScenarioInvite)
+
+	var out tools.DownloadsOut
+	text := call(t, h, "download_attachments", map[string]any{"message_id": sc.MessageIDs[0]}, &out)
+	if out.MessageID != sc.MessageIDs[0] || len(out.Files) != 1 || out.Files[0].PartID != "1" ||
+		filepath.Base(string(out.Files[0].UntrustedPath)) != "invite.ics" || out.Files[0].Bytes != 271 || out.Units != 40 {
+		t.Fatalf("out = %+v; want invite.ics from part 1, 271 bytes, for 40 units", out)
+	}
+	if len(out.Skipped) != 1 || out.Skipped[0] != (tools.PassedPart{PartID: "0.2", Reason: "invitation_copy"}) ||
+		len(out.Failed) != 0 {
+		t.Fatalf("skipped %+v, failed %+v; want part 0.2 passed over as invitation_copy", out.Skipped, out.Failed)
+	}
+	if !strings.Contains(text, "passed over part 0.2: it is an invitation's calendar version of the body") {
+		t.Errorf("the text does not say why part 0.2 was passed over:\n%s", text)
+	}
+	if strings.Contains(outside(text), "invite.ics") {
+		t.Errorf("the file name reached the server's own lines:\n%s", text)
+	}
+
+	call(t, h, "download_attachments", map[string]any{"message_id": sc.MessageIDs[0], "part_ids": []any{"1", "7"}}, &out)
+	if len(out.Files) != 1 || !out.Files[0].Suffixed || len(out.Failed) != 1 || out.Failed[0].PartID != "7" ||
+		!strings.HasPrefix(out.Failed[0].Error, "[not_found] ") {
+		t.Fatalf("out = %+v; want part 1 saved under a new name and part 7 failed as [not_found]", out)
 	}
 }
 

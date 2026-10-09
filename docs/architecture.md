@@ -886,6 +886,28 @@ before it is read. A stream is bounded by `GMAIL_HTTP_TIMEOUT` without
 progress rather than in total, so a large file on a slow link finishes
 and a stalled one does not hang. A body cut anywhere is a failed read and
 retried; a retried read starts the file over.
+
+`download_attachments` writes several attachments of one message the
+same way, one at a time, for one read of the message and one
+`attachments.get` per part Gmail stored apart. `part_ids` names them,
+at most 100. Left out, it takes every attachment but three kinds, each
+listed in `skipped` with its reason: an inline part, such as an image
+the body shows, unless `include_inline`; an emoji reaction, which is
+not a file; and an invitation's calendar version of the body when the
+message also carries the invitation as a file, as Gmail's invitations
+carry `invite.ics` beside the same calendar in `multipart/alternative`.
+Past 100 parts the rest are skipped as over the limit. Each part is
+written or fails on its own: a failure is listed in `failed` as
+`[class] message` and leaves no file, and the files written before it
+stay.
+
+A part whose content Gmail gives neither inline nor behind an
+`attachmentId`, though it has a size or parts of its own, is refused as
+`[unsupported]` by both tools rather than written as an empty file. An
+attached message (`message/rfc822`) that Gmail served as its own parts
+would read this way. Whether Gmail does that is not known (§18 row 83).
+An empty attachment has neither and no size, and is written empty.
+
 Attachments are never inlined into a tool result.
 
 ### 7.4 Drafts and replies
@@ -1095,8 +1117,8 @@ again gives the filter without it.
 
 ## 8. Tool surface
 
-Twenty-seven tools: twenty by default, twelve in read-only mode, one
-fewer in each when `GMAIL_LOCAL_DIR` is unset.
+Twenty-eight tools: twenty-one by default, thirteen in read-only mode,
+two fewer in each when `GMAIL_LOCAL_DIR` is unset.
 Annotations come from `Kind` in one place (`CLAUDE.md` rule 11);
 `openWorldHint` is true only where the call reaches another person.
 "Write, for good" is registered as a Write is and annotated destructive,
@@ -1125,6 +1147,7 @@ tool sits behind from it.
 | `get_settings` | Read | always | `gmail.readonly` | 1 each, 7 |
 | `list_filters` | Read | always | `gmail.readonly` | 1 + 1 |
 | `download_attachment` | Read (local write) | `GMAIL_LOCAL_DIR` set | `gmail.readonly` | 20 + 20 |
+| `download_attachments` | Read (local write) | `GMAIL_LOCAL_DIR` set | `gmail.readonly` | 20 + 20/part stored apart |
 | `create_draft` | Write | not read-only | `gmail.modify` | 1 + 10 (+20 reply_to, +40 reply_to_thread) |
 | `update_draft` | Write | not read-only | `gmail.modify` | 20 + 15 |
 | `delete_draft` | Write, for good | not read-only | `gmail.modify` | 20 + 10 |
@@ -2790,3 +2813,4 @@ live** — §15 exists to settle these, and they are marked.
 | 80 | A row can carry `List-Unsubscribe` at no cost, and the header says what it offers | Discovery document revision 20261005, read 2026-10-09: `users.messages.get` and `users.threads.get` parameter `metadataHeaders`, "When given and format is `METADATA`, only include headers specified"; Gmail's quota reference, read 2026-10-09, one cost per method; RFC 2369 §2 and §3.2; RFC 8058 §3.1 and §4 | **Confirmed.** A read costs 20 or 40 units whatever headers it names, so the listing names `List-Unsubscribe` and `List-Unsubscribe-Post` for free. RFC 2369: "The URLs have order of preference from left to right"; a field that does not start with `<`, and the rest of one after an item that is not a bracketed URL, "SHOULD be ignored". RFC 8058 §3.1: `List-Unsubscribe` "MUST contain one HTTPS URI", and the Post header "MUST contain the single key/value pair "List-Unsubscribe=One-Click"". §4 says a receiver SHOULD NOT offer one-click without a DKIM signature covering both headers. The server checks no signature, so `one_click` is the sender's claim and says so. Owed: the live step "a row reads the List-Unsubscribe the driver wrote", which shows Gmail keeps both headers on an inserted message and returns them to a headers-only read |
 | 81 | An invitation's calendar part can be read for the identifiers and times a calendar server finds its event by, for one more read at most | RFC 5545 §3.1 ("implementations need to unfold lines in such a way to properly restore the original sequence"), §3.1.4 ("The default charset for an iCalendar stream is UTF-8"), §3.3.5, §3.3.11, §3.8.4.3 and §3.8.7.4 ("When a calendar component is created, its sequence number is 0"); RFC 5546 §1.4, the eight methods, and §2.1.5, UID then SEQUENCE as the keys; Calendar API discovery document revision 20261005, `events.list` parameter `iCalUID`, "Use this if you want to search for an event by its iCalendar ID"; Gmail's quota reference, `attachments.get` 20 units; all read 2026-10-09 | **Confirmed from the documents; unverified live.** The UID is the key, and the Calendar API looks an event up by it. Unfolding comes before decoding, as §3.1 asks. A time with an IANA `TZID` reads as RFC 3339; a Windows zone name does not, so it stays as written beside its zone. Owed: the live step "an attachment entry reads the invitation the driver wrote", which settles whether Gmail keeps an inserted calendar part inline (21 units) or apart (41), and that the parse of a part Gmail returns matches the one written |
 | 82 | A release binary can read any IANA zone on every platform it is built for | `go doc time.LoadLocation` and `go doc time/tzdata`, Go 1.27.2, read 2026-10-09; the release targets in `.goreleaser.yaml`; the Windows, Linux and macOS amd64 builds measured with and without the package the same day | **Refuted before this change.** `LoadLocation` looks in `ZONEINFO`, then "on a Unix system, the system standard installation location", then `$GOROOT/lib/time/zoneinfo.zip`, then "the time/tzdata package, if it was imported". Windows has no standard location, and a person who runs the archive has no `GOROOT`, so every zone was refused there. The main package now imports `time/tzdata`, which the docs say "should normally be imported by a program's main package"; it is read only when the system has no zone files, and it adds 402 KB to the Windows binary, 3%. A test holds the import in each target's build, since a test run reads this machine's zone files whatever the binary carries. Not run on Windows |
+| 83 | An attached message (`message/rfc822`) comes back from `messages.get` with its content inline or behind an `attachmentId`, like any attachment | Discovery document revision 20261005, read 2026-10-09: `MessagePart.parts`, "This only applies to container MIME message parts, for example `multipart/*`"; `MessagePart.body`, "may be empty for container MIME message parts"; `MessagePartBody.attachmentId`, "When not present, the entire content of the message part body is contained in the data field"; RFC 2046 §5, where `message` is a composite type beside `multipart` | **Unverified, tier 3.** The document names `multipart/*` as a container and no other, and RFC 2046 makes `message/rfc822` composite too. If Gmail serves an attached message as its parts, the part itself has no data and no `attachmentId`, and a download used to write it as an empty file. Both download tools now refuse such a part as `[unsupported]`, and the fake can serve one so the refusal is tested. Owed: the live step that saves every attachment of the run's message with an attached `.eml`, which shows which way Gmail serves it |

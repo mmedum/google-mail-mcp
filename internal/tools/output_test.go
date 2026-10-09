@@ -31,6 +31,7 @@ var outputTypes = map[string]reflect.Type{
 	"SettingsOut":    reflect.TypeFor[SettingsOut](),
 	"FiltersOut":     reflect.TypeFor[FiltersOut](),
 	"DownloadOut":    reflect.TypeFor[DownloadOut](),
+	"DownloadsOut":   reflect.TypeFor[DownloadsOut](),
 
 	"DraftWriteOut": reflect.TypeFor[DraftWriteOut](),
 	"ItemsOut":      reflect.TypeFor[ItemsOut](),

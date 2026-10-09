@@ -125,8 +125,9 @@ var validArgs = map[string]any{
 	"time_zone": "UTC", "after": "2026-01-01", "before": "2026-02-01",
 	"budget_chars": 0, "cursor": 0, "offset": 0,
 	// The canary message's one part has no part id, and carries the
-	// canary file name, so download_attachment writes it.
-	"part_id": "", "history_id": "1", "kinds": []any{"added"},
+	// canary file name, so download_attachment and download_attachments
+	// write it.
+	"part_id": "", "part_ids": []any{""}, "history_id": "1", "kinds": []any{"added"},
 }
 
 func canaryFor(name string) string {
