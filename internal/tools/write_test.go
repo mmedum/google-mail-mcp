@@ -465,11 +465,11 @@ func TestCreateDraftForwards(t *testing.T) {
 		t.Fatalf("stored: attachments %+v, body %q, in-reply-to %v, references %v, original whole %v",
 			m.Attachments, m.Body.Text, m.InReplyTo, m.References, bytes.Contains(raw, orig))
 	}
-	// The fake threads only a draft with all three of §2.5's conditions,
-	// and a forward carries no threading headers.
-	if !strings.Contains(text, "forward of message "+id+" in thread "+plain.ThreadID) ||
-		!strings.Contains(text, "note: Gmail filed the draft in a new thread "+out.ThreadID+", not the original's.") {
-		t.Errorf("text:\n%s", text)
+	// Gmail filed a forward in the original's thread by its threadId
+	// alone when tested live (§18 row 85), and the fake does the same.
+	if out.ThreadID != plain.ThreadID || !strings.Contains(text, "forward of message "+id+" in thread "+plain.ThreadID) ||
+		!strings.Contains(text, "\nGmail filed the draft in the original's thread.\n") || strings.Contains(text, "a new thread") {
+		t.Errorf("thread %s; text:\n%s", out.ThreadID, text)
 	}
 
 	var dry tools.DraftWriteOut
@@ -515,19 +515,19 @@ func TestCreateDraftForwardNamesTheCopy(t *testing.T) {
 	}
 }
 
-// When Gmail files a forward in the original's thread, the result says
-// so and names no new thread. The fake does that only by thread id
-// alone, as spike D saw for a send; a forward has no threading headers.
-func TestCreateDraftForwardInTheOriginalsThread(t *testing.T) {
+// When Gmail files a forward in a thread of its own, as Google
+// documents for a draft with no threading headers, the result says so
+// and names the new thread.
+func TestCreateDraftForwardInANewThread(t *testing.T) {
 	h, fake := connectFake(t, config.Config{})
-	fake.ThreadByID = true
+	fake.ThreadAsDocumented = true
 	plain := fake.Scenario(gmailtest.ScenarioPlainThread)
 	var out tools.DraftWriteOut
 	text := call(t, h, "create_draft", map[string]any{"forward": plain.MessageIDs[0]}, &out)
-	if out.ThreadID != plain.ThreadID || out.Forwarded == nil || out.Forwarded.ThreadID != plain.ThreadID {
-		t.Fatalf("thread %s, forwarded %+v; want both in %s", out.ThreadID, out.Forwarded, plain.ThreadID)
+	if out.ThreadID == plain.ThreadID || out.Forwarded == nil || out.Forwarded.ThreadID != plain.ThreadID {
+		t.Fatalf("thread %s, forwarded %+v; want a new thread, the original in %s", out.ThreadID, out.Forwarded, plain.ThreadID)
 	}
-	if !strings.Contains(text, "\nGmail filed the draft in the original's thread.\n") || strings.Contains(text, "a new thread") {
+	if !strings.Contains(text, "\nnote: Gmail filed the draft in a new thread "+out.ThreadID+", not the original's.\n") {
 		t.Errorf("text:\n%s", text)
 	}
 }

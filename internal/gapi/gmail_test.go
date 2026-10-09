@@ -273,20 +273,36 @@ func rawReply(t *testing.T, fake *gmailtest.Server, parentID, drop string, size 
 	return threadID, raw
 }
 
-func TestDraftsThreadOnlyWithAllThreeConditions(t *testing.T) {
+// drafts.create files a draft by its threadId alone, as Gmail did live
+// (§18 row 85); with ThreadAsDocumented, only with all three of §2.5's
+// conditions, as Google documents.
+func TestDraftsThreadByIDOrAsDocumented(t *testing.T) {
 	c, fake := fakeClient(t)
 	ctx := context.Background()
 	parent := fake.Scenario(gmailtest.ScenarioPlainThread)
 	last := parent.MessageIDs[len(parent.MessageIDs)-1]
-	for _, drop := range []string{"", "threadId", "headers", "subject"} {
-		threadID, raw := rawReply(t, fake, last, drop, 0)
+	for _, tc := range []struct {
+		documented bool
+		drop       string
+		joined     bool
+	}{
+		{false, "", true},
+		{false, "threadId", false},
+		{false, "headers", true},
+		{false, "subject", true},
+		{true, "", true},
+		{true, "threadId", false},
+		{true, "headers", false},
+		{true, "subject", false},
+	} {
+		fake.ThreadAsDocumented = tc.documented
+		threadID, raw := rawReply(t, fake, last, tc.drop, 0)
 		d, err := c.CreateDraft(ctx, threadID, raw)
 		if err != nil {
-			t.Fatalf("drop %q: %v", drop, err)
+			t.Fatalf("documented %v, drop %q: %v", tc.documented, tc.drop, err)
 		}
-		joined := d.Message.ThreadID == parent.ThreadID
-		if joined != (drop == "") {
-			t.Errorf("drop %q: joined the thread = %v", drop, joined)
+		if joined := d.Message.ThreadID == parent.ThreadID; joined != tc.joined {
+			t.Errorf("documented %v, drop %q: joined the thread = %v; want %v", tc.documented, tc.drop, joined, tc.joined)
 		}
 		if !slices.Equal(d.Message.LabelIDs, []string{"DRAFT"}) || !strings.HasPrefix(d.ID, "r") {
 			t.Errorf("draft %+v", d)
