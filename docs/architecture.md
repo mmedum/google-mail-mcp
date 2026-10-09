@@ -1,6 +1,7 @@
 # Architecture — google-mail-mcp
 
-**Status: 2.1.0 is released, 2026-10-06, from `main`, and verified from
+**Status: 2.2.0 is cut, 2026-10-09, from `main`, after a live run of 95
+steps with none failed. 2.1.0 was released 2026-10-06 and verified from
 outside: checksums, the cosign signature and the provenance attestation,
 each also against a tampered copy, the version in all five places, the
 registry entry, and the Go proxy resolving the `/v2` module path. A
