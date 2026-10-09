@@ -208,6 +208,25 @@ func (m Message) HasLabel(id string) bool {
 	return slices.ContainsFunc(m.Labels, func(l LabelRef) bool { return l.ID == id })
 }
 
+// ReactionType is the type of the part an emoji reaction carries.
+const ReactionType = "text/vnd.google.email-reaction+json"
+
+// IsReaction reports whether the message is an emoji reaction. Only a
+// read with the parts can tell: a read with headers only never reports
+// one.
+func (m Message) IsReaction() bool {
+	return slices.ContainsFunc(m.Attachments, func(a mime.Attachment) bool {
+		return strings.EqualFold(a.MimeType, ReactionType)
+	})
+}
+
+// Answerable reports whether the message was sent or received and can
+// be answered: it is not a draft, not in the trash and not an emoji
+// reaction (§3.2).
+func (m Message) Answerable() bool {
+	return !m.HasLabel("DRAFT") && !m.HasLabel("TRASH") && !m.IsReaction()
+}
+
 // Sender is the first From address, or a zero Address.
 func (m Message) Sender() mime.Address {
 	if len(m.From) == 0 {
@@ -333,12 +352,28 @@ func (t Thread) Subject() Untrusted {
 	return t.Messages[0].Subject
 }
 
-// Latest is the newest message, or a zero Message.
+// Latest is the newest answerable message: not a draft, not in the
+// trash and not a reaction. A thread with none gives its newest message,
+// and an empty thread a zero Message.
 func (t Thread) Latest() Message {
+	if m, ok := t.LatestAnswerable(); ok {
+		return m
+	}
 	if len(t.Messages) == 0 {
 		return Message{}
 	}
 	return t.Messages[len(t.Messages)-1]
+}
+
+// LatestAnswerable is the newest answerable message, and false when the
+// thread has none.
+func (t Thread) LatestAnswerable() (Message, bool) {
+	for i := len(t.Messages) - 1; i >= 0; i-- {
+		if t.Messages[i].Answerable() {
+			return t.Messages[i], true
+		}
+	}
+	return Message{}, false
 }
 
 // Participants are the distinct senders and recipients, in order of
@@ -382,10 +417,16 @@ func (t Thread) HasAttachments() bool {
 }
 
 // Unread counts messages carrying UNREAD.
-func (t Thread) Unread() int {
+func (t Thread) Unread() int { return t.count("UNREAD") }
+
+// Drafts counts the thread's drafts.
+func (t Thread) Drafts() int { return t.count("DRAFT") }
+
+// count counts the messages carrying a label id.
+func (t Thread) count(label string) int {
 	n := 0
 	for _, m := range t.Messages {
-		if m.HasLabel("UNREAD") {
+		if m.HasLabel(label) {
 			n++
 		}
 	}

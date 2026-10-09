@@ -191,6 +191,58 @@ func TestThread(t *testing.T) {
 	}
 }
 
+// A thread's latest is its newest message that was sent or received:
+// drafts, messages in the trash and emoji reactions after it are passed
+// over. A thread of nothing else gives its newest message.
+func TestThreadLatestPassesOverWhatWasNotSaid(t *testing.T) {
+	b64 := base64.URLEncoding.EncodeToString
+	from := []gmail.MessagePartHeader{{Name: "From", Value: "Ada Quill <ada.quill@example.com>"}}
+	headersOnly := func(id, millis string, labels ...string) gmail.Message {
+		return gmail.Message{ID: id, LabelIDs: labels, InternalDate: millis,
+			Payload: &gmail.MessagePart{MimeType: "text/plain", Headers: from, Body: &gmail.MessagePartBody{}}}
+	}
+	// What Gmail sends for an emoji reaction, read with its parts.
+	reaction := gmail.Message{ID: "m5", LabelIDs: []string{"INBOX"}, InternalDate: "5000",
+		Payload: &gmail.MessagePart{MimeType: "multipart/alternative", Headers: from, Body: &gmail.MessagePartBody{},
+			Parts: []gmail.MessagePart{
+				{PartID: "0", MimeType: "text/plain", Body: &gmail.MessagePartBody{Data: b64([]byte("Ada reacted")), Size: 11}},
+				{PartID: "1", MimeType: model.ReactionType,
+					Body: &gmail.MessagePartBody{Data: b64([]byte(`{"version":1,"emoji":"x"}`)), Size: 25}},
+			}}}
+	wire := gmail.Thread{ID: "m1", Messages: []gmail.Message{
+		headersOnly("m1", "1000", "INBOX"),
+		headersOnly("m2", "2000", "SENT"),
+		headersOnly("m3", "3000", "DRAFT"),
+		headersOnly("m4", "4000", "TRASH", "INBOX"),
+		reaction,
+		headersOnly("m6", "6000", "DRAFT"),
+	}}
+	th, err := model.NewThread(&wire, model.NewLabelIndex(nil), nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !th.Messages[4].IsReaction() || th.Messages[0].IsReaction() {
+		t.Fatalf("reactions: m5 %v, m1 %v", th.Messages[4].IsReaction(), th.Messages[0].IsReaction())
+	}
+	if got := th.Latest().ID; got != "m2" {
+		t.Errorf("latest = %s, want m2", got)
+	}
+	if m, ok := th.LatestAnswerable(); !ok || m.ID != "m2" {
+		t.Errorf("latest answerable = %s, %v; want m2", m.ID, ok)
+	}
+	if th.Drafts() != 2 || th.Unread() != 0 {
+		t.Errorf("drafts %d, unread %d; want 2 and 0", th.Drafts(), th.Unread())
+	}
+
+	th.Messages = th.Messages[2:]
+	if got := th.Latest().ID; got != "m6" {
+		t.Errorf("with nothing sent or received, latest = %s, want the newest, m6", got)
+	}
+	if m, ok := th.LatestAnswerable(); ok {
+		t.Errorf("with nothing sent or received, latest answerable = %s", m.ID)
+	}
+}
+
 // A participant is one address, whatever name or case it comes with;
 // two addresses under one name are two participants.
 func TestParticipantsAreDistinctAddresses(t *testing.T) {

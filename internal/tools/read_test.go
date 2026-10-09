@@ -155,6 +155,57 @@ func TestSearchThreadsMarksMailAsUntrusted(t *testing.T) {
 	}
 }
 
+// A row is about the thread's newest message that was sent or received.
+// A draft after it is the account's unsent text, and a message in the
+// trash was removed; neither is the thread's latest, and the row counts
+// the drafts.
+func TestSearchThreadsRowPassesOverDraftsAndTrash(t *testing.T) {
+	h, fake := connectFake(t, config.Config{})
+	backed, _ := fake.AddBackedThread()
+	plain := fake.Scenario(gmailtest.ScenarioPlainThread)
+	call(t, h, "trash", map[string]any{"message_ids": []any{plain.MessageIDs[2]}}, &struct{}{})
+
+	row := func(q, id string) (tools.ThreadSummary, string) {
+		t.Helper()
+		var out tools.ThreadsOut
+		text := call(t, h, "search_threads", map[string]any{"q": q}, &out)
+		if len(out.Threads) != 1 || out.Threads[0].ID != id {
+			t.Fatalf("%s: rows %+v", q, out.Threads)
+		}
+		return out.Threads[0], text
+	}
+
+	// Dmitri wrote last; the account's draft reply came a minute later.
+	got, text := row("subject:long notes", backed)
+	want := tools.ThreadSummary{MessageCount: 3, Drafts: 1, Latest: time.Date(2026, 3, 4, 5, 2, 0, 0, time.UTC),
+		LatestFromMe: false, UntrustedSnippet: "Backed body 2."}
+	if got.MessageCount != want.MessageCount || got.Drafts != want.Drafts || !got.Latest.Equal(want.Latest) ||
+		got.LatestFromMe != want.LatestFromMe || got.UntrustedSnippet != want.UntrustedSnippet {
+		t.Errorf("row = %+v, want %+v", got, want)
+	}
+	for _, s := range []string{
+		"thread " + backed + " · 3 messages (1 draft) · 2026-03-04 05:02 UTC · labels: INBOX, DRAFT",
+		"thread summary from dmitri.vale@example.org in ",
+	} {
+		if !strings.Contains(text, s) {
+			t.Errorf("the row does not say %q:\n%s", s, text)
+		}
+	}
+	if strings.Contains(text, "you sent the latest") {
+		t.Errorf("the row credits Dmitri's message to the account:\n%s", text)
+	}
+
+	// Bruno's answer is in the trash, so the account's reply is the latest.
+	got, text = row("subject:offsite venue", plain.ThreadID)
+	if !got.Latest.Equal(time.Date(2026, 3, 2, 12, 0, 0, 0, time.UTC)) || !got.LatestFromMe || got.Drafts != 0 ||
+		!strings.HasPrefix(string(got.UntrustedSnippet), "The old mill works for me.") {
+		t.Errorf("row = %+v", got)
+	}
+	if !strings.Contains(text, " · 2026-03-02 12:00 UTC · you sent the latest · labels: ") {
+		t.Errorf("the row does not say the account sent the latest:\n%s", text)
+	}
+}
+
 func TestSearchMessagesStatesItsQuery(t *testing.T) {
 	h, _ := connectFake(t, config.Config{})
 	var out tools.MessagesOut

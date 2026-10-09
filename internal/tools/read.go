@@ -112,7 +112,9 @@ type ThreadSummary struct {
 	ID                    string            `json:"id"`
 	MessageCount          int               `json:"message_count"`
 	Unread                int               `json:"unread"`
-	Latest                time.Time         `json:"latest"`
+	Drafts                int               `json:"drafts" jsonschema:"how many of the messages are drafts"`
+	Latest                time.Time         `json:"latest" jsonschema:"when the newest message that is not a draft or in the trash arrived; the snippet is that message's"`
+	LatestFromMe          bool              `json:"latest_from_me" jsonschema:"true when this account sent that newest message"`
 	Labels                []LabelRef        `json:"labels"`
 	HasAttachments        bool              `json:"has_attachments"`
 	UntrustedSubject      model.Untrusted   `json:"untrusted_subject"`
@@ -248,7 +250,8 @@ func registerRead(s *mcp.Server, d Deps) {
 
 	register(s, d, Spec{Name: "search_threads", Kind: Read, OmittedIDs: omittedThreads, Description: "Find conversations with a Gmail search. " +
 		"The usual starting point: threads are what a person reads. Each row gives the thread id, subject, participants, " +
-		"latest date, labels and Gmail's snippet; read one with get_thread. Use search_messages instead when single " +
+		"labels and how many drafts it holds, then the date and Gmail's snippet of its newest message that is not a " +
+		"draft or in the trash, and whether you sent it; read one with get_thread. Use search_messages instead when single " +
 		"messages matter, e.g. which one carries an attachment. Costs about 40 units per result, so the default page is 20." +
 		fullRowsNote + untrustedNote},
 		func(ctx context.Context, in SearchIn) (ThreadsOut, error) {
@@ -360,9 +363,10 @@ func registerRead(s *mcp.Server, d Deps) {
 func threadSummary(t model.Thread) ThreadSummary {
 	latest := t.Latest()
 	return ThreadSummary{
-		ID: t.ID, MessageCount: len(t.Messages), Unread: t.Unread(), Latest: latest.Date,
+		ID: t.ID, MessageCount: len(t.Messages), Unread: t.Unread(), Drafts: t.Drafts(),
+		Latest: latest.Date, LatestFromMe: latest.HasLabel("SENT"),
 		Labels: labelRefs(t.Labels()), HasAttachments: t.HasAttachments(), UntrustedSubject: t.Subject(),
-		UntrustedParticipants: model.UntrustedAddresses(t.Participants()), UntrustedSnippet: t.Snippet,
+		UntrustedParticipants: model.UntrustedAddresses(t.Participants()), UntrustedSnippet: latest.Snippet,
 	}
 }
 

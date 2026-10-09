@@ -18,10 +18,15 @@ lifted verbatim.
 ### Added
 
 - `--dump-schemas` names the build's version, so a recorded tool surface says which release it is.
+- `search_threads` rows carry `drafts`, how many drafts a thread holds, and `latest_from_me`, whether this account sent the thread's latest message.
 
 ### Changed
 
 - `send_draft`, `delete_permanently` and `delete_label` ask once in Claude Code, not twice: for a client that can ask, they drop the `requiresUserInteraction` mark, and the server's question is the confirmation. Every other write keeps the mark. A Claude Code `Elicitation` hook that accepts now confirms these alone.
+
+### Fixed
+
+- A `search_threads` row's date, snippet and sender are its newest message that is not a draft or in the trash. A draft reply made the row show the draft's date and credit its text to this account.
 
 ### Security
 

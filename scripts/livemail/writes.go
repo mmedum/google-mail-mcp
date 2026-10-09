@@ -227,6 +227,21 @@ var writeSteps = []step{
 			return want(text, "(reply_all)")
 		}},
 
+	// The draft just saved is the newest message in that thread. The row
+	// names the inserted message as the latest, and counts the draft.
+	{name: "a thread row passes over the draft in it", tool: "search_threads",
+		args: func(e *env) map[string]any { return map[string]any{"q": e.seed.label.query("")} },
+		check: func(e *env, text string) error {
+			row := regexp.MustCompile(`(?m)^thread ` + e.seed.threads[2] + ` · .*$`).FindString(text)
+			if row == "" {
+				return errors.New("the result has no row for the thread replied to")
+			}
+			if !strings.Contains(row, "1 draft) · ") || strings.Contains(row, "you sent the latest") {
+				return fmt.Errorf("the row does not pass over the draft: %s", row)
+			}
+			return want(text, "thread summary from sender-3@example.com in "+e.seed.messages[2])
+		}},
+
 	{name: "a large draft goes as an upload", tool: "create_draft",
 		args: func(e *env) map[string]any {
 			return map[string]any{"subject": e.seed.label.name + " large", "body": "Six megabytes attached.",

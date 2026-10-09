@@ -41,10 +41,6 @@ type Compose struct {
 // first ids and its last. A hostile parent cannot make a reply huge.
 const maxReferences = 40
 
-// reactionType is the part Gmail's emoji reactions carry. A reaction is
-// not a message to reply to (§3.2).
-const reactionType = "text/vnd.google.email-reaction+json"
-
 // CreateDraft builds a new draft, or a reply constructed from its parent
 // (§4.5), and saves it. On a dry run it builds everything and saves
 // nothing.
@@ -277,10 +273,8 @@ func (s *Service) replyParent(ctx context.Context, replyTo, thread string) (mode
 		if err != nil {
 			return model.Message{}, gapi.Wrap(gapi.ClassUnavailable, err, "Gmail returned a thread this server could not read")
 		}
-		for i := len(t.Messages) - 1; i >= 0; i-- {
-			if unrepliable(t.Messages[i]) == "" {
-				return t.Messages[i], nil
-			}
+		if m, ok := t.LatestAnswerable(); ok {
+			return m, nil
 		}
 		return model.Message{}, gapi.Errf(gapi.ClassInvalid,
 			"thread %s has no message to reply to: each one is a draft, in the trash, or an emoji reaction", thread)
@@ -310,11 +304,8 @@ func unrepliable(m model.Message) string {
 		return "is a draft"
 	case m.HasLabel("TRASH"):
 		return "is in the trash (restore it first, or answer another message)"
-	}
-	for _, a := range m.Attachments {
-		if strings.EqualFold(a.MimeType, reactionType) {
-			return "is an emoji reaction"
-		}
+	case m.IsReaction():
+		return "is an emoji reaction"
 	}
 	return ""
 }

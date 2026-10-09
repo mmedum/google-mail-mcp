@@ -119,9 +119,7 @@ func TestGoldenListings(t *testing.T) {
 	b := newBox(t)
 	var threads []model.Thread
 	for _, name := range []string{gmailtest.ScenarioInjection, gmailtest.ScenarioDraftReply, gmailtest.ScenarioInternational, gmailtest.ScenarioNewsletter} {
-		th := b.thread(name, "metadata")
-		th.Snippet = th.Latest().Snippet
-		threads = append(threads, th)
+		threads = append(threads, b.thread(name, "metadata"))
 	}
 	golden(t, "threads", render.Threads(render.ThreadList{Threads: threads, NextPageToken: "page-4", ResultSizeEstimate: 11}, opts()).Text)
 	golden(t, "threads_empty_page", render.Threads(render.ThreadList{NextPageToken: "page-0", ResultSizeEstimate: 11}, opts()).Text)
