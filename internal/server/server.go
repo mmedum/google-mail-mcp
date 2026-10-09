@@ -233,7 +233,10 @@ func outcome(res mcp.Result, err error) string {
 // schema — and every resource and template, since removing one is as
 // breaking as removing a tool.
 type SchemaDump struct {
-	Server            string                  `json:"server"`
+	Server string `json:"server"`
+	// Version is the build's, which is how the schema diff tells which
+	// release a recorded baseline holds.
+	Version           string                  `json:"version"`
 	SDKVersion        string                  `json:"sdk_version"`
 	Tools             []*mcp.Tool             `json:"tools"`
 	Resources         []*mcp.Resource         `json:"resources"`
@@ -252,11 +255,12 @@ func DumpSchemas(ctx context.Context, w io.Writer, d Deps) error {
 	if d.Client == nil {
 		d.Client = gapi.New(gapi.Options{})
 	}
-	return dump(ctx, w, New(d), tools.Kinds(d.Deps))
+	return dump(ctx, w, New(d), d.Version, tools.Kinds(d.Deps))
 }
 
-// dump lists srv's surface through an in-memory client and writes it.
-func dump(ctx context.Context, w io.Writer, srv *mcp.Server, kinds map[string]string) error {
+// dump lists srv's surface through an in-memory client and writes it,
+// stamped with the build's version.
+func dump(ctx context.Context, w io.Writer, srv *mcp.Server, build string, kinds map[string]string) error {
 	ct, st := mcp.NewInMemoryTransports()
 	ss, err := srv.Connect(ctx, st, nil)
 	if err != nil {
@@ -270,7 +274,7 @@ func dump(ctx context.Context, w io.Writer, srv *mcp.Server, kinds map[string]st
 	defer func() { _ = cs.Close() }()
 
 	out := SchemaDump{
-		Server: Name, SDKVersion: version.Module(sdkModule),
+		Server: Name, Version: build, SDKVersion: version.Module(sdkModule),
 		Tools: []*mcp.Tool{}, Resources: []*mcp.Resource{}, ResourceTemplates: []*mcp.ResourceTemplate{},
 		Kinds: kinds,
 	}

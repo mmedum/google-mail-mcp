@@ -31,7 +31,7 @@ with no argument lists them.
 | `api-coverage` | every published API method is used, planned for a named phase, or written off with a reason | check |
 | `api-fields` | every published field is modeled or left out with a reason | check |
 | `smoke` | the built binary over stdio, signed out, at two protocol revisions, and a clean exit on an abrupt disconnect | check |
-| `schema-diff` | the tool and resource surface against `testdata/schema-baseline.json` | check |
+| `schema-diff` | the tool and resource surface against `testdata/schema-baseline.json`, the newest release's; fails on a removed tool or resource, a field removed or retyped at any depth, a newly required input, or a baseline that is not the newest release's | check |
 | `staleness` | README, `docs/` and `CLAUDE.md` against the code, including the generated scope lists in `gcp-setup.md` | check |
 | `checklist` | `CLAUDE.md`'s definition of done against `make check` | check |
 | `changelog` | a pull request adds a CHANGELOG entry, unless it is a release cut | CI |
@@ -51,8 +51,10 @@ Five are manual:
   `testdata/api-surface.json`. On a network failure it fails loudly and
   leaves the committed file untouched. Every method Google adds then
   fails `api-coverage` until somebody judges it.
-- `schema-baseline` writes the surface baseline from the built binary.
-  Run it when a change to the surface is intended, and read the diff.
+- `schema-baseline` records the surface of the release being cut, as
+  `make schema-baseline VERSION=vX.Y.Z` in its release commit. It
+  refuses a build stamped with another version, and a break unless the
+  release is a new major version.
 - `schema-refetch` compares the vendored manifest and registry schemas
   with what upstream serves. It writes nothing.
 - `precommit` and `install-hooks`, above.
@@ -136,8 +138,8 @@ and the recovery for each step no rehearsal reaches.
 2. Put the logic in `internal/service`, not the handler.
 3. Add it to the README's tool table, or `staleness` fails.
 4. Add a step to `scripts/livemail`, or `live-cover` fails.
-5. Run `schema-diff`, read it, and `schema-baseline` if the change is
-   intended.
+5. Run `schema-diff` and read it. The baseline moves only in a release
+   commit.
 
 ## Adding an API call
 

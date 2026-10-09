@@ -15,6 +15,10 @@ lifted verbatim.
 
 ## [Unreleased]
 
+### Added
+
+- `--dump-schemas` names the build's version, so a recorded tool surface says which release it is.
+
 ### Changed
 
 - `send_draft`, `delete_permanently` and `delete_label` ask once in Claude Code, not twice: for a client that can ask, they drop the `requiresUserInteraction` mark, and the server's question is the confirmation. Every other write keeps the mark. A Claude Code `Elicitation` hook that accepts now confirms these alone.

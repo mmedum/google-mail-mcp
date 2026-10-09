@@ -37,7 +37,9 @@ goreleaser runs.
   workflow refuses to publish a commit whose `ci` run was not green.
 - A live run of anything that touched the send path, MIME building or an
   API response shape, **with the transcript read**.
-- `make schema-diff`, read for anything breaking.
+- `make schema-baseline VERSION=vX.Y.Z` in the release-prep commit,
+  after the heading is renamed; `make schema-diff` fails until it is
+  done. A break is recorded only as a new major version.
 - `[Unreleased]` renamed to the version with the date, in a release-prep
   commit, with an empty `[Unreleased]` heading left above it.
 - The status line of `docs/architecture.md` says what changed since the

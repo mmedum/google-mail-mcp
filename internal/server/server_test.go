@@ -217,6 +217,9 @@ func TestDumpSchemas(t *testing.T) {
 	if dump.Server != Name {
 		t.Errorf("server = %q", dump.Server)
 	}
+	if dump.Version != "test" {
+		t.Errorf("version = %q, want the build's, test", dump.Version)
+	}
 	if dump.SDKVersion == "" || dump.SDKVersion == "unknown" {
 		t.Errorf("sdk version = %q; it must come from build info", dump.SDKVersion)
 	}
@@ -248,7 +251,7 @@ func TestDumpCarriesTheWholeSurface(t *testing.T) {
 	s.AddResource(&mcp.Resource{Name: "labels", URI: "gmail://labels"}, noop)
 	s.AddResourceTemplate(&mcp.ResourceTemplate{Name: "thread", URITemplate: "gmail://threads/{id}"}, noop)
 	var buf bytes.Buffer
-	if err := dump(context.Background(), &buf, s, map[string]string{"alpha": "read", "zeta": "send"}); err != nil {
+	if err := dump(context.Background(), &buf, s, "v9.9.9", map[string]string{"alpha": "read", "zeta": "send"}); err != nil {
 		t.Fatal(err)
 	}
 	var got SchemaDump

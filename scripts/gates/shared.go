@@ -96,7 +96,9 @@ func writeFileAtomic(path string, data []byte) error {
 // Tools are kept raw as well as decoded, so schema-diff can compare the
 // parts it does not name by value.
 type schemaDump struct {
-	Server            string            `json:"server"`
+	Server string `json:"server"`
+	// Version is the build's: a release's tag, or "dev" and the like.
+	Version           string            `json:"version"`
 	SDKVersion        string            `json:"sdk_version"`
 	Tools             []dumpTool        `json:"tools"`
 	Resources         []json.RawMessage `json:"resources"`
