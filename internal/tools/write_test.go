@@ -1,9 +1,11 @@
 package tools_test
 
 import (
+	"bytes"
 	"maps"
 	"os"
 	"path/filepath"
+	"regexp"
 	"slices"
 	"strconv"
 	"strings"
@@ -187,6 +189,18 @@ func TestCreateDraftRefusals(t *testing.T) {
 		{"reply to the trash", map[string]any{"reply_to": fake.Scenario(gmailtest.ScenarioTrash).MessageIDs[0]}, gapi.ClassInvalid},
 		{"reply to nothing", map[string]any{"reply_to": "00000000000fffff"}, gapi.ClassNotFound},
 		{"attachments without a directory", map[string]any{"attachments": []any{"a.txt"}}, gapi.ClassBlocked},
+		{"forward and reply_to", map[string]any{"forward": plain.MessageIDs[0], "reply_to": plain.MessageIDs[1]}, gapi.ClassInvalid},
+		{"forward and reply_to_thread", map[string]any{"forward": plain.MessageIDs[0], "reply_to_thread": plain.ThreadID}, gapi.ClassInvalid},
+		{"forward and reply_all", map[string]any{"forward": plain.MessageIDs[0], "reply_all": true}, gapi.ClassInvalid},
+		{"forward a draft", map[string]any{"forward": fake.Scenario(gmailtest.ScenarioDraftReply).MessageIDs[2]}, gapi.ClassInvalid},
+		{"forward from the trash", map[string]any{"forward": fake.Scenario(gmailtest.ScenarioTrash).MessageIDs[0]}, gapi.ClassInvalid},
+		{"forward a reaction", map[string]any{"forward": fake.AddPartsMessage(&gmailtest.Part{
+			ContentType: model.ReactionType + "; charset=utf-8", CTE: "7bit", Content: []byte(`{"version":1,"emoji":"+"}`)})},
+			gapi.ClassInvalid},
+		{"forward nothing", map[string]any{"forward": "00000000000fffff"}, gapi.ClassNotFound},
+		{"forward a line too long to attach", map[string]any{"forward": fake.AddPartsMessage(&gmailtest.Part{
+			ContentType: "text/plain; charset=us-ascii", CTE: "7bit", Content: []byte(strings.Repeat("x", 999) + "\n")})},
+			gapi.ClassUnsupported},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
@@ -308,6 +322,95 @@ func TestCreateDraftReplyThreadingHeaders(t *testing.T) {
 				t.Errorf("References %v; want %v", m.References, tc.wantRefs)
 			}
 		})
+	}
+}
+
+// A forward attaches the original as Gmail stored it, named after its
+// subject, under a subject of its own, and asks for the original's
+// thread with no threading headers (§7.4).
+func TestCreateDraftForwards(t *testing.T) {
+	h, fake := connectFake(t, config.Config{})
+	plain := fake.Scenario(gmailtest.ScenarioPlainThread)
+	id := plain.MessageIDs[0] // Ada's "Offsite venue"
+	orig, _ := fake.Raw(id)
+
+	var out tools.DraftWriteOut
+	text := call(t, h, "create_draft", map[string]any{"forward": id, "to": []any{"chiara@example.com"}, "body": "See below."}, &out)
+	want := tools.ForwardOut{MessageID: id, ThreadID: plain.ThreadID, Bytes: len(orig)}
+	if out.Forwarded == nil || *out.Forwarded != want || out.Reply != nil || out.Units != 31 {
+		t.Fatalf("forwarded %+v reply %+v units %d; want %+v, no reply, 31 units", out.Forwarded, out.Reply, out.Units, want)
+	}
+	if string(out.UntrustedSubject) != "Fwd: Offsite venue" || len(out.Attachments) != 1 ||
+		out.Attachments[0] != (tools.DraftFile{UntrustedName: "Offsite venue.eml", UntrustedMimeType: "message/rfc822", Size: len(orig)}) {
+		t.Fatalf("subject %q attachments %+v", out.UntrustedSubject, out.Attachments)
+	}
+	raw, _ := fake.Raw(out.MessageID)
+	m := mime.ParseRaw(raw)
+	if !bytes.Contains(raw, orig) || len(m.Attachments) != 1 || m.Attachments[0].MimeType != "message/rfc822" ||
+		m.Attachments[0].Size != len(orig) || m.Body.Text != "See below." || len(m.InReplyTo) > 0 || len(m.References) > 0 {
+		t.Fatalf("stored: attachments %+v, body %q, in-reply-to %v, references %v, original whole %v",
+			m.Attachments, m.Body.Text, m.InReplyTo, m.References, bytes.Contains(raw, orig))
+	}
+	// The fake threads only a draft with all three of §2.5's conditions,
+	// and a forward carries no threading headers.
+	if !strings.Contains(text, "forward of message "+id+" in thread "+plain.ThreadID) ||
+		!strings.Contains(text, "note: Gmail filed the draft in a new thread "+out.ThreadID+", not the original's.") {
+		t.Errorf("text:\n%s", text)
+	}
+
+	var dry tools.DraftWriteOut
+	text = call(t, h, "create_draft", map[string]any{"forward": "rfc822:<fixture." + id + "@mail.example.com>",
+		"subject": "For the offsite", "dry_run": true}, &dry)
+	if !dry.DryRun || dry.ThreadID != plain.ThreadID || dry.Forwarded == nil || dry.Forwarded.MessageID != id ||
+		string(dry.UntrustedSubject) != "For the offsite" || dry.Units != 26 {
+		t.Fatalf("dry run %+v", dry)
+	}
+	if !strings.Contains(text, "would create a draft in thread "+plain.ThreadID) {
+		t.Errorf("text:\n%s", text)
+	}
+
+	// Ivan's message is 8-bit windows-1251, so it goes declared 8bit, and
+	// its name carries the subject's Cyrillic and colon as written.
+	ivan := fake.Scenario(gmailtest.ScenarioInternational).MessageIDs[2]
+	orig, _ = fake.Raw(ivan)
+	var intl tools.DraftWriteOut
+	call(t, h, "create_draft", map[string]any{"forward": ivan}, &intl)
+	raw, _ = fake.Raw(intl.MessageID)
+	cte := regexp.MustCompile(`Content-Type: message/rfc822;[^\r]*\r\n(?:[^\r]*\r\n)*?Content-Transfer-Encoding: (\S+)`).FindSubmatch(raw)
+	if intl.Attachments[0].UntrustedName != "Re: Отчёт по проекту.eml" || cte == nil || string(cte[1]) != "8bit" ||
+		!bytes.Contains(raw, orig) || mime.ParseRaw(raw).Attachments[0].DeclaredName != "Re: Отчёт по проекту.eml" {
+		t.Fatalf("attachments %+v, encoding %q, original whole %v", intl.Attachments, cte, bytes.Contains(raw, orig))
+	}
+}
+
+// A sent message's own copy carries its Bcc; a forward leaves it out of
+// the attached copy, and says so.
+func TestCreateDraftForwardLeavesOutBcc(t *testing.T) {
+	h, fake := connectFake(t, config.Config{})
+	id := fake.AddSentWithBcc()
+	if orig, _ := fake.Raw(id); !bytes.Contains(orig, []byte(gmailtest.Bruno.Email)) {
+		t.Fatal("the fixture carries no Bcc")
+	}
+	var out tools.DraftWriteOut
+	text := call(t, h, "create_draft", map[string]any{"forward": id}, &out)
+	raw, _ := fake.Raw(out.MessageID)
+	if !out.Forwarded.BccRemoved || bytes.Contains(raw, []byte(gmailtest.Bruno.Email)) {
+		t.Fatalf("bcc_removed %v; the draft carries the blind recipient: %v", out.Forwarded.BccRemoved,
+			bytes.Contains(raw, []byte(gmailtest.Bruno.Email)))
+	}
+	if !strings.Contains(text, "leaves out the original's Bcc header") {
+		t.Errorf("text:\n%s", text)
+	}
+}
+
+// An original over what one read carries is refused, naming the limit,
+// before anything is written.
+func TestCreateDraftForwardRefusesAnOriginalTooLargeToRead(t *testing.T) {
+	h, fake := connectFake(t, config.Config{})
+	id, _ := fake.AddAttachmentMessage("big.bin", make([]byte, 19<<20))
+	text := refused(t, h, "create_draft", map[string]any{"forward": id}, gapi.ClassInvalid)
+	if !strings.Contains(text, "larger than the 24 MB this server reads in one answer") || writeCalls(fake) != 0 {
+		t.Fatalf("%s; %d writes", text, writeCalls(fake))
 	}
 }
 

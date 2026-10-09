@@ -2,7 +2,7 @@
 # Columns: method id, state, phase, verdict. The verb and path live in testdata/api-surface.json.
 # used: a client call exists (internal/gapi). planned: judged used or gated, built in the named phase (§16).
 # out: deferred or written off; the verdict says why.
-gmail.users.drafts.create	used	-	Used: `create_draft`, including replies (§4.5); a multipart upload above 5 MB (§7.4). Never repeated after an ambiguous failure
+gmail.users.drafts.create	used	-	Used: `create_draft`, including replies (§4.5) and forwards (§7.4); a multipart upload above 5 MB (§7.4). Never repeated after an ambiguous failure
 gmail.users.drafts.delete	used	-	Used: `delete_draft`, with `confirm: true`. Permanent, but only ever an unsent draft; decided in §17.1 not to sit behind the destructive flag
 gmail.users.drafts.get	used	-	Used: `get_draft`, and the witness read before `update_draft` (§4.4)
 gmail.users.drafts.list	used	-	Used: `list_drafts`
@@ -20,7 +20,7 @@ gmail.users.messages.attachments.get	used	-	Used: `download_attachment`, `downlo
 gmail.users.messages.batchDelete	out	-	Written off: "provides no guarantees that messages were not already deleted or even existed", so its result cannot be reported truthfully; `delete_permanently` loops `messages.delete` under a cap instead
 gmail.users.messages.batchModify	out	-	Written off: it answers with no body, so it cannot say which messages changed or why one failed, and §4.7 reports per item. `modify_labels` calls `messages.modify` per message, 5 units each, whose answer is the message's labels after (§18 row 39)
 gmail.users.messages.delete	used	-	Gated: `delete_permanently`, registered only with `GMAIL_ENABLE_DESTRUCTIVE=true`, with `confirm: true`; the only scope it accepts is `https://mail.google.com/`
-gmail.users.messages.get	used	-	Used: `get_message`, `download_attachment`, `download_attachments` and `read_attachment` (to find the parts), reply construction (to read `Message-ID`/`References`)
+gmail.users.messages.get	used	-	Used: `get_message`, `download_attachment`, `download_attachments` and `read_attachment` (to find the parts), reply construction (to read `Message-ID`/`References`), and a forward's original, in `format=raw`
 gmail.users.messages.import	out	-	Written off: mailbox migration, not an assistant task; it runs spam and virus classification as though delivered
 gmail.users.messages.insert	out	-	Written off for the server: it plants mail that was never delivered, bypassing the classification a received message gets. Used by the live driver only, to write the messages it reads (§9.1)
 gmail.users.messages.list	used	-	Used: `search_messages`

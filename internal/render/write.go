@@ -85,7 +85,25 @@ func (w *writer) draftCreated(d model.DraftWrite) {
 	if r := d.Reply; r != nil {
 		w.replyLines(d, r)
 	}
+	if f := d.Forward; f != nil {
+		w.forwardLines(d, f)
+	}
 	w.recipientCounts(d.Recipients)
+}
+
+func (w *writer) forwardLines(d model.DraftWrite, f *model.Forward) {
+	w.say("forward of message %s in thread %s: the original is attached, %s", gmailID(f.MessageID), gmailID(f.ThreadID),
+		size(int64(f.Bytes)))
+	switch {
+	case d.DryRun:
+	case f.Joined:
+		w.say("Gmail filed the draft in the original's thread.")
+	default:
+		w.say("note: Gmail filed the draft in a new thread %s, not the original's.", gmailID(d.ThreadID))
+	}
+	if f.BccRemoved {
+		w.say("the attached copy leaves out the original's Bcc header, so it does not show who got a blind copy.")
+	}
 }
 
 func (w *writer) replyLines(d model.DraftWrite, r *model.Reply) {

@@ -390,6 +390,9 @@ type env struct {
 	// replyAll and replyAllMessage are the reply-all draft the recipient
 	// guard's dry run reads.
 	replyAll, replyAllMessage string
+	// forwardDraft and forwardMessage are the forward the forward steps
+	// make, read back and delete.
+	forwardDraft, forwardMessage string
 	// spikeE is the draft side of spike E, from reading a draft back.
 	spikeE string
 	// sendTo is -send-to, the one address a step may send to; full is
@@ -568,7 +571,7 @@ func (e *env) guard(tool string, args map[string]any) error {
 	if err := e.guardSettings(tool, args); err != nil {
 		return err
 	}
-	for _, key := range []string{"thread_id", "message_id", "draft_id", "reply_to", "reply_to_thread"} {
+	for _, key := range []string{"thread_id", "message_id", "draft_id", "reply_to", "reply_to_thread", "forward"} {
 		id, ok := args[key].(string)
 		if !ok {
 			continue

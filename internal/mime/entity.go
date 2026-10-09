@@ -220,8 +220,9 @@ func isContentHeader(name string) bool {
 }
 
 // newBoundary draws a multipart boundary. It starts with "=_", which
-// quoted-printable and base64 can never produce, and every part this
-// package writes is one of the two, so no content can contain it.
+// quoted-printable and base64 can never produce, so no part this package
+// encodes can contain it. An attached message goes as written, and
+// multipartEntity draws again for one that holds the boundary drawn.
 // Tests replace it to get fixed bytes.
 var newBoundary = func() string {
 	var b [12]byte

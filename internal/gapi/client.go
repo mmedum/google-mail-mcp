@@ -51,6 +51,10 @@ const apiPrefix = "/gmail/v1/users/me/"
 // a separate path in a later phase; this is a ceiling on an envelope.
 const maxResponseBytes = 32 << 20
 
+// MaxRawRead is about the largest message one format=raw read carries:
+// the answer holds it as base64url, a third larger than the message.
+const MaxRawRead = maxResponseBytes / 4 * 3
+
 // maxBackoff caps one jittered wait, as Google's own algorithm does.
 const maxBackoff = 32 * time.Second
 
@@ -670,7 +674,7 @@ func (c *Client) attempt(ctx context.Context, method, endpoint string, payload [
 		return nil, resp.StatusCode, resp.Header, withoutURL(err)
 	}
 	if len(body) > maxResponseBytes {
-		return nil, resp.StatusCode, resp.Header, errTooLarge
+		return nil, resp.StatusCode, resp.Header, ErrTooLarge
 	}
 	return body, resp.StatusCode, resp.Header, nil
 }
@@ -714,7 +718,9 @@ func (p progressReader) Read(b []byte) (int, error) {
 	return n, err
 }
 
-var errTooLarge = fmt.Errorf("the response is larger than %d bytes", maxResponseBytes)
+// ErrTooLarge is an answer over the 32 MB one call reads. A caller that
+// can say what was too large checks for it.
+var ErrTooLarge = fmt.Errorf("the response is larger than %d bytes", maxResponseBytes)
 
 // askCompactJSON sets Google's prettyPrint system parameter to false,
 // which drops the indentation it adds by default. Appended rather than
@@ -824,7 +830,7 @@ func classifyTransport(ctx context.Context, call Call, p policy, sendErr error) 
 	switch {
 	case errors.Is(sendErr, ErrHostNotAllowed):
 		return failure{err: Wrap(ClassBlocked, sendErr, "%s was refused: its address is outside the allowed Google origins", call.ID)}
-	case errors.Is(sendErr, errTooLarge):
+	case errors.Is(sendErr, ErrTooLarge):
 		return failure{err: Wrap(ClassUnavailable, sendErr, "Google's answer to %s was too large to read", call.ID)}
 	case neverSent(sendErr):
 		return failure{err: Wrap(ClassUnavailable, sendErr, "could not reach Google for %s: %s", call.ID, sendErr), repeat: ifTurnedAway}

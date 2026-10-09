@@ -271,7 +271,9 @@ an annotation is not a control and a registered tool can run unattended.
    leaves this server existed first as a draft the person could open in
    Gmail. Replying is `create_draft` with `reply_to`, then `send_draft`.
 2. **The body is exactly what the caller gave.** No signature, prefix,
-   footer or "sent by" line is added server-side, ever. When the caller
+   footer or "sent by" line is added server-side, ever. The server adds
+   only what the caller names: with `forward`, the original as an
+   attachment (§7.4). When the caller
    gives no HTML, the same words also go as an HTML version made from
    the text (§7.4), so a reader sees the caller's words either way.
 3. **`send_draft` shows before it sends.** Its result names every
@@ -971,6 +973,30 @@ part it sends both, as it does any mail written in it: the HTML is what
 readers show, and the plain part Gmail delivers is wrapped at 75, as in
 any mail Gmail sends.
 
+`forward` on `create_draft` takes a message id, or `rfc822:` and its
+`Message-ID`, and attaches that message to the draft, read with one
+`messages.get` in `format=raw`, as `<subject>.eml`. A slash or backslash
+in the subject is written as `_`. The subject is `Fwd: ` and the
+original's unless `subject` is given. The copy goes as Gmail stored it,
+with two changes. Its line endings are written as CRLF. Its `Bcc` and
+`Resent-Bcc` headers are left out, since the sender's own copy of a sent
+message keeps its `Bcc` and a forward would show the blind recipients to
+everyone it reaches (RFC 5322 §3.6.3); the result's `bcc_removed` says
+so. RFC 2046 §5.2.1 permits only `7bit`, `8bit` or `binary` for an
+attached message, never base64, so the part is declared `7bit` when it
+is ASCII and `8bit` when it is not. A message with a line over 998
+octets or a NUL is refused as `[unsupported]`: only `binary` carries one
+(RFC 2045 §2.7, §2.8), and SMTP carries binary only between servers that
+both offer it (RFC 3030). The part goes as written, so a boundary is
+drawn again when the message holds it. A message whose raw form is over
+about 24 MB is refused as `[invalid]` before anything is written: the
+read carries it as base64url, a third larger, and the client reads at
+most 32 MB of one answer. The draft is filed in the original's thread,
+with no `In-Reply-To` or `References`, since it is not a reply; the
+result says where Gmail put it (§18 row 85). `forward` with `reply_to`,
+`reply_to_thread` or `reply_all` is `[invalid]`, and a draft, a trashed
+message and a reaction are refused as a reply's parent is (§4.5).
+
 `plain_only: true` on `create_draft` keeps the text alone, for a mailing
 list that refuses HTML (§17.9). `update_draft` given `body` alone keeps
 the draft's shape: plain text alone stays alone, and an HTML version
@@ -1180,7 +1206,7 @@ tool sits behind from it.
 | `list_filters` | Read | always | `gmail.readonly` | 1 + 1 |
 | `download_attachment` | Read (local write) | `GMAIL_LOCAL_DIR` set | `gmail.readonly` | 20 + 20 |
 | `download_attachments` | Read (local write) | `GMAIL_LOCAL_DIR` set | `gmail.readonly` | 20 + 20/part stored apart |
-| `create_draft` | Write | not read-only | `gmail.modify` | 1 + 10 (+20 reply_to, +40 reply_to_thread) |
+| `create_draft` | Write | not read-only | `gmail.modify` | 1 + 10 (+20 reply_to or forward, +40 reply_to_thread) |
 | `update_draft` | Write | not read-only | `gmail.modify` | 20 + 15 |
 | `delete_draft` | Write, for good | not read-only | `gmail.modify` | 20 + 10 |
 | `modify_labels` | Write | not read-only | `gmail.modify` | 1 + 25/message, 50/thread |
@@ -1434,6 +1460,7 @@ generated from `internal/scopes` and gated (§5a, `staleness`).
 | A client that cannot ask falls back to `confirm` and `confirm_recipients`; `GMAIL_REQUIRE_PROMPT=true` refuses instead | maintainer, 2026-09-28 | §4.13, §9.4 |
 | An invitation's identifiers and times are read from its calendar part, reversing §7.2's "no further parsing" | maintainer, 2026-10-09 | §7.2, §18 row 81 |
 | `read_attachment` reads an attachment's text into a result, registered by default, reversing §7.3's "never inlined" | maintainer, 2026-10-09 | §7.3, §18 row 84; text types only, inside the boundaries |
+| `create_draft` forwards a message by attaching it, with its `Bcc` left out; the server adds to a draft only what the caller names | maintainer, 2026-10-09 | §4.2, §7.4, §18 row 85; never inline, so the original goes as Gmail stored it |
 | Spikes D and E send in phase 2, from the live driver's run, to a second address the maintainer passes on the command line and never commits | maintainer, 2026-09-26 | §15; the transcript records the address redacted only |
 
 ## 15. What must be verified live
@@ -2848,3 +2875,4 @@ live** — §15 exists to settle these, and they are marked.
 | 82 | A release binary can read any IANA zone on every platform it is built for | `go doc time.LoadLocation` and `go doc time/tzdata`, Go 1.27.2, read 2026-10-09; the release targets in `.goreleaser.yaml`; the Windows, Linux and macOS amd64 builds measured with and without the package the same day | **Refuted before this change.** `LoadLocation` looks in `ZONEINFO`, then "on a Unix system, the system standard installation location", then `$GOROOT/lib/time/zoneinfo.zip`, then "the time/tzdata package, if it was imported". Windows has no standard location, and a person who runs the archive has no `GOROOT`, so every zone was refused there. The main package now imports `time/tzdata`, which the docs say "should normally be imported by a program's main package"; it is read only when the system has no zone files, and it adds 402 KB to the Windows binary, 3%. A test holds the import in each target's build, since a test run reads this machine's zone files whatever the binary carries. Not run on Windows |
 | 83 | An attached message (`message/rfc822`) comes back from `messages.get` with its content inline or behind an `attachmentId`, like any attachment | Discovery document revision 20261005, read 2026-10-09: `MessagePart.parts`, "This only applies to container MIME message parts, for example `multipart/*`"; `MessagePart.body`, "may be empty for container MIME message parts"; `MessagePartBody.attachmentId`, "When not present, the entire content of the message part body is contained in the data field"; RFC 2046 §5, where `message` is a composite type beside `multipart` | **Unverified, tier 3.** The document names `multipart/*` as a container and no other, and RFC 2046 makes `message/rfc822` composite too. If Gmail serves an attached message as its parts, the part itself has no data and no `attachmentId`, and a download used to write it as an empty file. Both download tools and `read_attachment` now refuse such a part as `[unsupported]`, and the fake can serve one so the refusal is tested. Owed: the live steps that save and read the run's attached `.eml`, which show which way Gmail serves it |
 | 84 | An attachment's content is never put in a tool result | §7.3 as written in phase 1, which recorded no reason; the owner's decision of 2026-10-09 | **Reversed for text.** `read_attachment` reads plain text, CSV, Markdown, JSON, HTML, a calendar file and an attached message into the result, under the boundaries, hidden-text removal and budget a body gets; every other type stays a file to save. §7.3 gives the reasons on both sides. Owed: the live steps "read the run's text attachment" and "read the attached message", which show the content Gmail returns for each reads as written |
+| 85 | A forward can attach the original as Gmail stores it, and be filed in its thread | RFC 2046 §5.2.1 ("No encoding other than "7bit", "8bit", or "binary" is permitted for the body of a "message/rfc822" entity"), RFC 2045 §2.7 and §2.8 (lines of "998 octets or less", "no NULs", CR and LF "only as part of CRLF"), RFC 5322 §3.6.3 and §4.5, RFC 3030, all read at rfc-editor.org 2026-10-09; the discovery document's `drafts.create` upload limit (§2.6); the client's 32 MB limit on one answer; row 42 | **Confirmed from the RFCs for the encoding; unverified live, tier 3.** A part declared `7bit` or `8bit` carries any message whose lines fit and that holds no NUL, and none other. `Bcc` is for addresses "not to be revealed to other recipients", and §4.5 lets "any amount of white space" stand before the colon, so `Bcc :` is left out too. Unknown: whether `drafts.create` keeps an `8bit` `message/rfc822` part as written, whether `messages.get` serves it back as one part (row 83), and whether a draft with the thread's `threadId` and no `In-Reply-To` or `References` joins the thread, which row 42 found for `messages.send` only; the fake models all three of §2.5's conditions, so a forward there starts a thread of its own. Owed: the live steps "forward an inserted message", "read the forward back" and "read the forwarded original in the draft" |

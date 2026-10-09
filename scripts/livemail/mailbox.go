@@ -253,7 +253,8 @@ func cleanUp(ctx context.Context, box mailbox, s *seeded) error {
 // came from anybody. The first carries an attachment, for
 // download_attachment, and a calendar part, for its invitation. The
 // second offers to unsubscribe, one-click, at addresses that cannot
-// resolve. The third carries an attached message, part 1.
+// resolve, and its body is 8-bit text in four scripts, which a forward
+// of it attaches as 8bit. The third carries an attached message, part 1.
 func syntheticMessage(r runLabel, i int) []byte {
 	var b strings.Builder
 	fmt.Fprintf(&b, "From: Synthetic Sender <sender-%d@example.com>\r\n", i+1)
@@ -275,6 +276,11 @@ func syntheticMessage(r runLabel, i int) []byte {
 		b.WriteString("Content-Disposition: attachment; filename=\"" + syntheticAttachedName + "\"\r\n\r\n")
 		b.WriteString(syntheticAttached(r) + "\r\n")
 		b.WriteString("--" + boundary + "--\r\n")
+		return []byte(b.String())
+	}
+	if i == 1 {
+		b.WriteString("Content-Type: text/plain; charset=utf-8\r\nContent-Transfer-Encoding: 8bit\r\n\r\n" + body +
+			fourScripts + "\r\n")
 		return []byte(b.String())
 	}
 	if i != 0 {

@@ -463,6 +463,19 @@ func (s *Server) AddWidenedThread() (threadID, messageID string) {
 	return m1.threadID, m2.id
 }
 
+// AddSentWithBcc adds a message the reader sent to Ada with Bruno in
+// Bcc, as Gmail keeps the sender's own copy of one, alone in its thread,
+// and returns its id. Tests forward it.
+func (s *Server) AddSentWithBcc() string {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.clock = s.clock.Add(time.Minute)
+	b := "Ada,\n\nThe spring plan is below.\n\nRae\n"
+	m := s.add(spec{from: Reader, to: []Person{Ada}, subject: "Spring plan", at: s.clock, labels: []string{"SENT"},
+		body: utf8Text(b), text: b, extra: []gmail.MessagePartHeader{{Name: "Bcc", Value: Bruno.addr()}}})
+	return m.id
+}
+
 // AddThreadingParent adds a message from Bruno, alone in its thread,
 // whose Message-ID, In-Reply-To and References are exactly the values
 // given; "" leaves a header out. It returns the message id, which is

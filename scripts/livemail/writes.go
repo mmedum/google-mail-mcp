@@ -242,6 +242,61 @@ var writeSteps = []step{
 			return want(text, "thread summary from sender-3@example.com in "+e.seed.messages[2])
 		}},
 
+	// The original's body is 8-bit, so it goes attached as 8bit, and the
+	// draft carries no threading headers, only the original's thread:
+	// whether Gmail files it there and keeps the part is §18 row 85.
+	{name: "forward an inserted message", tool: "create_draft",
+		args: func(e *env) map[string]any {
+			return map[string]any{"forward": e.seed.messages[1], "to": []any{rcptTo}, "body": "A synthetic forward."}
+		},
+		check: func(e *env, text string) error {
+			var err error
+			if e.forwardDraft, e.forwardMessage, err = e.composed(text); err != nil {
+				return err
+			}
+			if err := want(text, e.seed.label.name+" message 2.eml (message/rfc822"); err != nil {
+				return err
+			}
+			return want(text, "Gmail filed the draft in the original's thread.")
+		}},
+
+	{name: "read the forward back", tool: "get_draft",
+		args: func(e *env) map[string]any { return map[string]any{"draft_id": e.forwardDraft} },
+		check: func(e *env, text string) error {
+			for _, s := range []string{"Fwd: " + e.seed.label.name + " message 2", "A synthetic forward.",
+				e.seed.label.name + " message 2.eml (message/rfc822"} {
+				if err := want(text, s); err != nil {
+					return err
+				}
+			}
+			return nil
+		}},
+
+	// If Gmail serves the attached original as its own parts, the read is
+	// refused as [unsupported] (§18 row 83).
+	{name: "read the forwarded original in the draft", tool: "read_attachment",
+		args: func(e *env) map[string]any { return map[string]any{"message_id": e.forwardMessage, "part_id": "1"} },
+		check: func(e *env, text string) error {
+			msg, _ := e.structured["message"].(map[string]any)
+			if e.structured["read_as"] != "message" || msg["untrusted_subject"] != e.seed.label.name+" message 2" {
+				return fmt.Errorf("read as %v, message %v; want the forwarded original", e.structured["read_as"], msg)
+			}
+			return want(text, fourScripts)
+		}},
+
+	{name: "delete the forward", tool: "delete_draft",
+		args: func(e *env) map[string]any { return map[string]any{"draft_id": e.forwardDraft, "confirm": true} },
+		check: func(e *env, text string) error {
+			if err := want(text, "permanently."); err != nil {
+				return err
+			}
+			if _, err := e.asked(); err != nil {
+				return err
+			}
+			e.seed.forget(e.forwardDraft)
+			return nil
+		}},
+
 	{name: "a large draft goes as an upload", tool: "create_draft",
 		args: func(e *env) map[string]any {
 			return map[string]any{"subject": e.seed.label.name + " large", "body": "Six megabytes attached.",
@@ -407,7 +462,7 @@ var (
 		// Checked below or by guard.
 		"message_ids": true, "thread_ids": true, "to": true, "cc": true, "bcc": true, "from": true,
 		"attachments": true, "add_attachments": true, "name": true, "label": true,
-		"draft_id": true, "message_id": true, "reply_to": true, "reply_to_thread": true, "confirm_recipients": true,
+		"draft_id": true, "message_id": true, "reply_to": true, "reply_to_thread": true, "forward": true, "confirm_recipients": true,
 		// Carry no id, address or file: text, flags, part ids of the run's
 		// own drafts, and the system labels STARRED and IMPORTANT.
 		"dry_run": true, "confirm": true, "reply_all": true, "subject": true, "body": true, "body_html": true, "plain_only": true,

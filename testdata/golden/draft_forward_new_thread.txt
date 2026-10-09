@@ -1,0 +1,12 @@
+created draft r0000000000000025 · message 0000000000000026 · thread 0000000000000027 · labels: DRAFT
+update_draft needs draft_id r0000000000000025 and message_id 0000000000000026.
+forward of message 0000000000000003 in thread 0000000000000001: the original is attached, 2.1 KB
+note: Gmail filed the draft in a new thread 0000000000000027, not the original's.
+recipients: 1 named in this call
+size: 3.3 KB, sent as JSON
+<<<untrusted-mail TESTTOKEN: draft headers in 0000000000000026>>>
+From: Rae Reader <reader@example.com>
+To: Chiara Oddleaf <chiara@example.com>
+Subject: Fwd: Offsite venue
+Attachment: Offsite venue.eml (message/rfc822, 2.1 KB)
+<<<end-untrusted-mail TESTTOKEN>>>

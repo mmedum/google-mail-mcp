@@ -9,6 +9,7 @@ import (
 	"regexp"
 	"strings"
 	"sync"
+	"unicode/utf8"
 
 	"github.com/mmedum/google-mail-mcp/v2/internal/gapi"
 	"github.com/mmedum/google-mail-mcp/v2/internal/gmail"
@@ -34,16 +35,19 @@ type Compose struct {
 	// a thread id, whose newest message is answered. At most one.
 	ReplyTo, ReplyToThread string
 	ReplyAll               bool
-	LocalDir               string
+	// Forward is a message id, or rfc822:<Message-ID>, to attach as it
+	// is but for its Bcc (§7.4). Not with a reply.
+	Forward  string
+	LocalDir string
 }
 
 // maxReferences bounds the References a reply carries: the thread's
 // first ids and its last. A hostile parent cannot make a reply huge.
 const maxReferences = 40
 
-// CreateDraft builds a new draft, or a reply constructed from its parent
-// (§4.5), and saves it. On a dry run it builds everything and saves
-// nothing.
+// CreateDraft builds a new draft, a reply constructed from its parent
+// (§4.5) or a forward carrying its original (§7.4), and saves it. On a
+// dry run it builds everything and saves nothing.
 func (s *Service) CreateDraft(ctx context.Context, in Compose) (model.DraftWrite, error) {
 	out := model.DraftWrite{Op: "create", DryRun: gapi.WritesForbidden(ctx)}
 	callers, err := in.check()
@@ -54,14 +58,19 @@ func (s *Service) CreateDraft(ctx context.Context, in Compose) (model.DraftWrite
 	if err != nil {
 		return out, err
 	}
-	// The send-as list and the parent are independent reads.
+	// The send-as list and the parent or the original are independent
+	// reads.
 	var (
 		parent model.Message
+		fwd    original
 		perr   error
 		wg     sync.WaitGroup
 	)
-	if in.reply() {
+	switch {
+	case in.reply():
 		wg.Go(func() { parent, perr = s.replyParent(ctx, in.ReplyTo, in.ReplyToThread) })
+	case in.Forward != "":
+		wg.Go(func() { fwd, perr = s.original(ctx, in.Forward) })
 	}
 	senders, err := s.client.SendAs(ctx)
 	wg.Wait()
@@ -75,6 +84,13 @@ func (s *Service) CreateDraft(ctx context.Context, in Compose) (model.DraftWrite
 	if err != nil {
 		return out, err
 	}
+	threadID := ""
+	if in.Forward != "" {
+		threadID = fwd.m.ThreadID
+		out.Forward = &model.Forward{MessageID: fwd.m.ID, ThreadID: fwd.m.ThreadID, Bytes: len(fwd.raw), BccRemoved: fwd.bccRemoved}
+		files = append([]mime.OutAttachment{{Filename: forwardName(string(fwd.m.Subject)), MediaType: "message/rfc822",
+			Content: fwd.raw}}, files...)
+	}
 	htm := in.HTML
 	if htm == "" && !in.PlainOnly {
 		// Without an HTML part, Gmail's web composer wraps the text when
@@ -83,8 +99,10 @@ func (s *Service) CreateDraft(ctx context.Context, in Compose) (model.DraftWrite
 	}
 	o := mime.Outgoing{From: &from, Subject: in.Subject, Text: in.Body, HTML: htm, Attachments: files,
 		MessageID: mime.NewMessageID(from.Email)}
+	if in.Forward != "" && in.Subject == "" {
+		o.Subject = strings.TrimSpace("Fwd: " + string(fwd.m.Subject))
+	}
 	out.Recipients = callers
-	threadID := ""
 	if in.reply() {
 		r := &model.Reply{ParentID: parent.ID, ParentThreadID: parent.ThreadID, FromThread: in.ReplyToThread != "",
 			ReplyAll: in.ReplyAll}
@@ -98,6 +116,10 @@ func (s *Service) CreateDraft(ctx context.Context, in Compose) (model.DraftWrite
 	}
 	addressTo(&o, out.Recipients)
 	raw, err := mime.Build(o)
+	if errors.Is(err, mime.ErrAttachedLines) {
+		return out, gapi.Errf(gapi.ClassUnsupported, "message %s has a line over 998 characters or a NUL character, "+
+			"which an attached message cannot carry as it is (RFC 2046 §5.2.1); forward it from Gmail", fwd.m.ID)
+	}
 	if err != nil {
 		// Every input was checked above, and the parent's addresses that
 		// cannot be written were left out; the cause is not shown, since
@@ -124,6 +146,9 @@ func (s *Service) CreateDraft(ctx context.Context, in Compose) (model.DraftWrite
 	if out.Reply != nil {
 		out.Reply.Joined = d.Message != nil && d.Message.ThreadID == out.Reply.ParentThreadID
 	}
+	if out.Forward != nil {
+		out.Forward.Joined = d.Message != nil && d.Message.ThreadID == out.Forward.ThreadID
+	}
 	return out, nil
 }
 
@@ -135,6 +160,9 @@ func (in Compose) reply() bool { return in.ReplyTo != "" || in.ReplyToThread != 
 func (in Compose) check() ([]model.Recipient, error) {
 	reply := in.reply()
 	switch {
+	case in.Forward != "" && (reply || in.ReplyAll):
+		return nil, gapi.Errf(gapi.ClassInvalid,
+			"forward writes a new message with the original attached, so it takes no reply_to, reply_to_thread or reply_all")
 	case in.ReplyTo != "" && in.ReplyToThread != "":
 		return nil, gapi.Errf(gapi.ClassInvalid, "give reply_to or reply_to_thread, not both")
 	case in.ReplyAll && !reply:
@@ -295,6 +323,74 @@ func (s *Service) replyParent(ctx context.Context, replyTo, thread string) (mode
 		return model.Message{}, gapi.Errf(gapi.ClassInvalid, "reply_to %s; reply to a message that was sent or received", why)
 	}
 	return m, nil
+}
+
+// original is the message a forward attaches: as read, and the copy
+// that goes attached.
+type original struct {
+	m          model.Message
+	raw        []byte
+	bccRemoved bool
+}
+
+// original reads the message a forward attaches with one format=raw
+// read, and refuses a draft, a trashed message and a reaction as a reply
+// does. One whose answer would be over the client's limit is refused
+// before anything is written.
+func (s *Service) original(ctx context.Context, ref string) (original, error) {
+	id, err := s.messageID(ctx, ref)
+	if err != nil {
+		return original{}, err
+	}
+	g, err := s.client.GetMessage(ctx, id, gapi.FormatRaw)
+	if errors.Is(err, gapi.ErrTooLarge) {
+		return original{}, gapi.Errf(gapi.ClassInvalid, "message %s is larger than the %d MB this server reads in one "+
+			"answer, so it cannot be forwarded from here; forward it from Gmail", id, gapi.MaxRawRead>>20)
+	}
+	if err != nil {
+		return original{}, err
+	}
+	m, err := model.NewMessage(g, model.NewLabelIndex(nil), nil)
+	if err != nil {
+		return original{}, gapi.Wrap(gapi.ClassUnavailable, err, "Gmail returned a message this server could not read")
+	}
+	if why := unrepliable(m); why != "" {
+		return original{}, gapi.Errf(gapi.ClassInvalid, "forward %s; forward a message that was sent or received", why)
+	}
+	raw, err := mime.DecodeBase64URL(g.Raw)
+	if err != nil || len(raw) == 0 {
+		return original{}, gapi.Errf(gapi.ClassUnavailable, "Gmail returned message %s without its content", id)
+	}
+	out := original{m: m}
+	out.raw, out.bccRemoved = mime.ForwardCopy(raw)
+	return out, nil
+}
+
+// maxForwardName bounds the subject in an attached original's name, in
+// bytes, well under every file system's 255.
+const maxForwardName = 200
+
+// forwardName names the attached original after its subject, as Gmail
+// does: "<subject>.eml", with a slash or backslash written as "_" so the
+// name stays a base name.
+func forwardName(subject string) string {
+	name := strings.TrimSpace(strings.Map(func(r rune) rune {
+		switch {
+		case r == '/' || r == '\\':
+			return '_'
+		case mime.HasControl(string(r)):
+			return ' '
+		}
+		return r
+	}, subject))
+	for len(name) > maxForwardName {
+		_, n := utf8.DecodeLastRuneInString(name)
+		name = name[:len(name)-n]
+	}
+	if name = strings.TrimSpace(name); name == "" {
+		name = "forwarded message"
+	}
+	return name + ".eml"
 }
 
 // unrepliable says why a message is not a parent, or "".

@@ -39,6 +39,19 @@ func TestGoldenDraftWrites(t *testing.T) {
 	newThread.Upload, newThread.Bytes = true, 6<<20
 	golden(t, "draft_reply_new_thread", render.DraftWrite(newThread, opts()).Text)
 
+	forward := model.DraftWrite{
+		Op: "create", DraftID: "r0000000000000025", MessageID: "0000000000000026", ThreadID: "0000000000000001",
+		Labels: []model.LabelRef{{ID: "DRAFT", Name: "DRAFT"}}, From: &from,
+		Recipients: []model.Recipient{{Address: addr(gmailtest.Chiara), Field: "to", Origin: model.FromCaller}},
+		Subject:    "Fwd: Offsite venue",
+		Files:      []model.File{{Name: "Offsite venue.eml", MediaType: "message/rfc822", Size: 2150}},
+		Forward:    &model.Forward{MessageID: "0000000000000003", ThreadID: "0000000000000001", Bytes: 2150, BccRemoved: true, Joined: true},
+		Bytes:      3400,
+	}
+	golden(t, "draft_forward", render.DraftWrite(forward, opts()).Text)
+	forward.ThreadID, forward.Forward.Joined, forward.Forward.BccRemoved = "0000000000000027", false, false
+	golden(t, "draft_forward_new_thread", render.DraftWrite(forward, opts()).Text)
+
 	update := model.DraftWrite{
 		Op: "update", DraftID: "r0000000000000021", MessageID: "0000000000000024", PreviousMessageID: "0000000000000022",
 		ThreadID: "0000000000000001", From: &from,
