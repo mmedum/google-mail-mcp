@@ -186,7 +186,8 @@ var steps = []step{
 
 	// The first message carries a calendar part. Its entry gives the
 	// event's UID and times. Gmail may keep the part inline or apart; one
-	// apart costs one more read, so the units say which it did.
+	// apart costs one more read, so the units, which the step prints, say
+	// which it did.
 	{name: "an attachment entry reads the invitation the driver wrote", tool: "get_message",
 		args: func(e *env) map[string]any { return map[string]any{"message_id": e.seed.messages[0]} },
 		check: func(e *env, text string) error {
@@ -449,9 +450,13 @@ func (e *env) unsubscribeIs(id, url, mailto string) error {
 
 // invitationIs holds the invitation on one attachment entry of the last
 // get_message to want, field by field, and its units to a read with the
-// part inline (21) or one fetched apart (41).
+// part inline (21) or one fetched apart (41). It prints the units: the
+// result's text does not carry them, and they say where Gmail kept the
+// part (§18 row 81).
 func (e *env) invitationIs(partID string, want map[string]any) error {
-	if u := e.structured["units"]; u != float64(21) && u != float64(41) {
+	u := e.structured["units"]
+	e.tr.Sayf("report: the read spent %v units; 21 means Gmail kept the calendar part inline, 41 that it stored it apart", u)
+	if u != float64(21) && u != float64(41) {
 		return fmt.Errorf("the read spent %v units; want 21, or 41 with the calendar part fetched", u)
 	}
 	msg, _ := e.structured["message"].(map[string]any)

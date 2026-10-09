@@ -37,9 +37,9 @@ type Part struct {
 	// Expanded serves a message/rfc822 part, whose Content is the
 	// attached message, as its own parts: one child holding the attached
 	// message's headers and tree, and no data or attachment id for the
-	// part itself. Whether Gmail serves any attached message this way is
-	// unverified (§18 row 83); the fake can, so the server's refusal of
-	// it is tested.
+	// part itself. Gmail served attached messages whole in the live run
+	// of 2026-10-09 (§18 row 83); the fake can serve one this way, so the
+	// server's refusal of a shape not seen is tested.
 	Expanded bool
 	// Boundary separates Children when this is a multipart.
 	Boundary string

@@ -17,6 +17,8 @@ import (
 	"time"
 
 	"github.com/mmedum/google-mail-mcp/v2/internal/mime"
+	"github.com/mmedum/google-mail-mcp/v2/scripts/internal/redact"
+	"github.com/mmedum/google-mail-mcp/v2/scripts/internal/transcript"
 )
 
 // fakeMailbox records what the driver did to the mailbox.
@@ -421,6 +423,24 @@ func TestCleanUpSkipsDeletedMessages(t *testing.T) {
 	}
 	if len(box.trashed) != 1 || box.trashed[0] != "0000000000000001" || len(s.messages) != 2 {
 		t.Errorf("trashed %v, messages %v", box.trashed, s.messages)
+	}
+}
+
+// The invitation step prints the units its read spent: the result's text
+// leaves them out, and they say where Gmail kept the calendar part.
+func TestTheInvitationStepPrintsItsUnits(t *testing.T) {
+	var out strings.Builder
+	e := &env{tr: transcript.NewTo(redact.NewRedactor(false), &out, &out), structured: map[string]any{
+		"units": float64(41),
+		"message": map[string]any{"attachments": []any{
+			map[string]any{"part_id": "2", "invitation": map[string]any{"method": "PUBLISH"}},
+		}},
+	}}
+	if err := e.invitationIs("2", map[string]any{"method": "PUBLISH"}); err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(out.String(), "report: the read spent 41 units;") {
+		t.Errorf("the transcript does not give the units: %q", out.String())
 	}
 }
 
