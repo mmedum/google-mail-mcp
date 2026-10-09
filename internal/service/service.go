@@ -24,8 +24,10 @@ const (
 )
 
 // listingHeaders are what a listing reads per row with format=metadata.
-// Content-Type is how a metadata read infers attachments.
-var listingHeaders = []string{"From", "To", "Cc", "Subject", "Date", "Message-ID", "Content-Type"}
+// Content-Type is how a metadata read infers attachments. A read costs
+// the same whatever headers it names (§18 row 80).
+var listingHeaders = []string{"From", "To", "Cc", "Subject", "Date", "Message-ID", "Content-Type",
+	"List-Unsubscribe", "List-Unsubscribe-Post"}
 
 // Service reads the mailbox through one client.
 type Service struct {

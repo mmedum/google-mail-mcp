@@ -181,6 +181,8 @@ type Message struct {
 	InReplyTo       []Untrusted
 	References      []Untrusted
 	ListUnsubscribe Untrusted
+	// Unsubscribe is ListUnsubscribe read as URIs.
+	Unsubscribe Unsubscribe
 	// Headers are every top-level header, undecoded, for headers: all.
 	Headers []mime.Header
 	// HeaderHidden counts invisible characters removed from the subject,
@@ -202,6 +204,18 @@ type Message struct {
 
 	Classification []gmail.ClassificationLabelValue
 }
+
+// Unsubscribe is what a List-Unsubscribe header offers, in the sender's
+// order of preference (mime.Unsubscribe). Every URI in it is the
+// sender's, and the server never visits or writes to one.
+type Unsubscribe struct {
+	URLs     []Untrusted
+	Mailto   []Untrusted
+	OneClick bool
+}
+
+// Empty reports whether the header offered nothing usable.
+func (u Unsubscribe) Empty() bool { return len(u.URLs) == 0 && len(u.Mailto) == 0 }
 
 // HasLabel reports whether the message carries a label id.
 func (m Message) HasLabel(id string) bool {
@@ -274,6 +288,8 @@ func NewMessage(g *gmail.Message, labels LabelIndex, fetched map[string][]byte) 
 	m.RFC822MessageID = Untrusted(parsed.MessageID)
 	m.InReplyTo, m.References = untrustedList(parsed.InReplyTo), untrustedList(parsed.References)
 	m.ListUnsubscribe = Untrusted(parsed.ListUnsubscribe)
+	m.Unsubscribe = Unsubscribe{URLs: untrustedList(parsed.Unsubscribe.URLs),
+		Mailto: untrustedList(parsed.Unsubscribe.Mailto), OneClick: parsed.Unsubscribe.OneClick}
 	m.Headers = parsed.Headers
 	m.DateHeader = Untrusted(parsed.DateHeader)
 	m.HeaderHidden, m.LenientHeaders = parsed.HeaderHidden, parsed.LenientHeaders

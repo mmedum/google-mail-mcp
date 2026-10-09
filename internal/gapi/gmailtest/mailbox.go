@@ -216,6 +216,7 @@ func (sd *seeder) newsletter() {
 		body:   htmlPart("quoted-printable", []byte(newsletterHTML)), text: text,
 		extra: []gmail.MessagePartHeader{
 			{Name: "List-Unsubscribe", Value: "<mailto:leave@harbor-weekly.invalid>, <https://harbor-weekly.invalid/unsubscribe>"},
+			{Name: "List-Unsubscribe-Post", Value: "List-Unsubscribe=One-Click"},
 			{Name: "Precedence", Value: "bulk"},
 		}})
 	sd.record(ScenarioNewsletter, []*message{m}, "")

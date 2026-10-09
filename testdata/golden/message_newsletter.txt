@@ -1,5 +1,5 @@
 budget: 24000 characters
-message 0000000000000004 · thread 0000000000000004 · 2026-03-02 15:00 UTC · labels: INBOX, CATEGORY_PROMOTIONS, Newsletters
+message 0000000000000004 · thread 0000000000000004 · 2026-03-02 15:00 UTC · labels: INBOX, CATEGORY_PROMOTIONS, Newsletters · unsubscribe: web (one-click, as the sender declares), mail
 <<<untrusted-mail TESTTOKEN: headers from news@harbor-weekly.invalid in 0000000000000004>>>
 From: Harbor Weekly <news@harbor-weekly.invalid>
 To: Rae Reader <reader@example.com>

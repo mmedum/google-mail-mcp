@@ -800,6 +800,20 @@ nothing else shows its newest message. A row cannot pass over a reaction:
 a reaction is told by its part, and the row's read carries headers only
 (§18 row 78).
 
+A message's row and its read say how the sender offers to unsubscribe.
+`List-Unsubscribe` is read as RFC 2369 §2 tells a client to: URIs in
+angle brackets, with comments and whitespace between them ignored. The
+first thing that is neither a bracketed URI nor a comma after one ends
+the reading. `unsubscribe` lists the http and https addresses and the
+mailto ones, each in the header's order, which RFC 2369 makes the
+sender's order of preference. `one_click` is true when one of them is
+https and the one `List-Unsubscribe-Post` header reads exactly
+`List-Unsubscribe=One-Click` (RFC 8058 §3.1). It is the sender's claim:
+RFC 8058 §4 asks a receiver to check a DKIM signature over both
+headers, and this server does not. The server never visits or writes to
+any of these addresses (§4.1.3). Both headers are in the listing's
+header set, at no cost (§18 row 80).
+
 ### 7.2 Reading a thread or a message
 
 `get_thread` and `get_message` walk the whole MIME tree (§3.7): the
@@ -808,7 +822,8 @@ then HTML converted to text (§4.1.2); every part's charset decoded;
 parts stored behind an `attachmentId` fetched when they are body parts
 and listed when they are attachments. Headers shown are From, To, Cc,
 Reply-To, Date, Subject, `Message-ID`, and `List-Unsubscribe` when
-present; `all_headers: true` shows the rest. Budget and collapsing per §4.8.
+present, and the message's line says how it offers to unsubscribe
+(§7.1); `all_headers: true` shows the rest. Budget and collapsing per §4.8.
 Calendar invitations are listed as attachments with their method
 (`REQUEST`, `CANCEL`) and no further parsing. A thread's drafts follow its conversation in a
 section of their own, "drafts in this thread, not sent", on the first
@@ -2734,3 +2749,4 @@ live** — §15 exists to settle these, and they are marked.
 | 77 | A tool the server confirms itself should carry the mark too | The owner's report of 2026-10-09 that one delete asked twice in Claude Code in a sibling server built the same way, and the decision that followed; GitHub's MCP server (`delete_repository`) and Supabase's, which confirm with `destructiveHint` plus a form elicitation; Claude Code's documentation, which scopes the mark to "tools whose permission prompt is itself the point"; rows 49 and 60 | **Refuted, 2026-10-09.** No source recommends two hard gates for one call. Claude Code prompts for the mark even under an allow rule (row 49), and then the server asks. So `tools/list` drops the mark from the tools that ask before every write when the request declares form elicitation (§4.13 item 15); `destructiveHint` stays as the client's soft gate. Unattended, `claude -p` declares elicitation and answers `cancel` (row 60), so a send or delete is still `[blocked]`, though a dry run now reaches the server. An `Elicitation` hook that accepts (row 61) now confirms one alone, where the mark used to refuse the call first. Owed: the maintainer's check that a confirmed `send_draft` asks once in interactive Claude Code |
 | 78 | A search row can name a thread's newest sent or received message, passing over drafts, trash and emoji reactions, with no call beyond the `threads.get` it already makes | Discovery document revision 20261005, `users.threads.get` parameter `format`, read 2026-10-09: `metadata` "Returns only email message IDs, labels, and email headers"; the `DRAFT`, `TRASH` and `SENT` system labels | **Confirmed for drafts and trash, refuted for reactions.** Labels arrive with every message, so a row passes over a draft or a trashed message and says whether the account sent the latest from `SENT`. A reaction is told only by its `text/vnd.google.email-reaction+json` part, which a headers-only read does not carry, so a row may still name one as the latest. Telling it would cost a full read per thread. Owed: the live step "a thread row passes over the draft in it" |
 | 79 | A per-user OAuth login can call every settings method its scopes allow | Discovery document revision 20261005, read 2026-10-09: `delegates.create`, `delete`, `get` and `list`, `forwardingAddresses.create` and `delete`, `sendAs.create`, `delete` and `verify`, and `updateAutoForwarding` each say "This method is only available to service account clients that have been delegated domain-wide authority"; `sendAs.update` says "Addresses other than the primary address for the account can only be updated by service account clients that have been delegated domain-wide authority"; `sendAs.patch` says neither | **Refuted for those methods.** Their rows in `testdata/api-coverage.tsv` quote it. The server calls none of them, so none was probed. `sendAs.patch`, behind `update_signature`, names no such limit, yet it changes the resource `update` does. Whether a per-user login can patch the signature of an address other than the primary is unproven, tier 3: the live driver writes only the default address's signature, which is the primary on most accounts. Owed: a live run on an account whose default send-as address is an alias, or a step that saves, sets and restores an alias's signature |
+| 80 | A row can carry `List-Unsubscribe` at no cost, and the header says what it offers | Discovery document revision 20261005, read 2026-10-09: `users.messages.get` and `users.threads.get` parameter `metadataHeaders`, "When given and format is `METADATA`, only include headers specified"; Gmail's quota reference, read 2026-10-09, one cost per method; RFC 2369 §2 and §3.2; RFC 8058 §3.1 and §4 | **Confirmed.** A read costs 20 or 40 units whatever headers it names, so the listing names `List-Unsubscribe` and `List-Unsubscribe-Post` for free. RFC 2369: "The URLs have order of preference from left to right"; a field that does not start with `<`, and the rest of one after an item that is not a bracketed URL, "SHOULD be ignored". RFC 8058 §3.1: `List-Unsubscribe` "MUST contain one HTTPS URI", and the Post header "MUST contain the single key/value pair "List-Unsubscribe=One-Click"". §4 says a receiver SHOULD NOT offer one-click without a DKIM signature covering both headers. The server checks no signature, so `one_click` is the sender's claim and says so. Owed: the live step "a row reads the List-Unsubscribe the driver wrote", which shows Gmail keeps both headers on an inserted message and returns them to a headers-only read |

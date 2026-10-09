@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"reflect"
 	"regexp"
 	"slices"
 	"strconv"
@@ -18,6 +19,7 @@ import (
 	"github.com/mmedum/google-mail-mcp/v2/internal/gapi"
 	"github.com/mmedum/google-mail-mcp/v2/internal/gapi/gmailtest"
 	"github.com/mmedum/google-mail-mcp/v2/internal/gmail"
+	"github.com/mmedum/google-mail-mcp/v2/internal/model"
 	"github.com/mmedum/google-mail-mcp/v2/internal/server"
 	"github.com/mmedum/google-mail-mcp/v2/internal/server/testutil"
 	"github.com/mmedum/google-mail-mcp/v2/internal/tools"
@@ -387,6 +389,36 @@ func TestGetThreadCountsHiddenText(t *testing.T) {
 	}
 	if hidden == 0 || mismatches == 0 {
 		t.Errorf("the newsletter hides text and a mismatched link; counted %d hidden, %d mismatches", hidden, mismatches)
+	}
+}
+
+// The newsletter's List-Unsubscribe is read on its search row, whose
+// headers-only read must name both headers, and on a full read.
+func TestUnsubscribeOnRowsAndReads(t *testing.T) {
+	h, fake := connectFake(t, config.Config{})
+	id := fake.Scenario(gmailtest.ScenarioNewsletter).MessageIDs[0]
+	want := tools.Unsubscribe{
+		UntrustedURLs:   []model.Untrusted{"https://harbor-weekly.invalid/unsubscribe"},
+		UntrustedMailto: []model.Untrusted{"mailto:leave@harbor-weekly.invalid"},
+		OneClick:        true,
+	}
+	var list tools.MessagesOut
+	text := call(t, h, "search_messages", map[string]any{"q": "from:news@harbor-weekly.invalid"}, &list)
+	if len(list.Messages) != 1 || list.Messages[0].Unsubscribe == nil || !reflect.DeepEqual(*list.Messages[0].Unsubscribe, want) {
+		t.Fatalf("the row's unsubscribe = %+v; want %+v", list.Messages, want)
+	}
+	if !strings.Contains(text, "· unsubscribe: web (one-click, as the sender declares), mail\n") {
+		t.Errorf("the row does not say how to unsubscribe:\n%s", text)
+	}
+	var one tools.MessageOut
+	call(t, h, "get_message", map[string]any{"message_id": id}, &one)
+	if one.Message.Unsubscribe == nil || !reflect.DeepEqual(*one.Message.Unsubscribe, want) {
+		t.Errorf("the read's unsubscribe = %+v; want %+v", one.Message.Unsubscribe, want)
+	}
+	var plain tools.MessageOut
+	call(t, h, "get_message", map[string]any{"message_id": fake.Scenario(gmailtest.ScenarioPlainThread).MessageIDs[0]}, &plain)
+	if plain.Message.Unsubscribe != nil {
+		t.Errorf("a message with no List-Unsubscribe carries %+v", plain.Message.Unsubscribe)
 	}
 }
 

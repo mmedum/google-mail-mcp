@@ -149,6 +149,7 @@ func (h *hostile) message(n int, format string) *gmail.Message {
 		{"In-Reply-To", "<" + m() + "@x.example>"},
 		{"References", "<" + m() + "@x.example> <" + m() + "@x.example>"},
 		{"List-Unsubscribe", "<mailto:" + m() + "@" + m() + ".example>, <https://" + m() + ".example/u>"},
+		{"List-Unsubscribe-Post", h.shape(m())},
 		{"X-" + m(), h.shape(m()) + "\r\n folded note: " + m()},
 		{"MIME-Version", "1.0"},
 	}

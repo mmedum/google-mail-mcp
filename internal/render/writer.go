@@ -164,6 +164,27 @@ func (w *writer) when(t time.Time) part {
 	return part{t.In(w.loc).Format("2006-01-02 15:04 MST")}
 }
 
+// unsubscribeWays says how a message offers to unsubscribe, as " ·
+// unsubscribe: " and the ways, from a fixed set; empty when it offers
+// none. The addresses are the sender's: the header block shows them as
+// written, and the structured result lists them.
+func unsubscribeWays(u model.Unsubscribe) part {
+	var ways []string
+	switch {
+	case u.OneClick:
+		ways = append(ways, "web (one-click, as the sender declares)")
+	case len(u.URLs) > 0:
+		ways = append(ways, "web")
+	}
+	if len(u.Mailto) > 0 {
+		ways = append(ways, "mail")
+	}
+	if len(ways) == 0 {
+		return part{}
+	}
+	return part{" · unsubscribe: " + strings.Join(ways, ", ")}
+}
+
 func yesNo(b bool) part {
 	if b {
 		return part{"yes"}

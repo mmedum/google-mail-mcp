@@ -52,6 +52,9 @@ type Message struct {
 	InReplyTo       []string
 	References      []string
 	ListUnsubscribe string
+	// Unsubscribe is ListUnsubscribe read as URIs, with whether the
+	// sender declares one-click unsubscribe.
+	Unsubscribe Unsubscribe
 
 	// HeaderHidden counts invisible characters removed from the subject,
 	// display names and addresses.
@@ -245,6 +248,7 @@ func (m *Message) decodeHeaders() {
 	m.InReplyTo = parseMsgIDs(headerGet(m.Headers, "In-Reply-To"))
 	m.References = parseMsgIDs(headerGet(m.Headers, "References"))
 	m.ListUnsubscribe = cleanHeader(headerGet(m.Headers, "List-Unsubscribe"))
+	m.Unsubscribe = parseUnsubscribe(m.Headers)
 }
 
 // declaredName is the part's name: Content-Disposition filename, then

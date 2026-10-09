@@ -129,7 +129,9 @@ func TestGoldenListings(t *testing.T) {
 	for _, id := range b.s.Scenario(gmailtest.ScenarioInternational).MessageIDs {
 		msgs = append(msgs, b.message(id, "metadata"))
 	}
-	golden(t, "messages", render.Messages(render.MessageList{Messages: msgs, ResultSizeEstimate: 4}, opts()).Text)
+	// The newsletter's row says how it offers to unsubscribe.
+	msgs = append(msgs, b.message(b.s.Scenario(gmailtest.ScenarioNewsletter).MessageIDs[0], "metadata"))
+	golden(t, "messages", render.Messages(render.MessageList{Messages: msgs, ResultSizeEstimate: 5}, opts()).Text)
 
 	sc := b.s.Scenario(gmailtest.ScenarioDraftReply)
 	d := model.Draft{ID: sc.DraftID, Message: b.message(sc.MessageIDs[2], "metadata")}

@@ -251,7 +251,8 @@ func cleanUp(ctx context.Context, box mailbox, s *seeded) error {
 // syntheticMessage builds message i of a run: addresses at reserved
 // domains, a subject naming the run, a body from a template. Nothing in it
 // came from anybody. The first carries an attachment, for
-// download_attachment.
+// download_attachment. The second offers to unsubscribe, one-click, at
+// addresses that cannot resolve.
 func syntheticMessage(r runLabel, i int) []byte {
 	var b strings.Builder
 	fmt.Fprintf(&b, "From: Synthetic Sender <sender-%d@example.com>\r\n", i+1)
@@ -259,6 +260,10 @@ func syntheticMessage(r runLabel, i int) []byte {
 	fmt.Fprintf(&b, "Subject: %s message %d\r\n", r.name, i+1)
 	fmt.Fprintf(&b, "Message-ID: <%s.%d@livemail.invalid>\r\n", r.name, i+1)
 	b.WriteString("Date: " + syntheticDateHeader + "\r\n")
+	if i == 1 {
+		b.WriteString("List-Unsubscribe: <" + syntheticUnsubscribeMail + ">,\r\n <" + syntheticUnsubscribeURL(r) + ">\r\n")
+		b.WriteString("List-Unsubscribe-Post: List-Unsubscribe=One-Click\r\n")
+	}
 	b.WriteString("MIME-Version: 1.0\r\n")
 	body := fmt.Sprintf("Synthetic body %d, written by the live driver for run %s.\r\n", i+1, r.name)
 	if i != 0 {
@@ -274,6 +279,14 @@ func syntheticMessage(r runLabel, i int) []byte {
 	b.WriteString(base64.StdEncoding.EncodeToString(syntheticAttachment(r)) + "\r\n")
 	b.WriteString("--" + boundary + "--\r\n")
 	return []byte(b.String())
+}
+
+// syntheticUnsubscribeMail and syntheticUnsubscribeURL are the second
+// message's List-Unsubscribe, at domains that never resolve.
+const syntheticUnsubscribeMail = "mailto:leave@livemail.invalid?subject=unsubscribe"
+
+func syntheticUnsubscribeURL(r runLabel) string {
+	return "https://livemail.invalid/unsubscribe?run=" + r.name
 }
 
 // syntheticAttachmentName names the first message's attachment.

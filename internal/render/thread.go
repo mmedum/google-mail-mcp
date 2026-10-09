@@ -210,8 +210,8 @@ func Messages(l MessageList, o Options) Result {
 	return listing(o, l.Messages, l.NextPageToken, "message", "messages",
 		func(m model.Message) string { return m.ID },
 		func(w *writer, m model.Message) {
-			w.say("message %s · thread %s · %s · labels: %s · attachments: %s",
-				gmailID(m.ID), gmailID(m.ThreadID), w.when(m.Date), labelList(m.Labels), yesNo(m.HasAttachments))
+			w.say("message %s · thread %s · %s · labels: %s · attachments: %s%s", gmailID(m.ID), gmailID(m.ThreadID),
+				w.when(m.Date), labelList(m.Labels), yesNo(m.HasAttachments), unsubscribeWays(m.Unsubscribe))
 			w.block("message summary", m.Sender().Email, m.ID,
 				"From: "+string(addrList(m.From))+"\n"+
 					"To: "+string(addrList(m.To))+"\n"+

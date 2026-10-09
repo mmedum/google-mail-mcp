@@ -224,11 +224,12 @@ func sizeText(n int) string {
 // A thread's message line also gives its position, pos of n.
 func (w *writer) messageLine(m model.Message, pos, n int) {
 	if n > 0 {
-		w.say("── %s of %s · message %s · thread %s · %s · labels: %s", num(pos), num(n),
-			gmailID(m.ID), gmailID(m.ThreadID), w.when(m.Date), labelList(m.Labels))
+		w.say("── %s of %s · message %s · thread %s · %s · labels: %s%s", num(pos), num(n),
+			gmailID(m.ID), gmailID(m.ThreadID), w.when(m.Date), labelList(m.Labels), unsubscribeWays(m.Unsubscribe))
 		return
 	}
-	w.say("message %s · thread %s · %s · labels: %s", gmailID(m.ID), gmailID(m.ThreadID), w.when(m.Date), labelList(m.Labels))
+	w.say("message %s · thread %s · %s · labels: %s%s", gmailID(m.ID), gmailID(m.ThreadID), w.when(m.Date),
+		labelList(m.Labels), unsubscribeWays(m.Unsubscribe))
 }
 
 // draftLine heads one draft in a thread's drafts section.

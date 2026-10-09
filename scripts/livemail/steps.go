@@ -172,6 +172,18 @@ var steps = []step{
 		},
 		check: func(_ *env, text string) error { return want(text, "Synthetic body 2") }},
 
+	// The second message offers to unsubscribe. Its row reads both
+	// headers, which the listing's headers-only read must name.
+	{name: "a row reads the List-Unsubscribe the driver wrote", tool: "search_messages",
+		args: func(e *env) map[string]any { return map[string]any{"q": e.seed.label.query("Synthetic")} },
+		check: func(e *env, text string) error {
+			row := regexp.MustCompile(`(?m)^message ` + e.seed.messages[1] + ` · .*$`).FindString(text)
+			if !strings.HasSuffix(row, " · unsubscribe: web (one-click, as the sender declares), mail") {
+				return fmt.Errorf("the row does not say how to unsubscribe: %q", row)
+			}
+			return e.unsubscribeIs(e.seed.messages[1], syntheticUnsubscribeURL(e.seed.label), syntheticUnsubscribeMail)
+		}},
+
 	{name: "read an inserted message by its Message-ID", tool: "get_message",
 		args: func(e *env) map[string]any {
 			return map[string]any{"message_id": "rfc822:<" + e.seed.label.name + ".3@livemail.invalid>"}
@@ -332,6 +344,26 @@ type env struct {
 	// predicted is each item's labels after, as the last dry run said,
 	// for the write that follows to match (§18 row 70).
 	predicted map[string][]string
+}
+
+// unsubscribeIs holds a row of the last listing to one web address,
+// one-click, and one mail address.
+func (e *env) unsubscribeIs(id, url, mailto string) error {
+	rows, _ := e.structured["messages"].([]any)
+	for _, r := range rows {
+		row, _ := r.(map[string]any)
+		if row["id"] != id {
+			continue
+		}
+		u, _ := row["unsubscribe"].(map[string]any)
+		urls, _ := u["untrusted_urls"].([]any)
+		mails, _ := u["untrusted_mailto"].([]any)
+		if u["one_click"] != true || !slices.Equal(urls, []any{url}) || !slices.Equal(mails, []any{mailto}) {
+			return fmt.Errorf("the row's unsubscribe is %v; want %s, one-click, and %s", u, url, mailto)
+		}
+		return nil
+	}
+	return fmt.Errorf("no row for message %s", id)
 }
 
 // itemsAfter is each item's labels_after in the last multi-id write.

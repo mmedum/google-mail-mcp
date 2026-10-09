@@ -19,6 +19,7 @@ lifted verbatim.
 
 - `--dump-schemas` names the build's version, so a recorded tool surface says which release it is.
 - `search_threads` rows carry `drafts`, how many drafts a thread holds, and `latest_from_me`, whether this account sent the thread's latest message.
+- `search_messages` rows and message reads carry `unsubscribe`: the web and mail addresses of the sender's `List-Unsubscribe` header, most preferred first, and `one_click` when the sender declares one-click unsubscribe. The server never visits them.
 
 ### Changed
 

@@ -54,6 +54,16 @@ type MessageMeta struct {
 	// LinkMismatches counts links whose visible text names a different
 	// host from the one they point to.
 	LinkMismatches int `json:"link_mismatches,omitempty"`
+	// Unsubscribe is the message's List-Unsubscribe header, read.
+	Unsubscribe *Unsubscribe `json:"unsubscribe,omitempty" jsonschema:"how the sender's List-Unsubscribe header offers to unsubscribe; absent when it offers no web or mail address. The server never visits or writes to these"`
+}
+
+// Unsubscribe is what a List-Unsubscribe header offers (RFC 2369), each
+// list in the header's order, which is the sender's order of preference.
+type Unsubscribe struct {
+	UntrustedURLs   []model.Untrusted `json:"untrusted_urls,omitempty" jsonschema:"the http and https addresses, most preferred first"`
+	UntrustedMailto []model.Untrusted `json:"untrusted_mailto,omitempty" jsonschema:"the mailto addresses, with any subject or body they ask for, most preferred first"`
+	OneClick        bool              `json:"one_click" jsonschema:"true when the sender declares one-click unsubscribe (RFC 8058) for an https address; the sender declares it, and no signature over it is checked"`
 }
 
 // Rendered is what every read returns besides its rows: how the text was
@@ -118,6 +128,7 @@ func messageMeta(m model.Message) MessageMeta {
 		HasAttachments:     m.HasAttachments,
 		HiddenCharsRemoved: m.Body.HiddenChars() + m.HeaderHidden + m.SnippetHidden,
 		LinkMismatches:     len(m.Body.Mismatches()),
+		Unsubscribe:        unsubscribe(m.Unsubscribe),
 	}
 	for _, a := range m.Attachments {
 		meta.Attachments = append(meta.Attachments, attachment(a))
@@ -131,6 +142,13 @@ func attachment(a mime.Attachment) Attachment {
 		Size: a.Size, AttachmentID: a.AttachmentID, Inline: a.Inline,
 		UntrustedCalendarMethod: model.Untrusted(a.CalendarMethod),
 	}
+}
+
+func unsubscribe(u model.Unsubscribe) *Unsubscribe {
+	if u.Empty() {
+		return nil
+	}
+	return &Unsubscribe{UntrustedURLs: u.URLs, UntrustedMailto: u.Mailto, OneClick: u.OneClick}
 }
 
 func page(token string, estimate int) Page {
