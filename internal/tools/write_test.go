@@ -189,6 +189,10 @@ func TestCreateDraftRefusals(t *testing.T) {
 		{"reply to the trash", map[string]any{"reply_to": fake.Scenario(gmailtest.ScenarioTrash).MessageIDs[0]}, gapi.ClassInvalid},
 		{"reply to nothing", map[string]any{"reply_to": "00000000000fffff"}, gapi.ClassNotFound},
 		{"attachments without a directory", map[string]any{"attachments": []any{"a.txt"}}, gapi.ClassBlocked},
+		{"quote without a reply", map[string]any{"quote": true, "body": "x"}, gapi.ClassInvalid},
+		{"quote and body_html", map[string]any{"reply_to": plain.MessageIDs[0], "quote": true, "body": "x", "body_html": "<p>x</p>"},
+			gapi.ClassInvalid},
+		{"quote a forward", map[string]any{"forward": plain.MessageIDs[0], "quote": true}, gapi.ClassInvalid},
 		{"forward and reply_to", map[string]any{"forward": plain.MessageIDs[0], "reply_to": plain.MessageIDs[1]}, gapi.ClassInvalid},
 		{"forward and reply_to_thread", map[string]any{"forward": plain.MessageIDs[0], "reply_to_thread": plain.ThreadID}, gapi.ClassInvalid},
 		{"forward and reply_all", map[string]any{"forward": plain.MessageIDs[0], "reply_all": true}, gapi.ClassInvalid},
@@ -320,6 +324,116 @@ func TestCreateDraftReplyThreadingHeaders(t *testing.T) {
 			}
 			if !slices.Equal(m.References, tc.wantRefs) {
 				t.Errorf("References %v; want %v", m.References, tc.wantRefs)
+			}
+		})
+	}
+}
+
+// A quote puts the parent's text below the body, after a line naming its
+// Date header as written and its sender, each line after "> " (§7.4).
+// The HTML version is made from the whole text, quote included.
+func TestCreateDraftQuotes(t *testing.T) {
+	h, fake := connectFake(t, config.Config{})
+	id := fake.AddThreadingParent("<parent.1@example.com>", "", "")
+	var out tools.DraftWriteOut
+	text := call(t, h, "create_draft", map[string]any{"reply_to": id, "quote": true, "body": "Yes, booked."}, &out)
+	if out.Reply == nil || out.Reply.QuotedChars != 39 || out.Reply.QuoteFromHTML || out.Units != 31 {
+		t.Fatalf("reply %+v units %d; want 39 characters quoted from plain text, 31 units", out.Reply, out.Units)
+	}
+	const quote = "On Wed, 04 Mar 2026 05:01:00 +0000, Bruno Fennick <bruno.fennick@example.org> wrote:\n> Is the room booked for Thursday?\n>\n> Bruno"
+	raw, _ := fake.Raw(out.MessageID)
+	html, _ := gmailtest.HTMLPart(raw)
+	if got := mime.ParseRaw(raw).Body.Text; got != "Yes, booked.\n\n"+quote {
+		t.Fatalf("stored text\n%q\nwant\n%q", got, "Yes, booked.\n\n"+quote)
+	}
+	// An empty line of the parent's is quoted as ">", with no space after.
+	if !bytes.Contains(raw, []byte("Thursday?\r\n>\r\n> Bruno")) {
+		t.Errorf("the plain part does not quote the empty line as >:\n%s", raw)
+	}
+	if !strings.Contains(html, "&gt; Is the room booked for Thursday?<br>") {
+		t.Errorf("the HTML version does not carry the quote:\n%s", html)
+	}
+	if !strings.Contains(text, "quoted below the body: 39 characters of the parent's text") {
+		t.Errorf("text:\n%s", text)
+	}
+	// The HTML version, quote included, reads as made from the text: a
+	// body-only update makes it again, and replaces the quote with the rest.
+	var upd tools.DraftWriteOut
+	call(t, h, "update_draft", map[string]any{"draft_id": out.DraftID, "message_id": out.MessageID, "body": "Booked."}, &upd)
+	raw, _ = fake.Raw(upd.MessageID)
+	html, _ = gmailtest.HTMLPart(raw)
+	if !slices.Equal(upd.Changed, []string{"body", "body_html"}) || mime.ParseRaw(raw).Body.Text != "Booked." || html != "<p>Booked.</p>\n" {
+		t.Fatalf("update changed %v; stored %q and HTML %q", upd.Changed, mime.ParseRaw(raw).Body.Text, html)
+	}
+
+	var bare tools.DraftWriteOut
+	call(t, h, "create_draft", map[string]any{"reply_to": id, "quote": true, "plain_only": true}, &bare)
+	raw, _ = fake.Raw(bare.MessageID)
+	if got := mime.ParseRaw(raw).Body.Text; got != quote {
+		t.Fatalf("with no body, stored\n%q\nwant the quote alone", got)
+	}
+	if _, ok := gmailtest.HTMLPart(raw); ok {
+		t.Error("plain_only kept an HTML version")
+	}
+}
+
+// A parent with only HTML, or whose plain part only points at its HTML,
+// is quoted as converted: hidden text left out, links reduced to their
+// host, and quote_from_html set.
+func TestCreateDraftQuotesHTMLAsConverted(t *testing.T) {
+	h, fake := connectFake(t, config.Config{})
+	for _, tc := range []struct {
+		scenario, want, never string
+	}{
+		{gmailtest.ScenarioNewsletter, "> Members can renew at https://members.example.com/renew <track.harbor-weekly.invalid> before Friday.",
+			"collector@attacker.invalid"},
+		{gmailtest.ScenarioPlaceholder, "> Your booking is confirmed.", "Please view the HTML version"},
+	} {
+		t.Run(tc.scenario, func(t *testing.T) {
+			var out tools.DraftWriteOut
+			text := call(t, h, "create_draft", map[string]any{"reply_to": fake.Scenario(tc.scenario).MessageIDs[0],
+				"quote": true, "body": "Noted."}, &out)
+			got := storedDraft(t, fake, out.MessageID).Body.Text
+			if !out.Reply.QuoteFromHTML || !strings.Contains(got, tc.want) || strings.Contains(got, tc.never) ||
+				strings.Contains(got, "/c/1?u=") {
+				t.Fatalf("quote_from_html %v, stored:\n%s", out.Reply.QuoteFromHTML, got)
+			}
+			if !strings.Contains(text, "converted from its HTML, so each link in the quote keeps only its host") {
+				t.Errorf("text:\n%s", text)
+			}
+		})
+	}
+}
+
+// A quote reads the parts of the parent's text Gmail stored apart, 20
+// units each, and says so; a reply without quote reads none.
+func TestCreateDraftQuoteReadsTextStoredApart(t *testing.T) {
+	h, fake := connectFake(t, config.Config{})
+	thread, _ := fake.AddBackedThread()
+	invite := fake.AddPartsMessage(gmailtest.File("application/ics", "invite.ics", []byte(
+		"BEGIN:VCALENDAR\r\nMETHOD:REQUEST\r\nBEGIN:VEVENT\r\nUID:quote@example.com\r\nEND:VEVENT\r\nEND:VCALENDAR\r\n")))
+	for _, tc := range []struct {
+		name    string
+		args    map[string]any
+		units   int
+		want    string
+		fetched bool
+	}{
+		{"by thread", map[string]any{"reply_to_thread": thread, "quote": true}, 71, "> Backed body 2.", true},
+		{"by message", map[string]any{"reply_to": thread, "quote": true}, 51, "> Backed body 1.", true},
+		{"no quote", map[string]any{"reply_to_thread": thread, "body": "x"}, 51, "x", false},
+		// A read of the message would fetch the calendar file; a quote does not.
+		{"a calendar file stored apart", map[string]any{"reply_to": invite, "quote": true}, 31, "> The files are attached.", false},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			var out tools.DraftWriteOut
+			text := call(t, h, "create_draft", tc.args, &out)
+			got := storedDraft(t, fake, out.MessageID).Body.Text
+			if out.Units != tc.units || !strings.HasSuffix(got, tc.want) {
+				t.Fatalf("units %d, stored %q; want %d units and the text ending %q", out.Units, got, tc.units, tc.want)
+			}
+			if said := strings.Contains(text, "read 1 part of the parent's text that Gmail stored apart"); said != tc.fetched {
+				t.Errorf("the text says a part was read: %v; want %v\n%s", said, tc.fetched, text)
 			}
 		})
 	}

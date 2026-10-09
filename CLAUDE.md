@@ -79,9 +79,9 @@ or missed. Siblings are never named in this repository (rule 1).
    control, and it is not to be replaced by an annotation or a prompt.
    A sent body is exactly what the caller gave: no prefix, no suffix, no
    signature appended server-side. The server adds only what the caller
-   names: with `forward`, the original as an attachment. Without
-   `body_html`, the same words also go as an HTML version made from
-   them. §4.2, §7.4.
+   names: with `quote`, the parent's text below the body; with
+   `forward`, the original as an attachment. Without `body_html`, the
+   same words also go as an HTML version made from them. §4.2, §7.4.
 6. **A send is never retried.** `messages.send` and `drafts.send` are
    POSTs Google does not deduplicate. An ambiguous failure is
    `[ambiguous_outcome]` and the server reads to settle it; it never

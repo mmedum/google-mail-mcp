@@ -145,7 +145,7 @@ be saved to; `GMAIL_PROFILE` lets one machine hold several accounts.
 | `list_filters` | The account's filters, with any that forward mail flagged |
 | `download_attachment` | Save an attachment into `GMAIL_LOCAL_DIR`, never overwriting; only when that is set |
 | `download_attachments` | Save several attachments of one message, or all of them, the same way; only when `GMAIL_LOCAL_DIR` is set |
-| `create_draft` | Save a new draft, a reply threaded by the server, or a forward with the original attached; nothing is sent |
+| `create_draft` | Save a new draft, a reply threaded by the server and quoting its parent if asked, or a forward with the original attached; nothing is sent |
 | `update_draft` | Change only the fields given, refusing a draft that changed since it was read |
 | `delete_draft` | Delete a draft for good, with `confirm: true` |
 | `modify_labels` | Add and remove labels on up to 100 messages or threads, reported per item |

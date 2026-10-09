@@ -393,6 +393,9 @@ type env struct {
 	// forwardDraft and forwardMessage are the forward the forward steps
 	// make, read back and delete.
 	forwardDraft, forwardMessage string
+	// quoteDraft is the quoting reply the quote steps make, read back
+	// and delete.
+	quoteDraft string
 	// spikeE is the draft side of spike E, from reading a draft back.
 	spikeE string
 	// sendTo is -send-to, the one address a step may send to; full is

@@ -131,6 +131,20 @@ func (w *writer) replyLines(d model.DraftWrite, r *model.Reply) {
 		w.say("left out: %s from the parent that cannot be written into a header (not ASCII local@domain).",
 			plural(r.Unwritable, "address", "addresses"))
 	}
+	switch {
+	case !r.Quote:
+	case r.QuotedChars == 0:
+		w.say("quote: the parent has no text to quote, so the body is as given.")
+	default:
+		w.say("quoted below the body: %s of the parent's text", plural(r.QuotedChars, "character", "characters"))
+		if r.QuoteFromHTML {
+			w.say("note: the parent's text was converted from its HTML, so each link in the quote keeps only its host.")
+		}
+		if r.QuoteFetched > 0 {
+			w.say("read %s of the parent's text that Gmail stored apart, 20 units each.",
+				plural(r.QuoteFetched, "part", "parts"))
+		}
+	}
 }
 
 // recipientCounts says where the recipients came from; the block lists

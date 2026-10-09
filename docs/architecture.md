@@ -272,10 +272,10 @@ an annotation is not a control and a registered tool can run unattended.
    Gmail. Replying is `create_draft` with `reply_to`, then `send_draft`.
 2. **The body is exactly what the caller gave.** No signature, prefix,
    footer or "sent by" line is added server-side, ever. The server adds
-   only what the caller names: with `forward`, the original as an
-   attachment (§7.4). When the caller
-   gives no HTML, the same words also go as an HTML version made from
-   the text (§7.4), so a reader sees the caller's words either way.
+   only what the caller names: with `quote`, the parent's text below the
+   body; with `forward`, the original as an attachment (§7.4). When the
+   caller gives no HTML, the same words also go as an HTML version made
+   from the text (§7.4), so a reader sees the caller's words either way.
 3. **`send_draft` shows before it sends.** Its result names every
    recipient (To, Cc, Bcc), the subject, the attachment names and sizes,
    and the thread it joins. `dry_run: true` returns that without
@@ -973,6 +973,23 @@ part it sends both, as it does any mail written in it: the HTML is what
 readers show, and the plain part Gmail delivers is wrapped at 75, as in
 any mail Gmail sends.
 
+`quote: true` on a reply puts the parent's text below the body: the
+body as given, a blank line, `On <Date>, <From> wrote:`, then each line
+of the parent's text after `> `, an empty one as `>`. The `Date` header
+is shown as the sender wrote it, and `From` as a result shows an
+address (§6.4). The text is the parent's as `get_message` reads it: a
+plain part as written, with what a reader would not see removed; an
+HTML-only parent, or one whose plain part only points at its HTML,
+converted, so each link keeps only its host, and the result says
+`quote_from_html`. The parts of that text Gmail stored apart are read
+for it, 20 units each, and the result says how many; an invitation's
+calendar part is not. `quoted_chars` counts the characters quoted. The
+HTML version is made from the whole text, quote included, so it says
+what the plain text says and `update_draft` still recognizes it as
+made; `quote` with `body_html` is `[invalid]`, and without a reply
+target too. A later `update_draft` with `body` replaces the quote with
+the rest of the text, which its description says (§18 row 86).
+
 `forward` on `create_draft` takes a message id, or `rfc822:` and its
 `Message-ID`, and attaches that message to the draft, read with one
 `messages.get` in `format=raw`, as `<subject>.eml`. A slash or backslash
@@ -1206,7 +1223,7 @@ tool sits behind from it.
 | `list_filters` | Read | always | `gmail.readonly` | 1 + 1 |
 | `download_attachment` | Read (local write) | `GMAIL_LOCAL_DIR` set | `gmail.readonly` | 20 + 20 |
 | `download_attachments` | Read (local write) | `GMAIL_LOCAL_DIR` set | `gmail.readonly` | 20 + 20/part stored apart |
-| `create_draft` | Write | not read-only | `gmail.modify` | 1 + 10 (+20 reply_to or forward, +40 reply_to_thread) |
+| `create_draft` | Write | not read-only | `gmail.modify` | 1 + 10 (+20 reply_to or forward, +40 reply_to_thread, +20/quoted part stored apart) |
 | `update_draft` | Write | not read-only | `gmail.modify` | 20 + 15 |
 | `delete_draft` | Write, for good | not read-only | `gmail.modify` | 20 + 10 |
 | `modify_labels` | Write | not read-only | `gmail.modify` | 1 + 25/message, 50/thread |
@@ -1461,6 +1478,7 @@ generated from `internal/scopes` and gated (§5a, `staleness`).
 | An invitation's identifiers and times are read from its calendar part, reversing §7.2's "no further parsing" | maintainer, 2026-10-09 | §7.2, §18 row 81 |
 | `read_attachment` reads an attachment's text into a result, registered by default, reversing §7.3's "never inlined" | maintainer, 2026-10-09 | §7.3, §18 row 84; text types only, inside the boundaries |
 | `create_draft` forwards a message by attaching it, with its `Bcc` left out; the server adds to a draft only what the caller names | maintainer, 2026-10-09 | §4.2, §7.4, §18 row 85; never inline, so the original goes as Gmail stored it |
+| A reply quotes its parent below the body only when `quote` asks, reversing "no suffix" for that one block | maintainer, 2026-10-09 | §4.2, §7.4, §18 row 86; the body the caller wrote is never changed |
 | Spikes D and E send in phase 2, from the live driver's run, to a second address the maintainer passes on the command line and never commits | maintainer, 2026-09-26 | §15; the transcript records the address redacted only |
 
 ## 15. What must be verified live
@@ -2876,3 +2894,4 @@ live** — §15 exists to settle these, and they are marked.
 | 83 | An attached message (`message/rfc822`) comes back from `messages.get` with its content inline or behind an `attachmentId`, like any attachment | Discovery document revision 20261005, read 2026-10-09: `MessagePart.parts`, "This only applies to container MIME message parts, for example `multipart/*`"; `MessagePart.body`, "may be empty for container MIME message parts"; `MessagePartBody.attachmentId`, "When not present, the entire content of the message part body is contained in the data field"; RFC 2046 §5, where `message` is a composite type beside `multipart` | **Unverified, tier 3.** The document names `multipart/*` as a container and no other, and RFC 2046 makes `message/rfc822` composite too. If Gmail serves an attached message as its parts, the part itself has no data and no `attachmentId`, and a download used to write it as an empty file. Both download tools and `read_attachment` now refuse such a part as `[unsupported]`, and the fake can serve one so the refusal is tested. Owed: the live steps that save and read the run's attached `.eml`, which show which way Gmail serves it |
 | 84 | An attachment's content is never put in a tool result | §7.3 as written in phase 1, which recorded no reason; the owner's decision of 2026-10-09 | **Reversed for text.** `read_attachment` reads plain text, CSV, Markdown, JSON, HTML, a calendar file and an attached message into the result, under the boundaries, hidden-text removal and budget a body gets; every other type stays a file to save. §7.3 gives the reasons on both sides. Owed: the live steps "read the run's text attachment" and "read the attached message", which show the content Gmail returns for each reads as written |
 | 85 | A forward can attach the original as Gmail stores it, and be filed in its thread | RFC 2046 §5.2.1 ("No encoding other than "7bit", "8bit", or "binary" is permitted for the body of a "message/rfc822" entity"), RFC 2045 §2.7 and §2.8 (lines of "998 octets or less", "no NULs", CR and LF "only as part of CRLF"), RFC 5322 §3.6.3 and §4.5, RFC 3030, all read at rfc-editor.org 2026-10-09; the discovery document's `drafts.create` upload limit (§2.6); the client's 32 MB limit on one answer; row 42 | **Confirmed from the RFCs for the encoding; unverified live, tier 3.** A part declared `7bit` or `8bit` carries any message whose lines fit and that holds no NUL, and none other. `Bcc` is for addresses "not to be revealed to other recipients", and §4.5 lets "any amount of white space" stand before the colon, so `Bcc :` is left out too. Unknown: whether `drafts.create` keeps an `8bit` `message/rfc822` part as written, whether `messages.get` serves it back as one part (row 83), and whether a draft with the thread's `threadId` and no `In-Reply-To` or `References` joins the thread, which row 42 found for `messages.send` only; the fake models all three of §2.5's conditions, so a forward there starts a thread of its own. Owed: the live steps "forward an inserted message", "read the forward back" and "read the forwarded original in the draft" |
+| 86 | A reply's quote can be built from the parent as a read shows it, and an HTML version made from the result | The owner's decision of 2026-10-09; RFC 3676 §4.5 ("the canonical quote indicator (or quote mark) is one or more close angle bracket (">") characters"), read at rfc-editor.org 2026-10-09; §7.4's made HTML, which `update_draft` recognizes by reading it back; the fake's HTML-only, placeholder and stored-apart bodies | **Confirmed against the fake; unverified live, tier 3.** The quote is the text a read shows, so hidden text and link targets never reach a draft by way of it. `> ` before each line is the plain-text convention; RFC 3676 governs only `format=flowed`, which this server does not write (row 72). Owed: the live steps "reply with a quote to an inserted message" and "read the quoted reply back", which show the quote of the run's 8-bit message reads back as written |

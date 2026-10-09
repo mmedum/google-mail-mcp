@@ -39,6 +39,13 @@ func TestGoldenDraftWrites(t *testing.T) {
 	newThread.Upload, newThread.Bytes = true, 6<<20
 	golden(t, "draft_reply_new_thread", render.DraftWrite(newThread, opts()).Text)
 
+	quoted := reply
+	quoted.Reply = &model.Reply{ParentID: "0000000000000003", ParentThreadID: "0000000000000001", Joined: true,
+		Quote: true, QuotedChars: 1234, QuoteFromHTML: true, QuoteFetched: 2}
+	golden(t, "draft_reply_quote", render.DraftWrite(quoted, opts()).Text)
+	quoted.Reply = &model.Reply{ParentID: "0000000000000003", ParentThreadID: "0000000000000001", Joined: true, Quote: true}
+	golden(t, "draft_reply_quote_nothing", render.DraftWrite(quoted, opts()).Text)
+
 	forward := model.DraftWrite{
 		Op: "create", DraftID: "r0000000000000025", MessageID: "0000000000000026", ThreadID: "0000000000000001",
 		Labels: []model.LabelRef{{ID: "DRAFT", Name: "DRAFT"}}, From: &from,
