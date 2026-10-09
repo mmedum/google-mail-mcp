@@ -56,7 +56,7 @@ type Message struct {
 	Unsubscribe Unsubscribe
 
 	// HeaderHidden counts invisible characters removed from the subject,
-	// display names and addresses.
+	// display names, addresses and attachments' types (Attachment.Hidden).
 	HeaderHidden int
 
 	// ContentType is the top-level media type.
@@ -143,6 +143,9 @@ type Attachment struct {
 	// its own or a size. An attached message Gmail serves as its parts
 	// would read this way (§18 row 83); an empty part does not.
 	ContentMissing bool
+	// Hidden counts invisible characters removed from MimeType and
+	// CalendarMethod, which are the sender's Content-Type values.
+	Hidden int
 }
 
 // PartRef names a part whose content must be fetched.
@@ -210,6 +213,7 @@ func analyze(root *node) *Message {
 			}
 			a := n.attachment()
 			a.Alternative = alternative
+			m.HeaderHidden += a.Hidden
 			m.Attachments = append(m.Attachments, a)
 		}
 	}
@@ -285,7 +289,6 @@ func (n *node) attachment() Attachment {
 	declared := n.declaredName()
 	a := Attachment{
 		PartID:       n.partID,
-		MimeType:     n.mediaType,
 		Size:         n.size,
 		AttachmentID: n.attachmentID,
 		DeclaredName: escapeInvisible(declared),
@@ -296,6 +299,7 @@ func (n *node) attachment() Attachment {
 	}
 	a.ContentMissing = !n.hasData && n.attachmentID == "" && (len(n.children) > 0 || n.size > 0)
 	a.Inline = n.disposition == "inline" || (n.disposition == "" && a.ContentID != "")
+	a.MimeType, a.Hidden = StripInvisible(n.mediaType)
 	a.Filename = SafeBaseName(declared)
 	switch {
 	case declared == "":
@@ -312,7 +316,9 @@ func (n *node) attachment() Attachment {
 		if n.hasData {
 			a.Invitation, method = parseInvitation(n.data, n.params["charset"])
 		}
-		a.CalendarMethod = n.calendarMethod(method)
+		var hidden int
+		a.CalendarMethod, hidden = StripInvisible(n.calendarMethod(method))
+		a.Hidden += hidden
 		if a.NameMissing {
 			a.Filename = "invite.ics"
 		}

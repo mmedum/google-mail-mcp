@@ -27,16 +27,22 @@ type Invitation struct {
 	// number is 0").
 	Sequence int
 	// RecurrenceID is set when the event is one occurrence of a
-	// repeating event, written as Start is.
+	// repeating event, written as Start is, in RecurrenceTimeZone when
+	// that is set.
 	RecurrenceID string
 	Summary      string
 	// Organizer is the address of a mailto: ORGANIZER, else "".
 	Organizer string
 	// Start and End are RFC 3339 when the time is UTC or its TZID is an
-	// IANA zone, YYYY-MM-DD for a date, and otherwise as written.
+	// IANA zone, YYYY-MM-DD for a date, and otherwise as written: Start
+	// in TimeZone, End in EndTimeZone when that is set, else TimeZone.
 	Start, End string
 	// TimeZone is the TZID the start names, as written.
 	TimeZone string
+	// EndTimeZone and RecurrenceTimeZone are the TZIDs the end and the
+	// recurrence id name, as written, when not the start's (RFC 5545
+	// §3.2.19 lets each time name its own).
+	EndTimeZone, RecurrenceTimeZone string
 	// AllDay is set when the start is a date.
 	AllDay bool
 	// Events counts the calendar's events. The fields describe the first
@@ -194,10 +200,23 @@ func (r *icsReader) invitation() *Invitation {
 	inv.Start, inv.AllDay = icsTime(e["DTSTART"])
 	inv.End, _ = icsTime(e["DTEND"])
 	inv.RecurrenceID, _ = icsTime(e["RECURRENCE-ID"])
-	if z := e["DTSTART"].tzid; len(z) <= maxICSZone {
-		inv.TimeZone = icsText(z)
+	inv.TimeZone = icsZone(e["DTSTART"])
+	if z := icsZone(e["DTEND"]); z != inv.TimeZone {
+		inv.EndTimeZone = z
+	}
+	if z := icsZone(e["RECURRENCE-ID"]); z != inv.TimeZone {
+		inv.RecurrenceTimeZone = z
 	}
 	return inv
+}
+
+// icsZone is the TZID a time names, as written; "" when it names none or
+// one over maxICSZone.
+func icsZone(p icsProp) string {
+	if len(p.tzid) > maxICSZone {
+		return ""
+	}
+	return icsText(p.tzid)
 }
 
 func isEventProp(name string) bool {

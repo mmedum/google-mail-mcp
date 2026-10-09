@@ -186,7 +186,8 @@ type Message struct {
 	// Headers are every top-level header, undecoded, for headers: all.
 	Headers []mime.Header
 	// HeaderHidden counts invisible characters removed from the subject,
-	// names and addresses; LenientHeaders names address headers read leniently.
+	// names, addresses and attachments' types; LenientHeaders names
+	// address headers read leniently.
 	HeaderHidden   int
 	LenientHeaders []string
 

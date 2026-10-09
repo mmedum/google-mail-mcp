@@ -366,6 +366,49 @@ func TestManyMisleadingLinksStayWithinTheBudget(t *testing.T) {
 	}
 }
 
+// Invisible characters in a part's Content-Type, in its type or its
+// invitation method, are removed and counted: in a message read, an
+// attachment read, and the parts of an attached message.
+func TestInvisibleCharactersInAPartsTypeAreRemoved(t *testing.T) {
+	h, fake := connectFake(t, config.Config{ReadOnly: true})
+	const tags = "\U000E0049\U000E0047\U000E004E" // three tag characters
+	const removed = "invisible characters were removed from the subject, names, addresses and attachment types."
+	inner := "From: Bruno Fennick <bruno.fennick@example.org>\r\nSubject: The venue\r\nMIME-Version: 1.0\r\n" +
+		"Content-Type: multipart/mixed; boundary=inner\r\n\r\n" +
+		"--inner\r\nContent-Type: text/plain; charset=utf-8\r\n\r\nThe lake house.\r\n" +
+		"--inner\r\nContent-Type: application/pdf" + tags + "\r\nContent-Disposition: attachment; filename=\"plan.pdf\"\r\n\r\n%PDF-1.4\r\n" +
+		"--inner\r\nContent-Type: text/calendar; method=REQUEST" + tags + "\r\nContent-Disposition: attachment; filename=\"i.ics\"\r\n\r\n" +
+		"BEGIN:VCALENDAR\r\nEND:VCALENDAR\r\n--inner--\r\n"
+	eml := fake.AddPartsMessage(&gmailtest.Part{ContentType: "message/rfc822", Disposition: `attachment; filename="venue.eml"`,
+		Content: []byte(inner), Filename: "venue.eml"})
+	var read tools.AttachmentOut
+	text := call(t, h, "read_attachment", map[string]any{"message_id": eml, "part_id": "1"}, &read)
+	if read.Message == nil || read.Message.HiddenCharsRemoved != 6 || len(read.Message.Attachments) != 2 ||
+		read.Message.Attachments[0].UntrustedMimeType != "application/pdf" ||
+		read.Message.Attachments[1].UntrustedCalendarMethod != "REQUEST" {
+		t.Fatalf("attached message %+v", read.Message)
+	}
+	if strings.ContainsRune(text, 0xE0049) || !strings.Contains(text, "note: 6 "+removed) {
+		t.Errorf("the text keeps a tag character, or does not count them:\n%s", text)
+	}
+
+	ics := fake.AddPartsMessage(gmailtest.File(`text/calendar; method="REQUEST`+tags+`"`, "i.ics", []byte("BEGIN:VCALENDAR\r\nEND:VCALENDAR\r\n")))
+	var msg tools.MessageOut
+	text = call(t, h, "get_message", map[string]any{"message_id": ics}, &msg)
+	if msg.Message.HiddenCharsRemoved != 3 || len(msg.Message.Attachments) != 1 ||
+		msg.Message.Attachments[0].UntrustedCalendarMethod != "REQUEST" {
+		t.Fatalf("message %+v", msg.Message)
+	}
+	if strings.ContainsRune(text, 0xE0049) || !strings.Contains(text, "note: 3 "+removed) {
+		t.Errorf("the text keeps a tag character, or does not count them:\n%s", text)
+	}
+	text = call(t, h, "read_attachment", map[string]any{"message_id": ics, "part_id": "1"}, &read)
+	if read.HiddenCharsRemoved != 3 || strings.ContainsRune(text, 0xE0049) ||
+		!strings.Contains(text, "note: 3 invisible characters were removed from the attachment's type.") {
+		t.Errorf("hidden_chars_removed %d; text:\n%s", read.HiddenCharsRemoved, text)
+	}
+}
+
 // An attached message reads as get_message reads one: its headers and
 // body, its quotes collapsed unless show_quoted, and its own attachments
 // listed with no part id, since none names them in the mailbox.

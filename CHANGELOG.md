@@ -20,7 +20,7 @@ lifted verbatim.
 - `--dump-schemas` names the build's version, so a recorded tool surface says which release it is.
 - `search_threads` rows carry `drafts`, how many drafts a thread holds, and `latest_from_me`, whether this account sent the thread's latest message.
 - `search_messages` rows and message reads carry `unsubscribe`: the web and mail addresses of the sender's `List-Unsubscribe` header, most preferred first, and `one_click` when the sender declares one-click unsubscribe. The server never visits them.
-- A calendar invitation's attachment entry carries `invitation`: the event's UID, which a calendar server finds it by, its sequence, start and end, organizer, title and how many events it holds. An invitation Gmail stored apart costs one more read, at most one per message.
+- A calendar invitation's attachment entry carries `invitation`: the event's UID, which a calendar server finds it by, its sequence, start and end, each with the time zone it names, organizer, title and how many events it holds. An invitation Gmail stored apart costs one more read, at most one per message.
 - `download_attachments` saves several attachments of one message into `GMAIL_LOCAL_DIR`: those `part_ids` names, or every attachment but inline parts, emoji reactions and an invitation's calendar copy of `invite.ics`. Each file is saved or fails on its own, and the files saved before a failure are kept. Registered only when `GMAIL_LOCAL_DIR` is set.
 - `create_draft` takes `forward`, a message id: the message goes attached to the draft as `<subject>.eml`, as Gmail stored it but without its `Bcc` header, under the subject `Fwd:` and the original's, in the original's thread. The result's `forwarded` names the message and the copy's size, and says whether a `Bcc` was left out.
 - `create_draft` takes `quote` on a reply: the parent's text goes below the body after a blank line and `On <date>, <sender> wrote:`, each line after `> `, and in the HTML version made from the text too. A parent with only HTML is quoted as converted, with each link reduced to its host. The result's `reply` carries `quoted_chars` and `quote_from_html`. A later `update_draft` with `body` replaces the quote too.
@@ -36,6 +36,7 @@ lifted verbatim.
 - An address in a result quotes its name unless the name is plain words, so it can be given back as one recipient. A name with a comma split in two, and a name holding an address could pass for it.
 - `download_attachment` refuses, as `[unsupported]`, a part whose content Gmail gives neither inline nor by an attachment id, as it may serve an attached message. It wrote such a part as an empty file.
 - A message or attachment read stays within `budget_chars` when the mail holds thousands of links whose text names another site: the note pairs as many as fit an eighth of the budget and counts the rest. Such mail made a read many times its budget.
+- Invisible characters in an attachment's type or invitation method are removed, and counted in `hidden_chars_removed`. They reached the result as written.
 - On Windows, `time_zone` and an invitation's time zone work without Go installed. Every zone was refused there; the binary now carries the zone database, about 400 KB, and reads it only when the system has none.
 
 ### Security

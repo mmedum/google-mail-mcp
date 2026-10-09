@@ -183,19 +183,31 @@ func invitationLine(inv mime.Invitation, before []mime.Attachment, partIDs bool)
 		out = append(out, `"`+inv.Summary+`"`)
 	}
 	if when := inv.Start; when != "" {
+		// An end in a zone of its own names each time's zone after it.
+		endZone := inv.End != "" && inv.EndTimeZone != ""
+		if endZone && inv.TimeZone != "" {
+			when += " (" + inv.TimeZone + ")"
+		}
 		if inv.End != "" {
 			when += " to " + inv.End
 		}
 		if inv.AllDay {
 			when = "all day " + when
 		}
-		if inv.TimeZone != "" {
+		switch {
+		case endZone:
+			when += " (" + inv.EndTimeZone + ")"
+		case inv.TimeZone != "":
 			when += " (" + inv.TimeZone + ")"
 		}
 		out = append(out, when)
 	}
 	if inv.RecurrenceID != "" {
-		out = append(out, "one occurrence, originally at "+inv.RecurrenceID)
+		at := "one occurrence, originally at " + inv.RecurrenceID
+		if inv.RecurrenceTimeZone != "" {
+			at += " (" + inv.RecurrenceTimeZone + ")"
+		}
+		out = append(out, at)
 	}
 	if inv.Organizer != "" {
 		out = append(out, "organizer "+inv.Organizer)
@@ -303,7 +315,7 @@ func (w *writer) notes(m model.Message, c collapsed, room int) {
 			plural(n, "character", "characters"), hiddenList(m.Body.Hidden))
 	}
 	if m.HeaderHidden > 0 {
-		w.say("note: %s were removed from the subject, names and addresses.",
+		w.say("note: %s were removed from the subject, names, addresses and attachment types.",
 			plural(m.HeaderHidden, "invisible character", "invisible characters"))
 	}
 	w.linkNote(m.Body, origin, m.ID, room)
@@ -597,6 +609,10 @@ func (w *writer) attachmentNotes(a AttachmentRead, c collapsed, room int) {
 	if n := b.HiddenChars(); n > 0 {
 		w.say("note: %s a reader would not see were removed from the attachment (%s).",
 			plural(n, "character", "characters"), hiddenList(b.Hidden))
+	}
+	if a.Attachment.Hidden > 0 {
+		w.say("note: %s were removed from the attachment's type.",
+			plural(a.Attachment.Hidden, "invisible character", "invisible characters"))
 	}
 	w.linkNote(b, a.From.Email, a.MessageID, room)
 	if a.Attachment.Renamed {

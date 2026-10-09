@@ -197,6 +197,26 @@ func TestNotesStayWithinTheBudget(t *testing.T) {
 	}
 }
 
+// An invitation's times each carry the zone they name: the start's once
+// for both when the end shares it, each after its own time when not.
+func TestAnInvitationNamesEachTimesZone(t *testing.T) {
+	for _, tc := range []struct {
+		inv  mime.Invitation
+		want string
+	}{
+		{mime.Invitation{Start: "20260310T100000", End: "20260310T110000", TimeZone: "W. Europe Standard Time", Events: 1},
+			"20260310T100000 to 20260310T110000 (W. Europe Standard Time) · sequence 0 · 1 event"},
+		{mime.Invitation{Start: "20260310T100000", End: "20260310T120000", TimeZone: "W. Europe Standard Time",
+			EndTimeZone: "GTB Standard Time", RecurrenceID: "20260310T100000", RecurrenceTimeZone: "Romance Standard Time", Events: 1},
+			"20260310T100000 (W. Europe Standard Time) to 20260310T120000 (GTB Standard Time) · " +
+				"one occurrence, originally at 20260310T100000 (Romance Standard Time) · sequence 0 · 1 event"},
+	} {
+		if got := invitationLine(tc.inv, nil, true); got != tc.want {
+			t.Errorf("invitationLine = %q\nwant %q", got, tc.want)
+		}
+	}
+}
+
 func TestMessageNotes(t *testing.T) {
 	m := plainMessage("Body text.")
 	m.HeaderHidden = 2
@@ -208,7 +228,7 @@ func TestMessageNotes(t *testing.T) {
 	m.Attachments = []mime.Attachment{{PartID: "1", Filename: "a.pdf", MimeType: "application/pdf", Size: 3 << 20, Inline: true}, {Filename: "b.bin", Size: 2048}}
 	text := Message(m, Options{Tokens: seq("T"), Location: time.FixedZone("CET", 3600)}).Text
 	for _, want := range []string{
-		"2 invisible characters were removed from the subject, names and addresses",
+		"2 invisible characters were removed from the subject, names, addresses and attachment types",
 		"malformed address headers were read leniently: To",
 		"unknown charsets were read as UTF-8 or windows-1252 in 1 body part",
 		"body parts not fetched: 1",

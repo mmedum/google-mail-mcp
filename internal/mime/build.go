@@ -664,10 +664,17 @@ func withCRLF(b []byte) []byte {
 // endings made CRLF, and its Bcc and Resent-Bcc headers left out. The
 // sender's own copy of a sent message keeps its Bcc, and a forward would
 // show the blind recipients to everyone it reaches. bccRemoved reports
-// whether one was left out; every other byte is as given.
+// whether one was left out.
+//
+// The header block is split as the parser splits it, before any line
+// ending is rewritten: a bare CR would otherwise become a line break,
+// and "Subject: a\r\r\nBcc: x" an empty line that moves the Bcc into
+// the body. A CR inside a header line, which RFC 5322 forbids, is
+// written as a space, so the copy has the header lines the original
+// was read as. Every other byte is as given.
 func ForwardCopy(raw []byte) (out []byte, bccRemoved bool) {
-	out = withCRLF(raw)
-	hs, body := splitRawHeaders(out)
+	hs, body := splitRawHeaders(raw)
+	head := raw[:len(raw)-len(body)]
 	var kept []rawHeader
 	for _, h := range hs {
 		// RFC 5322 §4.5 lets a reader take "Bcc :" for Bcc too.
@@ -678,18 +685,32 @@ func ForwardCopy(raw []byte) (out []byte, bccRemoved bool) {
 		}
 		kept = append(kept, h)
 	}
-	if !bccRemoved {
-		return out, false
+	if !bccRemoved && !hasBareCR(head) {
+		return withCRLF(raw), false
 	}
 	var b bytes.Buffer
-	b.Grow(len(out))
+	b.Grow(len(raw) + len(raw)/64)
 	for _, h := range kept {
-		b.WriteString(h.text + "\r\n")
+		b.WriteString(bareCRSpace.Replace(h.text) + "\r\n")
 	}
 	b.WriteString("\r\n")
-	b.Write(body)
-	return b.Bytes(), true
+	b.Write(withCRLF(body))
+	return b.Bytes(), bccRemoved
 }
+
+// hasBareCR reports a CR that does not start a CRLF.
+func hasBareCR(b []byte) bool {
+	for i, c := range b {
+		if c == '\r' && (i+1 == len(b) || b[i+1] != '\n') {
+			return true
+		}
+	}
+	return false
+}
+
+// bareCRSpace writes a CR that does not start a CRLF as a space. A
+// header's text joins its folded lines with CRLF, which it keeps.
+var bareCRSpace = strings.NewReplacer("\r\n", "\r\n", "\r", " ")
 
 // base64Lines encodes b as base64 in lines of 76, straight into a buffer
 // of the final size: an attachment can be most of 35 MB.

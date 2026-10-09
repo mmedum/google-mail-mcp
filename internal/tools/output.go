@@ -41,14 +41,17 @@ type Invitation struct {
 	Method                string          `json:"method,omitempty" jsonschema:"the calendar's METHOD when it is one RFC 5546 defines: PUBLISH, REQUEST, REPLY, ADD, CANCEL, REFRESH, COUNTER or DECLINECOUNTER"`
 	UntrustedUID          model.Untrusted `json:"untrusted_uid,omitempty" jsonschema:"the event's iCalendar UID, which a calendar server finds the event by (the Google Calendar API's iCalUID)"`
 	Sequence              int             `json:"sequence" jsonschema:"the event's revision (SEQUENCE); 0 when the calendar gives none"`
-	UntrustedRecurrenceID model.Untrusted `json:"untrusted_recurrence_id,omitempty" jsonschema:"set when the invitation is for one occurrence of a repeating event: that occurrence's original start, written as untrusted_start is"`
+	UntrustedRecurrenceID model.Untrusted `json:"untrusted_recurrence_id,omitempty" jsonschema:"set when the invitation is for one occurrence of a repeating event: that occurrence's original start, written as untrusted_start is, in untrusted_recurrence_time_zone when that is set"`
 	UntrustedSummary      model.Untrusted `json:"untrusted_summary,omitempty" jsonschema:"the event's title"`
 	UntrustedOrganizer    model.Untrusted `json:"untrusted_organizer,omitempty" jsonschema:"the organizer's address, when the calendar gives a mailto address"`
 	UntrustedStart        model.Untrusted `json:"untrusted_start,omitempty" jsonschema:"RFC 3339 when the time is in UTC or its time zone is an IANA zone; YYYY-MM-DD for an all-day event; otherwise the time as written, in untrusted_time_zone"`
-	UntrustedEnd          model.Untrusted `json:"untrusted_end,omitempty" jsonschema:"written as untrusted_start is; absent when the calendar gives a duration instead"`
+	UntrustedEnd          model.Untrusted `json:"untrusted_end,omitempty" jsonschema:"written as untrusted_start is, in untrusted_end_time_zone when that is set; absent when the calendar gives a duration instead"`
 	UntrustedTimeZone     model.Untrusted `json:"untrusted_time_zone,omitempty" jsonschema:"the time zone the start names (its TZID), as written"`
-	AllDay                bool            `json:"all_day" jsonschema:"true when the start is a date with no time of day"`
-	Events                int             `json:"events" jsonschema:"how many events the calendar holds; the fields describe the first that is not one occurrence's change, or else the first"`
+	// The end and the recurrence id may each name a zone of their own.
+	UntrustedEndTimeZone        model.Untrusted `json:"untrusted_end_time_zone,omitempty" jsonschema:"the time zone the end names (its TZID), as written, when it is not the one the start names"`
+	UntrustedRecurrenceTimeZone model.Untrusted `json:"untrusted_recurrence_time_zone,omitempty" jsonschema:"the time zone the recurrence id names (its TZID), as written, when it is not the one the start names"`
+	AllDay                      bool            `json:"all_day" jsonschema:"true when the start is a date with no time of day"`
+	Events                      int             `json:"events" jsonschema:"how many events the calendar holds; the fields describe the first that is not one occurrence's change, or else the first"`
 }
 
 // MessageMeta is one message's headers and what the server noticed.
@@ -170,6 +173,7 @@ func invitation(i *mime.Invitation) *Invitation {
 		UntrustedRecurrenceID: model.Untrusted(i.RecurrenceID), UntrustedSummary: model.Untrusted(i.Summary),
 		UntrustedOrganizer: model.Untrusted(i.Organizer), UntrustedStart: model.Untrusted(i.Start),
 		UntrustedEnd: model.Untrusted(i.End), UntrustedTimeZone: model.Untrusted(i.TimeZone),
+		UntrustedEndTimeZone: model.Untrusted(i.EndTimeZone), UntrustedRecurrenceTimeZone: model.Untrusted(i.RecurrenceTimeZone),
 		AllDay: i.AllDay, Events: i.Events,
 	}
 }

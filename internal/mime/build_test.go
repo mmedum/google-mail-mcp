@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"errors"
 	"html"
+	netmail "net/mail"
 	"regexp"
 	"strings"
 	"testing"
@@ -710,6 +711,62 @@ func TestForwardCopyLeavesOutBcc(t *testing.T) {
 	if string(got) != "From: ada@example.com\r\nSubject: Plan\r\n\r\nBody\r\n" || removed {
 		t.Fatalf("ForwardCopy = %q, %v; want the message with CRLF line endings, nothing removed", got, removed)
 	}
+}
+
+// A bare CR in the original's header block changes no header line of
+// the copy. One ending a line no longer makes an empty line that moves
+// the Bcc below it into the copy's body; one inside a line is a space,
+// so it does not start a header the original did not have.
+func TestForwardCopyReadsHeadersAsTheParserDoes(t *testing.T) {
+	for _, tc := range []struct {
+		raw, want string
+		removed   bool
+	}{
+		{"Subject: Plan\r\r\nBcc: secret@example.org\r\n\r\nBody\r\n", "Subject: Plan\r\n\r\nBody\r\n", true},
+		{"Subject: Plan\rBcc: secret@example.org\r\n\r\nBody\r\n", "Subject: Plan Bcc: secret@example.org\r\n\r\nBody\r\n", false},
+		{"Subject: Plan\r\n\tand more\r\r\n\r\nBody\rmore\r\n", "Subject: Plan\r\n\tand more\r\n\r\nBody\r\nmore\r\n", false},
+	} {
+		got, removed := ForwardCopy([]byte(tc.raw))
+		if string(got) != tc.want || removed != tc.removed {
+			t.Errorf("ForwardCopy(%q) =\n%q, %v\nwant\n%q, %v", tc.raw, got, removed, tc.want, tc.removed)
+		}
+	}
+}
+
+// FuzzForwardCopyLeavesOutBcc holds that no reader finds a Bcc in a
+// forward's copy: neither this package nor net/mail reads one in its
+// headers, and no Bcc header line of the original reaches its body.
+func FuzzForwardCopyLeavesOutBcc(f *testing.F) {
+	f.Add([]byte("From: a@example.com\r\nBcc: x@example.org\r\n\r\nbody\r\n"))
+	f.Add([]byte("Subject: a\r\r\nBcc: x@example.org\r\n\r\nbody"))
+	f.Add([]byte("Subject: a\rBcc: x@example.org\r\n\r\nbody"))
+	f.Add([]byte("Bcc: x@example.org"))
+	f.Add([]byte("Subject: a\n \nBcc: x@example.org\n\nb"))
+	f.Add([]byte("A: 1\n\r\nBcc: x@example.org\n\nrest"))
+	f.Fuzz(func(t *testing.T, raw []byte) {
+		got, _ := ForwardCopy(raw)
+		copied := ParseRaw(got)
+		if len(copied.Bcc) > 0 || headerGet(copied.Headers, "Bcc") != "" || headerGet(copied.Headers, "Resent-Bcc") != "" {
+			t.Fatalf("the copy of %q has a Bcc: %q", raw, got)
+		}
+		if m, err := netmail.ReadMessage(bytes.NewReader(got)); err == nil {
+			if len(m.Header["Bcc"]) > 0 || len(m.Header["Resent-Bcc"]) > 0 {
+				t.Fatalf("net/mail reads a Bcc in the copy of %q: %q", raw, got)
+			}
+		}
+		hs, _ := splitRawHeaders(raw)
+		for _, h := range hs {
+			name, _, _ := strings.Cut(h.text, ":")
+			name = strings.TrimRight(name, " \t")
+			if !strings.EqualFold(name, "Bcc") && !strings.EqualFold(name, "Resent-Bcc") {
+				continue
+			}
+			line, _, _ := strings.Cut(h.text, "\r\n")
+			if bytes.Count(got, []byte(line)) >= bytes.Count(raw, []byte(line)) {
+				t.Fatalf("the original's %q is still in the copy:\n%q\n%q", line, raw, got)
+			}
+		}
+	})
 }
 
 // FuzzAttachedMessageRoundTrip holds §4.10 for an attached message: Build

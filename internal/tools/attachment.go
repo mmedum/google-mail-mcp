@@ -90,8 +90,9 @@ type AttachmentOut struct {
 	ReadAs            string          `json:"read_as" jsonschema:"text (plain text, CSV, Markdown or JSON, as written), html (converted to text), calendar (as written) or message (an attached email, read as get_message reads one)"`
 	// Message is the attached message, when ReadAs is message.
 	Message *MessageMeta `json:"message,omitempty" jsonschema:"the attached email, when read_as is message, as get_message gives one. It is not in the mailbox: it has no id, thread or labels, its date is its own Date header, and its attachments have an empty part_id, since they cannot be read or saved apart from it"`
-	// HiddenCharsRemoved and LinkMismatches are about the text read;
-	// an attached message carries its own in message.
+	// HiddenCharsRemoved and LinkMismatches are about the text read and
+	// the attachment's type; an attached message carries its own in
+	// message.
 	HiddenCharsRemoved int `json:"hidden_chars_removed,omitempty"`
 	LinkMismatches     int `json:"link_mismatches,omitempty"`
 	Rendered
@@ -124,7 +125,7 @@ func registerAttachment(s *mcp.Server, d Deps) {
 			}
 			out := AttachmentOut{MessageID: a.MessageID, PartID: a.Attachment.PartID,
 				UntrustedFilename: model.Untrusted(a.Attachment.Filename), UntrustedMimeType: model.Untrusted(a.Attachment.MimeType),
-				Bytes: a.Bytes, ReadAs: a.As, HiddenCharsRemoved: a.Body.HiddenChars(), LinkMismatches: len(a.Body.Mismatches()),
+				Bytes: a.Bytes, ReadAs: a.As, HiddenCharsRemoved: a.Body.HiddenChars() + a.Attachment.Hidden, LinkMismatches: len(a.Body.Mismatches()),
 				Rendered: readOf(render.Attachment(a, o))}
 			if a.As == mime.ReadMessage {
 				out.Message = ptr(messageMeta(a.Message))

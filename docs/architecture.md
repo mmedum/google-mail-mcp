@@ -851,7 +851,8 @@ Reply-To, Date, Subject, `Message-ID`, and `List-Unsubscribe` when
 present, and the message's line says how it offers to unsubscribe
 (§7.1); `all_headers: true` shows the rest. Budget and collapsing per §4.8.
 Calendar invitations are listed as attachments with their method
-(`REQUEST`, `CANCEL`). A thread's drafts follow its conversation in a
+(`REQUEST`, `CANCEL`). Invisible characters in a part's type or method,
+which are the sender's, are removed and counted with the headers'. A thread's drafts follow its conversation in a
 section of their own, "drafts in this thread, not sent", on the first
 read; the cursor counts only what was sent or received, and drafts over
 the budget are listed by message id (§17.2).
@@ -866,7 +867,9 @@ calendar needs it, and the times say which meeting it is. The fields
 describe the first event that is not one occurrence's change, else the
 first. A time is RFC 3339 when it is UTC or its `TZID` names an IANA
 zone, a date when the event is all day, and otherwise as written, with
-the zone it names. `method` is the calendar's `METHOD` when RFC 5546
+the zone it names. The end and the recurrence id each give their own
+zone when it is not the start's, since RFC 5545 lets each time name
+one. `method` is the calendar's `METHOD` when RFC 5546
 defines it; every other field is the sender's text and named
 `untrusted_*`.
 
@@ -1016,7 +1019,10 @@ with two changes. Its line endings are written as CRLF. Its `Bcc` and
 `Resent-Bcc` headers are left out, since the sender's own copy of a sent
 message keeps its `Bcc` and a forward would show the blind recipients to
 everyone it reaches (RFC 5322 §3.6.3); the result's `bcc_removed` says
-so. RFC 2046 §5.2.1 permits only `7bit`, `8bit` or `binary` for an
+so. The header block is split as a read splits it, before any line
+ending is rewritten, so a bare CR cannot turn into an empty line that
+moves a `Bcc` into the body; a CR inside a header line is written as a
+space. RFC 2046 §5.2.1 permits only `7bit`, `8bit` or `binary` for an
 attached message, never base64, so the part is declared `7bit` when it
 is ASCII and `8bit` when it is not. A message with a line over 998
 octets or a NUL is refused as `[unsupported]`: only `binary` carries one
