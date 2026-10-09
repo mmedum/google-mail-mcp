@@ -3,6 +3,7 @@ package mime
 import (
 	"encoding/base64"
 	"slices"
+	"strconv"
 	"strings"
 	"testing"
 	"unicode/utf8"
@@ -17,6 +18,20 @@ func cal(lines ...string) []byte {
 
 func event(lines ...string) []string {
 	return append(append([]string{"BEGIN:VEVENT"}, lines...), "END:VEVENT")
+}
+
+// nestedEvent is an event with n components nested in it, the innermost
+// holding an END:VEVENT, and a SUMMARY after they close.
+func nestedEvent(n int) []byte {
+	lines := []string{"UID:a"}
+	for i := range n {
+		lines = append(lines, "BEGIN:X"+strconv.Itoa(i))
+	}
+	lines = append(lines, "END:VEVENT")
+	for i := n - 1; i >= 0; i-- {
+		lines = append(lines, "END:X"+strconv.Itoa(i))
+	}
+	return cal(event(append(lines, "SUMMARY:after")...)...)
 }
 
 func TestParseInvitation(t *testing.T) {
@@ -100,10 +115,13 @@ func TestParseInvitation(t *testing.T) {
 			Invitation{UID: "a", Events: 1}},
 		{"an END closes what is left open inside it",
 			cal(append(event("UID:a", "BEGIN:VALARM"), event("UID:b")...)...), "", Invitation{UID: "a", Events: 2}},
-		{"components nested too deep are skipped",
-			cal(event(append(append(strings.Split(strings.Repeat("BEGIN:X\n", 20), "\n")[:20], "SUMMARY:deep"),
-				append(strings.Split(strings.Repeat("END:X\n", 20), "\n")[:20], "SUMMARY:shallow")...)...)...), "",
-			Invitation{Summary: "shallow", Events: 1}},
+		// The event is level 2, so six components inside it reach level 8,
+		// the deepest read, and a seventh is skipped whole: an END inside
+		// it, one naming the event too, closes nothing.
+		{"a component at the deepest level read can close the event", nestedEvent(6), "",
+			Invitation{UID: "a", Events: 1}},
+		{"a component past the deepest level read is skipped whole", nestedEvent(7), "",
+			Invitation{UID: "a", Summary: "after", Events: 1}},
 		{"a calendar of no events", cal("METHOD:PUBLISH"), "", Invitation{Method: "PUBLISH"}},
 	} {
 		t.Run(tc.name, func(t *testing.T) {

@@ -497,6 +497,41 @@ func TestCreateDraftForwards(t *testing.T) {
 	}
 }
 
+// A forward's copy is named after the original's subject, made a base
+// name: a slash or backslash is "_", the subject is cut to 200 bytes at
+// a character, and a message with no subject is "forwarded message".
+func TestCreateDraftForwardNamesTheCopy(t *testing.T) {
+	h, fake := connectFake(t, config.Config{})
+	for _, tc := range []struct{ subject, want string }{
+		{`Q3/Q4 plan \ draft`, "Q3_Q4 plan _ draft.eml"},
+		{"a" + strings.Repeat("é", 150), "a" + strings.Repeat("é", 99) + ".eml"},
+		{"", "forwarded message.eml"},
+	} {
+		var out tools.DraftWriteOut
+		call(t, h, "create_draft", map[string]any{"forward": fake.AddSubjectMessage(tc.subject)}, &out)
+		if len(out.Attachments) != 1 || string(out.Attachments[0].UntrustedName) != tc.want {
+			t.Errorf("subject %q: attachments %+v; want one named %q", tc.subject, out.Attachments, tc.want)
+		}
+	}
+}
+
+// When Gmail files a forward in the original's thread, the result says
+// so and names no new thread. The fake does that only by thread id
+// alone, as spike D saw for a send; a forward has no threading headers.
+func TestCreateDraftForwardInTheOriginalsThread(t *testing.T) {
+	h, fake := connectFake(t, config.Config{})
+	fake.ThreadByID = true
+	plain := fake.Scenario(gmailtest.ScenarioPlainThread)
+	var out tools.DraftWriteOut
+	text := call(t, h, "create_draft", map[string]any{"forward": plain.MessageIDs[0]}, &out)
+	if out.ThreadID != plain.ThreadID || out.Forwarded == nil || out.Forwarded.ThreadID != plain.ThreadID {
+		t.Fatalf("thread %s, forwarded %+v; want both in %s", out.ThreadID, out.Forwarded, plain.ThreadID)
+	}
+	if !strings.Contains(text, "\nGmail filed the draft in the original's thread.\n") || strings.Contains(text, "a new thread") {
+		t.Errorf("text:\n%s", text)
+	}
+}
+
 // A sent message's own copy carries its Bcc; a forward leaves it out of
 // the attached copy, and says so.
 func TestCreateDraftForwardLeavesOutBcc(t *testing.T) {

@@ -99,11 +99,15 @@ func sameSubject(a, b string) bool {
 // threadFor decides which thread a draft joins. It joins threadID only
 // when all three of §2.5's conditions hold: the thread is named, the
 // draft's In-Reply-To or References names a message in it, and the
-// subjects match. Otherwise it starts its own thread.
+// subjects match; with ThreadByID, the first alone. Otherwise it starts
+// its own thread.
 func (s *Server) threadFor(threadID string, p parsedRaw, own string) string {
 	ids, ok := s.threads[threadID]
 	if threadID == "" || !ok {
 		return own
+	}
+	if s.ThreadByID {
+		return threadID
 	}
 	refs := headerValue(p.headers, "In-Reply-To") + " " + headerValue(p.headers, "References")
 	linked := false

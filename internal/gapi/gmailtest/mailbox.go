@@ -429,6 +429,20 @@ func (s *Server) AddAttachmentMessage(filename string, content []byte) (messageI
 	return m.id, "1"
 }
 
+// AddSubjectMessage adds a message from Ada under the subject given,
+// as written, alone in its thread, and returns its id; "" leaves the
+// Subject header out. Tests forward it for subjects the generated
+// mailbox does not hold.
+func (s *Server) AddSubjectMessage(subject string) string {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.clock = s.clock.Add(time.Minute)
+	text := "The plan is below.\n"
+	m := s.add(spec{from: Ada, to: []Person{Reader}, subject: subject, at: s.clock, labels: []string{"INBOX"},
+		body: utf8Text(text), text: text})
+	return m.id
+}
+
 // AddPartsMessage adds a message from Ada whose body is a short text
 // part followed by parts, in a multipart/mixed, and returns its id. The
 // text is part "0" and parts are "1", "2"… in order. Tests use it for
