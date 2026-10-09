@@ -23,6 +23,11 @@ import (
 	"os/signal"
 	"strings"
 	"syscall"
+	// Zone data for a system that has none of its own. On Windows Go finds
+	// zones only in a Go installation, so without this every IANA zone a
+	// call names, or an invitation's TZID, is refused there. The time
+	// package reads it only when the system has no zone files.
+	_ "time/tzdata"
 
 	"github.com/modelcontextprotocol/go-sdk/jsonrpc"
 	"github.com/modelcontextprotocol/go-sdk/mcp"
