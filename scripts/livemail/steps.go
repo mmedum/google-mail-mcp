@@ -323,6 +323,31 @@ var steps = []step{
 			}
 			return nil
 		}},
+
+	{name: "read the run's text attachment", tool: "read_attachment",
+		args: func(e *env) map[string]any {
+			return map[string]any{"message_id": e.seed.messages[0], "part_id": "1", "budget_chars": 2000, "offset": 0}
+		},
+		check: func(e *env, text string) error {
+			if e.structured["read_as"] != "text" {
+				return fmt.Errorf("read as %v; want text", e.structured["read_as"])
+			}
+			return want(text, strings.TrimSpace(string(syntheticAttachment(e.seed.label))))
+		}},
+
+	// If Gmail serves the attached message as its own parts, the read is
+	// refused as [unsupported] (§18 row 83).
+	{name: "read the attached message", tool: "read_attachment",
+		args: func(e *env) map[string]any {
+			return map[string]any{"message_id": e.seed.messages[2], "part_id": "1", "show_quoted": true}
+		},
+		check: func(e *env, text string) error {
+			msg, _ := e.structured["message"].(map[string]any)
+			if e.structured["read_as"] != "message" || msg["untrusted_subject"] != e.seed.label.name+" attached message" {
+				return fmt.Errorf("read as %v, message %v; want the attached message", e.structured["read_as"], msg)
+			}
+			return want(text, syntheticAttachedBody(e.seed.label))
+		}},
 }
 
 // checkDownload holds a download to what the run inserted: the file is in

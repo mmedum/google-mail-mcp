@@ -908,7 +908,38 @@ attached message (`message/rfc822`) that Gmail served as its own parts
 would read this way. Whether Gmail does that is not known (§18 row 83).
 An empty attachment has neither and no size, and is written empty.
 
-Attachments are never inlined into a tool result.
+`read_attachment` reads one attachment into the result as text, and is
+registered in every mode. It reads plain text, CSV, Markdown and JSON
+as written, HTML converted as a body is, a calendar file as written,
+and an attached message (`message/rfc822`) parsed and rendered as
+`get_message` renders one, in a `message` field. The text is decoded
+from its charset and has what a reader would not see removed and
+counted, as a body has (§4.1). It sits inside the same boundaries, its
+fields are named `untrusted_*`, and it takes a body's budget, `offset`
+and `show_quoted`. Quotes and signatures collapse only in plain text,
+HTML and an attached message, where they mean what they mean in a body;
+a Markdown quote stays. Any other type is `[unsupported]` and points to
+`download_attachment`. A part declared over 5 MB is refused before it
+is read, and so is one that turns out larger. A part with no content
+of its own is refused as the download tools refuse it (§18 row 83).
+An attached message is not in the mailbox: it has no id, thread or
+labels, its date is its own `Date` header, and its own attachments are
+listed with no `part_id`, since none names them in the mailbox. A read
+costs one `messages.get`, and one `attachments.get` when Gmail stored
+the part apart.
+
+**Reversed 2026-10-09.** This section said "Attachments are never
+inlined into a tool result", with no reason recorded. For reading them:
+a person asks about an attached file as often as about a body, and the
+only path was to save it into `GMAIL_LOCAL_DIR` and open it outside the
+server, where nothing marks it as mail or removes what a reader would
+not see. A forwarded message often arrives as an attached `.eml`, which
+could not be read at all. Against: an attachment is a large place to
+hide instructions, and one a person rarely reads before an assistant
+does; and a result can carry up to 5 MB more mail. The owner decided on
+2026-10-09 to read attachments, registered by default, for the text
+types above only, inside the boundaries and under the budget a body
+gets (§14, §18 row 84).
 
 ### 7.4 Drafts and replies
 
@@ -1117,7 +1148,7 @@ again gives the filter without it.
 
 ## 8. Tool surface
 
-Twenty-eight tools: twenty-one by default, thirteen in read-only mode,
+Twenty-nine tools: twenty-two by default, fourteen in read-only mode,
 two fewer in each when `GMAIL_LOCAL_DIR` is unset.
 Annotations come from `Kind` in one place (`CLAUDE.md` rule 11);
 `openWorldHint` is true only where the call reaches another person.
@@ -1140,6 +1171,7 @@ tool sits behind from it.
 | `search_messages` | Read | always | `gmail.readonly` | 5 + 20/result |
 | `get_thread` | Read | always | `gmail.readonly` | 40 (+20/fetched part) |
 | `get_message` | Read | always | `gmail.readonly` | 20 (+20/fetched part) |
+| `read_attachment` | Read | always | `gmail.readonly` | 20 (+20 when stored apart) |
 | `list_labels` | Read | always | `gmail.readonly` | 1 (+1/label with counts) |
 | `list_drafts` | Read | always | `gmail.readonly` | 5 + 20/result |
 | `get_draft` | Read | always | `gmail.readonly` | 20 (+20/fetched part) |
@@ -1401,6 +1433,7 @@ generated from `internal/scopes` and gated (§5a, `staleness`).
 | Accepting the question is the confirmation; the form has no checkbox | maintainer, 2026-09-28, after the interactive check | §4.13, §18 row 64 |
 | A client that cannot ask falls back to `confirm` and `confirm_recipients`; `GMAIL_REQUIRE_PROMPT=true` refuses instead | maintainer, 2026-09-28 | §4.13, §9.4 |
 | An invitation's identifiers and times are read from its calendar part, reversing §7.2's "no further parsing" | maintainer, 2026-10-09 | §7.2, §18 row 81 |
+| `read_attachment` reads an attachment's text into a result, registered by default, reversing §7.3's "never inlined" | maintainer, 2026-10-09 | §7.3, §18 row 84; text types only, inside the boundaries |
 | Spikes D and E send in phase 2, from the live driver's run, to a second address the maintainer passes on the command line and never commits | maintainer, 2026-09-26 | §15; the transcript records the address redacted only |
 
 ## 15. What must be verified live
@@ -2813,4 +2846,5 @@ live** — §15 exists to settle these, and they are marked.
 | 80 | A row can carry `List-Unsubscribe` at no cost, and the header says what it offers | Discovery document revision 20261005, read 2026-10-09: `users.messages.get` and `users.threads.get` parameter `metadataHeaders`, "When given and format is `METADATA`, only include headers specified"; Gmail's quota reference, read 2026-10-09, one cost per method; RFC 2369 §2 and §3.2; RFC 8058 §3.1 and §4 | **Confirmed.** A read costs 20 or 40 units whatever headers it names, so the listing names `List-Unsubscribe` and `List-Unsubscribe-Post` for free. RFC 2369: "The URLs have order of preference from left to right"; a field that does not start with `<`, and the rest of one after an item that is not a bracketed URL, "SHOULD be ignored". RFC 8058 §3.1: `List-Unsubscribe` "MUST contain one HTTPS URI", and the Post header "MUST contain the single key/value pair "List-Unsubscribe=One-Click"". §4 says a receiver SHOULD NOT offer one-click without a DKIM signature covering both headers. The server checks no signature, so `one_click` is the sender's claim and says so. Owed: the live step "a row reads the List-Unsubscribe the driver wrote", which shows Gmail keeps both headers on an inserted message and returns them to a headers-only read |
 | 81 | An invitation's calendar part can be read for the identifiers and times a calendar server finds its event by, for one more read at most | RFC 5545 §3.1 ("implementations need to unfold lines in such a way to properly restore the original sequence"), §3.1.4 ("The default charset for an iCalendar stream is UTF-8"), §3.3.5, §3.3.11, §3.8.4.3 and §3.8.7.4 ("When a calendar component is created, its sequence number is 0"); RFC 5546 §1.4, the eight methods, and §2.1.5, UID then SEQUENCE as the keys; Calendar API discovery document revision 20261005, `events.list` parameter `iCalUID`, "Use this if you want to search for an event by its iCalendar ID"; Gmail's quota reference, `attachments.get` 20 units; all read 2026-10-09 | **Confirmed from the documents; unverified live.** The UID is the key, and the Calendar API looks an event up by it. Unfolding comes before decoding, as §3.1 asks. A time with an IANA `TZID` reads as RFC 3339; a Windows zone name does not, so it stays as written beside its zone. Owed: the live step "an attachment entry reads the invitation the driver wrote", which settles whether Gmail keeps an inserted calendar part inline (21 units) or apart (41), and that the parse of a part Gmail returns matches the one written |
 | 82 | A release binary can read any IANA zone on every platform it is built for | `go doc time.LoadLocation` and `go doc time/tzdata`, Go 1.27.2, read 2026-10-09; the release targets in `.goreleaser.yaml`; the Windows, Linux and macOS amd64 builds measured with and without the package the same day | **Refuted before this change.** `LoadLocation` looks in `ZONEINFO`, then "on a Unix system, the system standard installation location", then `$GOROOT/lib/time/zoneinfo.zip`, then "the time/tzdata package, if it was imported". Windows has no standard location, and a person who runs the archive has no `GOROOT`, so every zone was refused there. The main package now imports `time/tzdata`, which the docs say "should normally be imported by a program's main package"; it is read only when the system has no zone files, and it adds 402 KB to the Windows binary, 3%. A test holds the import in each target's build, since a test run reads this machine's zone files whatever the binary carries. Not run on Windows |
-| 83 | An attached message (`message/rfc822`) comes back from `messages.get` with its content inline or behind an `attachmentId`, like any attachment | Discovery document revision 20261005, read 2026-10-09: `MessagePart.parts`, "This only applies to container MIME message parts, for example `multipart/*`"; `MessagePart.body`, "may be empty for container MIME message parts"; `MessagePartBody.attachmentId`, "When not present, the entire content of the message part body is contained in the data field"; RFC 2046 §5, where `message` is a composite type beside `multipart` | **Unverified, tier 3.** The document names `multipart/*` as a container and no other, and RFC 2046 makes `message/rfc822` composite too. If Gmail serves an attached message as its parts, the part itself has no data and no `attachmentId`, and a download used to write it as an empty file. Both download tools now refuse such a part as `[unsupported]`, and the fake can serve one so the refusal is tested. Owed: the live step that saves every attachment of the run's message with an attached `.eml`, which shows which way Gmail serves it |
+| 83 | An attached message (`message/rfc822`) comes back from `messages.get` with its content inline or behind an `attachmentId`, like any attachment | Discovery document revision 20261005, read 2026-10-09: `MessagePart.parts`, "This only applies to container MIME message parts, for example `multipart/*`"; `MessagePart.body`, "may be empty for container MIME message parts"; `MessagePartBody.attachmentId`, "When not present, the entire content of the message part body is contained in the data field"; RFC 2046 §5, where `message` is a composite type beside `multipart` | **Unverified, tier 3.** The document names `multipart/*` as a container and no other, and RFC 2046 makes `message/rfc822` composite too. If Gmail serves an attached message as its parts, the part itself has no data and no `attachmentId`, and a download used to write it as an empty file. Both download tools and `read_attachment` now refuse such a part as `[unsupported]`, and the fake can serve one so the refusal is tested. Owed: the live steps that save and read the run's attached `.eml`, which show which way Gmail serves it |
+| 84 | An attachment's content is never put in a tool result | §7.3 as written in phase 1, which recorded no reason; the owner's decision of 2026-10-09 | **Reversed for text.** `read_attachment` reads plain text, CSV, Markdown, JSON, HTML, a calendar file and an attached message into the result, under the boundaries, hidden-text removal and budget a body gets; every other type stays a file to save. §7.3 gives the reasons on both sides. Owed: the live steps "read the run's text attachment" and "read the attached message", which show the content Gmail returns for each reads as written |

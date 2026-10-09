@@ -22,6 +22,7 @@ lifted verbatim.
 - `search_messages` rows and message reads carry `unsubscribe`: the web and mail addresses of the sender's `List-Unsubscribe` header, most preferred first, and `one_click` when the sender declares one-click unsubscribe. The server never visits them.
 - A calendar invitation's attachment entry carries `invitation`: the event's UID, which a calendar server finds it by, its sequence, start and end, organizer, title and how many events it holds. An invitation Gmail stored apart costs one more read, at most one per message.
 - `download_attachments` saves several attachments of one message into `GMAIL_LOCAL_DIR`: those `part_ids` names, or every attachment but inline parts, emoji reactions and an invitation's calendar copy of `invite.ics`. Each file is saved or fails on its own, and the files saved before a failure are kept. Registered only when `GMAIL_LOCAL_DIR` is set.
+- `read_attachment` reads one attachment as text: plain text, CSV, Markdown and JSON as written, HTML converted, a calendar file as written, or an attached email as `get_message` reads one. The text arrives inside the same marked boundaries as a body, with hidden text removed, under the same budget and `offset`. Any other type, and anything over 5 MB, is refused.
 
 ### Changed
 

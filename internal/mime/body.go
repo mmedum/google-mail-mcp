@@ -7,6 +7,8 @@ import (
 	"unicode/utf8"
 
 	"golang.org/x/net/html/charset"
+
+	"github.com/mmedum/google-mail-mcp/v2/internal/gmail"
 )
 
 // placeholders are what a plain part says when it only points at the
@@ -168,6 +170,78 @@ func buildBody(root *node) Body {
 	b.Hidden = sortedHidden(hidden)
 	b.Spans = FindSpans(b.Text)
 	sort.Strings(b.UnknownCharsets)
+	return b
+}
+
+// Ways read_attachment reads an attachment (ReadAs).
+const (
+	// ReadText is plain text, CSV, Markdown or JSON, read as written.
+	ReadText = "text"
+	// ReadHTML is HTML, converted to text as a body is.
+	ReadHTML = "html"
+	// ReadCalendar is an iCalendar file, read as written.
+	ReadCalendar = "calendar"
+	// ReadMessage is an attached message, parsed as a message.
+	ReadMessage = "message"
+)
+
+// ReadAs is how an attachment of this media type is read as text, one
+// of the Read* ways, or "" when it is not.
+func ReadAs(mediaType string) string {
+	switch strings.ToLower(strings.TrimSpace(mediaType)) {
+	case "text/plain", "text/csv", "text/markdown", "application/json":
+		return ReadText
+	case "text/html":
+		return ReadHTML
+	case "text/calendar", "application/ics":
+		return ReadCalendar
+	case "message/rfc822":
+		return ReadMessage
+	}
+	return ""
+}
+
+// PartText reads the content of one part of a payload as a body part is
+// read (§4.1): its charset decoded and the characters a reader would not
+// see removed and counted. Plain text also has format=flowed undone and
+// its quotes and signature found; HTML is converted, its hidden text
+// dropped and its links read. Any other type keeps every line as
+// written. data is the part's content, from the payload or fetched.
+func PartText(p *gmail.MessagePart, data []byte) Body {
+	n := &node{partID: p.PartID, gmailName: p.Filename}
+	for _, h := range p.Headers {
+		n.headers = append(n.headers, Header{Name: h.Name, Value: h.Value})
+	}
+	n.mediaType = strings.ToLower(strings.TrimSpace(p.MimeType))
+	n.setContentHeaders()
+	n.data, n.hasData = data, true
+
+	b := Body{PartIDs: []string{p.PartID}}
+	if cs := n.unknownCharset(); cs != "" {
+		b.UnknownCharsets = []string{cs}
+	}
+	hidden := map[string]int{}
+	switch n.mediaType {
+	case "text/html":
+		h := HTMLToText([]byte(htmlText(n)))
+		for _, c := range h.Hidden {
+			hidden[c.Reason] += c.Chars
+		}
+		b.Text, b.Links, b.Source = strings.TrimSpace(h.Text), h.Links, SourceHTML
+	case "text/plain":
+		t, k := StripInvisible(plainText(n))
+		hidden[HiddenInvisible] += k
+		b.Text, b.Source = strings.TrimSpace(t), SourcePlain
+	default:
+		s, _ := decodeCharset(n.data, n.params["charset"])
+		t, k := StripInvisible(normalizeNewlines(s))
+		hidden[HiddenInvisible] += k
+		b.Text = strings.TrimRight(t, "\n")
+	}
+	b.Hidden = sortedHidden(hidden)
+	if b.Source != "" {
+		b.Spans = FindSpans(b.Text)
+	}
 	return b
 }
 

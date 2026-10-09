@@ -3,6 +3,7 @@ package service
 import (
 	"context"
 	"crypto/sha256"
+	"encoding/base64"
 	"encoding/hex"
 	"errors"
 	"hash"
@@ -20,6 +21,7 @@ import (
 	"github.com/mmedum/google-mail-mcp/v2/internal/gmail"
 	"github.com/mmedum/google-mail-mcp/v2/internal/mime"
 	"github.com/mmedum/google-mail-mcp/v2/internal/model"
+	"github.com/mmedum/google-mail-mcp/v2/internal/render"
 )
 
 // maxSuffix bounds the numbered names tried when a file name is taken.
@@ -168,6 +170,103 @@ func (s *Service) DownloadAttachments(ctx context.Context, dir, messageID string
 		out.Files = append(out.Files, dl)
 	}
 	return out, nil
+}
+
+// MaxReadBytes is the largest attachment read_attachment reads into a
+// result (§7.3). A larger one is refused before it is read.
+const MaxReadBytes = 5 << 20
+
+// ReadAttachment reads one attachment of a message as text (§7.3): plain
+// text, CSV, Markdown, JSON, HTML, a calendar or an attached message.
+// Any other type, a part over MaxReadBytes and a part whose content Gmail
+// did not give are refused before it is read.
+func (s *Service) ReadAttachment(ctx context.Context, messageID, partID string) (render.AttachmentRead, error) {
+	id, g, parsed, err := s.readParts(ctx, messageID)
+	if err != nil {
+		return render.AttachmentRead{}, err
+	}
+	att, ok := findAttachment(parsed.Attachments, partID)
+	if !ok {
+		return render.AttachmentRead{}, noAttachment(partID)
+	}
+	as := mime.ReadAs(att.MimeType)
+	switch {
+	case as == "":
+		return render.AttachmentRead{}, gapi.Errf(gapi.ClassUnsupported, "part %q is not a type this server reads as "+
+			"text: plain text, CSV, Markdown, JSON, HTML, a calendar or an attached message. download_attachment saves "+
+			"it, when the person has set GMAIL_LOCAL_DIR", partID)
+	case att.ContentMissing:
+		return render.AttachmentRead{}, gapi.Errf(gapi.ClassUnsupported, "Gmail returned part %q as parts of its own, "+
+			"with no content or attachment id for the part itself, so it cannot be read as one", partID)
+	case att.Size > MaxReadBytes:
+		return render.AttachmentRead{}, tooLargeToRead(att.Size)
+	}
+	data, err := s.partData(ctx, id, att, g.Payload)
+	if err != nil {
+		return render.AttachmentRead{}, err
+	}
+	if len(data) > MaxReadBytes {
+		return render.AttachmentRead{}, tooLargeToRead(len(data))
+	}
+	out := render.AttachmentRead{MessageID: id, Attachment: att, As: as, Bytes: len(data)}
+	if len(parsed.From) > 0 {
+		out.From = parsed.From[0]
+	}
+	if as != mime.ReadMessage {
+		part := findPart(g.Payload, att.PartID)
+		if part == nil {
+			part = &gmail.MessagePart{PartID: att.PartID, MimeType: att.MimeType}
+		}
+		out.Body = mime.PartText(part, data)
+		return out, nil
+	}
+	out.Message = model.Message{Complete: true}
+	if len(data) > 0 {
+		raw := &gmail.Message{Raw: base64.RawURLEncoding.EncodeToString(data)}
+		if out.Message, err = model.NewMessage(raw, model.LabelIndex{}, nil); err != nil {
+			return render.AttachmentRead{}, gapi.Wrap(gapi.ClassUnavailable, err, "the attached message could not be read")
+		}
+	}
+	// Its parts are not in the mailbox, so no part id names them there.
+	for i := range out.Message.Attachments {
+		out.Message.Attachments[i].PartID, out.Message.Attachments[i].AttachmentID = "", ""
+	}
+	return out, nil
+}
+
+func tooLargeToRead(size int) error {
+	return gapi.Errf(gapi.ClassInvalid, "the attachment is %.1f MB, more than the %d MB this server reads into a result; "+
+		"download_attachment saves it, when the person has set GMAIL_LOCAL_DIR", float64(size)/(1<<20), MaxReadBytes>>20)
+}
+
+// partData is an attachment's content: fetched when Gmail stored it
+// behind an attachment id, else decoded from the message.
+func (s *Service) partData(ctx context.Context, messageID string, att mime.Attachment, payload *gmail.MessagePart) ([]byte, error) {
+	if att.AttachmentID == "" {
+		return inlineData(payload, att.PartID)
+	}
+	body, err := s.client.GetAttachment(ctx, messageID, att.AttachmentID)
+	if err != nil {
+		return nil, err
+	}
+	return decodePart(body.Data)
+}
+
+// inlineData is the content of a part Gmail kept in the message.
+func inlineData(payload *gmail.MessagePart, partID string) ([]byte, error) {
+	var data string
+	if p := findPart(payload, partID); p != nil && p.Body != nil {
+		data = p.Body.Data
+	}
+	return decodePart(data)
+}
+
+func decodePart(data string) ([]byte, error) {
+	b, err := mime.DecodeBase64URL(data)
+	if err != nil {
+		return nil, gapi.Wrap(gapi.ClassUnavailable, err, "Gmail returned a part that is not base64url")
+	}
+	return b, nil
 }
 
 // chooseAttachments is what download_attachments writes when the caller
@@ -329,13 +428,9 @@ func (s *Service) writePart(ctx context.Context, messageID string, att mime.Atta
 	if att.AttachmentID != "" {
 		return s.client.DownloadAttachment(ctx, messageID, att.AttachmentID, reset)
 	}
-	var data string
-	if p := findPart(payload, att.PartID); p != nil && p.Body != nil {
-		data = p.Body.Data
-	}
-	b, err := mime.DecodeBase64URL(data)
+	b, err := inlineData(payload, att.PartID)
 	if err != nil {
-		return 0, gapi.Wrap(gapi.ClassUnavailable, err, "Gmail returned a part that is not base64url")
+		return 0, err
 	}
 	w, err := reset()
 	if err != nil {

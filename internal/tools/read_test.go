@@ -95,7 +95,7 @@ func TestSurfaceByMode(t *testing.T) {
 		t.Run(tc.name, func(t *testing.T) {
 			h, _ := connectFake(t, tc.cfg)
 			tools := h.Tools(t)
-			if want := 11 + tc.writes; len(tools) != want {
+			if want := 12 + tc.writes; len(tools) != want {
 				t.Fatalf("%d tools; want %d", len(tools), want)
 			}
 			writes := 0

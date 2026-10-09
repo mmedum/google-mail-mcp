@@ -226,7 +226,7 @@ func TestProfileIsRequired(t *testing.T) {
 func TestEveryReadToolHasAStep(t *testing.T) {
 	want := []string{"get_profile", "search_threads", "search_messages", "get_thread", "get_message",
 		"list_labels", "list_drafts", "get_draft", "list_changes", "get_settings", "list_filters", "download_attachment",
-		"download_attachments"}
+		"download_attachments", "read_attachment"}
 	have := map[string]bool{}
 	for _, s := range steps {
 		have[s.tool] = true

@@ -132,8 +132,9 @@ func runeOffset(s string, byteOff int) int {
 	return utf8.RuneCountInString(s[:min(byteOff, len(s))])
 }
 
-// headerBlock is the untrusted header text of a message.
-func headerBlock(m model.Message, all bool) string {
+// headerBlock is the untrusted header text of a message. The attachments
+// of an attached message are listed without part ids.
+func headerBlock(m model.Message, all, attached bool) string {
 	var b strings.Builder
 	add := func(name string, v model.Untrusted) {
 		if v != "" {
@@ -157,9 +158,9 @@ func headerBlock(m model.Message, all bool) string {
 		add("List-Unsubscribe", m.ListUnsubscribe)
 	}
 	for i, a := range m.Attachments {
-		b.WriteString("Attachment: " + attachmentLine(a) + "\n")
+		b.WriteString("Attachment: " + attachmentLine(a, !attached) + "\n")
 		if a.Invitation != nil {
-			b.WriteString("  Invitation: " + invitationLine(*a.Invitation, m.Attachments[:i]) + "\n")
+			b.WriteString("  Invitation: " + invitationLine(*a.Invitation, m.Attachments[:i], !attached) + "\n")
 		}
 	}
 	return b.String()
@@ -168,9 +169,12 @@ func headerBlock(m model.Message, all bool) string {
 // invitationLine is what a calendar part says about its event, or which
 // earlier part says the same: a message often carries one invitation
 // twice, inline and as invite.ics.
-func invitationLine(inv mime.Invitation, before []mime.Attachment) string {
+func invitationLine(inv mime.Invitation, before []mime.Attachment, partIDs bool) string {
 	for _, p := range before {
 		if p.Invitation != nil && *p.Invitation == inv {
+			if !partIDs {
+				return "the same as an attachment above"
+			}
 			return `the same as part_id "` + p.PartID + `"`
 		}
 	}
@@ -235,7 +239,9 @@ func joinUntrusted(us []model.Untrusted, sep string) model.Untrusted {
 	return model.Untrusted(strings.Join(ss, sep))
 }
 
-func attachmentLine(a mime.Attachment) string {
+// attachmentLine describes an attachment, with its part_id when partID
+// is set.
+func attachmentLine(a mime.Attachment, partID bool) string {
 	var details []string
 	if a.MimeType != "" {
 		details = append(details, a.MimeType)
@@ -250,7 +256,9 @@ func attachmentLine(a mime.Attachment) string {
 	if a.Renamed {
 		details = append(details, `declared name "`+a.DeclaredName+`"`)
 	}
-	details = append(details, `part_id "`+a.PartID+`"`)
+	if partID {
+		details = append(details, `part_id "`+a.PartID+`"`)
+	}
 	return a.Filename + " (" + strings.Join(details, ", ") + ")"
 }
 
@@ -297,15 +305,7 @@ func (w *writer) notes(m model.Message, c collapsed) {
 		w.say("note: %s were removed from the subject, names and addresses.",
 			plural(m.HeaderHidden, "invisible character", "invisible characters"))
 	}
-	if links := m.Body.Mismatches(); len(links) > 0 {
-		w.say("note: %s whose text names a different site from the one it points to; the block below pairs each.",
-			plural(len(links), "link", "links"))
-		var b strings.Builder
-		for _, l := range links {
-			b.WriteString("text names " + l.TextHost + ", link points to " + l.Host + "\n")
-		}
-		w.block("links whose text names another site", origin, m.ID, b.String())
-	}
+	w.linkNote(m.Body, origin, m.ID)
 	if m.Body.PlaceholderSkipped {
 		w.say("note: the plain-text part only pointed to the HTML version, so the HTML was read.")
 	}
@@ -328,6 +328,28 @@ func (w *writer) notes(m model.Message, c collapsed) {
 	if len(m.Body.Missing) > 0 {
 		w.say("note: body parts not fetched: %s.", partIDs(m.Body.Missing))
 	}
+	w.collapsedNote(c)
+}
+
+// linkNote counts the links whose text names a different site from the
+// one they point to, and pairs each in a block, since the hosts are the
+// sender's.
+func (w *writer) linkNote(b mime.Body, origin, id string) {
+	links := b.Mismatches()
+	if len(links) == 0 {
+		return
+	}
+	w.say("note: %s whose text names a different site from the one it points to; the block below pairs each.",
+		plural(len(links), "link", "links"))
+	var s strings.Builder
+	for _, l := range links {
+		s.WriteString("text names " + l.TextHost + ", link points to " + l.Host + "\n")
+	}
+	w.block("links whose text names another site", origin, id, s.String())
+}
+
+// collapsedNote says what a view folded away, and how to see it.
+func (w *writer) collapsedNote(c collapsed) {
 	switch {
 	case c.quotes > 0 && c.sigs > 0:
 		w.say("collapsed: %s of quoted text and a signature (%s); show_quoted=true shows them.",
@@ -351,7 +373,7 @@ const minBody = 200
 // with the widest cut line it could need, and the body gets exactly what
 // is left.
 func (w *writer) messageBody(m model.Message, o Options, startRune, end int) int {
-	headers, cut := capHeaders(headerBlock(m, o.AllHeaders), o.budget()/2)
+	headers, cut := capHeaders(headerBlock(m, o.AllHeaders, o.attached), o.budget()/2)
 	w.block("headers", m.Sender().Email, m.ID, headers)
 	if cut > 0 {
 		w.say("cut: %s of the header block over half the budget were left out; the structured result lists every address.",
@@ -418,4 +440,111 @@ func single(o Options, m model.Message, head func(w *writer)) Result {
 		res.Truncated = res.NextOffset > 0
 		return res
 	})
+}
+
+// AttachmentRead is an attachment read as text (§7.3).
+type AttachmentRead struct {
+	MessageID string
+	// From is the sender of the message the attachment is in, whose
+	// blocks it is shown in.
+	From       mime.Address
+	Attachment mime.Attachment
+	// As is how it was read: one of mime's Read* ways.
+	As string
+	// Body is the text read, unless As is mime.ReadMessage.
+	Body mime.Body
+	// Message is the attached message, when As is mime.ReadMessage. It is
+	// not in the mailbox: it has no id, thread or labels, and the parts
+	// in it have no part id.
+	Message model.Message
+	// Bytes is the size of the content read.
+	Bytes int
+}
+
+// Attachment renders an attachment read as text: how it was read, its
+// entry, then its content from o.Offset, cut to the budget as a body is.
+// An attached message renders as Message renders one.
+func Attachment(a AttachmentRead, o Options) Result {
+	return render(o, func(w *writer) Result {
+		res := Result{Budget: o.budget()}
+		w.say("budget: %s characters", num(res.Budget))
+		part, id := partIDs([]string{a.Attachment.PartID}), gmailID(a.MessageID)
+		switch a.As {
+		case mime.ReadMessage:
+			w.say("part %s of message %s is a message, attached; it is read as get_message reads one. It is not in the mailbox, so it has no id, thread or labels, and the attachments in it cannot be read or saved apart from it.", part, id)
+		case mime.ReadHTML:
+			w.say("part %s of message %s is HTML, converted to text; no image or link was fetched.", part, id)
+		case mime.ReadCalendar:
+			w.say("part %s of message %s is a calendar, shown as written.", part, id)
+		default:
+			w.say("part %s of message %s is text, shown as written.", part, id)
+		}
+		w.block("attachment", a.From.Email, a.MessageID, "Attachment: "+attachmentLine(a.Attachment, true)+"\n")
+		if a.As == mime.ReadMessage {
+			m := a.Message
+			// Its blocks name the message in the mailbox it is attached to.
+			m.ID = a.MessageID
+			o.attached = true
+			res.NextOffset = w.messageBody(m, o, o.Offset, res.Budget)
+		} else {
+			res.NextOffset = w.attachmentContent(a, o, res.Budget)
+		}
+		res.Truncated = res.NextOffset > 0
+		return res
+	})
+}
+
+// attachmentContent writes an attachment's text from o.Offset, ending
+// the whole by the writer position end, as messageBody writes a body,
+// and returns the rune offset to continue from, or 0.
+func (w *writer) attachmentContent(a AttachmentRead, o Options, end int) int {
+	b := a.Body
+	if b.Text == "" {
+		w.say("(no readable text)")
+		w.attachmentNotes(a, collapsed{})
+		return 0
+	}
+	total := utf8.RuneCountInString(b.Text)
+	start := min(max(o.Offset, 0), total)
+	ps, c := bodyPieces(b, byteIndexOfRune(b.Text, start), o.ShowQuoted)
+	frame := w.sub(func(s *writer) { s.attachmentFrame(a, c, start, total, "", total) })
+	text, next := cutBody(ps, max(end-w.len()-frame.len(), minBody))
+	at := 0
+	if next > 0 {
+		at = runeOffset(b.Text, next)
+	}
+	w.attachmentFrame(a, c, start, total, text, at)
+	return at
+}
+
+// attachmentFrame writes an attachment's content block and what the
+// server says about it; at is where cut content continues, or 0.
+func (w *writer) attachmentFrame(a AttachmentRead, c collapsed, start, total int, text string, at int) {
+	if start > 0 {
+		w.say("(content from character %s of %s)", num(start), num(total))
+	}
+	w.block("attachment content", a.From.Email, a.MessageID, text)
+	w.attachmentNotes(a, c)
+	if at > 0 {
+		w.say("cut: the content continues at character %s of %s; offset=%s reads on.", num(at), num(total), num(at))
+	}
+}
+
+// attachmentNotes states what the server found in an attachment's text
+// and did to it.
+func (w *writer) attachmentNotes(a AttachmentRead, c collapsed) {
+	b := a.Body
+	if n := b.HiddenChars(); n > 0 {
+		w.say("note: %s a reader would not see were removed from the attachment (%s).",
+			plural(n, "character", "characters"), hiddenList(b.Hidden))
+	}
+	w.linkNote(b, a.From.Email, a.MessageID)
+	if a.Attachment.Renamed {
+		w.say("note: the attachment's declared name was unsafe as a file name; the block above shows it renamed.")
+	}
+	if cs := b.UnknownCharsets; len(cs) > 0 {
+		w.say("note: the attachment's charset is unknown, so it was read as UTF-8 or windows-1252; the block below names it.")
+		w.block("unknown charset label", a.From.Email, a.MessageID, strings.Join(cs, "\n"))
+	}
+	w.collapsedNote(c)
 }

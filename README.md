@@ -135,6 +135,7 @@ be saved to; `GMAIL_PROFILE` lets one machine hold several accounts.
 | `search_messages` | Find single messages with a Gmail search |
 | `get_thread` | Read a conversation, newest first, within a budget |
 | `get_message` | Read one message, by id or by its `Message-ID` header |
+| `read_attachment` | Read an attachment's text: plain text, CSV, Markdown, JSON, HTML, a calendar or an attached email |
 | `list_labels` | Every label, optionally with counts |
 | `list_drafts` | Unsent drafts |
 | `get_draft` | Read one draft |

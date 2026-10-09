@@ -257,23 +257,26 @@ func TestSenderTextNeverReachesTheServersVoice(t *testing.T) {
 		small.Budget = MinBudget
 
 		results := map[string]Result{
-			"message":         Message(msgs[0], o),
-			"message small":   Message(msgs[1], small),
-			"message meta":    Message(meta[0], o),
-			"draft":           Draft(drafts[0], o),
-			"thread":          Thread(th, o),
-			"thread small":    Thread(th, small),
-			"thread omitted":  Thread(model.Thread{ID: th.ID, Messages: append(append([]model.Message{}, meta...), msgs...)}, Options{Tokens: seq("TOKEN"), Budget: MinBudget}),
-			"threads":         Threads(ThreadList{Threads: []model.Thread{th, mt}, NextPageToken: "123", ResultSizeEstimate: 9}, o),
-			"threads small":   Threads(ThreadList{Threads: []model.Thread{mt, mt, mt, mt, mt, mt, mt, mt}}, small),
-			"messages":        Messages(MessageList{Messages: append(append([]model.Message{}, meta...), msgs...)}, small),
-			"drafts":          Drafts(DraftList{Drafts: drafts}, o),
-			"profile, labels": {Text: Profile(model.Profile{Email: "reader@example.com"}) + Labels(model.NewLabels(testLabels, true))},
-			"draft written":   DraftWrite(hostileDraftWrite(h, msgs[0], "update"), o),
-			"reply written":   DraftWrite(hostileDraftWrite(h, msgs[1], "create"), small),
-			"send":            SendDraft(hostileSendWrite(h, msgs[2], false), o),
-			"send dry run":    SendDraft(hostileSendWrite(h, msgs[3], true), small),
-			"downloads":       DownloadsWritten(hostileDownloads(h, msgs[0]), o),
+			"message":          Message(msgs[0], o),
+			"message small":    Message(msgs[1], small),
+			"message meta":     Message(meta[0], o),
+			"draft":            Draft(drafts[0], o),
+			"thread":           Thread(th, o),
+			"thread small":     Thread(th, small),
+			"thread omitted":   Thread(model.Thread{ID: th.ID, Messages: append(append([]model.Message{}, meta...), msgs...)}, Options{Tokens: seq("TOKEN"), Budget: MinBudget}),
+			"threads":          Threads(ThreadList{Threads: []model.Thread{th, mt}, NextPageToken: "123", ResultSizeEstimate: 9}, o),
+			"threads small":    Threads(ThreadList{Threads: []model.Thread{mt, mt, mt, mt, mt, mt, mt, mt}}, small),
+			"messages":         Messages(MessageList{Messages: append(append([]model.Message{}, meta...), msgs...)}, small),
+			"drafts":           Drafts(DraftList{Drafts: drafts}, o),
+			"profile, labels":  {Text: Profile(model.Profile{Email: "reader@example.com"}) + Labels(model.NewLabels(testLabels, true))},
+			"draft written":    DraftWrite(hostileDraftWrite(h, msgs[0], "update"), o),
+			"reply written":    DraftWrite(hostileDraftWrite(h, msgs[1], "create"), small),
+			"send":             SendDraft(hostileSendWrite(h, msgs[2], false), o),
+			"send dry run":     SendDraft(hostileSendWrite(h, msgs[3], true), small),
+			"downloads":        DownloadsWritten(hostileDownloads(h, msgs[0]), o),
+			"attachment text":  Attachment(hostileAttachment(msgs[0], mime.ReadText), o),
+			"attachment html":  Attachment(hostileAttachment(msgs[1], mime.ReadHTML), small),
+			"attached message": Attachment(hostileAttachment(msgs[2], mime.ReadMessage), o),
 			"signature": SignatureWrite(model.SignatureWrite{Address: "reader@example.com",
 				Before: model.Untrusted(h.mark()), After: model.Untrusted(h.mark())}, o),
 			"vacation": VacationWrite(model.VacationWrite{
@@ -350,6 +353,20 @@ func hostileDownloads(h *hostile, m model.Message) Downloads {
 			DeclaredName: a.DeclaredName, MimeType: a.MimeType, Suffixed: true, Bytes: int64(a.Size), SHA256: h.mark()})
 	}
 	return d
+}
+
+// hostileAttachment is an attachment of a hostile message read one way:
+// its first attachment's entry, with the message's body as its text, or
+// the message itself as the attached message.
+func hostileAttachment(m model.Message, as string) AttachmentRead {
+	a := AttachmentRead{MessageID: m.ID, Attachment: m.Attachments[0], As: as, Body: m.Body, Bytes: 10}
+	if len(m.From) > 0 {
+		a.From = m.From[0]
+	}
+	if as == mime.ReadMessage {
+		a.Body, a.Message = mime.Body{}, m
+	}
+	return a
 }
 
 // hostileSendWrite is a send's result made of a hostile message: its
@@ -471,6 +488,14 @@ func TestBudgetIsHeld(t *testing.T) {
 				d := Draft(model.Draft{ID: "r-1", Message: m}, Options{Tokens: seq("T"), Budget: budget, Offset: off})
 				if got := utf8.RuneCountInString(d.Text); got > budget {
 					t.Errorf("draft of %d words at %d: %d characters", words, budget, got)
+				}
+				for _, as := range []string{mime.ReadText, mime.ReadMessage} {
+					a := AttachmentRead{MessageID: m.ID, From: m.From[0], Attachment: mime.Attachment{PartID: "1",
+						Filename: "notes.txt", MimeType: "text/plain"}, As: as, Body: m.Body, Message: m}
+					r := Attachment(a, Options{Tokens: seq("T"), Budget: budget, Offset: off})
+					if got := utf8.RuneCountInString(r.Text); got > budget {
+						t.Errorf("attachment read as %s, %d words at %d: %d characters", as, words, budget, got)
+					}
 				}
 			}
 			th := model.Thread{ID: "0000000000000001", Messages: []model.Message{m, m, m}}

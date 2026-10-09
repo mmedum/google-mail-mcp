@@ -5,6 +5,7 @@ import (
 
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 
+	"github.com/mmedum/google-mail-mcp/v2/internal/mime"
 	"github.com/mmedum/google-mail-mcp/v2/internal/model"
 	"github.com/mmedum/google-mail-mcp/v2/internal/render"
 	"github.com/mmedum/google-mail-mcp/v2/internal/service"
@@ -70,6 +71,33 @@ type DownloadsOut struct {
 	Cost
 }
 
+// ReadAttachmentIn names one attachment to read as text.
+type ReadAttachmentIn struct {
+	MessageID   string `json:"message_id" jsonschema:"message id, or rfc822: followed by a Message-ID header value"`
+	PartID      string `json:"part_id" jsonschema:"the attachment's part_id as get_message lists it"`
+	Offset      int    `json:"offset,omitempty" jsonschema:"next_offset from the previous read, to continue a long attachment"`
+	BudgetChars int    `json:"budget_chars,omitempty" jsonschema:"characters of text to return; default 24000, between 2000 and 100000"`
+	ShowQuoted  bool   `json:"show_quoted,omitempty" jsonschema:"keep quoted replies and signatures in plain text, HTML and an attached message instead of collapsing them"`
+}
+
+// AttachmentOut is one attachment read as text.
+type AttachmentOut struct {
+	MessageID         string          `json:"message_id"`
+	PartID            string          `json:"part_id"`
+	UntrustedFilename model.Untrusted `json:"untrusted_filename"`
+	UntrustedMimeType model.Untrusted `json:"untrusted_mime_type"`
+	Bytes             int             `json:"bytes" jsonschema:"the size of the content read"`
+	ReadAs            string          `json:"read_as" jsonschema:"text (plain text, CSV, Markdown or JSON, as written), html (converted to text), calendar (as written) or message (an attached email, read as get_message reads one)"`
+	// Message is the attached message, when ReadAs is message.
+	Message *MessageMeta `json:"message,omitempty" jsonschema:"the attached email, when read_as is message, as get_message gives one. It is not in the mailbox: it has no id, thread or labels, its date is its own Date header, and its attachments have an empty part_id, since they cannot be read or saved apart from it"`
+	// HiddenCharsRemoved and LinkMismatches are about the text read;
+	// an attached message carries its own in message.
+	HiddenCharsRemoved int `json:"hidden_chars_removed,omitempty"`
+	LinkMismatches     int `json:"link_mismatches,omitempty"`
+	Rendered
+	Cost
+}
+
 // downloadNote ends both download descriptions.
 const downloadNote = " Files go into the directory the person configured as GMAIL_LOCAL_DIR, and nowhere else. Each is " +
 	"named after the attachment, made safe as a file name; an existing file is never overwritten, a number is added " +
@@ -77,6 +105,32 @@ const downloadNote = " Files go into the directory the person configured as GMAI
 
 func registerAttachment(s *mcp.Server, d Deps) {
 	svc := service.New(d.Client)
+
+	register(s, d, Spec{Name: "read_attachment", Kind: Read, Description: "Read one attachment as text: plain text, " +
+		"CSV, Markdown or JSON as written, HTML converted to text with nothing it links to fetched, a calendar file as " +
+		"written, or an attached email, read as get_message reads one. Any other type is refused, and so is anything " +
+		"over 5 MB; download_attachment saves those. A long attachment is cut at a paragraph and continued with offset. " +
+		"Take message_id and part_id from get_message. About 20 units, and 20 more when Gmail stores the attachment " +
+		"apart from the message." + untrustedNote},
+		func(ctx context.Context, in ReadAttachmentIn) (AttachmentOut, error) {
+			o, err := Shape{BudgetChars: in.BudgetChars, ShowQuoted: in.ShowQuoted}.options()
+			if err != nil {
+				return AttachmentOut{}, err
+			}
+			o.Offset = in.Offset
+			a, err := svc.ReadAttachment(ctx, in.MessageID, in.PartID)
+			if err != nil {
+				return AttachmentOut{}, err
+			}
+			out := AttachmentOut{MessageID: a.MessageID, PartID: a.Attachment.PartID,
+				UntrustedFilename: model.Untrusted(a.Attachment.Filename), UntrustedMimeType: model.Untrusted(a.Attachment.MimeType),
+				Bytes: a.Bytes, ReadAs: a.As, HiddenCharsRemoved: a.Body.HiddenChars(), LinkMismatches: len(a.Body.Mismatches()),
+				Rendered: readOf(render.Attachment(a, o))}
+			if a.As == mime.ReadMessage {
+				out.Message = ptr(messageMeta(a.Message))
+			}
+			return out, nil
+		})
 
 	register(s, d, Spec{Name: "download_attachment", Kind: ReadWritesLocally, Description: "Save one attachment." +
 		downloadNote + " Take message_id and part_id from get_message. About 40 units." + untrustedNote},

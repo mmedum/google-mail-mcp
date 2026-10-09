@@ -13,6 +13,7 @@ import (
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 
 	"github.com/mmedum/google-mail-mcp/v2/internal/config"
+	"github.com/mmedum/google-mail-mcp/v2/internal/gapi"
 	"github.com/mmedum/google-mail-mcp/v2/internal/gapi/gmailtest"
 	"github.com/mmedum/google-mail-mcp/v2/internal/server/testutil"
 	"github.com/mmedum/google-mail-mcp/v2/internal/tools"
@@ -233,4 +234,157 @@ func boundaryIn(text string) string {
 	}
 	tok, _, _ := strings.Cut(text[i+len(open):], ":")
 	return tok
+}
+
+// readAttachment reads one attachment and returns the result and its text.
+func readAttachment(t *testing.T, h *testutil.Harness, args map[string]any) (tools.AttachmentOut, string) {
+	t.Helper()
+	var out tools.AttachmentOut
+	text := call(t, h, "read_attachment", args, &out)
+	return out, text
+}
+
+// A text attachment's content arrives inside a block, decoded from its
+// charset, for the message read and the attachment read.
+func TestReadAttachmentReadsTextTypes(t *testing.T) {
+	h, fake := connectFake(t, config.Config{ReadOnly: true})
+	id := fake.AddPartsMessage(
+		gmailtest.File("text/csv; charset=iso-8859-1", "prices.csv", []byte("item;price\nCaf\xe9;3\n")),
+		gmailtest.File("text/markdown; charset=utf-8", "notes.md", []byte("# Notes\u200b\n\n> a quote in Markdown\n")),
+		gmailtest.File("application/json", "data.json", []byte(`{"room": "Garden suite"}`)),
+		gmailtest.File("text/calendar; charset=utf-8", "event.ics", []byte("BEGIN:VCALENDAR\r\nSUMMARY:Review\r\nEND:VCALENDAR\r\n")),
+	)
+	for _, tc := range []struct {
+		part, as, want string
+		hidden         int
+	}{
+		{"1", "text", "item;price\nCafé;3", 0},
+		// The zero-width space is removed and counted; the quote stays, as
+		// only plain text and HTML collapse one.
+		{"2", "text", "# Notes\n\n> a quote in Markdown", 1},
+		{"3", "text", `{"room": "Garden suite"}`, 0},
+		{"4", "calendar", "BEGIN:VCALENDAR\nSUMMARY:Review\nEND:VCALENDAR", 0},
+	} {
+		out, text := readAttachment(t, h, map[string]any{"message_id": id, "part_id": tc.part})
+		if out.ReadAs != tc.as || out.PartID != tc.part || out.MessageID != id || out.Message != nil || out.Units != 40 ||
+			out.HiddenCharsRemoved != tc.hidden {
+			t.Errorf("part %s: out = %+v; want read as %s, %d hidden, for 40 units", tc.part, out, tc.as, tc.hidden)
+		}
+		if !strings.Contains(text, tc.want) || strings.Contains(outside(text), tc.want) {
+			t.Errorf("part %s: the content %q is not inside a block:\n%s", tc.part, tc.want, text)
+		}
+	}
+}
+
+// HTML is converted as a body is: hidden text removed and counted, a
+// link whose text names another site flagged, nothing fetched.
+func TestReadAttachmentConvertsHTML(t *testing.T) {
+	h, fake := connectFake(t, config.Config{ReadOnly: true})
+	page := `<p>The menu is attached.</p><span style="display:none">secret words</span>` +
+		`<a href="https://tracker.example/x">www.harbor.example</a>`
+	id := fake.AddPartsMessage(gmailtest.File("text/html; charset=utf-8", "menu.html", []byte(page)))
+	out, text := readAttachment(t, h, map[string]any{"message_id": id, "part_id": "1"})
+	if out.ReadAs != "html" || out.HiddenCharsRemoved != len("secret words") || out.LinkMismatches != 1 {
+		t.Fatalf("out = %+v; want html, 12 hidden characters and one link flagged", out)
+	}
+	if !strings.Contains(text, "The menu is attached.") || strings.Contains(text, "secret words") {
+		t.Errorf("the text shows the wrong content:\n%s", text)
+	}
+	if !strings.Contains(text, "note: 1 link whose text names a different site") {
+		t.Errorf("the mismatched link is not flagged:\n%s", text)
+	}
+}
+
+// A long attachment is cut to the budget and continued with offset.
+func TestReadAttachmentContinuesWithOffset(t *testing.T) {
+	h, fake := connectFake(t, config.Config{ReadOnly: true})
+	var long strings.Builder
+	for i := range 60 {
+		long.WriteString("Paragraph " + strconv.Itoa(i+1) + " of the minutes, written out at length so the file runs past one budget.\n\n")
+	}
+	id := fake.AddPartsMessage(gmailtest.File("text/plain; charset=utf-8", "minutes.txt", []byte(long.String())))
+
+	first, text := readAttachment(t, h, map[string]any{"message_id": id, "part_id": "1", "budget_chars": 2000})
+	if !first.Truncated || first.NextOffset == 0 || !strings.Contains(text, "offset="+strconv.Itoa(first.NextOffset)) {
+		t.Fatalf("first read: %+v; want it cut, with the offset to continue from", first)
+	}
+	if strings.Contains(text, "Paragraph 60 ") {
+		t.Errorf("the first read already holds the last paragraph")
+	}
+	_, text = readAttachment(t, h, map[string]any{"message_id": id, "part_id": "1", "offset": first.NextOffset})
+	if !strings.Contains(text, "(content from character "+strconv.Itoa(first.NextOffset)+" of ") ||
+		!strings.Contains(text, "Paragraph 60 ") || strings.Contains(text, "Paragraph 1 ") {
+		t.Errorf("the second read does not continue where the first stopped:\n%s", text)
+	}
+}
+
+// An attached message reads as get_message reads one: its headers and
+// body, its quotes collapsed unless show_quoted, and its own attachments
+// listed with no part id, since none names them in the mailbox.
+func TestReadAttachmentReadsAnAttachedMessage(t *testing.T) {
+	h, fake := connectFake(t, config.Config{ReadOnly: true})
+	inner := "From: Bruno Fennick <bruno.fennick@example.org>\r\nTo: Ada Quill <ada.quill@example.com>\r\n" +
+		"Subject: The venue\r\nDate: Mon, 2 Mar 2026 09:00:00 +0000\r\nMIME-Version: 1.0\r\n" +
+		"Content-Type: multipart/mixed; boundary=inner\r\n\r\n" +
+		"--inner\r\nContent-Type: text/plain; charset=utf-8\r\n\r\nThe lake house is booked.\r\n\r\n" +
+		"On Monday Ada wrote:\r\n> Is it booked?\r\n" +
+		"--inner\r\nContent-Type: application/pdf\r\nContent-Disposition: attachment; filename=\"plan.pdf\"\r\n\r\n%PDF-1.4\r\n" +
+		"--inner--\r\n"
+	id := fake.AddPartsMessage(&gmailtest.Part{ContentType: "message/rfc822",
+		Disposition: `attachment; filename="venue.eml"`, Content: []byte(inner), Filename: "venue.eml"})
+
+	out, text := readAttachment(t, h, map[string]any{"message_id": id, "part_id": "1"})
+	m := out.Message
+	if out.ReadAs != "message" || m == nil || m.ID != "" || m.ThreadID != "" || m.UntrustedSubject != "The venue" ||
+		len(m.UntrustedFrom) != 1 || m.UntrustedFrom[0] != "Bruno Fennick <bruno.fennick@example.org>" {
+		t.Fatalf("out = %+v, message %+v; want the attached message, with no id or thread", out, m)
+	}
+	if len(m.Attachments) != 1 || m.Attachments[0].PartID != "" || m.Attachments[0].UntrustedFilename != "plan.pdf" {
+		t.Errorf("attachments = %+v; want plan.pdf with no part_id", m.Attachments)
+	}
+	if !strings.Contains(text, "The lake house is booked.") || strings.Contains(text, "Is it booked?") ||
+		!strings.Contains(text, "collapsed: 2 lines of quoted text") {
+		t.Errorf("the body is not shown with its quote collapsed:\n%s", text)
+	}
+	if !strings.Contains(text, "Attachment: plan.pdf (application/pdf, 8 B)\n") {
+		t.Errorf("the attached message's own attachment is not listed without a part id:\n%s", text)
+	}
+	if strings.Contains(outside(text), "The venue") || strings.Contains(outside(text), "bruno") {
+		t.Errorf("the attached message's words reached the server's own lines:\n%s", text)
+	}
+
+	_, text = readAttachment(t, h, map[string]any{"message_id": id, "part_id": "1", "show_quoted": true})
+	if !strings.Contains(text, "> Is it booked?") {
+		t.Errorf("show_quoted does not show the quote:\n%s", text)
+	}
+}
+
+// What cannot be read as text is refused before it is fetched.
+func TestReadAttachmentRefusals(t *testing.T) {
+	h, fake := connectFake(t, config.Config{ReadOnly: true})
+	id := fake.AddPartsMessage(
+		gmailtest.File("application/pdf", "plan.pdf", []byte("%PDF-1.4 generated fixture\n")),
+		gmailtest.File("text/plain", "big.txt", []byte(strings.Repeat("x", 5<<20+1))),
+		&gmailtest.Part{ContentType: "message/rfc822", Disposition: `attachment; filename="expanded.eml"`, Expanded: true,
+			Content: []byte("From: Bruno Fennick <bruno.fennick@example.org>\r\nSubject: s\r\n\r\nBody.\r\n")},
+	)
+	for _, tc := range []struct {
+		part  string
+		class gapi.Class
+		say   string
+	}{
+		{"1", gapi.ClassUnsupported, "download_attachment saves it"},
+		{"2", gapi.ClassInvalid, "more than the 5 MB"},
+		{"3", gapi.ClassUnsupported, "as parts of its own"},
+		{"9", gapi.ClassNotFound, "get_message lists"},
+	} {
+		text := refused(t, h, "read_attachment", map[string]any{"message_id": id, "part_id": tc.part}, tc.class)
+		if !strings.Contains(text, tc.say) {
+			t.Errorf("part %s: %s; want it to say %q", tc.part, text, tc.say)
+		}
+	}
+	if n := len(fake.CallsOf("gmail.users.messages.attachments.get")); n != 0 {
+		t.Errorf("%d attachment reads; a refused read fetches nothing", n)
+	}
+	refused(t, h, "read_attachment", map[string]any{"message_id": id, "part_id": "1", "budget_chars": 10}, gapi.ClassInvalid)
 }

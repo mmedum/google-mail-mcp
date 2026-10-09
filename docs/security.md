@@ -51,10 +51,10 @@ leaves an environment-provided token alone.
 
 ## Mail is untrusted input
 
-Every subject, body, header, snippet and attachment name was written by
-somebody other than the person using the server, and some of it is
-written to steer an AI agent. The server cannot stop a model being
-persuaded. It does four things instead:
+Every subject, body, header, snippet, attachment and attachment name
+was written by somebody other than the person using the server, and
+some of it is written to steer an AI agent. The server cannot stop a
+model being persuaded. It does four things instead:
 
 - **Marks it.** Mail content is returned inside a delimited block naming
   its sender and message id, with a boundary token generated for each

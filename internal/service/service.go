@@ -251,11 +251,7 @@ func (s *Service) fetchParts(ctx context.Context, labels model.LabelIndex, wire 
 		if err != nil {
 			return nil, err
 		}
-		b, err := mime.DecodeBase64URL(body.Data)
-		if err != nil {
-			return nil, gapi.Wrap(gapi.ClassUnavailable, err, "Gmail returned a part that is not base64url")
-		}
-		return b, nil
+		return decodePart(body.Data)
 	})
 	if err != nil {
 		return err
