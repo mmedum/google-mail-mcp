@@ -19,7 +19,8 @@ import (
 )
 
 // The write handlers model what the server's logic depends on (§13):
-// threading by the three conditions of §2.5, a draft's message replaced
+// threading by thread id on a draft's create, as Gmail did live, and by
+// the three conditions of §2.5 on its update, a draft's message replaced
 // with a new id on every update (spike A), SENT and DRAFT refused by
 // hand, labels that differ only in case refused (spike I), permanent
 // deletion refused without https://mail.google.com/ (spike G), and
@@ -96,17 +97,17 @@ func sameSubject(a, b string) bool {
 	return norm(a) == norm(b)
 }
 
-// threadFor decides which thread a draft joins. It joins threadID only
-// when all three of §2.5's conditions hold: the thread is named, the
-// draft's In-Reply-To or References names a message in it, and the
-// subjects match; with ThreadByID, the first alone. Otherwise it starts
-// its own thread.
-func (s *Server) threadFor(threadID string, p parsedRaw, own string) string {
+// threadFor decides which thread a draft joins. With byID it joins the
+// thread named. Otherwise it joins only when all three of §2.5's
+// conditions hold: the thread is named, the draft's In-Reply-To or
+// References names a message in it, and the subjects match. Else it
+// starts its own thread.
+func (s *Server) threadFor(threadID string, p parsedRaw, own string, byID bool) string {
 	ids, ok := s.threads[threadID]
 	if threadID == "" || !ok {
 		return own
 	}
-	if s.ThreadByID {
+	if byID {
 		return threadID
 	}
 	refs := headerValue(p.headers, "In-Reply-To") + " " + headerValue(p.headers, "References")
@@ -124,14 +125,15 @@ func (s *Server) threadFor(threadID string, p parsedRaw, own string) string {
 }
 
 // storeRaw adds a message the server wrote, as Gmail stores it: the
-// bytes as received, the payload read from them.
-func (s *Server) storeRaw(raw []byte, threadID string, labels []string) (*message, error) {
+// bytes as received, the payload read from them, in the thread
+// threadFor picks.
+func (s *Server) storeRaw(raw []byte, threadID string, byID bool, labels []string) (*message, error) {
 	p, err := parseRaw(raw)
 	if err != nil {
 		return nil, err
 	}
 	id := s.nextID()
-	return s.storeParsed(raw, p, id, s.threadFor(threadID, p, id), labels), nil
+	return s.storeParsed(raw, p, id, s.threadFor(threadID, p, id, byID), labels), nil
 }
 
 // storeParsed adds a message already parsed, in the thread given.
@@ -205,7 +207,7 @@ func (s *Server) createDraft(w http.ResponseWriter, r *http.Request, _ []string)
 		return
 	}
 	m, err := s.storeRaw(replaceMessageID(raw, "<draft."+strconv.FormatUint(s.counter+1, 16)+"@mail.example.com>"),
-		threadID, []string{"DRAFT"})
+		threadID, !s.ThreadAsDocumented, []string{"DRAFT"})
 	if err != nil {
 		writeError(w, http.StatusBadRequest, "invalidArgument", "Invalid raw message")
 		return
@@ -225,7 +227,7 @@ func (s *Server) updateDraft(w http.ResponseWriter, r *http.Request, args []stri
 	if !ok {
 		return
 	}
-	m, err := s.storeRaw(raw, threadID, []string{"DRAFT"})
+	m, err := s.storeRaw(raw, threadID, false, []string{"DRAFT"})
 	if err != nil {
 		writeError(w, http.StatusBadRequest, "invalidArgument", "Invalid raw message")
 		return
