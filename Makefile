@@ -139,11 +139,11 @@ api-diff: ## Refetch the discovery document and rewrite the snapshot (network; m
 	$(GATES) api-diff
 
 .PHONY: schema-diff
-schema-diff: build ## The tool surface against the last tag, else the recorded baseline
+schema-diff: build ## The tool surface against the newest release's recorded baseline
 	$(GATES) schema-diff $(BIN)
 
 .PHONY: schema-baseline
-schema-baseline: build ## Record the current tool surface as the baseline (deliberate; manual)
+schema-baseline: build ## Record the release being cut as the baseline: VERSION=vX.Y.Z, in its release commit (manual)
 	$(GATES) schema-baseline $(BIN)
 
 .PHONY: schema-refetch

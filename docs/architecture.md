@@ -38,8 +38,9 @@ The server works **inside one mailbox**: finding mail, reading threads
 and messages, attachments, labels, drafts, and — only when the person
 opts in — sending and the signature, filters and vacation reply (§7.9).
 It stops at the edge of the message. A calendar
-invitation is an `.ics` attachment here; the event belongs to a server
-built on the Calendar API. A linked Drive file is a URL here; the file
+invitation is an `.ics` attachment here, read for the UID and times a
+calendar server finds its event by; the event belongs to a server built
+on the Calendar API. A linked Drive file is a URL here; the file
 belongs to a Drive server. Mailbox administration — delegation,
 forwarding, send-as identities beyond a signature, S/MIME and client-side-encryption keys —
 is out of scope, and §8a says why method by method.
@@ -270,9 +271,11 @@ an annotation is not a control and a registered tool can run unattended.
    leaves this server existed first as a draft the person could open in
    Gmail. Replying is `create_draft` with `reply_to`, then `send_draft`.
 2. **The body is exactly what the caller gave.** No signature, prefix,
-   footer or "sent by" line is added server-side, ever. When the caller
-   gives no HTML, the same words also go as an HTML version made from
-   the text (§7.4), so a reader sees the caller's words either way.
+   footer or "sent by" line is added server-side, ever. The server adds
+   only what the caller names: with `quote`, the parent's text below the
+   body; with `forward`, the original as an attachment (§7.4). When the
+   caller gives no HTML, the same words also go as an HTML version made
+   from the text (§7.4), so a reader sees the caller's words either way.
 3. **`send_draft` shows before it sends.** Its result names every
    recipient (To, Cc, Bcc), the subject, the attachment names and sizes,
    and the thread it joins. `dry_run: true` returns that without
@@ -425,6 +428,12 @@ messages beyond the budget are listed by id, sender and date with a
 cursor. A long body is cut at a paragraph boundary with a marker and the
 offset to continue from. Listings use `format=metadata` with a fixed
 header set, never `full`.
+
+The notes after a body count against the budget too. A list in them of
+what the sender made, such as the links whose text names another site
+or unknown charset labels, takes at most an eighth of the budget, and
+the rest are counted after it. Parts are named thirty at most, and
+renamed attachments are counted in one note.
 
 A listing's budget bounds its text, in `content` and again in
 `untrusted_text`; the structured rows carry every item on the page in
@@ -585,6 +594,15 @@ when it turns the reply on, and `send_draft`.
     reached with no way to ask is refused. A test finds every such tool
     from the published schemas and holds each: declined, nothing
     written; accepted, one write.
+15. **One question per call.** `send_draft`, `delete_permanently` and
+    `delete_label` ask before every write, so for a client that can ask,
+    `tools/list` drops their `requiresUserInteraction` mark (§18 row 77).
+    Claude Code prompts for the mark even under an allow rule (§18 row
+    49), so with both the person would answer twice. `set_vacation` keeps the mark,
+    since it asks only when it turns the reply on, and so does every tool
+    for a client that cannot ask: there the mark is the only per-call
+    prompt. The kind decides it: `register` refuses a Send or Destructive
+    tool without `confirm`, which would lose the mark and never ask.
 
 ## 5. Module layout
 
@@ -605,7 +623,7 @@ sibling.** Three siblings' newest pins already trailed upstream:
 
 | Tool | Version |
 |---|---|
-| Go | 1.27.1 (`go-version-file: go.mod` in CI) |
+| Go | 1.27.2 (`go-version-file: go.mod` in CI) |
 | MCP Go SDK | v1.8.0 |
 | golangci-lint | v2.14.0 |
 | goreleaser | v2.18.2 |
@@ -655,7 +673,7 @@ comment, re-resolved at scaffold time.
 | `api-coverage` | offline, three directions; the row bound to its method by verb and path from the client's AST; out-of-scope methods derived from discovery scopes; a minimum length on a write-off reason; floors on methods, verdicts and client calls |
 | `api-diff` (manual) | one fetch covering methods and fields; written through a temp file and rename; a network failure leaves the committed snapshot untouched, **held by a test against a closed port** |
 | `api-fields` | recursive over inline objects; every struct the wire package declares judged; floors on published and modeled fields |
-| `schema-diff` | a committed baseline so it works before the first tag; the tool surface **and resources**; fails on a removed tool, a lost input or output field, or a new required input; the whole `mcp.Tool` dumped, `_meta` and output schema included; a floor on tools |
+| `schema-diff` | a committed baseline, never a tag, because CI's checkout is shallow and has no tags; the baseline is the CHANGELOG's newest release, stamped with its version, and the gate fails on any other; with nothing under `[Unreleased]` the build must match it exactly, which proves a release commit recorded it rather than relabeled it; the tool surface **and resources**; fails on a removed tool, a lost input or output field at any depth, a type change that breaks a caller (an input that takes less, an output that may return more, `null` included), a new required input, an input enum that loses a value or newly limits one, or an output field no longer required, which a caller read as always there; a field with no type, a list with no element schema and the boolean schema `true` take any value, and `false` none; the whole `mcp.Tool` dumped, `_meta` and output schema included; the dump free of `GMAIL_` settings; a floor on tools. `schema-baseline` refuses a build stamped with another version, and a break unless the release is a new major version |
 | `leaks` | allow-list rules, each anchored on a shape generated fields cannot take (an `@` with a dotted domain; a Gmail URL prefix; a keyword before a hex id; the OAuth shapes); every allow-list entry carries a reason, asserted; tracked files and untracked-unignored files both scanned; a tracked binary (ELF, Mach-O, PE magic) is a finding; history mode covering blobs, commit messages and tags with a derived floor; findings printed redacted |
 | `transcript` | drivers cannot reach `os.Stdout`, `os.Stderr` or `log.*`; exactly one exempt package with exactly one write site, which redacts; an unlisted driver fails; a listed directory that is missing fails; a floor on mentions |
 | `live-cover` | per tool **option**, not per tool, recorded at run time through the stdio client; waivers in a TSV with a reason each, a ceiling, and a failure on a waiver whose option is now driven |
@@ -702,7 +720,10 @@ confusing them is how a reply lands on the wrong message.
 RFC 5322 `Message-ID` values are shown as `untrusted_rfc822_message_id` and
 accepted wherever a message id is, prefixed with `rfc822:`; the server
 resolves them through `rfc822msgid:` search and refuses `[ambiguous]` if
-two messages carry one (mailing lists do that).
+two messages carry one (mailing lists do that). `rfc822:` takes exactly
+one, written `<local@domain>` with no space, quote, parenthesis, brace
+or colon; anything else is `[invalid]` before any search, since text
+after it would be read as more search terms (§18 row 87).
 
 ### 6.2 Labels
 
@@ -728,11 +749,32 @@ them to `q` as `after:<epoch>` / `before:<epoch>`, stating the instants
 it used. A date written inside `q` is left alone and the description
 warns about the Pacific reading.
 
+A zone name is read from the system's zone files, and from a copy of
+the zone database built into the binary when the system has none. On
+Windows Go finds zone files only in a Go installation, so the copy is
+what lets a person without Go name a zone there, in `time_zone` or an
+invitation's `TZID`. It adds about 400 KB (§18 row 82).
+
 ### 6.4 Addresses
 
 Parsed with `net/mail`. A display name with non-ASCII is RFC 2047
 encoded when building and decoded when reading. An address the parser
 refuses is `[invalid]` naming which argument, never passed through.
+
+A header in mail that `net/mail` refuses is read leniently, and the
+result says so. An address written inside a quoted name or a comment is
+never taken, since a sender writes one there to pass it off as the
+sender: the one angle address outside them is, else the one bare
+address. With none, or more than one, the text is kept as a name with
+no address. A fuzz test holds that a shown address lies outside every
+quoted string and comment.
+
+A result shows an address as `Name <address>`, with the name quoted
+unless it is plain words, as the header writer quotes it, but never
+encoded. So every address a result shows reads back with `net/mail` as
+the same mailbox, and can be given back as one recipient: a name with a
+comma does not split in two, and a name holding `<x@y>` stays a name.
+A fuzz test holds the round trip.
 
 ### 6.5 Error classes
 
@@ -774,6 +816,30 @@ inside an untrusted boundary (§4.1). Every listing says whether it is
 complete, per the sibling lesson that an empty page with a token is not
 the end.
 
+A thread's date and snippet are its newest message's that is not a
+draft, not in the trash and not an emoji reaction, as a reply's parent
+is chosen (§4.5). A draft after it is the account's own unsent text, so
+showing it would credit the account with the thread's last word. The row
+also says whether the account sent that message (`latest_from_me`, from
+its `SENT` label) and how many drafts the thread holds. A thread of
+nothing else shows its newest message. A row cannot pass over a reaction:
+a reaction is told by its part, and the row's read carries headers only
+(§18 row 78).
+
+A message's row and its read say how the sender offers to unsubscribe.
+`List-Unsubscribe` is read as RFC 2369 §2 tells a client to: URIs in
+angle brackets, with comments and whitespace between them ignored. The
+first thing that is neither a bracketed URI nor a comma after one ends
+the reading. `unsubscribe` lists the http and https addresses and the
+mailto ones, each in the header's order, which RFC 2369 makes the
+sender's order of preference. `one_click` is true when one of them is
+https and the one `List-Unsubscribe-Post` header reads exactly
+`List-Unsubscribe=One-Click` (RFC 8058 §3.1). It is the sender's claim:
+RFC 8058 §4 asks a receiver to check a DKIM signature over both
+headers, and this server does not. The server never visits or writes to
+any of these addresses (§4.1.3). Both headers are in the listing's
+header set, at no cost (§18 row 80).
+
 ### 7.2 Reading a thread or a message
 
 `get_thread` and `get_message` walk the whole MIME tree (§3.7): the
@@ -782,12 +848,48 @@ then HTML converted to text (§4.1.2); every part's charset decoded;
 parts stored behind an `attachmentId` fetched when they are body parts
 and listed when they are attachments. Headers shown are From, To, Cc,
 Reply-To, Date, Subject, `Message-ID`, and `List-Unsubscribe` when
-present; `all_headers: true` shows the rest. Budget and collapsing per §4.8.
+present, and the message's line says how it offers to unsubscribe
+(§7.1); `all_headers: true` shows the rest. Budget and collapsing per §4.8.
 Calendar invitations are listed as attachments with their method
-(`REQUEST`, `CANCEL`) and no further parsing. A thread's drafts follow its conversation in a
+(`REQUEST`, `CANCEL`). Invisible characters in a part's type or method,
+which are the sender's, are removed and counted with the headers'. A thread's drafts follow its conversation in a
 section of their own, "drafts in this thread, not sent", on the first
 read; the cursor counts only what was sent or received, and drafts over
 the budget are listed by message id (§17.2).
+
+An invitation's attachment entry also says what it says about its
+event: `invitation` gives the UID, the sequence, the recurrence id of
+one occurrence, the start and end, the organizer's address, the title,
+whether the event is all day, and how many events the calendar holds.
+This reverses "no further parsing": a calendar server finds an event by
+its UID (the Calendar API's `iCalUID`), so a hand-off from mail to
+calendar needs it, and the times say which meeting it is. The fields
+describe the first event that is not one occurrence's change, else the
+first. A time is RFC 3339 when it is UTC or its `TZID` names an IANA
+zone, a date when the event is all day, and otherwise as written, with
+the zone it names. The end and the recurrence id each give their own
+zone when it is not the start's, since RFC 5545 lets each time name
+one. `method` is the calendar's `METHOD` when RFC 5546
+defines it; every other field is the sender's text and named
+`untrusted_*`.
+
+The part is read as RFC 5545 §3.1 asks: lines unfolded before the
+charset is decoded, since a fold may split a character; parameter
+values quoted or not; text unescaped. Only properties directly in an
+event count, so a time zone's or an alarm's are never the event's.
+The caps are 1 MB of calendar, 8 levels of nesting, 256 characters of
+title and 1,024 bytes of UID, which is left out rather than cut. A fuzz
+test holds the parser, and another holds that a title and UID survive
+escaping and folding exactly.
+
+Gmail often keeps one copy of an invitation inline and stores an
+`invite.ics` apart. The stored copy is read even when the inline one
+was. The sender wrote both and can make them differ, and `invite.ics` is
+the copy `download_attachments` saves, so its entry says what the saved
+file says, or that it is the same as the inline copy. Reading the
+details of a part stored apart costs one `attachments.get`, 20 units,
+and a message spends at most one: on the first part whose Content-Type
+does not state the method, else the first (§18 row 81).
 
 ### 7.3 Attachments
 
@@ -808,7 +910,61 @@ before it is read. A stream is bounded by `GMAIL_HTTP_TIMEOUT` without
 progress rather than in total, so a large file on a slow link finishes
 and a stalled one does not hang. A body cut anywhere is a failed read and
 retried; a retried read starts the file over.
-Attachments are never inlined into a tool result.
+
+`download_attachments` writes several attachments of one message the
+same way, one at a time, for one read of the message and one
+`attachments.get` per part Gmail stored apart. `part_ids` names them,
+at most 100. Left out, it takes every attachment but three kinds, each
+listed in `skipped` with its reason: an inline part, such as an image
+the body shows, unless `include_inline`; an emoji reaction, which is
+not a file; and an invitation's calendar version of the body when the
+message also carries the invitation as a file, as Gmail's invitations
+carry `invite.ics` beside the same calendar in `multipart/alternative`.
+Past 100 parts the rest are skipped as over the limit. Each part is
+written or fails on its own: a failure is listed in `failed` as
+`[class] message` and leaves no file, and the files written before it
+stay.
+
+A part whose content Gmail gives neither inline nor behind an
+`attachmentId`, though it has a size or parts of its own, is refused as
+`[unsupported]` by both tools rather than written as an empty file. An
+attached message (`message/rfc822`) served as its own parts would read
+this way, but Gmail served attached messages whole when tested live, so
+this guards a shape not seen (§18 row 83).
+An empty attachment has neither and no size, and is written empty.
+
+`read_attachment` reads one attachment into the result as text, and is
+registered in every mode. It reads plain text, CSV, Markdown and JSON
+as written, HTML converted as a body is, a calendar file as written,
+and an attached message (`message/rfc822`) parsed and rendered as
+`get_message` renders one, in a `message` field. The text is decoded
+from its charset and has what a reader would not see removed and
+counted, as a body has (§4.1). It sits inside the same boundaries, its
+fields are named `untrusted_*`, and it takes a body's budget, `offset`
+and `show_quoted`. Quotes and signatures collapse only in plain text,
+HTML and an attached message, where they mean what they mean in a body;
+a Markdown quote stays. Any other type is `[unsupported]` and points to
+`download_attachment`. A part declared over 5 MB is refused before it
+is read, and so is one that turns out larger. A part with no content
+of its own is refused as the download tools refuse it (§18 row 83).
+An attached message is not in the mailbox: it has no id, thread or
+labels, its date is its own `Date` header, and its own attachments are
+listed with no `part_id`, since none names them in the mailbox. A read
+costs one `messages.get`, and one `attachments.get` when Gmail stored
+the part apart.
+
+**Reversed 2026-10-09.** This section said "Attachments are never
+inlined into a tool result", with no reason recorded. For reading them:
+a person asks about an attached file as often as about a body, and the
+only path was to save it into `GMAIL_LOCAL_DIR` and open it outside the
+server, where nothing marks it as mail or removes what a reader would
+not see. A forwarded message often arrives as an attached `.eml`, which
+could not be read at all. Against: an attachment is a large place to
+hide instructions, and one a person rarely reads before an assistant
+does; and a result can carry up to 5 MB more mail. The owner decided on
+2026-10-09 to read attachments, registered by default, for the text
+types above only, inside the boundaries and under the budget a body
+gets (§14, §18 row 84).
 
 ### 7.4 Drafts and replies
 
@@ -839,6 +995,52 @@ part as plain text and, when the person sends it, wraps every line over
 part it sends both, as it does any mail written in it: the HTML is what
 readers show, and the plain part Gmail delivers is wrapped at 75, as in
 any mail Gmail sends.
+
+`quote: true` on a reply puts the parent's text below the body: the
+body as given, a blank line, `On <Date>, <From> wrote:`, then each line
+of the parent's text after `> `, an empty one as `>`. The `Date` header
+is shown as the sender wrote it, and `From` as a result shows an
+address (§6.4). The text is the parent's as `get_message` reads it: a
+plain part as written, with what a reader would not see removed; an
+HTML-only parent, or one whose plain part only points at its HTML,
+converted, so each link keeps only its host, and the result says
+`quote_from_html`. The parts of that text Gmail stored apart are read
+for it, 20 units each, and the result says how many; an invitation's
+calendar part is not. `quoted_chars` counts the characters quoted. The
+HTML version is made from the whole text, quote included, so it says
+what the plain text says and `update_draft` still recognizes it as
+made; `quote` with `body_html` is `[invalid]`, and without a reply
+target too. A later `update_draft` with `body` replaces the quote with
+the rest of the text, which its description says (§18 row 86).
+
+`forward` on `create_draft` takes a message id, or `rfc822:` and its
+`Message-ID`, and attaches that message to the draft, read with one
+`messages.get` in `format=raw`, as `<subject>.eml`. A slash or backslash
+in the subject is written as `_`. The subject is `Fwd: ` and the
+original's unless `subject` is given. The copy goes as Gmail stored it,
+with two changes. Its line endings are written as CRLF. Its `Bcc` and
+`Resent-Bcc` headers are left out, since the sender's own copy of a sent
+message keeps its `Bcc` and a forward would show the blind recipients to
+everyone it reaches (RFC 5322 §3.6.3); the result's `bcc_removed` says
+so. The header block is split as a read splits it, before any line
+ending is rewritten, so a bare CR cannot turn into an empty line that
+moves a `Bcc` into the body; a CR inside a header line is written as a
+space. RFC 2046 §5.2.1 permits only `7bit`, `8bit` or `binary` for an
+attached message, never base64, so the part is declared `7bit` when it
+is ASCII and `8bit` when it is not. A message with a line over 998
+octets or a NUL is refused as `[unsupported]`: only `binary` carries one
+(RFC 2045 §2.7, §2.8), and SMTP carries binary only between servers that
+both offer it (RFC 3030). The part goes as written, so a boundary is
+drawn again when the message holds it. A message whose raw form is over
+about 24 MB is refused as `[invalid]` before anything is written: the
+read carries it as base64url, a third larger, and the client reads at
+most 32 MB of one answer. The server asks Gmail to file the draft in
+the original's thread, with no `In-Reply-To` or `References`, since it
+is not a reply. Gmail did when tested live, against the discovery
+document's conditions, and the result says each time whether it did
+(§18 row 85). `forward` with `reply_to`,
+`reply_to_thread` or `reply_all` is `[invalid]`, and a draft, a trashed
+message and a reaction are refused as a reply's parent is (§4.5).
 
 `plain_only: true` on `create_draft` keeps the text alone, for a mailing
 list that refuses HTML (§17.9). `update_draft` given `body` alone keeps
@@ -1017,14 +1219,16 @@ again gives the filter without it.
 
 ## 8. Tool surface
 
-Twenty-seven tools: twenty by default, twelve in read-only mode, one
-fewer in each when `GMAIL_LOCAL_DIR` is unset.
+Twenty-nine tools: twenty-two by default, fourteen in read-only mode,
+two fewer in each when `GMAIL_LOCAL_DIR` is unset.
 Annotations come from `Kind` in one place (`CLAUDE.md` rule 11);
 `openWorldHint` is true only where the call reaches another person.
 "Write, for good" is registered as a Write is and annotated destructive,
 because Gmail deletes a draft rather than trashing it.
 `_meta["anthropic/requiresUserInteraction"]` is set on the Send,
-Auto-reply and Destructive kinds, as a signal and not a control. A tool
+Auto-reply and Destructive kinds, as a signal and not a control. For a
+client that can ask, `tools/list` drops it from the Send and
+Destructive tools, which ask the person before every write (§4.13). A tool
 that takes `confirm` also asks the person, and only a kind that can ask
 may take it (§4.13). The
 schema dump names each tool's kind, since Settings looks like Write to a
@@ -1038,14 +1242,16 @@ tool sits behind from it.
 | `search_messages` | Read | always | `gmail.readonly` | 5 + 20/result |
 | `get_thread` | Read | always | `gmail.readonly` | 40 (+20/fetched part) |
 | `get_message` | Read | always | `gmail.readonly` | 20 (+20/fetched part) |
+| `read_attachment` | Read | always | `gmail.readonly` | 20 (+20 when stored apart) |
 | `list_labels` | Read | always | `gmail.readonly` | 1 (+1/label with counts) |
 | `list_drafts` | Read | always | `gmail.readonly` | 5 + 20/result |
-| `get_draft` | Read | always | `gmail.readonly` | 20 |
+| `get_draft` | Read | always | `gmail.readonly` | 20 (+20/fetched part) |
 | `list_changes` | Read | always | `gmail.readonly` | 2/page + 1 (+1 on expiry) |
 | `get_settings` | Read | always | `gmail.readonly` | 1 each, 7 |
 | `list_filters` | Read | always | `gmail.readonly` | 1 + 1 |
 | `download_attachment` | Read (local write) | `GMAIL_LOCAL_DIR` set | `gmail.readonly` | 20 + 20 |
-| `create_draft` | Write | not read-only | `gmail.modify` | 1 + 10 (+20 reply_to, +40 reply_to_thread) |
+| `download_attachments` | Read (local write) | `GMAIL_LOCAL_DIR` set | `gmail.readonly` | 20 + 20/part stored apart |
+| `create_draft` | Write | not read-only | `gmail.modify` | 1 + 10 (+20 reply_to or forward, +40 reply_to_thread, +20/quoted part stored apart) |
 | `update_draft` | Write | not read-only | `gmail.modify` | 20 + 15 |
 | `delete_draft` | Write, for good | not read-only | `gmail.modify` | 20 + 10 |
 | `modify_labels` | Write | not read-only | `gmail.modify` | 1 + 25/message, 50/thread |
@@ -1084,6 +1290,16 @@ per item, and `sendAs.get`, whose list `create_draft` reads anyway (§18
 row 39). Phase 5 gated the four settings writes §17 had deferred or
 written off: `filters.create` and `filters.delete`, `sendAs.patch` for
 the signature, and `updateVacation`.
+
+The discovery document says the delegate methods, creating and deleting
+a forwarding address, creating, deleting and verifying a send-as
+address, and `updateAutoForwarding` are only for service accounts with
+domain-wide authority, and that `sendAs.update` is too for any address
+but the primary. This server signs in as one person, not as such a
+service account, so no flag could turn those methods on (§18 row 79).
+`sendAs.patch`, which `update_signature` calls, carries no such
+sentence; whether it reaches an address other than the primary is
+unproven.
 
 ### 8b. Field coverage
 
@@ -1287,6 +1503,10 @@ generated from `internal/scopes` and gated (§5a, `staleness`).
 | The person confirms, through MCP form elicitation, each write that takes `confirm` or `confirm_recipients`, on top of those arguments; only an accept writes, and anything else is `[blocked]` as "not confirmed by the person", never "declined" | maintainer, 2026-09-28 | §4.13; an unattended client that declares elicitation cannot make these writes |
 | Accepting the question is the confirmation; the form has no checkbox | maintainer, 2026-09-28, after the interactive check | §4.13, §18 row 64 |
 | A client that cannot ask falls back to `confirm` and `confirm_recipients`; `GMAIL_REQUIRE_PROMPT=true` refuses instead | maintainer, 2026-09-28 | §4.13, §9.4 |
+| An invitation's identifiers and times are read from its calendar part, reversing §7.2's "no further parsing" | maintainer, 2026-10-09 | §7.2, §18 row 81 |
+| `read_attachment` reads an attachment's text into a result, registered by default, reversing §7.3's "never inlined" | maintainer, 2026-10-09 | §7.3, §18 row 84; text types only, inside the boundaries |
+| `create_draft` forwards a message by attaching it, with its `Bcc` left out; the server adds to a draft only what the caller names | maintainer, 2026-10-09 | §4.2, §7.4, §18 row 85; never inline, so the original goes as Gmail stored it |
+| A reply quotes its parent below the body only when `quote` asks, reversing "no suffix" for that one block | maintainer, 2026-10-09 | §4.2, §7.4, §18 row 86; the body the caller wrote is never changed |
 | Spikes D and E send in phase 2, from the live driver's run, to a second address the maintainer passes on the command line and never commits | maintainer, 2026-09-26 | §15; the transcript records the address redacted only |
 
 ## 15. What must be verified live
@@ -2474,6 +2694,42 @@ what fixed them.
   answers yes only for HTML holding nothing beyond the plain text, so
   HTML a person wrote still needs `body_html`. Fuzzed on a scratch copy,
   both held; no new log line or output carries the body.
+- **One question per call, code review: two fixed, one recorded.**
+  Fixed: row 77 said nothing changes unattended, but an `Elicitation`
+  hook that accepts now confirms a send or a permanent delete alone,
+  where the mark used to refuse it first; the row and the CHANGELOG say
+  so. Fixed: no test showed `tools/list` drops the mark from a copy, so
+  one server now lists for a client that can ask and then for one that
+  cannot. Recorded: on 2026-07-28 capabilities travel per request, so a
+  client can declare form elicitation to `tools/list` and none to
+  `tools/call`, and get neither the mark nor a question. That gives a
+  misbehaving client nothing it lacked, since it answers the question
+  itself and can accept without a person (row 61). The list result
+  depends on the request and goes out with the SDK's default cache
+  scope, public, but with a TTL of 0.
+
+- **Unreleased work, correctness and quality reviews.** Fixed: a read's
+  notes listed every link whose text names another site, so mail with
+  thousands of them read many times its budget; each list in the notes
+  now takes at most an eighth of it and counts the rest (§4.8).
+  `rfc822:` passed its text into a search, so a term after the id could
+  pick a message the caller never saw; it takes one `<local@domain>`
+  now (§6.1, §18 row 87). A malformed `From` showed an address from
+  inside its quoted name or a comment (§6.4). A bare CR in a sent
+  message's headers moved its `Bcc` into a forward's body. Invisible
+  characters in a part's type reached results uncounted. An
+  invitation's end and recurrence id were reported against the start's
+  zone. The schema diff passed an output turning optional, an input
+  enum losing a value and a boolean schema. Three tests could not fail.
+  The forward's thread was described as certain; the server asks for
+  it, and the result says whether Gmail filed it there. The read and
+  download paths lost their duplicates. Kept on purpose: the stored
+  `invite.ics` is read beside an inline copy, since the sender can make
+  the two differ and the stored one is the file a download saves
+  (§7.2). Run live 2026-10-09 without `-send-to`: 95 steps passed and
+  the 3 that send were skipped. The transcript settled rows 78, 80 and
+  83 to 86. Owed: whether Gmail keeps an inserted calendar part inline
+  or apart, which the invitation step now prints (§18 row 81).
 
 ### Closing a phase
 
@@ -2680,3 +2936,14 @@ live** — §15 exists to settle these, and they are marked.
 | 74 | A model writing mail through the server wraps its text to a width | The session that wrote the drafts of row 73, read 2026-10-06; the evals harness, 18 trials of a task drafting three paragraphs, `claude-opus-5-5` at high effort, on `main`'s descriptions and on these: plain, with notes wrapped at 70 columns in the prompt, and with the maintainer's own instructions loaded | **Refuted.** The drafting session passed paragraphs of 185 to 564 characters on one line, and no trial wrapped. The `body` descriptions still ask for a paragraph per line and a blank line between paragraphs, which the HTML version is made from; the task was not kept, having nothing to catch |
 | 75 | A web address in the HTML version needs no link: readers link it | Microsoft's Outlook help, Apple's WebKit and Mail help, Gmail Help 8260 and 8253, the GFM spec 0.29 §6.9 and cmark-gfm's `extensions/autolink.c`, Mozilla's `mozTXTToHTMLConv.cpp`, RFC 3986 Appendix C, the OWASP XSS Prevention Cheat Sheet, SpamAssassin's `70_phishing.cf` and `HTTPSMismatch.pm`, read 2026-10-06 | **Refuted.** No vendor documents that a reader links a bare address in HTML; Outlook's help covers its composer, "Every time you type a web address, Outlook creates a hyperlink for you", and one report has new Outlook showing such addresses as plain text. So the HTML version links each address itself, with text equal to its target, which SpamAssassin's mismatch rules cannot fire on: they flag a link whose text names another domain. Only `http` and `https`, as OWASP advises ("Allow-list http and HTTPS URLs only"). Where an address starts and ends follows GitHub's autolinks: after a space or one of `( [ < " ' * _ ~`, never inside a word; trailing `? ! . , : * _ ~ '` left out, a `)` or `]` only when unmatched, an entity or `;` at the end left out. It also stops at quotes and angle brackets, which RFC 3986 leaves outside an address, and at any character a reader cannot see; a line holding a bidi control gets no link at all, since an override anywhere before an address can draw its text as another address than its target, which a rendering of such a line in Chromium showed. A fuzz test holds that a line adds no markup but such links and reads back as written |
 | 76 | Every draft can carry an HTML version | The kernel's mailing-list etiquette (subspace.kernel.org/etiquette.html) and email-clients guide, git's `MyFirstContribution`, the Mailman 3 filtering docs, read 2026-10-06 | **Refuted.** "almost all kernel mailing lists will reject HTML email", and "the Git list rejects HTML email"; Mailman can strip an HTML part, but these lists refuse the message. So `plain_only` keeps a draft plain (§17.9). The kernel's guide also says Gmail's web interface "Does not work for sending patches", which row 73 explains: such a draft is better sent with `send_draft` than from Gmail |
+| 77 | A tool the server confirms itself should carry the mark too | The owner's report of 2026-10-09 that one delete asked twice in Claude Code in a sibling server built the same way, and the decision that followed; GitHub's MCP server (`delete_repository`) and Supabase's, which confirm with `destructiveHint` plus a form elicitation; Claude Code's documentation, which scopes the mark to "tools whose permission prompt is itself the point"; rows 49 and 60 | **Refuted, 2026-10-09.** No source recommends two hard gates for one call. Claude Code prompts for the mark even under an allow rule (row 49), and then the server asks. So `tools/list` drops the mark from the tools that ask before every write when the request declares form elicitation (§4.13 item 15); `destructiveHint` stays as the client's soft gate. Unattended, `claude -p` declares elicitation and answers `cancel` (row 60), so a send or delete is still `[blocked]`, though a dry run now reaches the server. An `Elicitation` hook that accepts (row 61) now confirms one alone, where the mark used to refuse the call first. Owed: the maintainer's check that a confirmed `send_draft` asks once in interactive Claude Code |
+| 78 | A search row can name a thread's newest sent or received message, passing over drafts, trash and emoji reactions, with no call beyond the `threads.get` it already makes | Discovery document revision 20261005, `users.threads.get` parameter `format`, read 2026-10-09: `metadata` "Returns only email message IDs, labels, and email headers"; the `DRAFT`, `TRASH` and `SENT` system labels; the live run of 2026-10-09 | **Confirmed for drafts and trash, refuted for reactions.** Labels arrive with every message, so a row passes over a draft or a trashed message and says whether the account sent the latest from `SENT`. A reaction is told only by its `text/vnd.google.email-reaction+json` part, which a headers-only read does not carry, so a row may still name one as the latest. Telling it would cost a full read per thread. Seen live for drafts 2026-10-09: after the run saved a reply draft in two of its threads, each row counted the draft and still named the inserted message as the latest, not sent by the account (step "a thread row passes over the draft in it", transcript lines 472–492) |
+| 79 | A per-user OAuth login can call every settings method its scopes allow | Discovery document revision 20261005, read 2026-10-09: `delegates.create`, `delete`, `get` and `list`, `forwardingAddresses.create` and `delete`, `sendAs.create`, `delete` and `verify`, and `updateAutoForwarding` each say "This method is only available to service account clients that have been delegated domain-wide authority"; `sendAs.update` says "Addresses other than the primary address for the account can only be updated by service account clients that have been delegated domain-wide authority"; `sendAs.patch` says neither | **Refuted for those methods.** Their rows in `testdata/api-coverage.tsv` quote it. The server calls none of them, so none was probed. `sendAs.patch`, behind `update_signature`, names no such limit, yet it changes the resource `update` does. Whether a per-user login can patch the signature of an address other than the primary is unproven, tier 3: the live driver writes only the default address's signature, which is the primary on most accounts. Owed: a live run on an account whose default send-as address is an alias, or a step that saves, sets and restores an alias's signature |
+| 80 | A row can carry `List-Unsubscribe` at no cost, and the header says what it offers | Discovery document revision 20261005, read 2026-10-09: `users.messages.get` and `users.threads.get` parameter `metadataHeaders`, "When given and format is `METADATA`, only include headers specified"; Gmail's quota reference, read 2026-10-09, one cost per method; RFC 2369 §2 and §3.2; RFC 8058 §3.1 and §4; the live run of 2026-10-09 | **Confirmed.** A read costs 20 or 40 units whatever headers it names, so the listing names `List-Unsubscribe` and `List-Unsubscribe-Post` for free. RFC 2369: "The URLs have order of preference from left to right"; a field that does not start with `<`, and the rest of one after an item that is not a bracketed URL, "SHOULD be ignored". RFC 8058 §3.1: `List-Unsubscribe` "MUST contain one HTTPS URI", and the Post header "MUST contain the single key/value pair "List-Unsubscribe=One-Click"". §4 says a receiver SHOULD NOT offer one-click without a DKIM signature covering both headers. The server checks no signature, so `one_click` is the sender's claim and says so. Seen live 2026-10-09: Gmail kept both headers on an inserted message and returned them to the listing's headers-only read, whose row gave the web address as one-click and the mail address (step "a row reads the List-Unsubscribe the driver wrote", transcript lines 127 and 142) |
+| 81 | An invitation's calendar part can be read for the identifiers and times a calendar server finds its event by, for one more read at most | RFC 5545 §3.1 ("implementations need to unfold lines in such a way to properly restore the original sequence"), §3.1.4 ("The default charset for an iCalendar stream is UTF-8"), §3.3.5, §3.3.11, §3.8.4.3 and §3.8.7.4 ("When a calendar component is created, its sequence number is 0"); RFC 5546 §1.4, the eight methods, and §2.1.5, UID then SEQUENCE as the keys; Calendar API discovery document revision 20261005, `events.list` parameter `iCalUID`, "Use this if you want to search for an event by its iCalendar ID"; Gmail's quota reference, `attachments.get` 20 units; all read 2026-10-09; the live run of 2026-10-09 | **Confirmed from the documents; the parse confirmed live, where Gmail keeps the part not yet.** The UID is the key, and the Calendar API looks an event up by it. Unfolding comes before decoding, as §3.1 asks. A time with an IANA `TZID` reads as RFC 3339; a Windows zone name does not, so it stays as written beside its zone. Before this, every part stored apart without a stated method was fetched for its method alone. Live 2026-10-09, the entry for the run's inserted calendar part gave back every field the driver wrote: method, UID, sequence, start and end with their zone, organizer, title and event count (step "an attachment entry reads the invitation the driver wrote", transcript lines 154 and 159). That run printed no units, so whether Gmail keeps an inserted calendar part inline (21 units) or apart (41) is still owed; the step now prints them |
+| 82 | A release binary can read any IANA zone on every platform it is built for | `go doc time.LoadLocation` and `go doc time/tzdata`, Go 1.27.2, read 2026-10-09; the release targets in `.goreleaser.yaml`; the Windows, Linux and macOS amd64 builds measured with and without the package the same day | **Refuted before this change.** `LoadLocation` looks in `ZONEINFO`, then "on a Unix system, the system standard installation location", then `$GOROOT/lib/time/zoneinfo.zip`, then "the time/tzdata package, if it was imported". Windows has no standard location, and a person who runs the archive has no `GOROOT`, so every zone was refused there. The main package now imports `time/tzdata`, which the docs say "should normally be imported by a program's main package"; it is read only when the system has no zone files, and it adds 402 KB to the Windows binary, 3%. A test holds the import in each target's build, since a test run reads this machine's zone files whatever the binary carries. Not run on Windows |
+| 83 | An attached message (`message/rfc822`) comes back from `messages.get` with its content inline or behind an `attachmentId`, like any attachment | Discovery document revision 20261005, read 2026-10-09: `MessagePart.parts`, "This only applies to container MIME message parts, for example `multipart/*`"; `MessagePart.body`, "may be empty for container MIME message parts"; `MessagePartBody.attachmentId`, "When not present, the entire content of the message part body is contained in the data field"; RFC 2046 §5, where `message` is a composite type beside `multipart`; the live run of 2026-10-09 | **Confirmed live 2026-10-09.** The document names `multipart/*` as a container and no other, though RFC 2046 makes `message/rfc822` composite too. Gmail served the run's attached messages whole, as one part with its content: `download_attachments` saved the inserted `.eml` as a 421 B file holding its text (transcript lines 282 and 288), and `read_attachment` read it, and the original a forward attached to a draft, as messages (lines 315 and 540). Served as its parts instead, the part would have no data and no `attachmentId`, and a download used to write it as an empty file. Both download tools and `read_attachment` still refuse such a part as `[unsupported]`, now as a guard for a shape not seen, and the fake can serve one so the refusal is tested |
+| 84 | An attachment's content is never put in a tool result | §7.3 as written in phase 1, which recorded no reason; the owner's decision of 2026-10-09; the live run of 2026-10-09 | **Reversed for text.** `read_attachment` reads plain text, CSV, Markdown, JSON, HTML, a calendar file and an attached message into the result, under the boundaries, hidden-text removal and budget a body gets; every other type stays a file to save. §7.3 gives the reasons on both sides. Seen live 2026-10-09: the run's text attachment and its attached message each read back as the driver wrote them (steps "read the run's text attachment" and "read the attached message", transcript lines 298 and 315) |
+| 85 | A forward can attach the original as Gmail stores it, and be filed in its thread | RFC 2046 §5.2.1 ("No encoding other than "7bit", "8bit", or "binary" is permitted for the body of a "message/rfc822" entity"), RFC 2045 §2.7 and §2.8 (lines of "998 octets or less", "no NULs", CR and LF "only as part of CRLF"), RFC 5322 §3.6.3 and §4.5, RFC 3030, all read at rfc-editor.org 2026-10-09; the discovery document's `drafts.create` upload limit (§2.6); the client's 32 MB limit on one answer; row 42; the live run of 2026-10-09 | **Confirmed from the RFCs for the encoding, and live 2026-10-09.** A part declared `7bit` or `8bit` carries any message whose lines fit and that holds no NUL, and none other. `Bcc` is for addresses "not to be revealed to other recipients", and §4.5 lets "any amount of white space" stand before the colon, so `Bcc :` is left out too. The discovery document's `Message.threadId` (revision 20261005) says that "to add a message or draft to a thread", the `threadId`, RFC 2822 `References` and `In-Reply-To`, and a matching `Subject` "must be met", so the documented answer for a forward is a thread of its own. Gmail did otherwise for `drafts.create` on 2026-10-09: a forward with the original's `threadId` and no `In-Reply-To` or `References` was filed in the original's thread, "Gmail filed the draft in the original's thread" (step "forward an inserted message", transcript line 497), as row 42 saw for `messages.send`. That is one observation against the document, so the result still reports what Gmail did each time. The original was the run's 8-bit message, which `messages.insert` took and a read gave back intact (line 111). `drafts.create` accepted it as an `8bit` `message/rfc822` part, and `messages.get` served that part back whole, its headers and its text in four scripts intact (step "read the forwarded original in the draft", lines 524–540; row 83). The fake models all three of §2.5's conditions, so a forward there starts a thread of its own, and with `ThreadByID` it files by thread id alone, as Gmail did, so both answers are tested |
+| 86 | A reply's quote can be built from the parent as a read shows it, and an HTML version made from the result | The owner's decision of 2026-10-09; RFC 3676 §4.5 ("the canonical quote indicator (or quote mark) is one or more close angle bracket (">") characters"), read at rfc-editor.org 2026-10-09; §7.4's made HTML, which `update_draft` recognizes by reading it back; the fake's HTML-only, placeholder and stored-apart bodies; the live run of 2026-10-09 | **Confirmed against the fake, and live 2026-10-09 for the plain text.** The quote is the text a read shows, so hidden text and link targets never reach a draft by way of it. `> ` before each line is the plain-text convention; RFC 3676 governs only `format=flowed`, which this server does not write (row 72). Live 2026-10-09, a quoting reply to the run's 8-bit message read back with the body, then `On <date>, <sender> wrote:`, then each of the parent's lines after `> `, its four scripts intact (steps "reply with a quote to an inserted message" and "read the quoted reply back", transcript lines 564 and 586–591). A read shows the plain text, so the HTML version made from it was not seen |
+| 87 | An `rfc822:` id can go into a search without adding a term | Discovery document revision 20261005, read 2026-10-09: `users.messages.list` parameter `q`, "Supports the same query format as the Gmail search box"; RFC 5322 §3.6.4, `msg-id = [CFWS] "<" id-left "@" id-right ">" [CFWS]`, with `id-left` and `id-right` dot-atom text in the current syntax, read at rfc-editor.org 2026-10-09 | **Refuted as built; fixed.** `q` is the search box's language, so `rfc822:<a@b> OR subject:x` searched for either, and a forward or quote could take a message the caller never saw. The id is now held to one msg-id of dot-atom text on both sides, less braces, which the search box reads as a group; the obsolete forms and domain literals are refused, and such a message is still reached by its Gmail id |

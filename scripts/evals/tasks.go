@@ -130,9 +130,9 @@ func tasks() []Task {
 			Name:   "send-draft",
 			Prompt: "Send my draft reply to Freya about the budget sign-off.",
 			Why: "send_draft takes the draft's message id as a witness, which the model must find. Under claude -p " +
-				"nobody can confirm the send: the client may hold the call for a person (anthropic/requiresUserInteraction), " +
-				"or pass it and cancel the server's question (§4.13), which refuses it. The score is reaching the send " +
-				"with the right witness",
+				"nobody can confirm the send: the client cancels the server's question (§4.13), which refuses it, or a " +
+				"client that cannot ask holds the call for a person (anthropic/requiresUserInteraction). The score is " +
+				"reaching the send with the right witness",
 			Send:        true,
 			MaxCalls:    8,
 			MustCall:    []string{"send_draft"},

@@ -24,8 +24,10 @@ const (
 )
 
 // listingHeaders are what a listing reads per row with format=metadata.
-// Content-Type is how a metadata read infers attachments.
-var listingHeaders = []string{"From", "To", "Cc", "Subject", "Date", "Message-ID", "Content-Type"}
+// Content-Type is how a metadata read infers attachments. A read costs
+// the same whatever headers it names (§18 row 80).
+var listingHeaders = []string{"From", "To", "Cc", "Subject", "Date", "Message-ID", "Content-Type",
+	"List-Unsubscribe", "List-Unsubscribe-Post"}
 
 // Service reads the mailbox through one client.
 type Service struct {
@@ -249,11 +251,7 @@ func (s *Service) fetchParts(ctx context.Context, labels model.LabelIndex, wire 
 		if err != nil {
 			return nil, err
 		}
-		b, err := mime.DecodeBase64URL(body.Data)
-		if err != nil {
-			return nil, gapi.Wrap(gapi.ClassUnavailable, err, "Gmail returned a part that is not base64url")
-		}
-		return b, nil
+		return decodePart(body.Data)
 	})
 	if err != nil {
 		return err

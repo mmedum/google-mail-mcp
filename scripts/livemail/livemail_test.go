@@ -17,6 +17,8 @@ import (
 	"time"
 
 	"github.com/mmedum/google-mail-mcp/v2/internal/mime"
+	"github.com/mmedum/google-mail-mcp/v2/scripts/internal/redact"
+	"github.com/mmedum/google-mail-mcp/v2/scripts/internal/transcript"
 )
 
 // fakeMailbox records what the driver did to the mailbox.
@@ -143,6 +145,11 @@ func TestSeedingAndCleanUp(t *testing.T) {
 	if !strings.Contains(box.inserted[0], "filename=\""+syntheticAttachmentName+"\"") {
 		t.Error("the first synthetic message carries no attachment for download_attachment")
 	}
+	if attached := mime.ParseRaw([]byte(box.inserted[2])).Attachments; len(attached) != 1 ||
+		attached[0].PartID != "1" || attached[0].MimeType != "message/rfc822" ||
+		!strings.Contains(mime.ParseRaw([]byte(box.inserted[2])).Body.Text, "Synthetic body 3") {
+		t.Errorf("the third synthetic message does not carry one attached message, part 1, beside its body: %+v", attached)
+	}
 	s.extraLabels = []string{"Label_9"}
 	if err := cleanUp(context.Background(), box, s); err != nil {
 		t.Fatal(err)
@@ -220,7 +227,8 @@ func TestProfileIsRequired(t *testing.T) {
 
 func TestEveryReadToolHasAStep(t *testing.T) {
 	want := []string{"get_profile", "search_threads", "search_messages", "get_thread", "get_message",
-		"list_labels", "list_drafts", "get_draft", "list_changes", "get_settings", "list_filters", "download_attachment"}
+		"list_labels", "list_drafts", "get_draft", "list_changes", "get_settings", "list_filters", "download_attachment",
+		"download_attachments", "read_attachment"}
 	have := map[string]bool{}
 	for _, s := range steps {
 		have[s.tool] = true
@@ -265,6 +273,9 @@ func TestTheGuardHoldsWritesToTheRun(t *testing.T) {
 		{"create_draft", map[string]any{"reply_to": "0000000000000001"}, true},
 		{"create_draft", map[string]any{"reply_to": "0000000000000009"}, false},
 		{"create_draft", map[string]any{"reply_to_thread": "0000000000000009"}, false},
+		{"create_draft", map[string]any{"forward": "0000000000000001"}, true},
+		{"create_draft", map[string]any{"forward": "0000000000000009"}, false},
+		{"create_draft", map[string]any{"forward": "rfc822:<someone@example.net>"}, false},
 		{"create_draft", map[string]any{"attachments": []any{attachName(r)}}, true},
 		{"create_draft", map[string]any{"attachments": []any{"notes.txt"}}, false},
 		{"update_draft", map[string]any{"draft_id": "r1", "message_id": "0000000000000003", "add_attachments": []any{"x"}}, false},
@@ -412,6 +423,24 @@ func TestCleanUpSkipsDeletedMessages(t *testing.T) {
 	}
 	if len(box.trashed) != 1 || box.trashed[0] != "0000000000000001" || len(s.messages) != 2 {
 		t.Errorf("trashed %v, messages %v", box.trashed, s.messages)
+	}
+}
+
+// The invitation step prints the units its read spent: the result's text
+// leaves them out, and they say where Gmail kept the calendar part.
+func TestTheInvitationStepPrintsItsUnits(t *testing.T) {
+	var out strings.Builder
+	e := &env{tr: transcript.NewTo(redact.NewRedactor(false), &out, &out), structured: map[string]any{
+		"units": float64(41),
+		"message": map[string]any{"attachments": []any{
+			map[string]any{"part_id": "2", "invitation": map[string]any{"method": "PUBLISH"}},
+		}},
+	}}
+	if err := e.invitationIs("2", map[string]any{"method": "PUBLISH"}); err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(out.String(), "report: the read spent 41 units;") {
+		t.Errorf("the transcript does not give the units: %q", out.String())
 	}
 }
 

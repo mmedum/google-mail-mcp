@@ -164,6 +164,27 @@ func (w *writer) when(t time.Time) part {
 	return part{t.In(w.loc).Format("2006-01-02 15:04 MST")}
 }
 
+// unsubscribeWays says how a message offers to unsubscribe, as " ·
+// unsubscribe: " and the ways, from a fixed set; empty when it offers
+// none. The addresses are the sender's: the header block shows them as
+// written, and the structured result lists them.
+func unsubscribeWays(u model.Unsubscribe) part {
+	var ways []string
+	switch {
+	case u.OneClick:
+		ways = append(ways, "web (one-click, as the sender declares)")
+	case len(u.URLs) > 0:
+		ways = append(ways, "web")
+	}
+	if len(u.Mailto) > 0 {
+		ways = append(ways, "mail")
+	}
+	if len(ways) == 0 {
+		return part{}
+	}
+	return part{" · unsubscribe: " + strings.Join(ways, ", ")}
+}
+
 func yesNo(b bool) part {
 	if b {
 		return part{"yes"}
@@ -416,10 +437,10 @@ func headerNames(ns []string) part {
 // partIDShape is a MIME part id: dotted decimals.
 var partIDShape = regexp.MustCompile(`^[0-9]{1,6}(\.[0-9]{1,6}){0,20}$`)
 
-// partIDs names MIME parts by id.
+// partIDs names MIME parts by id, at most maxListed of them.
 func partIDs(ids []string) part {
-	out := make([]string, len(ids))
-	for i, id := range ids {
+	out := make([]string, min(len(ids), maxListed))
+	for i, id := range ids[:len(out)] {
 		switch {
 		case id == "":
 			out[i] = "top-level"
@@ -429,7 +450,11 @@ func partIDs(ids []string) part {
 			out[i] = "(unreadable part id)"
 		}
 	}
-	return part{strings.Join(out, ", ")}
+	s := strings.Join(out, ", ")
+	if len(ids) > maxListed {
+		s += fmt.Sprintf(" and %d more", len(ids)-maxListed)
+	}
+	return part{s}
 }
 
 // colorShape is a label color as Gmail's palette writes it.

@@ -172,23 +172,28 @@ func Threads(l ThreadList, o Options) Result {
 	return listing(o, l.Threads, l.NextPageToken, "thread", "threads",
 		func(t model.Thread) string { return t.ID },
 		func(w *writer, t model.Thread) {
+			// The newest message that was sent or received: a draft
+			// after it is the account's unsent text, not the thread's.
 			latest := t.Latest()
 			count := plural(len(t.Messages), "message", "messages")
-			if u := t.Unread(); u > 0 {
-				w.say("thread %s · %s (%s unread) · %s · labels: %s · attachments: %s", gmailID(t.ID), count, num(u),
-					w.when(latest.Date), labelList(t.Labels()), yesNo(t.HasAttachments()))
-			} else {
-				w.say("thread %s · %s · %s · labels: %s · attachments: %s", gmailID(t.ID), count,
-					w.when(latest.Date), labelList(t.Labels()), yesNo(t.HasAttachments()))
+			switch u, d := t.Unread(), t.Drafts(); {
+			case u > 0 && d > 0:
+				count = fill("%s (%s unread, %s)", count, num(u), plural(d, "draft", "drafts"))
+			case u > 0:
+				count = fill("%s (%s unread)", count, num(u))
+			case d > 0:
+				count = fill("%s (%s)", count, plural(d, "draft", "drafts"))
 			}
-			snip := t.Snippet
-			if snip == "" {
-				snip = latest.Snippet
+			when := w.when(latest.Date)
+			if t.LatestSent() {
+				when = fill("%s · you sent the latest", when)
 			}
+			w.say("thread %s · %s · %s · labels: %s · attachments: %s", gmailID(t.ID), count,
+				when, labelList(t.Labels()), yesNo(t.HasAttachments()))
 			w.block("thread summary", latest.Sender().Email, latest.ID,
 				"Participants: "+string(addrList(t.Participants()))+"\n"+
 					"Subject: "+string(t.Subject())+"\n"+
-					"Snippet: "+string(snip)+"\n")
+					"Snippet: "+string(latest.Snippet)+"\n")
 		}, nil)
 }
 
@@ -205,8 +210,8 @@ func Messages(l MessageList, o Options) Result {
 	return listing(o, l.Messages, l.NextPageToken, "message", "messages",
 		func(m model.Message) string { return m.ID },
 		func(w *writer, m model.Message) {
-			w.say("message %s · thread %s · %s · labels: %s · attachments: %s",
-				gmailID(m.ID), gmailID(m.ThreadID), w.when(m.Date), labelList(m.Labels), yesNo(m.HasAttachments))
+			w.say("message %s · thread %s · %s · labels: %s · attachments: %s%s", gmailID(m.ID), gmailID(m.ThreadID),
+				w.when(m.Date), labelList(m.Labels), yesNo(m.HasAttachments), unsubscribeWays(m.Unsubscribe))
 			w.block("message summary", m.Sender().Email, m.ID,
 				"From: "+string(addrList(m.From))+"\n"+
 					"To: "+string(addrList(m.To))+"\n"+

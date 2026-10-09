@@ -14,7 +14,6 @@ package mime
 
 import (
 	"errors"
-	"regexp"
 	"strconv"
 	"strings"
 	"time"
@@ -52,9 +51,12 @@ type Message struct {
 	InReplyTo       []string
 	References      []string
 	ListUnsubscribe string
+	// Unsubscribe is ListUnsubscribe read as URIs, with whether the
+	// sender declares one-click unsubscribe.
+	Unsubscribe Unsubscribe
 
 	// HeaderHidden counts invisible characters removed from the subject,
-	// display names and addresses.
+	// display names, addresses and attachments' types (Attachment.Hidden).
 	HeaderHidden int
 
 	// ContentType is the top-level media type.
@@ -63,10 +65,10 @@ type Message struct {
 	Body        Body
 	Attachments []Attachment
 	// NeedsFetch lists the parts whose content is behind an attachment
-	// id and is needed to read the message: body parts, and calendar
-	// invitations whose method only their content states. Fetch each
-	// with messages.attachments.get and parse again with the bytes keyed
-	// by part id.
+	// id and is needed to read the message: body parts, and at most one
+	// calendar invitation (calendarFetch). Fetch each with
+	// messages.attachments.get and parse again with the bytes keyed by
+	// part id.
 	NeedsFetch []PartRef
 }
 
@@ -129,6 +131,21 @@ type Attachment struct {
 	// CalendarMethod is set for text/calendar: REQUEST, CANCEL, REPLY…,
 	// or "UNKNOWN" when it could not be read.
 	CalendarMethod string
+	// Invitation is what a calendar part says about its event, when its
+	// content was read; nil otherwise.
+	Invitation *Invitation
+	// Alternative is set when the part is one version of a body, inside
+	// a multipart/alternative: an invitation's calendar version beside
+	// its text and HTML, for one.
+	Alternative bool
+	// ContentMissing is set when Gmail gave neither the part's content
+	// nor an attachment id to fetch it by, though the part has parts of
+	// its own or a size. An attached message Gmail serves as its parts
+	// would read this way (§18 row 83); an empty part does not.
+	ContentMissing bool
+	// Hidden counts invisible characters removed from MimeType and
+	// CalendarMethod, which are the sender's Content-Type values.
+	Hidden int
 }
 
 // PartRef names a part whose content must be fetched.
@@ -175,15 +192,15 @@ func analyze(root *node) *Message {
 	m := &Message{Headers: root.headers, ContentType: root.mediaType}
 	m.decodeHeaders()
 
-	var candidates []*node
-	var walk func(n *node, depth int)
-	walk = func(n *node, depth int) {
+	var candidates, calendars []*node
+	var walk func(n *node, depth int, alternative bool)
+	walk = func(n *node, depth int, alternative bool) {
 		if depth > maxNesting {
 			return
 		}
 		if n.isMultipart() {
 			for _, ch := range n.children {
-				walk(ch, depth+1)
+				walk(ch, depth+1, n.mediaType == "multipart/alternative")
 			}
 			return
 		}
@@ -191,17 +208,19 @@ func analyze(root *node) *Message {
 		case n.isBodyLeaf():
 			candidates = append(candidates, n)
 		default:
-			a := n.attachment()
-			// An invitation's method decides what it means (REQUEST or
-			// CANCEL); when Gmail stored it apart and the header does
-			// not say, it is worth the fetch.
-			if a.CalendarMethod == "UNKNOWN" && !n.hasData && n.attachmentID != "" {
-				m.NeedsFetch = append(m.NeedsFetch, PartRef{PartID: n.partID, AttachmentID: n.attachmentID, MimeType: n.mediaType, Size: n.size})
+			if n.isCalendar() && n.attachmentID != "" {
+				calendars = append(calendars, n)
 			}
+			a := n.attachment()
+			a.Alternative = alternative
+			m.HeaderHidden += a.Hidden
 			m.Attachments = append(m.Attachments, a)
 		}
 	}
-	walk(root, 0)
+	walk(root, 0, false)
+	if ref, ok := calendarFetch(calendars); ok {
+		m.NeedsFetch = append(m.NeedsFetch, ref)
+	}
 
 	for _, c := range candidates {
 		if !c.hasData && (c.attachmentID != "" || c.size > 0) {
@@ -245,6 +264,7 @@ func (m *Message) decodeHeaders() {
 	m.InReplyTo = parseMsgIDs(headerGet(m.Headers, "In-Reply-To"))
 	m.References = parseMsgIDs(headerGet(m.Headers, "References"))
 	m.ListUnsubscribe = cleanHeader(headerGet(m.Headers, "List-Unsubscribe"))
+	m.Unsubscribe = parseUnsubscribe(m.Headers)
 }
 
 // declaredName is the part's name: Content-Disposition filename, then
@@ -269,7 +289,6 @@ func (n *node) attachment() Attachment {
 	declared := n.declaredName()
 	a := Attachment{
 		PartID:       n.partID,
-		MimeType:     n.mediaType,
 		Size:         n.size,
 		AttachmentID: n.attachmentID,
 		DeclaredName: escapeInvisible(declared),
@@ -278,7 +297,9 @@ func (n *node) attachment() Attachment {
 	if n.hasData && a.Size == 0 {
 		a.Size = len(n.data)
 	}
+	a.ContentMissing = !n.hasData && n.attachmentID == "" && (len(n.children) > 0 || n.size > 0)
 	a.Inline = n.disposition == "inline" || (n.disposition == "" && a.ContentID != "")
+	a.MimeType, a.Hidden = StripInvisible(n.mediaType)
 	a.Filename = SafeBaseName(declared)
 	switch {
 	case declared == "":
@@ -290,8 +311,14 @@ func (n *node) attachment() Attachment {
 	default:
 		a.Renamed = a.Filename != declared
 	}
-	if n.mediaType == "text/calendar" || n.mediaType == "application/ics" {
-		a.CalendarMethod = n.calendarMethod()
+	if n.isCalendar() {
+		var method string
+		if n.hasData {
+			a.Invitation, method = parseInvitation(n.data, n.params["charset"])
+		}
+		var hidden int
+		a.CalendarMethod, hidden = StripInvisible(n.calendarMethod(method))
+		a.Hidden += hidden
 		if a.NameMissing {
 			a.Filename = "invite.ics"
 		}
@@ -299,16 +326,46 @@ func (n *node) attachment() Attachment {
 	return a
 }
 
-var icsMethod = regexp.MustCompile(`(?mi)^METHOD:([A-Za-z-]+)\s*$`)
+func (n *node) isCalendar() bool {
+	return n.mediaType == "text/calendar" || n.mediaType == "application/ics"
+}
 
-func (n *node) calendarMethod() string {
+// calendarFetch picks the one calendar part, of those Gmail stored
+// behind an attachment id, whose content is worth a fetch: an
+// invitation's details, and often its method, are only there (§7.2). It
+// prefers a part whose Content-Type does not state the method, as an
+// invite.ics attachment often does not, and then the first. Nothing is
+// fetched once one of them has its content, or for a part over
+// maxICSBytes. A copy kept inline does not stop the fetch: the sender
+// can make the two differ, and the stored one is the file
+// download_attachments saves.
+func calendarFetch(parts []*node) (PartRef, bool) {
+	var pick *node
+	for _, n := range parts {
+		if n.hasData {
+			return PartRef{}, false
+		}
+		if n.size > maxICSBytes {
+			continue
+		}
+		if pick == nil || (pick.params["method"] != "" && n.params["method"] == "") {
+			pick = n
+		}
+	}
+	if pick == nil {
+		return PartRef{}, false
+	}
+	return PartRef{PartID: pick.partID, AttachmentID: pick.attachmentID, MimeType: pick.mediaType, Size: pick.size}, true
+}
+
+// calendarMethod is the part's method: its Content-Type's, else the
+// METHOD its content gives, else "UNKNOWN".
+func (n *node) calendarMethod(content string) string {
 	if v := strings.TrimSpace(n.params["method"]); v != "" {
 		return strings.ToUpper(v)
 	}
-	if n.hasData {
-		if m := icsMethod.FindSubmatch(n.data); m != nil {
-			return strings.ToUpper(string(m[1]))
-		}
+	if content != "" && len(content) <= 64 && nameEnd(content, 0) == len(content) {
+		return strings.ToUpper(content)
 	}
 	return "UNKNOWN"
 }

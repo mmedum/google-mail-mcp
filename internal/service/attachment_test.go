@@ -5,13 +5,20 @@ import (
 	"context"
 	"crypto/sha256"
 	"encoding/hex"
+	"fmt"
 	"os"
 	"path/filepath"
 	"runtime"
+	"slices"
+	"strconv"
 	"testing"
+
+	"golang.org/x/oauth2"
 
 	"github.com/mmedum/google-mail-mcp/v2/internal/gapi"
 	"github.com/mmedum/google-mail-mcp/v2/internal/gapi/gmailtest"
+	"github.com/mmedum/google-mail-mcp/v2/internal/render"
+	"github.com/mmedum/google-mail-mcp/v2/internal/service"
 )
 
 func TestDownloadAttachment(t *testing.T) {
@@ -162,4 +169,207 @@ func TestDownloadAttachmentRefusesAnOversizeAttachmentBeforeReadingIt(t *testing
 	if entries, _ := os.ReadDir(dir); len(entries) != 0 {
 		t.Errorf("a refused download left %d files", len(entries))
 	}
+}
+
+// attachedMessage is an RFC 5322 message to attach as message/rfc822.
+const attachedMessage = "From: Bruno Fennick <bruno.fennick@example.org>\r\nTo: Ada Quill <ada.quill@example.com>\r\n" +
+	"Subject: The venue\r\nDate: Mon, 2 Mar 2026 09:00:00 +0000\r\nMIME-Version: 1.0\r\n" +
+	"Content-Type: text/plain; charset=utf-8\r\n\r\nThe lake house is booked.\r\n"
+
+func names(ds []render.Saved) []string {
+	out := make([]string, len(ds))
+	for i, d := range ds {
+		out[i] = filepath.Base(d.Path)
+	}
+	return out
+}
+
+// With no part named, an invitation's calendar version of the body is
+// skipped: the same invitation is attached as invite.ics.
+func TestDownloadAttachmentsSkipsAnInvitationsCalendarBody(t *testing.T) {
+	s, fake := newService(t)
+	dir := t.TempDir()
+	sc := fake.Scenario(gmailtest.ScenarioInvite)
+	got, err := s.DownloadAttachments(context.Background(), dir, sc.MessageIDs[0], nil, false)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !slices.Equal(names(got.Files), []string{"invite.ics"}) || got.Files[0].PartID != "1" ||
+		!slices.Equal(got.Skipped, []render.Skipped{{PartID: "0.2", Reason: render.SkipInvitationCopy}}) || len(got.Failed) != 0 {
+		t.Fatalf("got %+v; want invite.ics from part 1, and part 0.2 skipped as the invitation's copy", got)
+	}
+	if b, _ := os.ReadFile(got.Files[0].Path); !bytes.HasPrefix(b, []byte("BEGIN:VCALENDAR\r\n")) {
+		t.Errorf("invite.ics holds %q", b)
+	}
+}
+
+// An invitation carried only as a calendar version of the body is the
+// only copy there is, so it is saved.
+func TestDownloadAttachmentsSavesAnInvitationsOnlyCopy(t *testing.T) {
+	s, fake := newService(t)
+	cal := &gmailtest.Part{ContentType: "text/calendar; charset=utf-8; method=REQUEST", CTE: "7bit",
+		Content: []byte("BEGIN:VCALENDAR\r\nMETHOD:REQUEST\r\nEND:VCALENDAR\r\n")}
+	alt := &gmailtest.Part{ContentType: `multipart/alternative; boundary="alt-only"`, Boundary: "alt-only",
+		Children: []*gmailtest.Part{{ContentType: "text/plain; charset=utf-8", Content: []byte("You are invited.\n")}, cal}}
+	id := fake.AddPartsMessage(alt)
+	got, err := s.DownloadAttachments(context.Background(), t.TempDir(), id, nil, false)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !slices.Equal(names(got.Files), []string{"invite.ics"}) || len(got.Skipped) != 0 {
+		t.Fatalf("got %+v; want the calendar part saved as invite.ics", got)
+	}
+}
+
+// Inline parts are skipped unless include_inline, and an emoji
+// reaction is skipped either way.
+func TestDownloadAttachmentsInlineAndReactions(t *testing.T) {
+	s, fake := newService(t)
+	image := &gmailtest.Part{ContentType: "image/png", Disposition: "inline", CTE: "base64", ContentID: "logo@example.com",
+		Content: []byte("PNG generated fixture"), Filename: "logo.png"}
+	reaction := &gmailtest.Part{ContentType: "text/vnd.google.email-reaction+json; charset=utf-8", CTE: "7bit",
+		Content: []byte(`{"version":1,"emoji":"+"}`)}
+	id := fake.AddPartsMessage(gmailtest.File("text/plain", "notes.txt", []byte("Notes.\n")), image, reaction)
+
+	got, err := s.DownloadAttachments(context.Background(), t.TempDir(), id, nil, false)
+	if err != nil {
+		t.Fatal(err)
+	}
+	wantSkipped := []render.Skipped{{PartID: "2", Reason: render.SkipInline}, {PartID: "3", Reason: render.SkipReaction}}
+	if !slices.Equal(names(got.Files), []string{"notes.txt"}) || !slices.Equal(got.Skipped, wantSkipped) {
+		t.Fatalf("got %+v; want notes.txt, the image skipped as inline, the reaction skipped", got)
+	}
+
+	got, err = s.DownloadAttachments(context.Background(), t.TempDir(), id, nil, true)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !slices.Equal(names(got.Files), []string{"notes.txt", "logo.png"}) ||
+		!slices.Equal(got.Skipped, []render.Skipped{{PartID: "3", Reason: render.SkipReaction}}) {
+		t.Fatalf("include_inline: got %+v; want notes.txt and logo.png, the reaction skipped", got)
+	}
+}
+
+// Parts named are saved in the order named, inline or not; a name the
+// message does not list fails alone.
+func TestDownloadAttachmentsNamedParts(t *testing.T) {
+	s, fake := newService(t)
+	sc := fake.Scenario(gmailtest.ScenarioInternational)
+	got, err := s.DownloadAttachments(context.Background(), t.TempDir(), sc.MessageIDs[0], []string{"2", "9", "1"}, false)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !slices.Equal(names(got.Files), []string{"年度報告.xlsx", "résumé.pdf"}) || len(got.Skipped) != 0 ||
+		len(got.Failed) != 1 || got.Failed[0].PartID != "9" || got.Failed[0].Class != string(gapi.ClassNotFound) {
+		t.Fatalf("got %+v; want parts 2 and 1 saved, and part 9 failed as not_found", got)
+	}
+	if n := len(calls(fake, "gmail.users.messages.get")); n != 1 {
+		t.Errorf("%d message reads; want 1 for every part", n)
+	}
+}
+
+// A part that fails leaves no file, and the file written before it
+// stays.
+func TestDownloadAttachmentsKeepsWhatWasWrittenBeforeAFailure(t *testing.T) {
+	s, fake := newService(t)
+	dir := t.TempDir()
+	// The first is kept in the message, so only the second is read apart.
+	first := &gmailtest.Part{ContentType: "text/plain; charset=utf-8", Disposition: `attachment; filename="first.txt"`,
+		CTE: "base64", Content: []byte("First.\n")}
+	id := fake.AddPartsMessage(first, gmailtest.File("text/plain", "second.txt", []byte("Second.\n")))
+	fake.Fail(gmailtest.Failure{Method: "gmail.users.messages.attachments.get", Status: 500, Reason: "backendError", Times: 4})
+
+	got, err := s.DownloadAttachments(context.Background(), dir, id, nil, false)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !slices.Equal(names(got.Files), []string{"first.txt"}) || len(got.Failed) != 1 || got.Failed[0].PartID != "2" ||
+		got.Failed[0].Class != string(gapi.ClassUnavailable) {
+		t.Fatalf("got %+v; want first.txt saved and part 2 failed", got)
+	}
+	entries, _ := os.ReadDir(dir)
+	if len(entries) != 1 || entries[0].Name() != "first.txt" {
+		t.Errorf("the directory holds %v; want first.txt alone", entries)
+	}
+}
+
+// An attached message Gmail serves as its own parts has no content to
+// write, and is refused rather than written as an empty file. An
+// attached message stored apart is written whole, and an empty
+// attachment is written empty.
+func TestDownloadAttachmentsAttachedMessages(t *testing.T) {
+	s, fake := newService(t)
+	dir := t.TempDir()
+	stored := &gmailtest.Part{ContentType: "message/rfc822", Disposition: `attachment; filename="stored.eml"`,
+		Content: []byte(attachedMessage), Filename: "stored.eml"}
+	expanded := &gmailtest.Part{ContentType: "message/rfc822", Disposition: `attachment; filename="expanded.eml"`,
+		Content: []byte(attachedMessage), Expanded: true}
+	empty := &gmailtest.Part{ContentType: "text/plain; charset=utf-8", Disposition: `attachment; filename="empty.txt"`}
+	id := fake.AddPartsMessage(stored, expanded, empty)
+
+	got, err := s.DownloadAttachments(context.Background(), dir, id, nil, false)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !slices.Equal(names(got.Files), []string{"stored.eml", "empty.txt"}) || len(got.Failed) != 1 ||
+		got.Failed[0].PartID != "2" || got.Failed[0].Class != string(gapi.ClassUnsupported) {
+		t.Fatalf("got %+v; want stored.eml and empty.txt saved, and part 2 refused as unsupported", got)
+	}
+	if b, _ := os.ReadFile(got.Files[0].Path); !bytes.Contains(b, []byte("The lake house is booked.")) {
+		t.Errorf("stored.eml holds %q; want the attached message", b)
+	}
+	if got.Files[1].Bytes != 0 {
+		t.Errorf("empty.txt is %d bytes", got.Files[1].Bytes)
+	}
+
+	_, err = s.DownloadAttachment(context.Background(), dir, id, "2")
+	wantClass(t, err, gapi.ClassUnsupported)
+	if _, err := os.Stat(filepath.Join(dir, "expanded.eml")); !os.IsNotExist(err) {
+		t.Errorf("a refused attached message left a file: %v", err)
+	}
+}
+
+// One call saves at most 100 parts; with none named, the rest are
+// skipped and named.
+func TestDownloadAttachmentsStopsAtOneHundred(t *testing.T) {
+	fake := gmailtest.New()
+	t.Cleanup(fake.Close)
+	// A quota this test cannot reach, so 102 reads do not wait for it.
+	s := service.New(gapi.New(gapi.Options{BaseURL: fake.URL(), UnitsPerMinute: 1 << 20,
+		TokenSource: oauth2.StaticTokenSource(&oauth2.Token{AccessToken: "test"})}))
+	parts := make([]*gmailtest.Part, render.MaxDownloads+2)
+	for i := range parts {
+		parts[i] = gmailtest.File("text/plain", fmt.Sprintf("f%03d.txt", i), []byte("x"))
+	}
+	id := fake.AddPartsMessage(parts...)
+	got, err := s.DownloadAttachments(context.Background(), t.TempDir(), id, nil, false)
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := []render.Skipped{{PartID: "101", Reason: render.SkipLimit}, {PartID: "102", Reason: render.SkipLimit}}
+	if len(got.Files) != render.MaxDownloads || !slices.Equal(got.Skipped, want) {
+		t.Fatalf("saved %d, skipped %+v; want 100 saved and parts 101 and 102 skipped", len(got.Files), got.Skipped)
+	}
+}
+
+func TestDownloadAttachmentsRefusals(t *testing.T) {
+	s, fake := newService(t)
+	sc := fake.Scenario(gmailtest.ScenarioInternational)
+	ctx := context.Background()
+
+	_, err := s.DownloadAttachments(ctx, "", sc.MessageIDs[0], nil, false)
+	wantClass(t, err, gapi.ClassBlocked)
+	_, err = s.DownloadAttachments(ctx, t.TempDir(), sc.MessageIDs[0], []string{"1", "2", "1"}, false)
+	wantClass(t, err, gapi.ClassInvalid)
+	many := make([]string, render.MaxDownloads+1)
+	for i := range many {
+		many[i] = strconv.Itoa(i)
+	}
+	_, err = s.DownloadAttachments(ctx, t.TempDir(), sc.MessageIDs[0], many, false)
+	wantClass(t, err, gapi.ClassInvalid)
+	if n := len(calls(fake, "gmail.users.messages.get")); n != 0 {
+		t.Errorf("%d message reads; a refused call reads nothing", n)
+	}
+	_, err = s.DownloadAttachments(ctx, t.TempDir(), "0000000000fffff0", nil, false)
+	wantClass(t, err, gapi.ClassNotFound)
 }

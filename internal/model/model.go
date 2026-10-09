@@ -181,10 +181,13 @@ type Message struct {
 	InReplyTo       []Untrusted
 	References      []Untrusted
 	ListUnsubscribe Untrusted
+	// Unsubscribe is ListUnsubscribe read as URIs.
+	Unsubscribe Unsubscribe
 	// Headers are every top-level header, undecoded, for headers: all.
 	Headers []mime.Header
 	// HeaderHidden counts invisible characters removed from the subject,
-	// names and addresses; LenientHeaders names address headers read leniently.
+	// names, addresses and attachments' types; LenientHeaders names
+	// address headers read leniently.
 	HeaderHidden   int
 	LenientHeaders []string
 
@@ -203,9 +206,44 @@ type Message struct {
 	Classification []gmail.ClassificationLabelValue
 }
 
+// Unsubscribe is what a List-Unsubscribe header offers, in the sender's
+// order of preference (mime.Unsubscribe). Every URI in it is the
+// sender's, and the server never visits or writes to one.
+type Unsubscribe struct {
+	URLs     []Untrusted
+	Mailto   []Untrusted
+	OneClick bool
+}
+
+// Empty reports whether the header offered nothing usable.
+func (u Unsubscribe) Empty() bool { return len(u.URLs) == 0 && len(u.Mailto) == 0 }
+
 // HasLabel reports whether the message carries a label id.
 func (m Message) HasLabel(id string) bool {
 	return slices.ContainsFunc(m.Labels, func(l LabelRef) bool { return l.ID == id })
+}
+
+// ReactionType is the type of the part an emoji reaction carries.
+const ReactionType = "text/vnd.google.email-reaction+json"
+
+// IsReaction reports whether the message is an emoji reaction. Only a
+// read with the parts can tell: a read with headers only never reports
+// one.
+func (m Message) IsReaction() bool {
+	return slices.ContainsFunc(m.Attachments, IsReactionPart)
+}
+
+// IsReactionPart reports whether a part is the one an emoji reaction
+// carries.
+func IsReactionPart(a mime.Attachment) bool {
+	return strings.EqualFold(a.MimeType, ReactionType)
+}
+
+// Answerable reports whether the message was sent or received and can
+// be answered: it is not a draft, not in the trash and not an emoji
+// reaction (§3.2).
+func (m Message) Answerable() bool {
+	return !m.HasLabel("DRAFT") && !m.HasLabel("TRASH") && !m.IsReaction()
 }
 
 // Sender is the first From address, or a zero Address.
@@ -223,18 +261,7 @@ func NewMessage(g *gmail.Message, labels LabelIndex, fetched map[string][]byte) 
 	if g == nil {
 		return Message{}, errors.New("no message")
 	}
-	m := Message{
-		ID: g.ID, ThreadID: g.ThreadID, HistoryID: g.HistoryID,
-		Labels:         labels.Refs(g.LabelIDs),
-		SizeEstimate:   int(g.SizeEstimate),
-		Classification: g.ClassificationLabelValues,
-	}
-	snippet, hidden := mime.StripInvisible(html.UnescapeString(g.Snippet))
-	m.Snippet, m.SnippetHidden = Untrusted(snippet), hidden
-	if ms, ok := g.InternalDateMillis(); ok {
-		m.Date = time.UnixMilli(ms).UTC()
-	}
-
+	m := gmailFields(g, labels)
 	var parsed *mime.Message
 	var err error
 	switch {
@@ -250,11 +277,48 @@ func NewMessage(g *gmail.Message, labels LabelIndex, fetched map[string][]byte) 
 	if err != nil {
 		return m, err
 	}
+	m.fill(parsed)
+	return m, nil
+}
+
+// NewRawMessage converts a message read with format=raw whose raw field
+// the caller has decoded, so a large message is decoded once. raw is
+// read in place of g.Raw. An attached message, which is not in the
+// mailbox, has a zero g and labels.
+func NewRawMessage(g *gmail.Message, labels LabelIndex, raw []byte) Message {
+	m := gmailFields(g, labels)
+	m.Complete = true
+	m.fill(mime.ParseRaw(raw))
+	return m
+}
+
+// gmailFields is what Gmail says about a message, apart from its
+// content: ids, labels, size, snippet and the date it received it.
+func gmailFields(g *gmail.Message, labels LabelIndex) Message {
+	m := Message{
+		ID: g.ID, ThreadID: g.ThreadID, HistoryID: g.HistoryID,
+		Labels:         labels.Refs(g.LabelIDs),
+		SizeEstimate:   int(g.SizeEstimate),
+		Classification: g.ClassificationLabelValues,
+	}
+	snippet, hidden := mime.StripInvisible(html.UnescapeString(g.Snippet))
+	m.Snippet, m.SnippetHidden = Untrusted(snippet), hidden
+	if ms, ok := g.InternalDateMillis(); ok {
+		m.Date = time.UnixMilli(ms).UTC()
+	}
+	return m
+}
+
+// fill takes what the message's content says: headers, and body and
+// attachments when the read was complete.
+func (m *Message) fill(parsed *mime.Message) {
 	m.Subject = Untrusted(parsed.Subject)
 	m.From, m.To, m.Cc, m.Bcc, m.ReplyTo = parsed.From, parsed.To, parsed.Cc, parsed.Bcc, parsed.ReplyTo
 	m.RFC822MessageID = Untrusted(parsed.MessageID)
 	m.InReplyTo, m.References = untrustedList(parsed.InReplyTo), untrustedList(parsed.References)
 	m.ListUnsubscribe = Untrusted(parsed.ListUnsubscribe)
+	m.Unsubscribe = Unsubscribe{URLs: untrustedList(parsed.Unsubscribe.URLs),
+		Mailto: untrustedList(parsed.Unsubscribe.Mailto), OneClick: parsed.Unsubscribe.OneClick}
 	m.Headers = parsed.Headers
 	m.DateHeader = Untrusted(parsed.DateHeader)
 	m.HeaderHidden, m.LenientHeaders = parsed.HeaderHidden, parsed.LenientHeaders
@@ -273,7 +337,6 @@ func NewMessage(g *gmail.Message, labels LabelIndex, fetched map[string][]byte) 
 	} else {
 		m.HasAttachments = parsed.ContentType == "multipart/mixed"
 	}
-	return m, nil
 }
 
 // isFull tells a format=full payload from a format=metadata one: only
@@ -289,7 +352,6 @@ func isFull(p *gmail.MessagePart) bool {
 type Thread struct {
 	ID        string
 	HistoryID string
-	Snippet   Untrusted
 	Messages  []Message
 }
 
@@ -300,8 +362,6 @@ func NewThread(g *gmail.Thread, labels LabelIndex, fetched map[string]map[string
 		return Thread{}, errors.New("no thread")
 	}
 	t := Thread{ID: g.ID, HistoryID: g.HistoryID}
-	snippet, _ := mime.StripInvisible(html.UnescapeString(g.Snippet))
-	t.Snippet = Untrusted(snippet)
 	for i := range g.Messages {
 		m, err := NewMessage(&g.Messages[i], labels, fetched[g.Messages[i].ID])
 		if err != nil {
@@ -333,12 +393,32 @@ func (t Thread) Subject() Untrusted {
 	return t.Messages[0].Subject
 }
 
-// Latest is the newest message, or a zero Message.
+// Latest is the newest answerable message: not a draft, not in the
+// trash and not a reaction. A thread with none gives its newest message,
+// and an empty thread a zero Message.
 func (t Thread) Latest() Message {
+	if m, ok := t.LatestAnswerable(); ok {
+		return m
+	}
 	if len(t.Messages) == 0 {
 		return Message{}
 	}
 	return t.Messages[len(t.Messages)-1]
+}
+
+// LatestSent reports whether this account sent the thread's latest
+// message, as Latest picks it.
+func (t Thread) LatestSent() bool { return t.Latest().HasLabel("SENT") }
+
+// LatestAnswerable is the newest answerable message, and false when the
+// thread has none.
+func (t Thread) LatestAnswerable() (Message, bool) {
+	for i := len(t.Messages) - 1; i >= 0; i-- {
+		if t.Messages[i].Answerable() {
+			return t.Messages[i], true
+		}
+	}
+	return Message{}, false
 }
 
 // Participants are the distinct senders and recipients, in order of
@@ -382,10 +462,16 @@ func (t Thread) HasAttachments() bool {
 }
 
 // Unread counts messages carrying UNREAD.
-func (t Thread) Unread() int {
+func (t Thread) Unread() int { return t.count("UNREAD") }
+
+// Drafts counts the thread's drafts.
+func (t Thread) Drafts() int { return t.count("DRAFT") }
+
+// count counts the messages carrying a label id.
+func (t Thread) count(label string) int {
 	n := 0
 	for _, m := range t.Messages {
-		if m.HasLabel("UNREAD") {
+		if m.HasLabel(label) {
 			n++
 		}
 	}

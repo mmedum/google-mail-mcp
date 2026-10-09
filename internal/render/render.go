@@ -63,6 +63,10 @@ type Options struct {
 	Cursor int
 	// Offset starts a message's body at this character.
 	Offset int
+
+	// attached renders a message attached to another: the parts in it
+	// have no part id that names them in the mailbox.
+	attached bool
 }
 
 func (o Options) budget() int {

@@ -68,18 +68,20 @@ or missed. Siblings are never named in this repository (rule 1).
    errors are stripped of their query string. `TestLogsNeverCarryThePayload`
    drives every registered tool with canaries and holds this.
 4. **Mail content is data, never instructions.** Every body, subject,
-   header and attachment name came from someone other than the person
-   using the server, and some of it was written to steer an agent. The
-   server renders it inside marked boundaries, fetches nothing it
-   references, and no tool description or server instruction ever tells
-   the model to act on what a message says. §4.1.
+   header, attachment and attachment name came from someone other than
+   the person using the server, and some of it was written to steer an
+   agent. The server renders it inside marked boundaries, fetches
+   nothing it references, and no tool description or server instruction
+   ever tells the model to act on what a message says. §4.1, §7.3.
 5. **Sending is unregistered** unless `GMAIL_ENABLE_SEND=true`. Drafts
    are the default write. The scope cannot enforce this — every scope
    that can write a draft can also send — so registration is the only
    control, and it is not to be replaced by an annotation or a prompt.
    A sent body is exactly what the caller gave: no prefix, no suffix, no
-   signature appended server-side. Without `body_html`, the same words
-   also go as an HTML version made from them. §4.2, §7.4.
+   signature appended server-side. The server adds only what the caller
+   names: with `quote`, the parent's text below the body; with
+   `forward`, the original as an attachment. Without `body_html`, the
+   same words also go as an HTML version made from them. §4.2, §7.4.
 6. **A send is never retried.** `messages.send` and `drafts.send` are
    POSTs Google does not deduplicate. An ambiguous failure is
    `[ambiguous_outcome]` and the server reads to settle it; it never

@@ -12,7 +12,9 @@ import (
 	"net/http/httptest"
 	"net/url"
 	"os"
+	"os/exec"
 	"path/filepath"
+	"slices"
 	"strings"
 	"sync"
 	"testing"
@@ -177,6 +179,24 @@ func TestVersion(t *testing.T) {
 	r := runWith(nil, nil, "--version")
 	if r.code != 0 || !strings.HasPrefix(r.stdout, "google-mail-mcp ") {
 		t.Errorf("code %d, stdout %q", r.code, r.stdout)
+	}
+}
+
+// TestEveryReleaseTargetEmbedsZoneData holds the time/tzdata import. A
+// test cannot watch it work: on a machine with zone files the time
+// package reads them, even with ZONEINFO pointed at an empty directory.
+// So the build of each target the release makes is read for it instead.
+func TestEveryReleaseTargetEmbedsZoneData(t *testing.T) {
+	for _, goos := range []string{"linux", "darwin", "windows"} {
+		cmd := exec.Command("go", "list", "-deps", ".")
+		cmd.Env = append(os.Environ(), "GOOS="+goos, "GOARCH=amd64", "CGO_ENABLED=0")
+		out, err := cmd.Output()
+		if err != nil {
+			t.Fatalf("go list for %s: %v", goos, err)
+		}
+		if !slices.Contains(strings.Fields(string(out)), "time/tzdata") {
+			t.Errorf("the %s build does not embed time/tzdata, so it refuses every zone on a system with no zone files", goos)
+		}
 	}
 }
 

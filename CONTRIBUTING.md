@@ -42,7 +42,10 @@ verified. Before adopting a convention, check it against the discovery
 document or a live probe and add a row there.
 
 The released tool surface is a contract. `make schema-diff` fails on a
-renamed tool, a lost field or a new required input.
+renamed tool, a lost or retyped field, a new required input, an input
+enum that takes fewer values or an output field no longer required. It
+compares with `testdata/schema-baseline.json`, the newest release's
+surface, which moves only in a release commit.
 
 ## Adding an API call
 

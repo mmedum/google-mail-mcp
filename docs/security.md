@@ -51,10 +51,10 @@ leaves an environment-provided token alone.
 
 ## Mail is untrusted input
 
-Every subject, body, header, snippet and attachment name was written by
-somebody other than the person using the server, and some of it is
-written to steer an AI agent. The server cannot stop a model being
-persuaded. It does four things instead:
+Every subject, body, header, snippet, attachment and attachment name
+was written by somebody other than the person using the server, and
+some of it is written to steer an AI agent. The server cannot stop a
+model being persuaded. It does four things instead:
 
 - **Marks it.** Mail content is returned inside a delimited block naming
   its sender and message id, with a boundary token generated for each
@@ -148,11 +148,15 @@ pasted — a debug log, `doctor` and `status` — are the ones that mask.
 - **Act on a query.** Writes take explicit ids, at most 100 per call.
 - **Read or write files outside `GMAIL_LOCAL_DIR`.** Unset means no file
   transfer at all.
-- **Change where mail goes.** Forwarding, delegation and send-as identities
-  are read-only or absent, and a filter cannot forward.
+- **Change where mail goes.** Forwarding settings, delegation and send-as
+  identities are read-only or absent, and a filter cannot forward.
+  `create_draft` can attach one message to a draft, which reaches nobody
+  until it is sent, and leaves the original's `Bcc` out of the copy.
 
 Tool annotations and `requiresUserInteraction` are set, and are hints: a
-host in an auto-approve mode runs an annotated tool without asking. Every
+host in an auto-approve mode runs an annotated tool without asking. For a
+client that can ask, the tools that ask before every write go without
+the mark, so the person answers once. Every
 control above is server-side, and client-side approval is not counted as
 one of them.
 

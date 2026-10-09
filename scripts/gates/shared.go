@@ -96,7 +96,9 @@ func writeFileAtomic(path string, data []byte) error {
 // Tools are kept raw as well as decoded, so schema-diff can compare the
 // parts it does not name by value.
 type schemaDump struct {
-	Server            string            `json:"server"`
+	Server string `json:"server"`
+	// Version is the build's: a release's tag, or "dev" and the like.
+	Version           string            `json:"version"`
 	SDKVersion        string            `json:"sdk_version"`
 	Tools             []dumpTool        `json:"tools"`
 	Resources         []json.RawMessage `json:"resources"`
@@ -122,6 +124,22 @@ type jsonSchema struct {
 	Required   []string               `json:"required,omitempty"`
 	Items      *jsonSchema            `json:"items,omitempty"`
 	Enum       []any                  `json:"enum,omitempty"`
+}
+
+// UnmarshalJSON takes a boolean schema too, as JSON Schema allows: `true`
+// takes any value, so it has no type, and `false` takes none, so its
+// type list is empty.
+func (s *jsonSchema) UnmarshalJSON(data []byte) error {
+	switch string(bytes.TrimSpace(data)) {
+	case "true":
+		*s = jsonSchema{}
+		return nil
+	case "false":
+		*s = jsonSchema{Type: []any{}}
+		return nil
+	}
+	type plain jsonSchema
+	return json.Unmarshal(data, (*plain)(s))
 }
 
 // parseDump decodes a schema dump. source names where it came from.

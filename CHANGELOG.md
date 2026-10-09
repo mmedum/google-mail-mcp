@@ -15,6 +15,38 @@ lifted verbatim.
 
 ## [Unreleased]
 
+## [2.2.0] - 2026-10-09
+
+### Added
+
+- `--dump-schemas` names the build's version, so a recorded tool surface says which release it is.
+- `search_threads` rows carry `drafts`, how many drafts a thread holds, and `latest_from_me`, whether this account sent the thread's latest message.
+- `search_messages` rows and message reads carry `unsubscribe`: the web and mail addresses of the sender's `List-Unsubscribe` header, most preferred first, and `one_click` when the sender declares one-click unsubscribe. The server never visits them.
+- A calendar invitation's attachment entry carries `invitation`: the event's UID, which a calendar server finds it by, its sequence, start and end, each with the time zone it names, organizer, title and how many events it holds. An invitation Gmail stored apart costs one more read, at most one per message.
+- `download_attachments` saves several attachments of one message into `GMAIL_LOCAL_DIR`: those `part_ids` names, or every attachment but inline parts, emoji reactions and an invitation's calendar version of the body. Each file is saved or fails on its own, and the files saved before a failure are kept. Registered only when `GMAIL_LOCAL_DIR` is set.
+- `create_draft` takes `forward`, a message id: the message goes attached to the draft as `<subject>.eml`, as Gmail stored it but without its `Bcc` header, under the subject `Fwd:` and the original's. The server asks Gmail to file the draft in the original's thread, which Gmail did when tested, and the result says each time whether it did. The result's `forwarded` names the message and the copy's size, and says whether a `Bcc` was left out.
+- `create_draft` takes `quote` on a reply: the parent's text goes below the body after a blank line and `On <date>, <sender> wrote:`, each line after `> `, and in the HTML version made from the text too. A parent with only HTML is quoted as converted, with each link reduced to its host. The result's `reply` carries `quoted_chars` and `quote_from_html`. A later `update_draft` with `body` replaces the quote too.
+- `read_attachment` reads one attachment as text: plain text, CSV, Markdown and JSON as written, HTML converted, a calendar file as written, or an attached email as `get_message` reads one. The text arrives inside the same marked boundaries as a body, with hidden text removed, under the same budget and `offset`. Any other type, and anything over 5 MB, is refused.
+
+### Changed
+
+- `send_draft`, `delete_permanently` and `delete_label` ask once in Claude Code, not twice: for a client that can ask, they drop the `requiresUserInteraction` mark, and the server's question is the confirmation. Every other write keeps the mark. A Claude Code `Elicitation` hook that accepts now confirms these alone.
+
+### Fixed
+
+- A `search_threads` row's date, snippet and sender are its newest message that is not a draft or in the trash. A draft reply made the row show the draft's date and credit its text to this account.
+- An address in a result quotes its name unless the name is plain words, so it can be given back as one recipient. A name with a comma split in two, and a name holding an address could pass for it.
+- `download_attachment` refuses, as `[unsupported]`, a part whose content Gmail gives neither inline nor by an attachment id. It wrote such a part as an empty file.
+- A message or attachment read stays within `budget_chars` when the mail holds thousands of links whose text names another site: the note pairs as many as fit an eighth of the budget and counts the rest. Such mail made a read many times its budget.
+- Invisible characters in an attachment's type or invitation method are removed, and counted in `hidden_chars_removed`. They reached the result as written.
+- On Windows, `time_zone` and an invitation's time zone work without Go installed. Every zone was refused there; the binary now carries the zone database, about 400 KB, and reads it only when the system has none.
+
+### Security
+
+- A malformed `From` or other address header never shows an address written inside its quoted name or a comment as the address. `"Boss <boss@bank.example>" <attacker@evil.example> x` read as from the boss; it now reads as from the attacker, and a header with two candidates shows none.
+- `rfc822:` takes exactly one Message-ID, written `<local@domain>`, and refuses anything else as `[invalid]` before searching. Text after the id went into Gmail's search, so a forward, reply or quote could take a message the caller never saw.
+- Built with Go 1.27.2 and `golang.org/x/net` v0.60.0, which fix ten advisories in `net/http`, its HTTP/2 code, `crypto/tls` and `net/textproto` that `govulncheck` found reachable from this server.
+
 ## [2.1.0] - 2026-10-06
 
 ### Added
@@ -138,7 +170,8 @@ lifted verbatim.
 - Repository gates run by `make check` and CI: leaks, pins, error classes, API coverage, schema diff, smoke, staleness and more.
 - Signed release archives for six platforms with SBOMs, build provenance, a Claude Desktop bundle and an MCP registry entry.
 
-[Unreleased]: https://github.com/mmedum/google-mail-mcp/compare/v2.1.0...HEAD
+[Unreleased]: https://github.com/mmedum/google-mail-mcp/compare/v2.2.0...HEAD
+[2.2.0]: https://github.com/mmedum/google-mail-mcp/compare/v2.1.0...v2.2.0
 [2.1.0]: https://github.com/mmedum/google-mail-mcp/compare/v2.0.4...v2.1.0
 [2.0.4]: https://github.com/mmedum/google-mail-mcp/compare/v2.0.3...v2.0.4
 [2.0.3]: https://github.com/mmedum/google-mail-mcp/compare/v2.0.2...v2.0.3

@@ -251,7 +251,10 @@ func cleanUp(ctx context.Context, box mailbox, s *seeded) error {
 // syntheticMessage builds message i of a run: addresses at reserved
 // domains, a subject naming the run, a body from a template. Nothing in it
 // came from anybody. The first carries an attachment, for
-// download_attachment.
+// download_attachment, and a calendar part, for its invitation. The
+// second offers to unsubscribe, one-click, at addresses that cannot
+// resolve, and its body is 8-bit text in four scripts, which a forward
+// of it attaches as 8bit. The third carries an attached message, part 1.
 func syntheticMessage(r runLabel, i int) []byte {
 	var b strings.Builder
 	fmt.Fprintf(&b, "From: Synthetic Sender <sender-%d@example.com>\r\n", i+1)
@@ -259,21 +262,90 @@ func syntheticMessage(r runLabel, i int) []byte {
 	fmt.Fprintf(&b, "Subject: %s message %d\r\n", r.name, i+1)
 	fmt.Fprintf(&b, "Message-ID: <%s.%d@livemail.invalid>\r\n", r.name, i+1)
 	b.WriteString("Date: " + syntheticDateHeader + "\r\n")
+	if i == 1 {
+		b.WriteString("List-Unsubscribe: <" + syntheticUnsubscribeMail + ">,\r\n <" + syntheticUnsubscribeURL(r) + ">\r\n")
+		b.WriteString("List-Unsubscribe-Post: List-Unsubscribe=One-Click\r\n")
+	}
 	b.WriteString("MIME-Version: 1.0\r\n")
 	body := fmt.Sprintf("Synthetic body %d, written by the live driver for run %s.\r\n", i+1, r.name)
+	const boundary = "livemail-synthetic-boundary"
+	if i == 2 {
+		b.WriteString("Content-Type: multipart/mixed; boundary=\"" + boundary + "\"\r\n\r\n")
+		b.WriteString("--" + boundary + "\r\nContent-Type: text/plain; charset=utf-8\r\n\r\n" + body + "\r\n")
+		b.WriteString("--" + boundary + "\r\nContent-Type: message/rfc822\r\n")
+		b.WriteString("Content-Disposition: attachment; filename=\"" + syntheticAttachedName + "\"\r\n\r\n")
+		b.WriteString(syntheticAttached(r) + "\r\n")
+		b.WriteString("--" + boundary + "--\r\n")
+		return []byte(b.String())
+	}
+	if i == 1 {
+		b.WriteString("Content-Type: text/plain; charset=utf-8\r\nContent-Transfer-Encoding: 8bit\r\n\r\n" + body +
+			fourScripts + "\r\n")
+		return []byte(b.String())
+	}
 	if i != 0 {
 		b.WriteString("Content-Type: text/plain; charset=utf-8\r\n\r\n" + body)
 		return []byte(b.String())
 	}
-	const boundary = "livemail-synthetic-boundary"
 	b.WriteString("Content-Type: multipart/mixed; boundary=\"" + boundary + "\"\r\n\r\n")
 	b.WriteString("--" + boundary + "\r\nContent-Type: text/plain; charset=utf-8\r\n\r\n" + body + "\r\n")
 	b.WriteString("--" + boundary + "\r\nContent-Type: text/plain; charset=utf-8\r\n")
 	b.WriteString("Content-Disposition: attachment; filename=\"" + syntheticAttachmentName + "\"\r\n")
 	b.WriteString("Content-Transfer-Encoding: base64\r\n\r\n")
 	b.WriteString(base64.StdEncoding.EncodeToString(syntheticAttachment(r)) + "\r\n")
+	b.WriteString("--" + boundary + "\r\nContent-Type: application/ics; name=\"" + syntheticInviteName + "\"\r\n")
+	b.WriteString("Content-Disposition: attachment; filename=\"" + syntheticInviteName + "\"\r\n\r\n")
+	b.WriteString(syntheticInvite(r))
 	b.WriteString("--" + boundary + "--\r\n")
 	return []byte(b.String())
+}
+
+// syntheticAttachedName names the third message's attached message.
+const syntheticAttachedName = "livemail-attached.eml"
+
+// syntheticAttachedBody is the attached message's text, which a read of
+// it shows and a saved copy holds.
+func syntheticAttachedBody(r runLabel) string {
+	return "Synthetic attached body, written by the live driver for run " + r.name + "."
+}
+
+// syntheticAttached is the message the third message carries attached,
+// from a sender at a reserved domain to the same synthetic reader.
+func syntheticAttached(r runLabel) string {
+	return strings.Join([]string{
+		"From: Synthetic Forwarded <forwarded@example.com>", "To: Synthetic Reader <reader@example.org>",
+		"Subject: " + r.name + " attached message", "Message-ID: <" + r.name + ".attached@livemail.invalid>",
+		"Date: " + syntheticDateHeader, "MIME-Version: 1.0", "Content-Type: text/plain; charset=utf-8", "",
+		syntheticAttachedBody(r), "",
+	}, "\r\n")
+}
+
+// syntheticInviteName names the first message's calendar part, part 2.
+const syntheticInviteName = "livemail-invite.ics"
+
+// syntheticInvite is the first message's calendar part. It publishes
+// one past event and invites nobody: no attendee, an organizer at a
+// reserved domain and METHOD PUBLISH, so nothing could take it for an
+// invitation to the account. Its UID names the run.
+func syntheticInvite(r runLabel) string {
+	return strings.Join([]string{
+		"BEGIN:VCALENDAR", "PRODID:-//livemail//synthetic//EN", "VERSION:2.0", "METHOD:PUBLISH",
+		"BEGIN:VEVENT", "UID:" + syntheticInviteUID(r), "SEQUENCE:1", "DTSTAMP:20260924T100000Z",
+		"DTSTART;TZID=Europe/Copenhagen:20260924T120000", "DTEND;TZID=Europe/Copenhagen:20260924T130000",
+		`SUMMARY:Synthetic event\, written by the live driver`,
+		`ORGANIZER;CN="Synthetic Sender":mailto:sender-1@example.com`,
+		"END:VEVENT", "END:VCALENDAR", "",
+	}, "\r\n")
+}
+
+func syntheticInviteUID(r runLabel) string { return r.name + "@livemail.invalid" }
+
+// syntheticUnsubscribeMail and syntheticUnsubscribeURL are the second
+// message's List-Unsubscribe, at domains that never resolve.
+const syntheticUnsubscribeMail = "mailto:leave@livemail.invalid?subject=unsubscribe"
+
+func syntheticUnsubscribeURL(r runLabel) string {
+	return "https://livemail.invalid/unsubscribe?run=" + r.name
 }
 
 // syntheticAttachmentName names the first message's attachment.

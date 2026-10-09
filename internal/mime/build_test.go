@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"errors"
 	"html"
+	netmail "net/mail"
 	"regexp"
 	"strings"
 	"testing"
@@ -632,6 +633,192 @@ func FuzzLineHTML(f *testing.F) {
 		}
 		if back := strings.ReplaceAll(html.UnescapeString(text), " ", " "); back != strings.ReplaceAll(line, "\t", "    ") {
 			t.Fatalf("%q reads back as %q", line, back)
+		}
+	})
+}
+
+// An attached message goes as written (RFC 2046 §5.2.1), never encoded:
+// 7bit when it is ASCII, 8bit when it is not, its line endings made
+// CRLF. A line over 998 octets or a NUL is refused, since only binary
+// carries one.
+func TestAnAttachedMessageGoesAsWritten(t *testing.T) {
+	head := func(cte string) string {
+		return "Content-Type: message/rfc822; name=\"fwd.eml\"\r\n" +
+			"Content-Disposition: attachment; filename=\"fwd.eml\"\r\n" +
+			"Content-Transfer-Encoding: " + cte + "\r\n\r\n"
+	}
+	cases := []struct {
+		name, content, want string
+	}{
+		{"ASCII, bare line feeds", "Subject: hi\n\nline one\nline two\n", head("7bit") + "Subject: hi\r\n\r\nline one\r\nline two\r\n"},
+		{"8-bit, a bare carriage return", "Subject: Grüße\r\n\r\nZoë\rÅngström", head("8bit") + "Subject: Grüße\r\n\r\nZoë\r\nÅngström"},
+		{"a line of 998", "Subject: x\r\n\r\n" + strings.Repeat("y", 998), head("7bit") + "Subject: x\r\n\r\n" + strings.Repeat("y", 998)},
+	}
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			a := OutAttachment{Filename: "fwd.eml", MediaType: "message/rfc822", Content: []byte(c.content)}
+			if got := string(entityBytes(t, a)); got != c.want {
+				t.Fatalf("written as\n%q\nwant\n%q", got, c.want)
+			}
+		})
+	}
+	for name, content := range map[string]string{
+		"a line of 999": "Subject: x\r\n\r\n" + strings.Repeat("y", 999),
+		"a NUL":         "Subject: x\r\n\r\na\x00b\r\n",
+	} {
+		t.Run(name, func(t *testing.T) {
+			_, err := Build(Outgoing{MessageID: "<f@example.com>", Text: "x",
+				Attachments: []OutAttachment{{Filename: "fwd.eml", MediaType: "message/rfc822", Content: []byte(content)}}})
+			if !errors.Is(err, ErrAttachedLines) {
+				t.Fatalf("Build = %v; want ErrAttachedLines", err)
+			}
+		})
+	}
+}
+
+// A boundary an attached message holds is drawn again: the message goes
+// as written, so nothing else keeps a line of it from ending the part.
+func TestABoundaryTheAttachedMessageHoldsIsDrawnAgain(t *testing.T) {
+	fixedBoundaries(t)
+	attached := "Subject: x\r\n\r\n--=_testx\r\nstill the attached message\r\n"
+	raw, err := Build(Outgoing{MessageID: "<f@example.com>", Text: "See attached.", Date: testDate,
+		Attachments: []OutAttachment{{Filename: "fwd.eml", MediaType: "message/rfc822", Content: []byte(attached)}}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(string(raw), `boundary="=_testxx"`) {
+		t.Fatalf("the first boundary, which the message holds, was kept:\n%s", raw)
+	}
+	ls := leaves(raw)
+	if len(ls) != 2 || string(ls[1].data) != attached {
+		t.Fatalf("read back %d parts, the attached one %q; want the message whole", len(ls), ls[len(ls)-1].data)
+	}
+}
+
+// A forward's copy leaves out Bcc and Resent-Bcc, folded or written with
+// a space before the colon, and keeps every other byte; one without
+// either is the message as given, its line endings made CRLF.
+func TestForwardCopyLeavesOutBcc(t *testing.T) {
+	sent := "From: Rae Reader <reader@example.com>\r\nTo: ada@example.com\r\nBcc: bruno@example.org,\r\n chiara@example.org\r\n" +
+		"Subject: Plan\r\nResent-Bcc: dmitri@example.org\r\nbcc : emeka@example.org\r\nX-Bcc-Note: kept\r\n\r\nBcc: in the body\r\n"
+	got, removed := ForwardCopy([]byte(sent))
+	want := "From: Rae Reader <reader@example.com>\r\nTo: ada@example.com\r\nSubject: Plan\r\nX-Bcc-Note: kept\r\n\r\nBcc: in the body\r\n"
+	if string(got) != want || !removed {
+		t.Fatalf("ForwardCopy =\n%q, %v\nwant\n%q, true", got, removed, want)
+	}
+	received := "From: ada@example.com\nSubject: Plan\n\nBody\n"
+	got, removed = ForwardCopy([]byte(received))
+	if string(got) != "From: ada@example.com\r\nSubject: Plan\r\n\r\nBody\r\n" || removed {
+		t.Fatalf("ForwardCopy = %q, %v; want the message with CRLF line endings, nothing removed", got, removed)
+	}
+}
+
+// A bare CR in the original's header block changes no header line of
+// the copy. One ending a line no longer makes an empty line that moves
+// the Bcc below it into the copy's body; one inside a line is a space,
+// so it does not start a header the original did not have.
+func TestForwardCopyReadsHeadersAsTheParserDoes(t *testing.T) {
+	for _, tc := range []struct {
+		raw, want string
+		removed   bool
+	}{
+		{"Subject: Plan\r\r\nBcc: secret@example.org\r\n\r\nBody\r\n", "Subject: Plan\r\n\r\nBody\r\n", true},
+		{"Subject: Plan\rBcc: secret@example.org\r\n\r\nBody\r\n", "Subject: Plan Bcc: secret@example.org\r\n\r\nBody\r\n", false},
+		{"Subject: Plan\r\n\tand more\r\r\n\r\nBody\rmore\r\n", "Subject: Plan\r\n\tand more\r\n\r\nBody\r\nmore\r\n", false},
+	} {
+		got, removed := ForwardCopy([]byte(tc.raw))
+		if string(got) != tc.want || removed != tc.removed {
+			t.Errorf("ForwardCopy(%q) =\n%q, %v\nwant\n%q, %v", tc.raw, got, removed, tc.want, tc.removed)
+		}
+	}
+}
+
+// FuzzForwardCopyLeavesOutBcc holds that no reader finds a Bcc in a
+// forward's copy: neither this package nor net/mail reads one in its
+// headers, and no Bcc header line of the original reaches its body.
+func FuzzForwardCopyLeavesOutBcc(f *testing.F) {
+	f.Add([]byte("From: a@example.com\r\nBcc: x@example.org\r\n\r\nbody\r\n"))
+	f.Add([]byte("Subject: a\r\r\nBcc: x@example.org\r\n\r\nbody"))
+	f.Add([]byte("Subject: a\rBcc: x@example.org\r\n\r\nbody"))
+	f.Add([]byte("Bcc: x@example.org"))
+	f.Add([]byte("Subject: a\n \nBcc: x@example.org\n\nb"))
+	f.Add([]byte("A: 1\n\r\nBcc: x@example.org\n\nrest"))
+	f.Fuzz(func(t *testing.T, raw []byte) {
+		got, _ := ForwardCopy(raw)
+		copied := ParseRaw(got)
+		if len(copied.Bcc) > 0 || headerGet(copied.Headers, "Bcc") != "" || headerGet(copied.Headers, "Resent-Bcc") != "" {
+			t.Fatalf("the copy of %q has a Bcc: %q", raw, got)
+		}
+		if m, err := netmail.ReadMessage(bytes.NewReader(got)); err == nil {
+			if len(m.Header["Bcc"]) > 0 || len(m.Header["Resent-Bcc"]) > 0 {
+				t.Fatalf("net/mail reads a Bcc in the copy of %q: %q", raw, got)
+			}
+		}
+		hs, _ := splitRawHeaders(raw)
+		for _, h := range hs {
+			name, _, _ := strings.Cut(h.text, ":")
+			name = strings.TrimRight(name, " \t")
+			if !strings.EqualFold(name, "Bcc") && !strings.EqualFold(name, "Resent-Bcc") {
+				continue
+			}
+			line, _, _ := strings.Cut(h.text, "\r\n")
+			if bytes.Count(got, []byte(line)) >= bytes.Count(raw, []byte(line)) {
+				t.Fatalf("the original's %q is still in the copy:\n%q\n%q", line, raw, got)
+			}
+		}
+	})
+}
+
+// FuzzAttachedMessageRoundTrip holds §4.10 for an attached message: Build
+// refuses exactly the messages RFC 2046 §5.2.1 gives no 7bit or 8bit
+// form, declares 8bit exactly when an octet is not ASCII, and the parser
+// reads back the message as given with its line endings made CRLF.
+func FuzzAttachedMessageRoundTrip(f *testing.F) {
+	f.Add([]byte("From: ada@example.com\r\nSubject: Plan\r\n\r\nBody\r\n"), "Plan.eml")
+	f.Add([]byte("Subject: Grüße\n\nZoë\rÅngström\n--=_x\n"), "Grüße.eml")
+	f.Add([]byte("Subject: x\r\n\r\n"+strings.Repeat("y", 999)), "long.eml")
+	f.Add([]byte("Subject: x\r\n\r\na\x00b"), "nul.eml")
+	f.Add([]byte(""), "empty.eml")
+	f.Fuzz(func(t *testing.T, content []byte, name string) {
+		if !utf8.ValidString(name) || !ValidFilename(name) {
+			t.Skip() // refused by Build; the service names the copy itself
+		}
+		want := strings.ReplaceAll(strings.ReplaceAll(string(content), "\r\n", "\n"), "\r", "\n")
+		want = strings.ReplaceAll(want, "\n", "\r\n")
+		carried := !strings.Contains(want, "\x00")
+		for line := range strings.SplitSeq(want, "\r\n") {
+			if len(line) > 998 {
+				carried = false
+			}
+		}
+		raw, err := Build(Outgoing{MessageID: "<f@example.com>", Text: "See attached.", Date: testDate,
+			Attachments: []OutAttachment{{Filename: name, MediaType: "message/rfc822", Content: content}}})
+		if !carried {
+			if !errors.Is(err, ErrAttachedLines) {
+				t.Fatalf("Build = %v; want ErrAttachedLines", err)
+			}
+			return
+		}
+		if err != nil {
+			t.Fatalf("Build: %v", err)
+		}
+		ls := leaves(raw)
+		if len(ls) != 2 {
+			t.Fatalf("read back %d parts; want the text and the message", len(ls))
+		}
+		got := ls[1]
+		if string(got.data) != want || got.mediaType != "message/rfc822" || got.declaredName() != name {
+			t.Fatalf("read back %s named %q:\n%q\nwant\n%q", got.mediaType, got.declaredName(), got.data, want)
+		}
+		cte := "7bit"
+		if strings.ContainsFunc(want, func(r rune) bool { return r > 0x7f }) {
+			cte = "8bit"
+		}
+		if v := headerGet(got.headers, "Content-Transfer-Encoding"); v != cte {
+			t.Fatalf("declared %q; want %q", v, cte)
+		}
+		if m := ParseRaw(raw); m.Body.Text != "See attached." || len(m.Attachments) != 1 {
+			t.Fatalf("the message reads back as %q with %d attachments", m.Body.Text, len(m.Attachments))
 		}
 	})
 }

@@ -29,6 +29,8 @@ type CreateDraftIn struct {
 	ReplyTo       string   `json:"reply_to,omitempty" jsonschema:"a message id to reply to, or rfc822: followed by its Message-ID"`
 	ReplyToThread string   `json:"reply_to_thread,omitempty" jsonschema:"a thread id to reply to: its newest message that is not a draft, in the trash or a reaction is answered"`
 	ReplyAll      bool     `json:"reply_all,omitempty" jsonschema:"with a reply, also address the parent's other recipients, leaving out this account's own addresses"`
+	Quote         bool     `json:"quote,omitempty" jsonschema:"with a reply, put the parent's text below the body: a blank line, a line saying when and who wrote it, then each of its lines starting with '> '. A parent with only HTML is quoted as converted, its links reduced to their host. 20 more units for each part of the parent's text Gmail stored apart. Not with body_html. A later update_draft with body replaces the quote too"`
+	Forward       string   `json:"forward,omitempty" jsonschema:"a message id to forward, or rfc822: followed by its Message-ID: the message goes attached as <subject>.eml, unchanged but for its Bcc header, which is left out. The subject is Fwd: and the original's unless subject is given. Not with reply_to, reply_to_thread or reply_all"`
 	DryRun        bool     `json:"dry_run,omitempty" jsonschema:"build the draft and report it without saving"`
 }
 
@@ -41,7 +43,7 @@ type UpdateDraftIn struct {
 	Cc        []string `json:"cc,omitempty" jsonschema:"replaces the Cc recipients; [] clears them; left out, they stay"`
 	Bcc       []string `json:"bcc,omitempty" jsonschema:"replaces the Bcc recipients; [] clears them; left out, they stay"`
 	Subject   *string  `json:"subject,omitempty" jsonschema:"replaces the subject; on a reply, a changed subject may take it out of its thread"`
-	Body      *string  `json:"body,omitempty" jsonschema:"replaces the plain-text body, written as for create_draft: each paragraph on one line, never broken to a width. The draft keeps its shape: plain text alone stays alone, and an HTML version made from the old body is made again (plain_only changes that); HTML written another way needs body_html too"`
+	Body      *string  `json:"body,omitempty" jsonschema:"replaces the plain-text body, a quote create_draft put below it included, written as for create_draft: each paragraph on one line, never broken to a width. The draft keeps its shape: plain text alone stays alone, and an HTML version made from the old body is made again (plain_only changes that); HTML written another way needs body_html too"`
 	BodyHTML  *string  `json:"body_html,omitempty" jsonschema:"replaces the HTML body, or adds one beside the plain text"`
 	PlainOnly *bool    `json:"plain_only,omitempty" jsonschema:"with body: true drops the HTML version made from the old body, false adds one made from the new; left out, the draft keeps its shape"`
 	// AddAttachments are base names in GMAIL_LOCAL_DIR, as create_draft's.
@@ -82,6 +84,16 @@ type ReplyOut struct {
 	ReplyAll       bool   `json:"reply_all"`
 	DroppedOwn     int    `json:"dropped_own" jsonschema:"this account's own addresses left out"`
 	Unwritable     int    `json:"unwritable,omitempty" jsonschema:"the parent's addresses left out because they cannot be written into a header"`
+	QuotedChars    int    `json:"quoted_chars,omitempty" jsonschema:"with quote, the characters of the parent's text quoted below the body; absent when the parent has no text"`
+	QuoteFromHTML  bool   `json:"quote_from_html,omitempty" jsonschema:"the quote is the parent's HTML converted to text, so each link in it keeps only its host"`
+}
+
+// ForwardOut is the message a draft carries attached.
+type ForwardOut struct {
+	MessageID  string `json:"message_id"`
+	ThreadID   string `json:"thread_id" jsonschema:"the original's thread, which the server asks Gmail to file the draft in; the draft's own thread_id says whether it did"`
+	Bytes      int    `json:"bytes" jsonschema:"the size of the attached copy"`
+	BccRemoved bool   `json:"bcc_removed" jsonschema:"the original's Bcc header was left out of the attached copy, so the copy does not show who got a blind copy"`
 }
 
 // DraftWriteOut is a created, updated or deleted draft.
@@ -103,6 +115,7 @@ type DraftWriteOut struct {
 	Removed                  []DraftFile      `json:"removed,omitempty"`
 	Changed                  []string         `json:"changed,omitempty" jsonschema:"the fields an update changed"`
 	Reply                    *ReplyOut        `json:"reply,omitempty"`
+	Forwarded                *ForwardOut      `json:"forwarded,omitempty"`
 	Bytes                    int              `json:"bytes,omitempty"`
 	Upload                   bool             `json:"upload,omitempty" jsonschema:"sent as a media upload, being over 5 MB"`
 	ThreadingAtRisk          bool             `json:"threading_at_risk,omitempty" jsonschema:"a reply whose subject changed: Gmail may take it out of its thread"`
@@ -204,16 +217,20 @@ func (o LabelWriteOut) Render() string { return o.text }
 func registerWrite(s *mcp.Server, d Deps) {
 	svc := service.New(d.Client)
 
-	register(s, d, Spec{Name: "create_draft", Kind: Write, Description: "Save a new draft, or a reply to a message. " +
-		"Nothing is sent: the draft waits in Gmail. For a reply, give reply_to (a message id) or reply_to_thread (a " +
+	register(s, d, Spec{Name: "create_draft", Kind: Write, Description: "Save a new draft, a reply to a message, or a " +
+		"forward. Nothing is sent: the draft waits in Gmail. For a reply, give reply_to (a message id) or reply_to_thread (a " +
 		"thread id); the server writes the recipients, the subject and the threading headers from the parent, and says " +
-		"whether Gmail filed the draft in the parent's thread. reply_all adds the parent's other recipients. Addresses " +
-		"you add are extra recipients. Attachments are files the person put in GMAIL_LOCAL_DIR, named, never a path. " +
-		"About 11 units, plus 20 for reply_to or 40 for reply_to_thread." + dryRunNote + untrustedNote},
+		"whether Gmail filed the draft in the parent's thread. reply_all adds the parent's other recipients, and quote " +
+		"puts the parent's text below the body. To forward, " +
+		"give forward (a message id): the message goes attached as an .eml file, and the server asks Gmail to file the " +
+		"draft in the original's thread; the result says whether it did. " +
+		"Addresses you add are extra recipients. Attachments are files the person put in GMAIL_LOCAL_DIR, named, never a " +
+		"path. About 11 units, plus 20 for reply_to or forward, or 40 for reply_to_thread, and 20 for each part of a " +
+		"quoted parent's text Gmail stored apart." + dryRunNote + untrustedNote},
 		func(ctx context.Context, in CreateDraftIn) (DraftWriteOut, error) {
 			dw, err := svc.CreateDraft(ctx, service.Compose{To: in.To, Cc: in.Cc, Bcc: in.Bcc, Subject: in.Subject,
 				Body: in.Body, HTML: in.BodyHTML, PlainOnly: in.PlainOnly, Attachments: in.Attachments, From: in.From, ReplyTo: in.ReplyTo,
-				ReplyToThread: in.ReplyToThread, ReplyAll: in.ReplyAll, LocalDir: d.Config.LocalDir})
+				ReplyToThread: in.ReplyToThread, ReplyAll: in.ReplyAll, Quote: in.Quote, Forward: in.Forward, LocalDir: d.Config.LocalDir})
 			if err != nil {
 				return DraftWriteOut{}, err
 			}
@@ -327,7 +344,11 @@ func draftWriteOut(dw model.DraftWrite) DraftWriteOut {
 	}
 	if r := dw.Reply; r != nil {
 		out.Reply = &ReplyOut{ParentID: r.ParentID, ParentThreadID: r.ParentThreadID, FromThread: r.FromThread,
-			Joined: r.Joined, NoMessageID: r.NoMessageID, ReplyAll: r.ReplyAll, DroppedOwn: r.DroppedOwn, Unwritable: r.Unwritable}
+			Joined: r.Joined, NoMessageID: r.NoMessageID, ReplyAll: r.ReplyAll, DroppedOwn: r.DroppedOwn, Unwritable: r.Unwritable,
+			QuotedChars: r.QuotedChars, QuoteFromHTML: r.QuoteFromHTML}
+	}
+	if f := dw.Forward; f != nil {
+		out.Forwarded = &ForwardOut{MessageID: f.MessageID, ThreadID: f.ThreadID, Bytes: f.Bytes, BccRemoved: f.BccRemoved}
 	}
 	return out
 }

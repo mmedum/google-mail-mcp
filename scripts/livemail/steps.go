@@ -172,6 +172,36 @@ var steps = []step{
 		},
 		check: func(_ *env, text string) error { return want(text, "Synthetic body 2") }},
 
+	// The second message offers to unsubscribe. Its row reads both
+	// headers, which the listing's headers-only read must name.
+	{name: "a row reads the List-Unsubscribe the driver wrote", tool: "search_messages",
+		args: func(e *env) map[string]any { return map[string]any{"q": e.seed.label.query("Synthetic")} },
+		check: func(e *env, text string) error {
+			row := regexp.MustCompile(`(?m)^message ` + e.seed.messages[1] + ` · .*$`).FindString(text)
+			if !strings.HasSuffix(row, " · unsubscribe: web (one-click, as the sender declares), mail") {
+				return fmt.Errorf("the row does not say how to unsubscribe: %q", row)
+			}
+			return e.unsubscribeIs(e.seed.messages[1], syntheticUnsubscribeURL(e.seed.label), syntheticUnsubscribeMail)
+		}},
+
+	// The first message carries a calendar part. Its entry gives the
+	// event's UID and times. Gmail may keep the part inline or apart; one
+	// apart costs one more read, so the units, which the step prints, say
+	// which it did.
+	{name: "an attachment entry reads the invitation the driver wrote", tool: "get_message",
+		args: func(e *env) map[string]any { return map[string]any{"message_id": e.seed.messages[0]} },
+		check: func(e *env, text string) error {
+			if err := want(text, "uid "+syntheticInviteUID(e.seed.label)); err != nil {
+				return err
+			}
+			return e.invitationIs("2", map[string]any{
+				"method": "PUBLISH", "untrusted_uid": syntheticInviteUID(e.seed.label), "sequence": float64(1),
+				"untrusted_summary": "Synthetic event, written by the live driver", "untrusted_organizer": "sender-1@example.com",
+				"untrusted_start": "2026-09-24T12:00:00+02:00", "untrusted_end": "2026-09-24T13:00:00+02:00",
+				"untrusted_time_zone": "Europe/Copenhagen", "all_day": false, "events": float64(1),
+			})
+		}},
+
 	{name: "read an inserted message by its Message-ID", tool: "get_message",
 		args: func(e *env) map[string]any {
 			return map[string]any{"message_id": "rfc822:<" + e.seed.label.name + ".3@livemail.invalid>"}
@@ -261,6 +291,64 @@ var steps = []step{
 			}
 			return e.checkDownload(text, "livemail-synthetic-1.txt")
 		}},
+
+	// The first message carries a text file and a calendar part, neither
+	// inline, so both are saved; the text file under a third name.
+	{name: "save every attachment of the run's first message", tool: "download_attachments",
+		args: func(e *env) map[string]any {
+			return map[string]any{"message_id": e.seed.messages[0], "include_inline": true}
+		},
+		check: func(e *env, text string) error {
+			if err := want(text, "saved 2, skipped 0, failed 0"); err != nil {
+				return err
+			}
+			return e.checkDownload(text, "livemail-synthetic-2.txt")
+		}},
+
+	// The third message carries an attached message. If Gmail serves it
+	// as its own parts, the part fails as [unsupported] (§18 row 83).
+	{name: "save the attached message by its part id", tool: "download_attachments",
+		args: func(e *env) map[string]any {
+			return map[string]any{"message_id": e.seed.messages[2], "part_ids": []any{"1"}}
+		},
+		check: func(e *env, text string) error {
+			if err := want(text, "saved 1, skipped 0, failed 0"); err != nil {
+				return err
+			}
+			got, err := os.ReadFile(filepath.Join(e.localDir, syntheticAttachedName))
+			if err != nil {
+				return fmt.Errorf("the attached message is not where the result says: %w", err)
+			}
+			if !bytes.Contains(got, []byte(syntheticAttachedBody(e.seed.label))) {
+				return fmt.Errorf("the saved message, %d bytes, does not hold the attached message's text", len(got))
+			}
+			return nil
+		}},
+
+	{name: "read the run's text attachment", tool: "read_attachment",
+		args: func(e *env) map[string]any {
+			return map[string]any{"message_id": e.seed.messages[0], "part_id": "1", "budget_chars": 2000, "offset": 0}
+		},
+		check: func(e *env, text string) error {
+			if e.structured["read_as"] != "text" {
+				return fmt.Errorf("read as %v; want text", e.structured["read_as"])
+			}
+			return want(text, strings.TrimSpace(string(syntheticAttachment(e.seed.label))))
+		}},
+
+	// If Gmail serves the attached message as its own parts, the read is
+	// refused as [unsupported] (§18 row 83).
+	{name: "read the attached message", tool: "read_attachment",
+		args: func(e *env) map[string]any {
+			return map[string]any{"message_id": e.seed.messages[2], "part_id": "1", "show_quoted": true}
+		},
+		check: func(e *env, text string) error {
+			msg, _ := e.structured["message"].(map[string]any)
+			if e.structured["read_as"] != "message" || msg["untrusted_subject"] != e.seed.label.name+" attached message" {
+				return fmt.Errorf("read as %v, message %v; want the attached message", e.structured["read_as"], msg)
+			}
+			return want(text, syntheticAttachedBody(e.seed.label))
+		}},
 }
 
 // checkDownload holds a download to what the run inserted: the file is in
@@ -303,6 +391,12 @@ type env struct {
 	// replyAll and replyAllMessage are the reply-all draft the recipient
 	// guard's dry run reads.
 	replyAll, replyAllMessage string
+	// forwardDraft and forwardMessage are the forward the forward steps
+	// make, read back and delete.
+	forwardDraft, forwardMessage string
+	// quoteDraft is the quoting reply the quote steps make, read back
+	// and delete.
+	quoteDraft string
 	// spikeE is the draft side of spike E, from reading a draft back.
 	spikeE string
 	// sendTo is -send-to, the one address a step may send to; full is
@@ -332,6 +426,55 @@ type env struct {
 	// predicted is each item's labels after, as the last dry run said,
 	// for the write that follows to match (§18 row 70).
 	predicted map[string][]string
+}
+
+// unsubscribeIs holds a row of the last listing to one web address,
+// one-click, and one mail address.
+func (e *env) unsubscribeIs(id, url, mailto string) error {
+	rows, _ := e.structured["messages"].([]any)
+	for _, r := range rows {
+		row, _ := r.(map[string]any)
+		if row["id"] != id {
+			continue
+		}
+		u, _ := row["unsubscribe"].(map[string]any)
+		urls, _ := u["untrusted_urls"].([]any)
+		mails, _ := u["untrusted_mailto"].([]any)
+		if u["one_click"] != true || !slices.Equal(urls, []any{url}) || !slices.Equal(mails, []any{mailto}) {
+			return fmt.Errorf("the row's unsubscribe is %v; want %s, one-click, and %s", u, url, mailto)
+		}
+		return nil
+	}
+	return fmt.Errorf("no row for message %s", id)
+}
+
+// invitationIs holds the invitation on one attachment entry of the last
+// get_message to want, field by field, and its units to a read with the
+// part inline (21) or one fetched apart (41). It prints the units: the
+// result's text does not carry them, and they say where Gmail kept the
+// part (§18 row 81).
+func (e *env) invitationIs(partID string, want map[string]any) error {
+	u := e.structured["units"]
+	e.tr.Sayf("report: the read spent %v units; 21 means Gmail kept the calendar part inline, 41 that it stored it apart", u)
+	if u != float64(21) && u != float64(41) {
+		return fmt.Errorf("the read spent %v units; want 21, or 41 with the calendar part fetched", u)
+	}
+	msg, _ := e.structured["message"].(map[string]any)
+	atts, _ := msg["attachments"].([]any)
+	for _, a := range atts {
+		att, _ := a.(map[string]any)
+		if att["part_id"] != partID {
+			continue
+		}
+		inv, _ := att["invitation"].(map[string]any)
+		for k, v := range want {
+			if inv[k] != v {
+				return fmt.Errorf("the invitation's %s is %v; want %v", k, inv[k], v)
+			}
+		}
+		return nil
+	}
+	return fmt.Errorf("no attachment entry for part %s", partID)
 }
 
 // itemsAfter is each item's labels_after in the last multi-id write.
@@ -436,7 +579,7 @@ func (e *env) guard(tool string, args map[string]any) error {
 	if err := e.guardSettings(tool, args); err != nil {
 		return err
 	}
-	for _, key := range []string{"thread_id", "message_id", "draft_id", "reply_to", "reply_to_thread"} {
+	for _, key := range []string{"thread_id", "message_id", "draft_id", "reply_to", "reply_to_thread", "forward"} {
 		id, ok := args[key].(string)
 		if !ok {
 			continue

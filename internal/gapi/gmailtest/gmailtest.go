@@ -159,6 +159,13 @@ type Server struct {
 	// place of Account: a personal account's, say.
 	ProfileAddress string
 
+	// ThreadByID files a draft in the thread it names whatever its
+	// headers and subject say, as spike D saw messages.send do for the
+	// sender (§18 row 42), and the live run of 2026-10-09 saw
+	// drafts.create do for a forward (row 85). Without it, a draft joins
+	// only with all three of §2.5's conditions, as Google documents.
+	ThreadByID bool
+
 	// SettingsScope is whether the token holds gmail.settings.basic.
 	// Without it, a settings write is refused 403: no other scope covers
 	// those methods, https://mail.google.com/ included.

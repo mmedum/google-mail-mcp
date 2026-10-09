@@ -187,6 +187,35 @@ func TestMessageByRFC822ID(t *testing.T) {
 	wantClass(t, err, gapi.ClassInvalid)
 }
 
+// rfc822: takes one Message-ID and nothing else, refused before any
+// search: the value goes into one, where text after it would add terms
+// and match messages the caller never saw.
+func TestRFC822TakesOneMessageID(t *testing.T) {
+	s, fake := newService(t)
+	sc := fake.Scenario(gmailtest.ScenarioPlainThread)
+	mid := "<fixture." + sc.MessageIDs[0] + "@mail.example.com>"
+	fake.ResetAccounting()
+	for _, v := range []string{
+		mid + ` OR subject:"password reset"`,
+		mid + " " + mid,
+		mid + "OR",
+		"fixture." + sc.MessageIDs[0] + "@mail.example.com",
+		"<fixture(x)@mail.example.com>",
+		`<"fixture"@mail.example.com>`,
+		"<{fixture}@mail.example.com>",
+		"<fixture@mail.example.com:x>",
+		"<@mail.example.com>",
+		"<fixture@>",
+		"<fixture\x00@mail.example.com>",
+	} {
+		_, err := s.Message(context.Background(), "rfc822:"+v)
+		wantClass(t, err, gapi.ClassInvalid)
+	}
+	if n := len(calls(fake, "gmail.users.messages.list")); n != 0 {
+		t.Errorf("%d searches ran; want none", n)
+	}
+}
+
 func TestMessageNotFound(t *testing.T) {
 	s, _ := newService(t)
 	_, err := s.Message(context.Background(), "00000000000fffff")

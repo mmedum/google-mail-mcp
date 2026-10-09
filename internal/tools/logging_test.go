@@ -40,6 +40,7 @@ const (
 	canaryReason  = "CANARY-refusal-detail"
 	canaryToken   = "CANARY-access-token"
 	canaryID      = "18c2f0a1b2c3d4e5"
+	canaryURL     = "canary-unsubscribe.example"
 )
 
 var forbidden = map[string]string{
@@ -53,6 +54,7 @@ var forbidden = map[string]string{
 	canaryReason:    "Google's refusal text, which can quote the request",
 	canaryToken:     "the access token",
 	canaryID:        "a whole message id (only six characters may be logged)",
+	canaryURL:       "an address a header names",
 }
 
 // canaryGmail answers every path with canary-laden mail, and every
@@ -72,8 +74,9 @@ func canaryGmail(t *testing.T) *httptest.Server {
 			"snippet":%[3]q,"labelIds":["INBOX"],"messages":[{"id":%[1]q,"threadId":%[1]q}],
 			"threads":[{"id":%[1]q,"snippet":%[3]q}],"labels":[{"id":"Label_1","name":%[4]q}],
 			"payload":{"mimeType":"text/plain","filename":%[5]q,"headers":[{"name":"Subject","value":%[6]q},
-			{"name":"From","value":%[2]q}],"body":{"size":4,"data":"Q0FOQVJZ"}}}`,
-			canaryID, canaryEmail, canaryText, canaryLabel, canaryFile, canarySubject)
+			{"name":"From","value":%[2]q},{"name":"List-Unsubscribe","value":"<https://%[7]s/u>, <mailto:%[2]s>"},
+			{"name":"List-Unsubscribe-Post","value":"List-Unsubscribe=One-Click"}],"body":{"size":4,"data":"Q0FOQVJZ"}}}`,
+			canaryID, canaryEmail, canaryText, canaryLabel, canaryFile, canarySubject, canaryURL)
 	}))
 	t.Cleanup(srv.Close)
 	return srv
@@ -122,8 +125,9 @@ var validArgs = map[string]any{
 	"time_zone": "UTC", "after": "2026-01-01", "before": "2026-02-01",
 	"budget_chars": 0, "cursor": 0, "offset": 0,
 	// The canary message's one part has no part id, and carries the
-	// canary file name, so download_attachment writes it.
-	"part_id": "", "history_id": "1", "kinds": []any{"added"},
+	// canary file name, so download_attachment and download_attachments
+	// write it.
+	"part_id": "", "part_ids": []any{""}, "history_id": "1", "kinds": []any{"added"},
 }
 
 func canaryFor(name string) string {

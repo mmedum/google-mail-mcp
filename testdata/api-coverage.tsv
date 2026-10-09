@@ -2,7 +2,7 @@
 # Columns: method id, state, phase, verdict. The verb and path live in testdata/api-surface.json.
 # used: a client call exists (internal/gapi). planned: judged used or gated, built in the named phase (§16).
 # out: deferred or written off; the verdict says why.
-gmail.users.drafts.create	used	-	Used: `create_draft`, including replies (§4.5); a multipart upload above 5 MB (§7.4). Never repeated after an ambiguous failure
+gmail.users.drafts.create	used	-	Used: `create_draft`, including replies (§4.5) and forwards (§7.4); a multipart upload above 5 MB (§7.4). Never repeated after an ambiguous failure
 gmail.users.drafts.delete	used	-	Used: `delete_draft`, with `confirm: true`. Permanent, but only ever an unsent draft; decided in §17.1 not to sit behind the destructive flag
 gmail.users.drafts.get	used	-	Used: `get_draft`, and the witness read before `update_draft` (§4.4)
 gmail.users.drafts.list	used	-	Used: `list_drafts`
@@ -16,11 +16,11 @@ gmail.users.labels.get	used	-	Used: `list_labels` with `counts: true` (list omit
 gmail.users.labels.list	used	-	Used: `list_labels`, and label-name resolution (§6.3)
 gmail.users.labels.patch	used	-	Used: `update_label`; only the fields given are sent (§4.4)
 gmail.users.labels.update	out	-	Written off: PUT replaces the whole label; `patch` covers every edit (§4.4)
-gmail.users.messages.attachments.get	used	-	Used: `download_attachment`
+gmail.users.messages.attachments.get	used	-	Used: `download_attachment`, `download_attachments`, `read_attachment`
 gmail.users.messages.batchDelete	out	-	Written off: "provides no guarantees that messages were not already deleted or even existed", so its result cannot be reported truthfully; `delete_permanently` loops `messages.delete` under a cap instead
 gmail.users.messages.batchModify	out	-	Written off: it answers with no body, so it cannot say which messages changed or why one failed, and §4.7 reports per item. `modify_labels` calls `messages.modify` per message, 5 units each, whose answer is the message's labels after (§18 row 39)
 gmail.users.messages.delete	used	-	Gated: `delete_permanently`, registered only with `GMAIL_ENABLE_DESTRUCTIVE=true`, with `confirm: true`; the only scope it accepts is `https://mail.google.com/`
-gmail.users.messages.get	used	-	Used: `get_message`, `download_attachment` (to find the part), reply construction (to read `Message-ID`/`References`)
+gmail.users.messages.get	used	-	Used: `get_message`, `download_attachment`, `download_attachments` and `read_attachment` (to find the parts), reply construction (to read `Message-ID`/`References`), and a forward's original, in `format=raw`
 gmail.users.messages.import	out	-	Written off: mailbox migration, not an assistant task; it runs spam and virus classification as though delivered
 gmail.users.messages.insert	out	-	Written off for the server: it plants mail that was never delivered, bypassing the classification a received message gets. Used by the live driver only, to write the messages it reads (§9.1)
 gmail.users.messages.list	used	-	Used: `search_messages`
@@ -39,16 +39,16 @@ gmail.users.settings.cse.keypairs.enable	out	-	Written off with CSE
 gmail.users.settings.cse.keypairs.get	out	-	Written off with CSE
 gmail.users.settings.cse.keypairs.list	out	-	Written off with CSE
 gmail.users.settings.cse.keypairs.obliterate	out	-	Written off with CSE: permanent key destruction
-gmail.users.settings.delegates.create	out	-	Written off: grants another person the mailbox; `gmail.settings.sharing`
-gmail.users.settings.delegates.delete	out	-	Written off: `gmail.settings.sharing`
-gmail.users.settings.delegates.get	out	-	Written off with `delegates.list`
-gmail.users.settings.delegates.list	out	-	Written off: delegation is account administration; `gmail.settings.basic`
+gmail.users.settings.delegates.create	out	-	Written off: grants another person the mailbox; `gmail.settings.sharing`; discovery: "This method is only available to service account clients that have been delegated domain-wide authority", which this server's per-user login is not (§18 row 79)
+gmail.users.settings.delegates.delete	out	-	Written off: `gmail.settings.sharing`; discovery: "This method is only available to service account clients that have been delegated domain-wide authority", which this server's per-user login is not (§18 row 79)
+gmail.users.settings.delegates.get	out	-	Written off with `delegates.list`; discovery: "This method is only available to service account clients that have been delegated domain-wide authority", which this server's per-user login is not (§18 row 79)
+gmail.users.settings.delegates.list	out	-	Written off: delegation is account administration; `gmail.settings.basic`; discovery: "This method is only available to service account clients that have been delegated domain-wide authority", which this server's per-user login is not (§18 row 79)
 gmail.users.settings.filters.create	used	-	Gated: `create_filter`, behind `GMAIL_ENABLE_SETTINGS`; its wire type has no forward field, so a filter cannot forward (§17.5)
 gmail.users.settings.filters.delete	used	-	Gated: `delete_filter`, behind `GMAIL_ENABLE_SETTINGS`, with `confirm: true`
 gmail.users.settings.filters.get	out	-	Written off: `filters.list` returns every field `get` does, for the same one unit, and an account holds at most 1,000 filters; `list_filters` reads the list (§18 row 36)
 gmail.users.settings.filters.list	used	-	Used: `list_filters`
-gmail.users.settings.forwardingAddresses.create	out	-	Written off: exfiltration path (§4.1); `gmail.settings.sharing`
-gmail.users.settings.forwardingAddresses.delete	out	-	Written off: `gmail.settings.sharing`, which this server never requests
+gmail.users.settings.forwardingAddresses.create	out	-	Written off: exfiltration path (§4.1); `gmail.settings.sharing`; discovery: "This method is only available to service account clients that have been delegated domain-wide authority", which this server's per-user login is not (§18 row 79)
+gmail.users.settings.forwardingAddresses.delete	out	-	Written off: `gmail.settings.sharing`, which this server never requests; discovery: "This method is only available to service account clients that have been delegated domain-wide authority", which this server's per-user login is not (§18 row 79)
 gmail.users.settings.forwardingAddresses.get	out	-	Written off: `forwardingAddresses.list` returns every field `get` does, for the same one unit; `get_settings` reads the list (§18 row 36)
 gmail.users.settings.forwardingAddresses.list	used	-	Used: `get_settings` (read)
 gmail.users.settings.getAutoForwarding	used	-	Used: `get_settings` (read, so a person can see whether mail is leaving)
@@ -56,19 +56,19 @@ gmail.users.settings.getImap	used	-	Used: `get_settings`
 gmail.users.settings.getLanguage	used	-	Used: `get_settings`
 gmail.users.settings.getPop	used	-	Used: `get_settings`
 gmail.users.settings.getVacation	used	-	Used: `get_settings`
-gmail.users.settings.sendAs.create	out	-	Written off: `gmail.settings.sharing`; identity administration
-gmail.users.settings.sendAs.delete	out	-	Written off: `gmail.settings.sharing`
+gmail.users.settings.sendAs.create	out	-	Written off: `gmail.settings.sharing`; identity administration; discovery: "This method is only available to service account clients that have been delegated domain-wide authority", which this server's per-user login is not (§18 row 79)
+gmail.users.settings.sendAs.delete	out	-	Written off: `gmail.settings.sharing`; discovery: "This method is only available to service account clients that have been delegated domain-wide authority", which this server's per-user login is not (§18 row 79)
 gmail.users.settings.sendAs.get	out	-	Written off: `sendAs.list` returns every field `get` does for the same one unit, and `create_draft` reads the list anyway for the default sender and the account's own addresses (§18 row 39)
 gmail.users.settings.sendAs.list	used	-	Used: `get_settings`, and the `from` choices of `create_draft`
-gmail.users.settings.sendAs.patch	used	-	Gated: `update_signature`, behind `GMAIL_ENABLE_SETTINGS`; the signature only, of one of the account's own addresses
+gmail.users.settings.sendAs.patch	used	-	Gated: `update_signature`, behind `GMAIL_ENABLE_SETTINGS`; the signature only, of one of the account's own addresses. Discovery says nothing of service accounts for `patch`, though it does for `update`; whether a per-user login can patch an address other than the primary is unproven (§18 row 79)
 gmail.users.settings.sendAs.smimeInfo.delete	out	-	Written off: key administration
 gmail.users.settings.sendAs.smimeInfo.get	out	-	Written off with `smimeInfo.list`
 gmail.users.settings.sendAs.smimeInfo.insert	out	-	Written off: uploads a private key
 gmail.users.settings.sendAs.smimeInfo.list	out	-	Written off: S/MIME key administration
 gmail.users.settings.sendAs.smimeInfo.setDefault	out	-	Written off: key administration
-gmail.users.settings.sendAs.update	out	-	Written off: PUT, and as `patch`
-gmail.users.settings.sendAs.verify	out	-	Written off: `gmail.settings.sharing`
-gmail.users.settings.updateAutoForwarding	out	-	Written off: turning forwarding on sends all future mail elsewhere; the single most dangerous write this API offers to an injected instruction (§4.1)
+gmail.users.settings.sendAs.update	out	-	Written off: PUT, and as `patch`; discovery: "Addresses other than the primary address for the account can only be updated by service account clients that have been delegated domain-wide authority" (§18 row 79)
+gmail.users.settings.sendAs.verify	out	-	Written off: `gmail.settings.sharing`; discovery: "This method is only available to service account clients that have been delegated domain-wide authority", which this server's per-user login is not (§18 row 79)
+gmail.users.settings.updateAutoForwarding	out	-	Written off: turning forwarding on sends all future mail elsewhere; the single most dangerous write this API offers to an injected instruction (§4.1); discovery: "This method is only available to service account clients that have been delegated domain-wide authority", which this server's per-user login is not (§18 row 79)
 gmail.users.settings.updateImap	out	-	Written off: client-protocol configuration, not an assistant task
 gmail.users.settings.updateLanguage	out	-	Written off: display preference, no assistant task
 gmail.users.settings.updatePop	out	-	Written off: as IMAP

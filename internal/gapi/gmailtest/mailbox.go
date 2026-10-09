@@ -216,6 +216,7 @@ func (sd *seeder) newsletter() {
 		body:   htmlPart("quoted-printable", []byte(newsletterHTML)), text: text,
 		extra: []gmail.MessagePartHeader{
 			{Name: "List-Unsubscribe", Value: "<mailto:leave@harbor-weekly.invalid>, <https://harbor-weekly.invalid/unsubscribe>"},
+			{Name: "List-Unsubscribe-Post", Value: "List-Unsubscribe=One-Click"},
 			{Name: "Precedence", Value: "bulk"},
 		}})
 	sd.record(ScenarioNewsletter, []*message{m}, "")
@@ -428,6 +429,34 @@ func (s *Server) AddAttachmentMessage(filename string, content []byte) (messageI
 	return m.id, "1"
 }
 
+// AddSubjectMessage adds a message from Ada under the subject given,
+// as written, alone in its thread, and returns its id; "" leaves the
+// Subject header out. Tests forward it for subjects the generated
+// mailbox does not hold.
+func (s *Server) AddSubjectMessage(subject string) string {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.clock = s.clock.Add(time.Minute)
+	text := "The plan is below.\n"
+	m := s.add(spec{from: Ada, to: []Person{Reader}, subject: subject, at: s.clock, labels: []string{"INBOX"},
+		body: utf8Text(text), text: text})
+	return m.id
+}
+
+// AddPartsMessage adds a message from Ada whose body is a short text
+// part followed by parts, in a multipart/mixed, and returns its id. The
+// text is part "0" and parts are "1", "2"… in order. Tests use it for
+// attachment shapes the generated mailbox does not hold.
+func (s *Server) AddPartsMessage(parts ...*Part) string {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.clock = s.clock.Add(time.Minute)
+	text := "The files are attached.\n"
+	m := s.add(spec{from: Ada, to: []Person{Reader}, subject: "Files", at: s.clock, labels: []string{"INBOX"},
+		body: multipart("mixed", "mix-parts", append([]*Part{utf8Text(text)}, parts...)...), text: text})
+	return m.id
+}
+
 // AddWidenedThread adds a thread in which a correspondent widened the
 // conversation: the reader wrote to Freya with Bruno in Cc, and Freya
 // answered with Ada added to Cc and Reply-To set to Chiara. It returns
@@ -446,6 +475,19 @@ func (s *Server) AddWidenedThread() (threadID, messageID string) {
 		labels: []string{"INBOX"}, body: utf8Text(b2), text: b2, thread: m1.threadID, inReplyTo: m1,
 		extra: []gmail.MessagePartHeader{{Name: "Reply-To", Value: Chiara.addr()}}})
 	return m1.threadID, m2.id
+}
+
+// AddSentWithBcc adds a message the reader sent to Ada with Bruno in
+// Bcc, as Gmail keeps the sender's own copy of one, alone in its thread,
+// and returns its id. Tests forward it.
+func (s *Server) AddSentWithBcc() string {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.clock = s.clock.Add(time.Minute)
+	b := "Ada,\n\nThe spring plan is below.\n\nRae\n"
+	m := s.add(spec{from: Reader, to: []Person{Ada}, subject: "Spring plan", at: s.clock, labels: []string{"SENT"},
+		body: utf8Text(b), text: b, extra: []gmail.MessagePartHeader{{Name: "Bcc", Value: Bruno.addr()}}})
+	return m.id
 }
 
 // AddThreadingParent adds a message from Bruno, alone in its thread,

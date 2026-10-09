@@ -26,7 +26,8 @@ is fetched; and a link whose text names a different site from its target
 is flagged.
 
 The writes that would make a persuaded assistant dangerous are not there.
-Forwarding, filters that forward and delegation are not implemented.
+Automatic forwarding, filters that forward and delegation are not
+implemented; forwarding one message attaches it to a draft.
 Sending is not registered unless you turn it on, and then only a draft
 can be sent. Removal is trash; permanent deletion is not registered
 unless you turn it on, and is the only thing that asks Google for full
@@ -135,6 +136,7 @@ be saved to; `GMAIL_PROFILE` lets one machine hold several accounts.
 | `search_messages` | Find single messages with a Gmail search |
 | `get_thread` | Read a conversation, newest first, within a budget |
 | `get_message` | Read one message, by id or by its `Message-ID` header |
+| `read_attachment` | Read an attachment's text: plain text, CSV, Markdown, JSON, HTML, a calendar or an attached email |
 | `list_labels` | Every label, optionally with counts |
 | `list_drafts` | Unsent drafts |
 | `get_draft` | Read one draft |
@@ -142,7 +144,8 @@ be saved to; `GMAIL_PROFILE` lets one machine hold several accounts.
 | `get_settings` | Forwarding, vacation reply, send-as addresses, IMAP and POP, read-only |
 | `list_filters` | The account's filters, with any that forward mail flagged |
 | `download_attachment` | Save an attachment into `GMAIL_LOCAL_DIR`, never overwriting; only when that is set |
-| `create_draft` | Save a new draft or a reply, threaded by the server; nothing is sent |
+| `download_attachments` | Save several attachments of one message, or all of them, the same way; only when `GMAIL_LOCAL_DIR` is set |
+| `create_draft` | Save a new draft, a reply threaded by the server and quoting its parent if asked, or a forward with the original attached; nothing is sent |
 | `update_draft` | Change only the fields given, refusing a draft that changed since it was read |
 | `delete_draft` | Delete a draft for good, with `confirm: true` |
 | `modify_labels` | Add and remove labels on up to 100 messages or threads, reported per item |
@@ -175,8 +178,8 @@ For clients that attach rather than call, `gmail://threads/{id}`,
 - **Mail is data.** It arrives marked, with what was hidden removed and
   counted, and no tool description tells a model to act on it.
 - **Nothing reaches another person by default.** Drafts wait in Gmail
-  to be sent, and by default no tool changes a setting. Forwarding is
-  shown, never set.
+  to be sent, and by default no tool changes a setting. Forwarding
+  settings are shown, never set.
 - **Settings are opt-in.** With `GMAIL_ENABLE_SETTINGS=true` the server
   can set a signature and create or delete filters. A filter cannot
   forward, and one that trashes mail needs `confirm: true`. The vacation
@@ -202,9 +205,9 @@ For clients that attach rather than call, `gmail://threads/{id}`,
   answer, such as `claude -p`, cannot make these writes. A client that
   cannot ask falls back to `confirm`; `GMAIL_REQUIRE_PROMPT=true` refuses
   instead. See [docs/configuration.md](docs/configuration.md#confirming-a-write).
-- **Files go to one directory.** `download_attachment` writes only into
-  `GMAIL_LOCAL_DIR`, under a name made safe, and never over an existing
-  file.
+- **Files go to one directory.** `download_attachment` and
+  `download_attachments` write only into `GMAIL_LOCAL_DIR`, under a name
+  made safe, and never over an existing file.
 - **Logs never carry mail.** No address, subject, body, label name or
   query; ids are cut to six characters. A test drives every tool with
   marker values and fails if one reaches a log, which is what makes a debug

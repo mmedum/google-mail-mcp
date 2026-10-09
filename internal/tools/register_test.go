@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"log/slog"
 	"slices"
 	"strings"
 	"testing"
@@ -43,10 +44,31 @@ func probe(ctx context.Context, in probeIn) (probeOut, error) {
 
 var kinds = []Kind{Read, ReadWritesLocally, Write, WriteForGood, Send, Destructive}
 
+// allKinds is every Kind, for the tests that probe each one.
+var allKinds = []Kind{Read, ReadWritesLocally, Write, WriteForGood, Send, Destructive, Settings, SettingsForGood, AutoReply}
+
+// confirmingProbeIn is probeIn with confirm, which a kind that asks
+// before every write must take.
+type confirmingProbeIn struct {
+	ID      string `json:"id" jsonschema:"an id"`
+	DryRun  bool   `json:"dry_run,omitempty"`
+	Fail    string `json:"fail,omitempty"`
+	Confirm bool   `json:"confirm,omitempty"`
+}
+
 // registerProbes registers one probe per Kind, named after the kind.
 func registerProbes(s *mcp.Server, d Deps) {
+	d.asking = newAsking(slog.New(slog.DiscardHandler))
 	for _, k := range kinds {
-		register(s, d, Spec{Name: strings.ReplaceAll(k.String(), "-", "_"), Description: "probe", Kind: k}, probe)
+		sp := Spec{Name: strings.ReplaceAll(k.String(), "-", "_"), Description: "probe", Kind: k}
+		if !k.asksEveryCall() {
+			register(s, d, sp, probe)
+			continue
+		}
+		sp.AskUnits = "1 more unit"
+		register(s, d, sp, func(ctx context.Context, in confirmingProbeIn) (probeOut, error) {
+			return probe(ctx, probeIn{ID: in.ID, DryRun: in.DryRun, Fail: in.Fail})
+		})
 	}
 }
 
@@ -253,18 +275,35 @@ type confirmIn struct {
 // A tool that takes confirm is registered only under a kind that also
 // asks the person (§4.13), so a new one cannot rest on the model alone.
 func TestATakingConfirmToolMustAskThePerson(t *testing.T) {
-	all := []Kind{Read, ReadWritesLocally, Write, WriteForGood, Send, Destructive, Settings, SettingsForGood, AutoReply}
 	cfg := FullSurface(config.Config{})
-	for _, k := range all {
+	for _, k := range allKinds {
 		panicked := func() (p bool) {
 			defer func() { p = recover() != nil }()
-			register(mcp.NewServer(&mcp.Implementation{Name: "t", Version: "0"}, nil), Deps{Config: cfg},
+			register(mcp.NewServer(&mcp.Implementation{Name: "t", Version: "0"}, nil), Deps{Config: cfg, asking: newAsking(nil)},
 				Spec{Name: "confirming", Description: "probe", Kind: k, AskUnits: "1 more unit"},
 				func(context.Context, confirmIn) (probeOut, error) { return probeOut{}, nil })
 			return false
 		}()
 		if panicked == k.asksPerson() {
 			t.Errorf("%s: panicked %v, asks the person %v", k, panicked, k.asksPerson())
+		}
+	}
+}
+
+// A tool of a kind that asks before every write must take confirm, or it
+// would drop the requiresUserInteraction mark and never ask in its place.
+func TestAKindThatAlwaysAsksMustTakeConfirm(t *testing.T) {
+	cfg := FullSurface(config.Config{})
+	for _, k := range allKinds {
+		panicked := func() (p bool) {
+			defer func() { p = recover() != nil }()
+			register(mcp.NewServer(&mcp.Implementation{Name: "t", Version: "0"}, nil), Deps{Config: cfg, asking: newAsking(nil)},
+				Spec{Name: "unconfirmed", Description: "probe", Kind: k},
+				func(context.Context, probeIn) (probeOut, error) { return probeOut{}, nil })
+			return false
+		}()
+		if want := k == Send || k == Destructive; panicked != want {
+			t.Errorf("%s: panicked %v, want %v", k, panicked, want)
 		}
 	}
 }

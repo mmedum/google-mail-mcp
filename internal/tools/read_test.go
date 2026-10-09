@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"reflect"
 	"regexp"
 	"slices"
 	"strconv"
@@ -18,6 +19,7 @@ import (
 	"github.com/mmedum/google-mail-mcp/v2/internal/gapi"
 	"github.com/mmedum/google-mail-mcp/v2/internal/gapi/gmailtest"
 	"github.com/mmedum/google-mail-mcp/v2/internal/gmail"
+	"github.com/mmedum/google-mail-mcp/v2/internal/model"
 	"github.com/mmedum/google-mail-mcp/v2/internal/server"
 	"github.com/mmedum/google-mail-mcp/v2/internal/server/testutil"
 	"github.com/mmedum/google-mail-mcp/v2/internal/tools"
@@ -93,7 +95,7 @@ func TestSurfaceByMode(t *testing.T) {
 		t.Run(tc.name, func(t *testing.T) {
 			h, _ := connectFake(t, tc.cfg)
 			tools := h.Tools(t)
-			if want := 11 + tc.writes; len(tools) != want {
+			if want := 12 + tc.writes; len(tools) != want {
 				t.Fatalf("%d tools; want %d", len(tools), want)
 			}
 			writes := 0
@@ -152,6 +154,57 @@ func TestSearchThreadsMarksMailAsUntrusted(t *testing.T) {
 		if th.ID == "" || th.MessageCount == 0 || th.UntrustedParticipants == nil {
 			t.Errorf("row %+v", th)
 		}
+	}
+}
+
+// A row is about the thread's newest message that was sent or received.
+// A draft after it is the account's unsent text, and a message in the
+// trash was removed; neither is the thread's latest, and the row counts
+// the drafts.
+func TestSearchThreadsRowPassesOverDraftsAndTrash(t *testing.T) {
+	h, fake := connectFake(t, config.Config{})
+	backed, _ := fake.AddBackedThread()
+	plain := fake.Scenario(gmailtest.ScenarioPlainThread)
+	call(t, h, "trash", map[string]any{"message_ids": []any{plain.MessageIDs[2]}}, &struct{}{})
+
+	row := func(q, id string) (tools.ThreadSummary, string) {
+		t.Helper()
+		var out tools.ThreadsOut
+		text := call(t, h, "search_threads", map[string]any{"q": q}, &out)
+		if len(out.Threads) != 1 || out.Threads[0].ID != id {
+			t.Fatalf("%s: rows %+v", q, out.Threads)
+		}
+		return out.Threads[0], text
+	}
+
+	// Dmitri wrote last; the account's draft reply came a minute later.
+	got, text := row("subject:long notes", backed)
+	want := tools.ThreadSummary{MessageCount: 3, Drafts: 1, Latest: time.Date(2026, 3, 4, 5, 2, 0, 0, time.UTC),
+		LatestFromMe: false, UntrustedSnippet: "Backed body 2."}
+	if got.MessageCount != want.MessageCount || got.Drafts != want.Drafts || !got.Latest.Equal(want.Latest) ||
+		got.LatestFromMe != want.LatestFromMe || got.UntrustedSnippet != want.UntrustedSnippet {
+		t.Errorf("row = %+v, want %+v", got, want)
+	}
+	for _, s := range []string{
+		"thread " + backed + " · 3 messages (1 draft) · 2026-03-04 05:02 UTC · labels: INBOX, DRAFT",
+		"thread summary from dmitri.vale@example.org in ",
+	} {
+		if !strings.Contains(text, s) {
+			t.Errorf("the row does not say %q:\n%s", s, text)
+		}
+	}
+	if strings.Contains(text, "you sent the latest") {
+		t.Errorf("the row credits Dmitri's message to the account:\n%s", text)
+	}
+
+	// Bruno's answer is in the trash, so the account's reply is the latest.
+	got, text = row("subject:offsite venue", plain.ThreadID)
+	if !got.Latest.Equal(time.Date(2026, 3, 2, 12, 0, 0, 0, time.UTC)) || !got.LatestFromMe || got.Drafts != 0 ||
+		!strings.HasPrefix(string(got.UntrustedSnippet), "The old mill works for me.") {
+		t.Errorf("row = %+v", got)
+	}
+	if !strings.Contains(text, " · 2026-03-02 12:00 UTC · you sent the latest · labels: ") {
+		t.Errorf("the row does not say the account sent the latest:\n%s", text)
 	}
 }
 
@@ -336,6 +389,86 @@ func TestGetThreadCountsHiddenText(t *testing.T) {
 	}
 	if hidden == 0 || mismatches == 0 {
 		t.Errorf("the newsletter hides text and a mismatched link; counted %d hidden, %d mismatches", hidden, mismatches)
+	}
+}
+
+// The newsletter's List-Unsubscribe is read on its search row, whose
+// headers-only read must name both headers, and on a full read.
+func TestUnsubscribeOnRowsAndReads(t *testing.T) {
+	h, fake := connectFake(t, config.Config{})
+	id := fake.Scenario(gmailtest.ScenarioNewsletter).MessageIDs[0]
+	want := tools.Unsubscribe{
+		UntrustedURLs:   []model.Untrusted{"https://harbor-weekly.invalid/unsubscribe"},
+		UntrustedMailto: []model.Untrusted{"mailto:leave@harbor-weekly.invalid"},
+		OneClick:        true,
+	}
+	var list tools.MessagesOut
+	text := call(t, h, "search_messages", map[string]any{"q": "from:news@harbor-weekly.invalid"}, &list)
+	if len(list.Messages) != 1 || list.Messages[0].Unsubscribe == nil || !reflect.DeepEqual(*list.Messages[0].Unsubscribe, want) {
+		t.Fatalf("the row's unsubscribe = %+v; want %+v", list.Messages, want)
+	}
+	if !strings.Contains(text, "· unsubscribe: web (one-click, as the sender declares), mail\n") {
+		t.Errorf("the row does not say how to unsubscribe:\n%s", text)
+	}
+	var one tools.MessageOut
+	call(t, h, "get_message", map[string]any{"message_id": id}, &one)
+	if one.Message.Unsubscribe == nil || !reflect.DeepEqual(*one.Message.Unsubscribe, want) {
+		t.Errorf("the read's unsubscribe = %+v; want %+v", one.Message.Unsubscribe, want)
+	}
+	var plain tools.MessageOut
+	call(t, h, "get_message", map[string]any{"message_id": fake.Scenario(gmailtest.ScenarioPlainThread).MessageIDs[0]}, &plain)
+	if plain.Message.Unsubscribe != nil {
+		t.Errorf("a message with no List-Unsubscribe carries %+v", plain.Message.Unsubscribe)
+	}
+}
+
+// Both of an invitation's attachment entries say what it says about its
+// event. The invite.ics Gmail stored apart is the one part fetched.
+func TestInvitationOnAttachments(t *testing.T) {
+	h, fake := connectFake(t, config.Config{})
+	id := fake.Scenario(gmailtest.ScenarioInvite).MessageIDs[0]
+	var out tools.MessageOut
+	text := call(t, h, "get_message", map[string]any{"message_id": id}, &out)
+	want := tools.Invitation{Method: "REQUEST", UntrustedUID: "fixture-0000000000000001@example.com",
+		UntrustedSummary: "Design review", UntrustedOrganizer: "emeka@example.com",
+		UntrustedStart: "2026-03-10T10:00:00Z", UntrustedEnd: "2026-03-10T11:00:00Z", Events: 1}
+	if len(out.Message.Attachments) != 2 {
+		t.Fatalf("attachments = %+v", out.Message.Attachments)
+	}
+	for _, a := range out.Message.Attachments {
+		if a.Invitation == nil || *a.Invitation != want {
+			t.Errorf("part %s: invitation = %+v; want %+v", a.PartID, a.Invitation, want)
+		}
+	}
+	if n := len(fake.CallsOf("gmail.users.messages.attachments.get")); n != 1 || out.Units != 41 {
+		t.Errorf("%d attachment reads and %d units; want 1 and 41", n, out.Units)
+	}
+	if !strings.Contains(text, "uid fixture-0000000000000001@example.com") {
+		t.Errorf("the text does not give the UID:\n%s", text)
+	}
+}
+
+// An invitation's file is read even beside a copy of it inline: the
+// sender can make the two differ, and the file is what
+// download_attachments saves, so its entry says what the file says.
+func TestAnInvitationFileIsReadBesideItsInlineCopy(t *testing.T) {
+	h, fake := connectFake(t, config.Config{ReadOnly: true})
+	ics := func(uid string) []byte {
+		return []byte("BEGIN:VCALENDAR\r\nMETHOD:REQUEST\r\nBEGIN:VEVENT\r\nUID:" + uid + "\r\nEND:VEVENT\r\nEND:VCALENDAR\r\n")
+	}
+	id := fake.AddPartsMessage(
+		&gmailtest.Part{ContentType: "text/calendar; charset=utf-8; method=REQUEST", CTE: "7bit", Content: ics("inline@example.com")},
+		gmailtest.File("application/ics", "invite.ics", ics("file@example.com")))
+	var out tools.MessageOut
+	text := call(t, h, "get_message", map[string]any{"message_id": id}, &out)
+	if len(out.Message.Attachments) != 2 || out.Message.Attachments[1].Invitation == nil ||
+		out.Message.Attachments[1].Invitation.UntrustedUID != "file@example.com" {
+		t.Fatalf("attachments %+v; want the file's own invitation on part 2", out.Message.Attachments)
+	}
+	if n := len(fake.CallsOf("gmail.users.messages.attachments.get")); n != 1 ||
+		!strings.Contains(text, "uid inline@example.com") || !strings.Contains(text, "uid file@example.com") ||
+		strings.Contains(text, "the same as part_id") {
+		t.Errorf("%d attachment reads; text:\n%s", n, text)
 	}
 }
 

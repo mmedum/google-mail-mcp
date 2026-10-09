@@ -32,6 +32,26 @@ type Attachment struct {
 	// UntrustedCalendarMethod is an invitation's METHOD as its sender
 	// wrote it: REQUEST, CANCEL, REPLY, or anything else.
 	UntrustedCalendarMethod model.Untrusted `json:"untrusted_calendar_method,omitempty"`
+	Invitation              *Invitation     `json:"invitation,omitempty" jsonschema:"what a calendar invitation says about its event, read from this part; absent when its content was not read"`
+}
+
+// Invitation is what a calendar part says about its event (RFC 5545).
+// Method is from a fixed set; every other string is the sender's.
+type Invitation struct {
+	Method                string          `json:"method,omitempty" jsonschema:"the calendar's METHOD when it is one RFC 5546 defines: PUBLISH, REQUEST, REPLY, ADD, CANCEL, REFRESH, COUNTER or DECLINECOUNTER"`
+	UntrustedUID          model.Untrusted `json:"untrusted_uid,omitempty" jsonschema:"the event's iCalendar UID, which a calendar server finds the event by (the Google Calendar API's iCalUID)"`
+	Sequence              int             `json:"sequence" jsonschema:"the event's revision (SEQUENCE); 0 when the calendar gives none"`
+	UntrustedRecurrenceID model.Untrusted `json:"untrusted_recurrence_id,omitempty" jsonschema:"set when the invitation is for one occurrence of a repeating event: that occurrence's original start, written as untrusted_start is, in untrusted_recurrence_time_zone when that is set"`
+	UntrustedSummary      model.Untrusted `json:"untrusted_summary,omitempty" jsonschema:"the event's title"`
+	UntrustedOrganizer    model.Untrusted `json:"untrusted_organizer,omitempty" jsonschema:"the organizer's address, when the calendar gives a mailto address"`
+	UntrustedStart        model.Untrusted `json:"untrusted_start,omitempty" jsonschema:"RFC 3339 when the time is in UTC or its time zone is an IANA zone; YYYY-MM-DD for an all-day event; otherwise the time as written, in untrusted_time_zone"`
+	UntrustedEnd          model.Untrusted `json:"untrusted_end,omitempty" jsonschema:"written as untrusted_start is, in untrusted_end_time_zone when that is set; absent when the calendar gives a duration instead"`
+	UntrustedTimeZone     model.Untrusted `json:"untrusted_time_zone,omitempty" jsonschema:"the time zone the start names (its TZID), as written"`
+	// The end and the recurrence id may each name a zone of their own.
+	UntrustedEndTimeZone        model.Untrusted `json:"untrusted_end_time_zone,omitempty" jsonschema:"the time zone the end names (its TZID), as written, when it is not the one the start names"`
+	UntrustedRecurrenceTimeZone model.Untrusted `json:"untrusted_recurrence_time_zone,omitempty" jsonschema:"the time zone the recurrence id names (its TZID), as written, when it is not the one the start names"`
+	AllDay                      bool            `json:"all_day" jsonschema:"true when the start is a date with no time of day"`
+	Events                      int             `json:"events" jsonschema:"how many events the calendar holds; the fields describe the first that is not one occurrence's change, or else the first"`
 }
 
 // MessageMeta is one message's headers and what the server noticed.
@@ -54,6 +74,16 @@ type MessageMeta struct {
 	// LinkMismatches counts links whose visible text names a different
 	// host from the one they point to.
 	LinkMismatches int `json:"link_mismatches,omitempty"`
+	// Unsubscribe is the message's List-Unsubscribe header, read.
+	Unsubscribe *Unsubscribe `json:"unsubscribe,omitempty" jsonschema:"how the sender's List-Unsubscribe header offers to unsubscribe; absent when it offers no web or mail address. The server never visits or writes to these"`
+}
+
+// Unsubscribe is what a List-Unsubscribe header offers (RFC 2369), each
+// list in the header's order, which is the sender's order of preference.
+type Unsubscribe struct {
+	UntrustedURLs   []model.Untrusted `json:"untrusted_urls,omitempty" jsonschema:"the http and https addresses, most preferred first"`
+	UntrustedMailto []model.Untrusted `json:"untrusted_mailto,omitempty" jsonschema:"the mailto addresses, with any subject or body they ask for, most preferred first"`
+	OneClick        bool              `json:"one_click" jsonschema:"true when the sender declares one-click unsubscribe (RFC 8058) for an https address; the sender declares it, and no signature over it is checked"`
 }
 
 // Rendered is what every read returns besides its rows: how the text was
@@ -118,6 +148,7 @@ func messageMeta(m model.Message) MessageMeta {
 		HasAttachments:     m.HasAttachments,
 		HiddenCharsRemoved: m.Body.HiddenChars() + m.HeaderHidden + m.SnippetHidden,
 		LinkMismatches:     len(m.Body.Mismatches()),
+		Unsubscribe:        unsubscribe(m.Unsubscribe),
 	}
 	for _, a := range m.Attachments {
 		meta.Attachments = append(meta.Attachments, attachment(a))
@@ -129,8 +160,29 @@ func attachment(a mime.Attachment) Attachment {
 	return Attachment{
 		PartID: a.PartID, UntrustedFilename: model.Untrusted(a.Filename), UntrustedMimeType: model.Untrusted(a.MimeType),
 		Size: a.Size, AttachmentID: a.AttachmentID, Inline: a.Inline,
-		UntrustedCalendarMethod: model.Untrusted(a.CalendarMethod),
+		UntrustedCalendarMethod: model.Untrusted(a.CalendarMethod), Invitation: invitation(a.Invitation),
 	}
+}
+
+func invitation(i *mime.Invitation) *Invitation {
+	if i == nil {
+		return nil
+	}
+	return &Invitation{
+		Method: i.Method, UntrustedUID: model.Untrusted(i.UID), Sequence: i.Sequence,
+		UntrustedRecurrenceID: model.Untrusted(i.RecurrenceID), UntrustedSummary: model.Untrusted(i.Summary),
+		UntrustedOrganizer: model.Untrusted(i.Organizer), UntrustedStart: model.Untrusted(i.Start),
+		UntrustedEnd: model.Untrusted(i.End), UntrustedTimeZone: model.Untrusted(i.TimeZone),
+		UntrustedEndTimeZone: model.Untrusted(i.EndTimeZone), UntrustedRecurrenceTimeZone: model.Untrusted(i.RecurrenceTimeZone),
+		AllDay: i.AllDay, Events: i.Events,
+	}
+}
+
+func unsubscribe(u model.Unsubscribe) *Unsubscribe {
+	if u.Empty() {
+		return nil
+	}
+	return &Unsubscribe{UntrustedURLs: u.URLs, UntrustedMailto: u.Mailto, OneClick: u.OneClick}
 }
 
 func page(token string, estimate int) Page {

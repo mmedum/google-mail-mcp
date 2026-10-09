@@ -34,6 +34,13 @@ type Part struct {
 	// Backed puts the content behind an attachment id even without a
 	// filename, which is how Gmail stores a large body part (§3.7).
 	Backed bool
+	// Expanded serves a message/rfc822 part, whose Content is the
+	// attached message, as its own parts: one child holding the attached
+	// message's headers and tree, and no data or attachment id for the
+	// part itself. Gmail served attached messages whole in the live run
+	// of 2026-10-09 (§18 row 83); the fake can serve one this way, so the
+	// server's refusal of a shape not seen is tested.
+	Expanded bool
 	// Boundary separates Children when this is a multipart.
 	Boundary string
 	Children []*Part
@@ -123,6 +130,16 @@ func (p *Part) payload(partID string, top []gmail.MessagePartHeader, attID func(
 		return mp
 	}
 	mp.Body.Size = int32(len(p.Content)) //nolint:gosec // fixture sizes are small
+	if p.Expanded {
+		if inner, err := parseRaw(p.Content); err == nil {
+			id := "0"
+			if partID != "" {
+				id = partID + ".0"
+			}
+			mp.Parts = []gmail.MessagePart{inner.body.payload(id, inner.headers, attID, store)}
+			return mp
+		}
+	}
 	if p.Filename != "" || p.Backed {
 		id := attID(partID)
 		mp.Body.AttachmentID = id
@@ -145,6 +162,13 @@ func htmlPart(cte string, content []byte) *Part {
 
 func multipart(kind, boundary string, children ...*Part) *Part {
 	return &Part{ContentType: "multipart/" + kind + "; boundary=\"" + boundary + "\"", Boundary: boundary, Children: children}
+}
+
+// File is an attachment named filename, written as most mail clients
+// write one: the name in both Content-Type and Content-Disposition,
+// base64. Tests build the parts of AddPartsMessage with it.
+func File(contentType, filename string, content []byte) *Part {
+	return attachment(contentType+`; name="`+filename+`"`, `attachment; filename="`+filename+`"`, filename, content)
 }
 
 // attachment is a named attachment. contentType and disposition carry

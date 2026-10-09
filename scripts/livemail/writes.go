@@ -227,6 +227,94 @@ var writeSteps = []step{
 			return want(text, "(reply_all)")
 		}},
 
+	// The draft just saved is the newest message in that thread. The row
+	// names the inserted message as the latest, and counts the draft.
+	{name: "a thread row passes over the draft in it", tool: "search_threads",
+		args: func(e *env) map[string]any { return map[string]any{"q": e.seed.label.query("")} },
+		check: func(e *env, text string) error {
+			row := regexp.MustCompile(`(?m)^thread ` + e.seed.threads[2] + ` · .*$`).FindString(text)
+			if row == "" {
+				return errors.New("the result has no row for the thread replied to")
+			}
+			if !strings.Contains(row, "1 draft) · ") || strings.Contains(row, "you sent the latest") {
+				return fmt.Errorf("the row does not pass over the draft: %s", row)
+			}
+			return want(text, "thread summary from sender-3@example.com in "+e.seed.messages[2])
+		}},
+
+	// The original's body is 8-bit, so it goes attached as 8bit, and the
+	// draft carries no threading headers, only the original's thread:
+	// whether Gmail files it there and keeps the part is §18 row 85.
+	{name: "forward an inserted message", tool: "create_draft",
+		args: func(e *env) map[string]any {
+			return map[string]any{"forward": e.seed.messages[1], "to": []any{rcptTo}, "body": "A synthetic forward."}
+		},
+		check: func(e *env, text string) error {
+			var err error
+			if e.forwardDraft, e.forwardMessage, err = e.composed(text); err != nil {
+				return err
+			}
+			if err := want(text, e.seed.label.name+" message 2.eml (message/rfc822"); err != nil {
+				return err
+			}
+			return want(text, "Gmail filed the draft in the original's thread.")
+		}},
+
+	{name: "read the forward back", tool: "get_draft",
+		args: func(e *env) map[string]any { return map[string]any{"draft_id": e.forwardDraft} },
+		check: func(e *env, text string) error {
+			for _, s := range []string{"Fwd: " + e.seed.label.name + " message 2", "A synthetic forward.",
+				e.seed.label.name + " message 2.eml (message/rfc822"} {
+				if err := want(text, s); err != nil {
+					return err
+				}
+			}
+			return nil
+		}},
+
+	// If Gmail serves the attached original as its own parts, the read is
+	// refused as [unsupported] (§18 row 83).
+	{name: "read the forwarded original in the draft", tool: "read_attachment",
+		args: func(e *env) map[string]any { return map[string]any{"message_id": e.forwardMessage, "part_id": "1"} },
+		check: func(e *env, text string) error {
+			msg, _ := e.structured["message"].(map[string]any)
+			if e.structured["read_as"] != "message" || msg["untrusted_subject"] != e.seed.label.name+" message 2" {
+				return fmt.Errorf("read as %v, message %v; want the forwarded original", e.structured["read_as"], msg)
+			}
+			return want(text, fourScripts)
+		}},
+
+	deleteStepDraft("delete the forward", func(e *env) string { return e.forwardDraft }),
+
+	// The parent is the run's 8-bit message, so the quote carries text in
+	// four scripts (§18 row 86).
+	{name: "reply with a quote to an inserted message", tool: "create_draft",
+		args: func(e *env) map[string]any {
+			return map[string]any{"reply_to": e.seed.messages[1], "quote": true, "body": "A synthetic quoted reply."}
+		},
+		check: func(e *env, text string) error {
+			var err error
+			if e.quoteDraft, _, err = e.composed(text); err != nil {
+				return err
+			}
+			return want(text, "quoted below the body: ")
+		}},
+
+	{name: "read the quoted reply back", tool: "get_draft",
+		args: func(e *env) map[string]any { return map[string]any{"draft_id": e.quoteDraft, "show_quoted": true} },
+		check: func(e *env, text string) error {
+			for _, s := range []string{"A synthetic quoted reply.",
+				"On " + syntheticDateHeader + ", Synthetic Sender <sender-2@example.com> wrote:",
+				"> Synthetic body 2, written by the live driver for run " + e.seed.label.name + ".", "> " + fourScripts} {
+				if err := want(text, s); err != nil {
+					return err
+				}
+			}
+			return nil
+		}},
+
+	deleteStepDraft("delete the quoted reply", func(e *env) string { return e.quoteDraft }),
+
 	{name: "a large draft goes as an upload", tool: "create_draft",
 		args: func(e *env) map[string]any {
 			return map[string]any{"subject": e.seed.label.name + " large", "body": "Six megabytes attached.",
@@ -381,6 +469,23 @@ var writeSteps = []step{
 		}},
 }
 
+// deleteStepDraft is a step that deletes a draft an earlier step made,
+// once the person confirms, so later steps never meet it.
+func deleteStepDraft(name string, draft func(e *env) string) step {
+	return step{name: name, tool: "delete_draft",
+		args: func(e *env) map[string]any { return map[string]any{"draft_id": draft(e), "confirm": true} },
+		check: func(e *env, text string) error {
+			if err := want(text, "permanently."); err != nil {
+				return err
+			}
+			if _, err := e.asked(); err != nil {
+				return err
+			}
+			e.seed.forget(draft(e))
+			return nil
+		}}
+}
+
 // writeTools are the tools guardWrite holds, and writeKeys every argument
 // it knows. A write with an argument it has no rule for is refused, so a
 // new input is guarded before it is driven, not after.
@@ -392,10 +497,10 @@ var (
 		// Checked below or by guard.
 		"message_ids": true, "thread_ids": true, "to": true, "cc": true, "bcc": true, "from": true,
 		"attachments": true, "add_attachments": true, "name": true, "label": true,
-		"draft_id": true, "message_id": true, "reply_to": true, "reply_to_thread": true, "confirm_recipients": true,
+		"draft_id": true, "message_id": true, "reply_to": true, "reply_to_thread": true, "forward": true, "confirm_recipients": true,
 		// Carry no id, address or file: text, flags, part ids of the run's
 		// own drafts, and the system labels STARRED and IMPORTANT.
-		"dry_run": true, "confirm": true, "reply_all": true, "subject": true, "body": true, "body_html": true, "plain_only": true,
+		"dry_run": true, "confirm": true, "reply_all": true, "quote": true, "subject": true, "body": true, "body_html": true, "plain_only": true,
 		"remove_attachments": true, "add": true, "remove": true, "in_label_list": true, "in_message_list": true,
 		"text_color": true, "background_color": true,
 	}

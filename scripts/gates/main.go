@@ -110,9 +110,9 @@ func init() {
 		"smoke": {run: smoke, maxArgs: 1, args: "[BINARY]", runsIn: inCheck,
 			doc: "the built server over stdio, signed out, at two protocol revisions"},
 		"schema-diff": {run: schemaDiff, maxArgs: 1, args: "[BINARY]", runsIn: inCheck,
-			doc: "the tool and resource surface against the committed baseline"},
+			doc: "the tool and resource surface against the newest release's committed baseline"},
 		"schema-baseline": {run: schemaBaseline, maxArgs: 1, args: "[BINARY]", runsIn: manual,
-			doc: "write the committed baseline from the built binary"},
+			doc: "record the surface of the release being cut, in its release commit"},
 
 		// Documents.
 		"staleness": {run: staleness, maxArgs: 1, args: "[BINARY]", runsIn: inCheck,

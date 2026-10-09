@@ -106,6 +106,18 @@ func TestParseAddressList(t *testing.T) {
 		{"lenient quoted name unquoted", `"Ada" <ada@example.com, bo@example.org`,
 			[]Address{{"Ada", "ada@example.com"}, {"", "bo@example.org"}}, false},
 		{"bidi in name stripped by message", "Ada <ada@example.com>", []Address{{"Ada", "ada@example.com"}}, true},
+		{"address in a quoted name is not the address", `"Boss <boss@bank.example>" <attacker@evil.example> x`,
+			[]Address{{`"Boss <boss@bank.example>" x`, "attacker@evil.example"}}, false},
+		{"address in a comment is not the address", "(boss@bank.example) attacker@evil.example;;",
+			[]Address{{"boss@bank.example", "attacker@evil.example"}}, false},
+		{"address in a quoted name before an unclosed bracket", `"boss@bank.example" <attacker@evil.example`,
+			[]Address{{"boss@bank.example", "attacker@evil.example"}}, false},
+		{"address in a nested comment split by a comma", "(x <a, boss@bank.example (y)) attacker@evil.example x",
+			[]Address{{"x <a, boss@bank.example (y)) x", "attacker@evil.example"}}, false},
+		{"two bare addresses are no address", "ada@example.com bruno@example.org",
+			[]Address{{"ada@example.com bruno@example.org", ""}}, false},
+		{"two angle addresses are no address", "<ada@example.com> <bruno@example.org>",
+			[]Address{{"<ada@example.com> <bruno@example.org>", ""}}, false},
 	}
 	for _, c := range cases {
 		t.Run(c.name, func(t *testing.T) {
@@ -125,14 +137,31 @@ func TestParseAddressList(t *testing.T) {
 	}
 }
 
+// A name that is not plain words is quoted, so the text reads back as
+// the one mailbox it is: a comma does not split it, and an address in
+// the name does not pass for the real one.
 func TestAddressString(t *testing.T) {
 	for _, c := range []struct {
 		a    Address
 		want string
 	}{
 		{Address{"Ada", "ada@example.com"}, "Ada <ada@example.com>"},
+		{Address{"Ada Quill", "ada@example.com"}, "Ada Quill <ada@example.com>"},
+		{Address{"Zoë Ångström", "zoe@example.org"}, "Zoë Ångström <zoe@example.org>"},
 		{Address{Email: "ada@example.com"}, "ada@example.com"},
 		{Address{Name: "Ada"}, "Ada"},
+		{Address{"Quill, Ada", "ada@example.com"}, `"Quill, Ada" <ada@example.com>`},
+		{Address{"Boss <boss@example.org>", "mallory@example.net"}, `"Boss <boss@example.org>" <mallory@example.net>`},
+		{Address{`Ada "Q" \ Quill`, "ada@example.com"}, `"Ada \"Q\" \\ Quill" <ada@example.com>`},
+		{Address{"A. Quill", "ada@example.com"}, `"A. Quill" <ada@example.com>`},
+		{Address{"=?utf-8?q?Boss?=", "ada@example.com"}, `"=?utf-8?q?Boss?=" <ada@example.com>`},
+		{Address{" Ada", "ada@example.com"}, `" Ada" <ada@example.com>`},
+		{Address{"Ada\tQuill\x7f", "ada@example.com"}, `"Ada Quill " <ada@example.com>`},
+		{Address{"Ada\xffQuill", "ada@example.com"}, "Ada\uFFFDQuill <ada@example.com>"},
+		{Address{Email: "ada quill@example.com"}, `"ada quill"@example.com`},
+		{Address{"Ada", `a"b@example.com`}, `Ada <"a\"b"@example.com>`},
+		{Address{Email: ".ada@example.com"}, `".ada"@example.com`},
+		{Address{Name: "Quill, Ada"}, `"Quill, Ada"`},
 	} {
 		if got := c.a.String(); got != c.want {
 			t.Errorf("%+v = %q", c.a, got)
@@ -226,6 +255,21 @@ func TestDecodeCharset(t *testing.T) {
 	}
 	if !strings.Contains(decodeWith(japanese.ShiftJIS, []byte{0x82, 0xa0}), "あ") {
 		t.Error("shift_jis")
+	}
+}
+
+// A From the standard parser refuses never shows an address written
+// inside the quoted name or a comment: the boundary line and a quote's
+// "wrote:" line name the sender by it.
+func TestALenientFromShowsTheAddressOutsideTheName(t *testing.T) {
+	for _, from := range []string{
+		`"Boss <boss@bank.example>" <attacker@evil.example> x`,
+		"(boss@bank.example) attacker@evil.example;;",
+	} {
+		m := ParseRaw([]byte("From: " + from + "\r\nSubject: Hi\r\n\r\nBody\r\n"))
+		if len(m.From) != 1 || m.From[0].Email != "attacker@evil.example" || len(m.LenientHeaders) != 1 {
+			t.Errorf("From: %s read as %+v, lenient %v; want attacker@evil.example, read leniently", from, m.From, m.LenientHeaders)
+		}
 	}
 }
 

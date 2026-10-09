@@ -61,6 +61,8 @@ type OutAttachment struct {
 	// Filename is the name the recipient sees.
 	Filename string
 	// MediaType is its Content-Type; "" is application/octet-stream.
+	// message/rfc822 is an attached message, which goes as written
+	// (messageBody); every other type goes as base64.
 	MediaType string
 	Content   []byte
 }
@@ -69,10 +71,18 @@ type OutAttachment struct {
 // control character in a subject or a display name.
 var ErrControl = errors.New("a header value may not contain line breaks or control characters")
 
+// ErrAttachedLines is an attached message that cannot go as it is: it
+// has a line over 998 octets or a NUL. RFC 2046 §5.2.1 lets an attached
+// message go only as 7bit, 8bit or binary, never encoded, and only
+// binary carries such a line. SMTP carries binary only between servers
+// that both offer it (RFC 3030), so this package does not write it.
+var ErrAttachedLines = errors.New("an attached message has a line over 998 octets or a NUL octet, which only the binary encoding carries")
+
 // Build writes an outgoing message as RFC 5322 bytes: headers encoded
 // per RFC 2047, filenames per RFC 2231, text as quoted-printable UTF-8,
-// attachments as base64, every line ending CRLF. What it writes, Parse
-// reads back to the same fields (§4.10); the fuzz test holds that.
+// attachments as base64 and an attached message as written, every line
+// ending CRLF. What it writes, Parse reads back to the same fields
+// (§4.10); the fuzz tests hold that.
 func Build(o Outgoing) ([]byte, error) {
 	if !ValidMessageID(o.MessageID) {
 		return nil, fmt.Errorf("message id %q is not <local@domain>", o.MessageID)
@@ -202,8 +212,7 @@ func formatAddress(a Address) (string, error) {
 	case isPhrase(a.Name):
 		return a.Name + " <" + a.Email + ">", nil
 	default:
-		r := strings.NewReplacer(`\`, `\\`, `"`, `\"`)
-		return `"` + r.Replace(a.Name) + `" <` + a.Email + ">", nil
+		return quotedString(a.Name) + " <" + a.Email + ">", nil
 	}
 }
 
@@ -224,9 +233,12 @@ func validEmail(s string) bool {
 }
 
 // isPhrase reports a display name made only of atoms and single spaces,
-// which needs no quoting and which net/mail reads back unchanged.
+// which needs no quoting and which net/mail reads back unchanged. A
+// character beyond ASCII is atext, as RFC 6532 and net/mail read it; the
+// header writer encodes such a name before it asks. "=?" would be read
+// as the start of an encoded-word.
 func isPhrase(s string) bool {
-	if s != strings.TrimSpace(s) || strings.Contains(s, "  ") {
+	if s != strings.TrimSpace(s) || strings.Contains(s, "  ") || strings.Contains(s, "=?") {
 		return false
 	}
 	for _, r := range s {
@@ -239,7 +251,7 @@ func isPhrase(s string) bool {
 
 func isAtext(r rune) bool {
 	switch {
-	case r >= 'a' && r <= 'z', r >= 'A' && r <= 'Z', r >= '0' && r <= '9':
+	case r >= 'a' && r <= 'z', r >= 'A' && r <= 'Z', r >= '0' && r <= '9', r >= utf8.RuneSelf:
 		return true
 	}
 	return strings.ContainsRune("!#$%&'*+-/=?^_`{|}~", r)
@@ -247,9 +259,9 @@ func isAtext(r rune) bool {
 
 // HasControl reports a character that would break a header or a line:
 // C0 and C1 controls and DEL, tab included.
-func HasControl(s string) bool {
-	return strings.IndexFunc(s, func(r rune) bool { return r < 0x20 || r == 0x7f || (r >= 0x80 && r <= 0x9f) }) >= 0
-}
+func HasControl(s string) bool { return strings.IndexFunc(s, isControl) >= 0 }
+
+func isControl(r rune) bool { return r < 0x20 || r == 0x7f || (r >= 0x80 && r <= 0x9f) }
 
 func needsEncoding(s string) bool {
 	for i := 0; i < len(s); i++ {
@@ -533,6 +545,11 @@ func bodyEntity(text, html string) *entity {
 
 func multipartEntity(subtype string, children ...*entity) *entity {
 	boundary := newBoundary()
+	// An attached message goes as written, so a line of it could be the
+	// boundary; one that holds it gets another.
+	for holds(children, "--"+boundary) {
+		boundary = newBoundary()
+	}
 	return &entity{
 		mediaType: "multipart/" + subtype,
 		boundary:  boundary,
@@ -543,9 +560,29 @@ func multipartEntity(subtype string, children ...*entity) *entity {
 	}
 }
 
+// holds reports whether any of es writes delim in a header or a body.
+func holds(es []*entity, delim string) bool {
+	for _, e := range es {
+		for _, h := range e.headers {
+			if strings.Contains(h.text, delim) {
+				return true
+			}
+		}
+		if e.dirty {
+			if holds(e.children, delim) {
+				return true
+			}
+		} else if bytes.Contains(e.body, []byte(delim)) {
+			return true
+		}
+	}
+	return false
+}
+
 // attachmentEntity is a file: base64 in lines of 76, named in both
 // Content-Disposition (RFC 2231, the standard) and Content-Type (RFC
-// 2047 in quotes, which older clients read instead).
+// 2047 in quotes, which older clients read instead). An attached message
+// is named the same way and goes as messageBody writes it.
 func attachmentEntity(a OutAttachment) (*entity, error) {
 	name := a.Filename
 	if !ValidFilename(name) {
@@ -562,6 +599,15 @@ func attachmentEntity(a OutAttachment) (*entity, error) {
 	if !quotable(name) {
 		nameParam = `"` + encodeWords(name) + `"`
 	}
+	cte, body := "base64", []byte(nil)
+	if strings.EqualFold(mt, "message/rfc822") {
+		var err error
+		if cte, body, err = messageBody(a.Content); err != nil {
+			return nil, err
+		}
+	} else {
+		body = base64Lines(a.Content)
+	}
 	return &entity{
 		mediaType:   mt,
 		disposition: "attachment",
@@ -569,11 +615,117 @@ func attachmentEntity(a OutAttachment) (*entity, error) {
 		headers: []rawHeader{
 			{name: "Content-Type", text: fold("Content-Type: " + mt + "; name=" + nameParam)},
 			{name: "Content-Disposition", text: fold("Content-Disposition: attachment; " + filenameParam(name))},
-			{name: "Content-Transfer-Encoding", text: "Content-Transfer-Encoding: base64"},
+			{name: "Content-Transfer-Encoding", text: "Content-Transfer-Encoding: " + cte},
 		},
-		body: base64Lines(a.Content),
+		body: body,
 	}, nil
 }
+
+// messageBody is an attached message as RFC 2046 §5.2.1 lets it go: as
+// written, with its line endings made CRLF, and declared 7bit when every
+// octet is ASCII, else 8bit. A message with a line over 998 octets or a
+// NUL is ErrAttachedLines (RFC 2045 §2.7, §2.8).
+func messageBody(b []byte) (cte string, body []byte, err error) {
+	body = withCRLF(b)
+	for line := range bytes.SplitSeq(body, []byte("\r\n")) {
+		if len(line) > maxLine || bytes.IndexByte(line, 0) >= 0 {
+			return "", nil, ErrAttachedLines
+		}
+	}
+	for _, c := range body {
+		if c > 0x7f {
+			return "8bit", body, nil
+		}
+	}
+	return "7bit", body, nil
+}
+
+// withCRLF writes every line ending as CRLF, which RFC 5322 requires:
+// a bare LF or a bare CR becomes one. Bytes that need no change are
+// returned as they are, not copied: a forward's copy, made CRLF once,
+// passes through again as an attachment is built.
+func withCRLF(b []byte) []byte {
+	if !hasBareCR(b) && !hasBareLF(b) {
+		return b
+	}
+	out := make([]byte, 0, len(b)+len(b)/64)
+	for i := 0; i < len(b); i++ {
+		switch b[i] {
+		case '\r':
+			out = append(out, '\r', '\n')
+			if i+1 < len(b) && b[i+1] == '\n' {
+				i++
+			}
+		case '\n':
+			out = append(out, '\r', '\n')
+		default:
+			out = append(out, b[i])
+		}
+	}
+	return out
+}
+
+// ForwardCopy is a message as a forward attaches it (§7.4): its line
+// endings made CRLF, and its Bcc and Resent-Bcc headers left out. The
+// sender's own copy of a sent message keeps its Bcc, and a forward would
+// show the blind recipients to everyone it reaches. bccRemoved reports
+// whether one was left out.
+//
+// The header block is split as the parser splits it, before any line
+// ending is rewritten: a bare CR would otherwise become a line break,
+// and "Subject: a\r\r\nBcc: x" an empty line that moves the Bcc into
+// the body. A CR inside a header line, which RFC 5322 forbids, is
+// written as a space, so the copy has the header lines the original
+// was read as. Every other byte is as given.
+func ForwardCopy(raw []byte) (out []byte, bccRemoved bool) {
+	hs, body := splitRawHeaders(raw)
+	head := raw[:len(raw)-len(body)]
+	var kept []rawHeader
+	for _, h := range hs {
+		// RFC 5322 §4.5 lets a reader take "Bcc :" for Bcc too.
+		name, _, _ := strings.Cut(h.text, ":")
+		if name = strings.TrimRight(name, " \t"); strings.EqualFold(name, "Bcc") || strings.EqualFold(name, "Resent-Bcc") {
+			bccRemoved = true
+			continue
+		}
+		kept = append(kept, h)
+	}
+	if !bccRemoved && !hasBareCR(head) {
+		return withCRLF(raw), false
+	}
+	var b bytes.Buffer
+	b.Grow(len(raw) + len(raw)/64)
+	for _, h := range kept {
+		b.WriteString(bareCRSpace.Replace(h.text) + "\r\n")
+	}
+	b.WriteString("\r\n")
+	b.Write(withCRLF(body))
+	return b.Bytes(), bccRemoved
+}
+
+// hasBareCR reports a CR that does not start a CRLF.
+func hasBareCR(b []byte) bool {
+	for i, c := range b {
+		if c == '\r' && (i+1 == len(b) || b[i+1] != '\n') {
+			return true
+		}
+	}
+	return false
+}
+
+// hasBareLF reports an LF that does not end a CRLF.
+func hasBareLF(b []byte) bool {
+	for i, c := range b {
+		if c == '\n' && (i == 0 || b[i-1] != '\r') {
+			return true
+		}
+	}
+	return false
+}
+
+// bareCRSpace writes a CR that does not start a CRLF as a space. A
+// header's text joins its folded lines with CRLF, which it keeps.
+var bareCRSpace = strings.NewReplacer("\r\n", "\r\n", "\r", " ")
 
 // base64Lines encodes b as base64 in lines of 76, straight into a buffer
 // of the final size: an attachment can be most of 35 MB.

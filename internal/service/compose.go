@@ -7,8 +7,10 @@ import (
 	"io/fs"
 	"os"
 	"regexp"
+	"slices"
 	"strings"
 	"sync"
+	"unicode/utf8"
 
 	"github.com/mmedum/google-mail-mcp/v2/internal/gapi"
 	"github.com/mmedum/google-mail-mcp/v2/internal/gmail"
@@ -34,20 +36,21 @@ type Compose struct {
 	// a thread id, whose newest message is answered. At most one.
 	ReplyTo, ReplyToThread string
 	ReplyAll               bool
-	LocalDir               string
+	// Quote puts a reply's parent's text below the body (§7.4).
+	Quote bool
+	// Forward is a message id, or rfc822:<Message-ID>, to attach as it
+	// is but for its Bcc (§7.4). Not with a reply.
+	Forward  string
+	LocalDir string
 }
 
 // maxReferences bounds the References a reply carries: the thread's
 // first ids and its last. A hostile parent cannot make a reply huge.
 const maxReferences = 40
 
-// reactionType is the part Gmail's emoji reactions carry. A reaction is
-// not a message to reply to (§3.2).
-const reactionType = "text/vnd.google.email-reaction+json"
-
-// CreateDraft builds a new draft, or a reply constructed from its parent
-// (§4.5), and saves it. On a dry run it builds everything and saves
-// nothing.
+// CreateDraft builds a new draft, a reply constructed from its parent
+// (§4.5) or a forward carrying its original (§7.4), and saves it. On a
+// dry run it builds everything and saves nothing.
 func (s *Service) CreateDraft(ctx context.Context, in Compose) (model.DraftWrite, error) {
 	out := model.DraftWrite{Op: "create", DryRun: gapi.WritesForbidden(ctx)}
 	callers, err := in.check()
@@ -58,41 +61,37 @@ func (s *Service) CreateDraft(ctx context.Context, in Compose) (model.DraftWrite
 	if err != nil {
 		return out, err
 	}
-	// The send-as list and the parent are independent reads.
-	var (
-		parent model.Message
-		perr   error
-		wg     sync.WaitGroup
-	)
-	if in.reply() {
-		wg.Go(func() { parent, perr = s.replyParent(ctx, in.ReplyTo, in.ReplyToThread) })
-	}
-	senders, err := s.client.SendAs(ctx)
-	wg.Wait()
+	senders, src, err := s.composeReads(ctx, in)
 	if err != nil {
 		return out, err
 	}
-	if perr != nil {
-		return out, perr
-	}
-	from, err := pickFrom(senders.SendAs, in.From)
+	parent := src.parent
+	from, err := pickFrom(senders, in.From)
 	if err != nil {
 		return out, err
+	}
+	text, quoted := in.Body, 0
+	if in.Quote {
+		text, quoted = quoteBelow(in.Body, parent)
 	}
 	htm := in.HTML
 	if htm == "" && !in.PlainOnly {
 		// Without an HTML part, Gmail's web composer wraps the text when
-		// the person sends the draft (§7.4).
-		htm = mime.HTMLFromText(in.Body)
+		// the person sends the draft (§7.4). A quote goes in it too.
+		htm = mime.HTMLFromText(text)
 	}
-	o := mime.Outgoing{From: &from, Subject: in.Subject, Text: in.Body, HTML: htm, Attachments: files,
+	o := mime.Outgoing{From: &from, Subject: in.Subject, Text: text, HTML: htm, Attachments: files,
 		MessageID: mime.NewMessageID(from.Email)}
 	out.Recipients = callers
 	threadID := ""
+	if in.Forward != "" {
+		threadID = asForward(&o, &out, src.original)
+	}
 	if in.reply() {
 		r := &model.Reply{ParentID: parent.ID, ParentThreadID: parent.ThreadID, FromThread: in.ReplyToThread != "",
-			ReplyAll: in.ReplyAll}
-		out.Recipients = replyRecipients(parent, senders.SendAs, in.ReplyAll, callers, r)
+			ReplyAll: in.ReplyAll, Quote: in.Quote, QuotedChars: quoted, QuoteFetched: src.fetched,
+			QuoteFromHTML: quoted > 0 && parent.Body.Source != mime.SourcePlain}
+		out.Recipients = replyRecipients(parent, senders, in.ReplyAll, callers, r)
 		o.Subject = replySubject(string(parent.Subject))
 		if o.InReplyTo, o.References = threading(parent); o.InReplyTo == "" {
 			r.NoMessageID = true
@@ -102,6 +101,10 @@ func (s *Service) CreateDraft(ctx context.Context, in Compose) (model.DraftWrite
 	}
 	addressTo(&o, out.Recipients)
 	raw, err := mime.Build(o)
+	if errors.Is(err, mime.ErrAttachedLines) {
+		return out, gapi.Errf(gapi.ClassUnsupported, "message %s has a line over 998 characters or a NUL character, "+
+			"which an attached message cannot carry as it is (RFC 2046 §5.2.1); forward it from Gmail", src.original.m.ID)
+	}
 	if err != nil {
 		// Every input was checked above, and the parent's addresses that
 		// cannot be written were left out; the cause is not shown, since
@@ -114,7 +117,7 @@ func (s *Service) CreateDraft(ctx context.Context, in Compose) (model.DraftWrite
 	// The Message-ID written is not reported: Gmail replaces it on
 	// drafts.create (§15, spike B), so it would state what was not kept.
 	out.From, out.Subject = &from, model.Untrusted(o.Subject)
-	out.Files = filesOf(files)
+	out.Files = filesOf(o.Attachments)
 	out.Bytes, out.Upload = len(raw), gapi.Uploads(len(raw))
 	out.ThreadID = threadID
 	if out.DryRun {
@@ -128,7 +131,54 @@ func (s *Service) CreateDraft(ctx context.Context, in Compose) (model.DraftWrite
 	if out.Reply != nil {
 		out.Reply.Joined = d.Message != nil && d.Message.ThreadID == out.Reply.ParentThreadID
 	}
+	if out.Forward != nil {
+		out.Forward.Joined = d.Message != nil && d.Message.ThreadID == out.Forward.ThreadID
+	}
 	return out, nil
+}
+
+// sources are what a draft is built from besides the caller's words: a
+// reply's parent, with the parts of its text a quote read, or a
+// forward's original.
+type sources struct {
+	parent   model.Message
+	fetched  int
+	original original
+}
+
+// composeReads reads the account's send-as addresses and, at the same
+// time, the parent or the original, which are independent reads.
+func (s *Service) composeReads(ctx context.Context, in Compose) ([]gmail.SendAs, sources, error) {
+	var (
+		src  sources
+		serr error
+		wg   sync.WaitGroup
+	)
+	switch {
+	case in.reply():
+		wg.Go(func() { src.parent, src.fetched, serr = s.replyParent(ctx, in.ReplyTo, in.ReplyToThread, in.Quote) })
+	case in.Forward != "":
+		wg.Go(func() { src.original, serr = s.original(ctx, in.Forward) })
+	}
+	senders, err := s.client.SendAs(ctx)
+	wg.Wait()
+	if err != nil {
+		return nil, src, err
+	}
+	return senders.SendAs, src, serr
+}
+
+// asForward makes o a forward of f (§7.4): the original attached first,
+// and the subject "Fwd: " and the original's unless the caller gave one.
+// It returns the thread the draft is filed in, the original's.
+func asForward(o *mime.Outgoing, out *model.DraftWrite, f original) string {
+	out.Forward = &model.Forward{MessageID: f.m.ID, ThreadID: f.m.ThreadID, Bytes: len(f.raw), BccRemoved: f.bccRemoved}
+	o.Attachments = append([]mime.OutAttachment{{Filename: mime.ForwardName(string(f.m.Subject)), MediaType: "message/rfc822",
+		Content: f.raw}}, o.Attachments...)
+	if o.Subject == "" {
+		o.Subject = strings.TrimSpace("Fwd: " + string(f.m.Subject))
+	}
+	return f.m.ThreadID
 }
 
 // reply reports whether the draft answers another message.
@@ -139,10 +189,18 @@ func (in Compose) reply() bool { return in.ReplyTo != "" || in.ReplyToThread != 
 func (in Compose) check() ([]model.Recipient, error) {
 	reply := in.reply()
 	switch {
+	case in.Forward != "" && (reply || in.ReplyAll):
+		return nil, gapi.Errf(gapi.ClassInvalid,
+			"forward writes a new message with the original attached, so it takes no reply_to, reply_to_thread or reply_all")
 	case in.ReplyTo != "" && in.ReplyToThread != "":
 		return nil, gapi.Errf(gapi.ClassInvalid, "give reply_to or reply_to_thread, not both")
 	case in.ReplyAll && !reply:
 		return nil, gapi.Errf(gapi.ClassInvalid, "reply_all needs reply_to or reply_to_thread")
+	case in.Quote && !reply:
+		return nil, gapi.Errf(gapi.ClassInvalid, "quote needs reply_to or reply_to_thread: it quotes the message answered")
+	case in.Quote && in.HTML != "":
+		return nil, gapi.Errf(gapi.ClassInvalid,
+			"give quote or body_html, not both: the quote goes in the plain text and in the HTML version made from it")
 	case reply && in.Subject != "":
 		return nil, gapi.Errf(gapi.ClassInvalid,
 			"a reply takes its parent's subject, which is one of the three things Gmail threads by; leave subject out")
@@ -265,42 +323,162 @@ func defaultSender(senders []gmail.SendAs) (int, error) {
 
 // replyParent reads the message a reply answers. A thread id is answered
 // through its newest message that is not a draft, not in the trash and
-// not a reaction; a message id naming one of those is refused.
-func (s *Service) replyParent(ctx context.Context, replyTo, thread string) (model.Message, error) {
-	empty := model.NewLabelIndex(nil)
+// not a reaction; a message id naming one of those is refused. For a
+// quote, the parts of its text Gmail stored apart are read too, and
+// fetched counts them.
+func (s *Service) replyParent(ctx context.Context, replyTo, thread string, quote bool) (m model.Message, fetched int, err error) {
+	var g *gmail.Message
 	if thread != "" {
-		g, err := s.client.GetThread(ctx, thread, gapi.FormatFull)
-		if err != nil {
-			return model.Message{}, err
-		}
-		t, err := model.NewThread(g, empty, nil)
-		if err != nil {
-			return model.Message{}, gapi.Wrap(gapi.ClassUnavailable, err, "Gmail returned a thread this server could not read")
-		}
-		for i := len(t.Messages) - 1; i >= 0; i-- {
-			if unrepliable(t.Messages[i]) == "" {
-				return t.Messages[i], nil
-			}
-		}
-		return model.Message{}, gapi.Errf(gapi.ClassInvalid,
+		m, g, err = s.threadParent(ctx, thread)
+	} else {
+		m, g, err = s.messageParent(ctx, replyTo)
+	}
+	if err != nil || !quote {
+		return m, 0, err
+	}
+	return s.quotedParts(ctx, g, m)
+}
+
+// threadParent is a thread's newest answerable message, and the wire
+// message it was read from.
+func (s *Service) threadParent(ctx context.Context, thread string) (model.Message, *gmail.Message, error) {
+	g, err := s.client.GetThread(ctx, thread, gapi.FormatFull)
+	if err != nil {
+		return model.Message{}, nil, err
+	}
+	t, err := model.NewThread(g, model.NewLabelIndex(nil), nil)
+	if err != nil {
+		return model.Message{}, nil, gapi.Wrap(gapi.ClassUnavailable, err, "Gmail returned a thread this server could not read")
+	}
+	m, ok := t.LatestAnswerable()
+	if !ok {
+		return model.Message{}, nil, gapi.Errf(gapi.ClassInvalid,
 			"thread %s has no message to reply to: each one is a draft, in the trash, or an emoji reaction", thread)
 	}
+	var wire *gmail.Message
+	if i := slices.IndexFunc(g.Messages, func(w gmail.Message) bool { return w.ID == m.ID }); i >= 0 {
+		wire = &g.Messages[i]
+	}
+	return m, wire, nil
+}
+
+// messageParent is the message replyTo names, and the wire message it
+// was read from.
+func (s *Service) messageParent(ctx context.Context, replyTo string) (model.Message, *gmail.Message, error) {
 	id, err := s.messageID(ctx, replyTo)
 	if err != nil {
-		return model.Message{}, err
+		return model.Message{}, nil, err
 	}
 	g, err := s.client.GetMessage(ctx, id, gapi.FormatFull)
 	if err != nil {
-		return model.Message{}, err
+		return model.Message{}, nil, err
 	}
-	m, err := model.NewMessage(g, empty, nil)
+	m, err := model.NewMessage(g, model.NewLabelIndex(nil), nil)
 	if err != nil {
-		return model.Message{}, gapi.Wrap(gapi.ClassUnavailable, err, "Gmail returned a message this server could not read")
+		return model.Message{}, nil, gapi.Wrap(gapi.ClassUnavailable, err, "Gmail returned a message this server could not read")
 	}
 	if why := unrepliable(m); why != "" {
-		return model.Message{}, gapi.Errf(gapi.ClassInvalid, "reply_to %s; reply to a message that was sent or received", why)
+		return model.Message{}, nil, gapi.Errf(gapi.ClassInvalid, "reply_to %s; reply to a message that was sent or received", why)
 	}
-	return m, nil
+	return m, g, nil
+}
+
+// quotedParts reads the parts of m's text that Gmail stored behind an
+// attachment id, 20 units each, and returns m with its text whole. An
+// invitation's calendar part, which a read would also fetch, is not
+// quoted and not read.
+func (s *Service) quotedParts(ctx context.Context, g *gmail.Message, m model.Message) (model.Message, int, error) {
+	var text []mime.PartRef
+	for _, p := range m.NeedsFetch {
+		if p.MimeType == "text/plain" || p.MimeType == "text/html" {
+			text = append(text, p)
+		}
+	}
+	if len(text) == 0 || g == nil {
+		return m, 0, nil
+	}
+	m.NeedsFetch = text
+	msgs := []model.Message{m}
+	if err := s.fetchParts(ctx, model.NewLabelIndex(nil), []*gmail.Message{g}, msgs); err != nil {
+		return model.Message{}, 0, err
+	}
+	return msgs[0], len(text), nil
+}
+
+// quoteBelow is a reply's text with its parent quoted below the body
+// (§7.4): the body as given, a blank line, "On <Date>, <From> wrote:",
+// and each line of the parent's text after "> ", an empty one as ">".
+// The Date header is shown as the sender wrote it. It returns the
+// characters of the parent's text quoted; a parent with no text leaves
+// the body as given.
+func quoteBelow(body string, p model.Message) (string, int) {
+	text := p.Body.Text
+	if strings.TrimSpace(text) == "" {
+		return body, 0
+	}
+	var b strings.Builder
+	if body != "" {
+		b.WriteString(body)
+		if !strings.HasSuffix(body, "\n") {
+			b.WriteString("\n")
+		}
+		b.WriteString("\n")
+	}
+	who := p.Sender().String()
+	if who == "" {
+		who = "the sender"
+	}
+	if date := string(p.DateHeader); date != "" {
+		b.WriteString("On " + date + ", " + who + " wrote:\n")
+	} else {
+		b.WriteString(who + " wrote:\n")
+	}
+	for line := range strings.SplitSeq(text, "\n") {
+		if line == "" {
+			b.WriteString(">\n")
+		} else {
+			b.WriteString("> " + line + "\n")
+		}
+	}
+	return b.String(), utf8.RuneCountInString(text)
+}
+
+// original is the message a forward attaches: as read, and the copy
+// that goes attached.
+type original struct {
+	m          model.Message
+	raw        []byte
+	bccRemoved bool
+}
+
+// original reads the message a forward attaches with one format=raw
+// read, and refuses a draft, a trashed message and a reaction as a reply
+// does. One whose answer would be over the client's limit is refused
+// before anything is written.
+func (s *Service) original(ctx context.Context, ref string) (original, error) {
+	id, err := s.messageID(ctx, ref)
+	if err != nil {
+		return original{}, err
+	}
+	g, err := s.client.GetMessage(ctx, id, gapi.FormatRaw)
+	if errors.Is(err, gapi.ErrTooLarge) {
+		return original{}, gapi.Errf(gapi.ClassInvalid, "message %s is larger than the %d MB this server reads in one "+
+			"answer, so it cannot be forwarded from here; forward it from Gmail", id, gapi.MaxRawRead>>20)
+	}
+	if err != nil {
+		return original{}, err
+	}
+	raw, err := mime.DecodeBase64URL(g.Raw)
+	if err != nil || len(raw) == 0 {
+		return original{}, gapi.Errf(gapi.ClassUnavailable, "Gmail returned message %s without its content", id)
+	}
+	m := model.NewRawMessage(g, model.NewLabelIndex(nil), raw)
+	if why := unrepliable(m); why != "" {
+		return original{}, gapi.Errf(gapi.ClassInvalid, "forward %s; forward a message that was sent or received", why)
+	}
+	out := original{m: m}
+	out.raw, out.bccRemoved = mime.ForwardCopy(raw)
+	return out, nil
 }
 
 // unrepliable says why a message is not a parent, or "".
@@ -310,11 +488,8 @@ func unrepliable(m model.Message) string {
 		return "is a draft"
 	case m.HasLabel("TRASH"):
 		return "is in the trash (restore it first, or answer another message)"
-	}
-	for _, a := range m.Attachments {
-		if strings.EqualFold(a.MimeType, reactionType) {
-			return "is an emoji reaction"
-		}
+	case m.IsReaction():
+		return "is an emoji reaction"
 	}
 	return ""
 }

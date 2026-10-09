@@ -7,7 +7,9 @@ Date: Mon, 02 Mar 2026 23:00:00 +0000
 Subject: Invitation: Design review @ Tue 10 Mar 2026 10:00
 Message-ID: <fixture.000000000000000b@mail.example.com>
 Attachment: invite.ics (text/calendar, 271 B, invitation method REQUEST, part_id "0.2")
+  Invitation: "Design review" · 2026-03-10T10:00:00Z to 2026-03-10T11:00:00Z · organizer emeka@example.com · uid fixture-0000000000000001@example.com · sequence 0 · 1 event
 Attachment: invite.ics (application/ics, 271 B, invitation method REQUEST, part_id "1")
+  Invitation: the same as part_id "0.2"
 <<<end-untrusted-mail TESTTOKEN>>>
 <<<untrusted-mail TESTTOKEN: body from emeka@example.com in 000000000000000b>>>
 You have been invited to Design review on Tue 10 Mar 2026 10:00 UTC.

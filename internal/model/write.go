@@ -59,6 +59,27 @@ type Reply struct {
 	// Unwritable counts the parent's addresses left out because they
 	// cannot be written into a header: not ASCII local@domain.
 	Unwritable int
+	// Quote is set when the caller asked for the parent's text below the
+	// body (§7.4). QuotedChars counts the characters of it quoted, 0 when
+	// the parent has none; QuoteFromHTML is set when some of it was
+	// converted from HTML; QuoteFetched counts the parts of it read apart.
+	Quote         bool
+	QuotedChars   int
+	QuoteFromHTML bool
+	QuoteFetched  int
+}
+
+// Forward is the message a draft carries attached (§7.4).
+type Forward struct {
+	MessageID, ThreadID string
+	// Bytes is the size of the attached copy.
+	Bytes int
+	// BccRemoved is set when the original's Bcc header was left out of
+	// the copy, which the sender's own copy of a sent message carries.
+	BccRemoved bool
+	// Joined reports whether Gmail filed the draft in the original's
+	// thread, read from its answer. False on a dry run.
+	Joined bool
 }
 
 // DraftWrite is a created, updated or deleted draft.
@@ -88,6 +109,7 @@ type DraftWrite struct {
 	// Changed names the fields an update changed.
 	Changed []string
 	Reply   *Reply
+	Forward *Forward
 	// Bytes is the size of the message sent to Gmail, and Upload whether
 	// it went as a media upload (§7.4).
 	Bytes  int

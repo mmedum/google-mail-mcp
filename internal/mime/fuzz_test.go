@@ -1,6 +1,7 @@
 package mime
 
 import (
+	netmail "net/mail"
 	"strings"
 	"testing"
 	"unicode/utf8"
@@ -68,6 +69,85 @@ func FuzzParsePayload(f *testing.F) {
 			t.Fatal(err)
 		}
 		checkMessage(t, m)
+	})
+}
+
+// A rendered mailbox reads back with net/mail as the same mailbox, and
+// with this package's own parser, which reads a draft's recipients, as
+// the same address. It holds for any name, and for every address
+// net/mail returns, a quoted local part included.
+func FuzzAddressStringReadsBack(f *testing.F) {
+	for _, c := range [][2]string{
+		{"Quill, Ada", "ada@example.com"},
+		{"Boss <boss@example.org>", "Ada <ada@example.com>"},
+		{`a"b\c`, `"john doe"@example.com`},
+		{"=?utf-8?q?Boss?=", `"a\"b"@example.com`},
+		{"Zoë\tÅngström\x00", "x@[192.0.2.1]"},
+		{" .Ada. ", "=?utf-8?q?Ada?= <ada@example.com>, b@example.org"},
+		{"\xff", ""},
+	} {
+		f.Add(c[0], c[1])
+	}
+	f.Fuzz(func(t *testing.T, name, header string) {
+		mailboxes := []Address{{Name: name, Email: "ada@example.com"}}
+		if list, err := netmail.ParseAddressList(header); err == nil {
+			for _, a := range list {
+				mailboxes = append(mailboxes, Address{Name: name, Email: a.Address}, Address{Email: a.Address})
+			}
+		}
+		for _, a := range mailboxes {
+			s := a.String()
+			got, err := netmail.ParseAddress(s)
+			if err != nil {
+				t.Fatalf("%+v renders as %q, which net/mail refuses: %v", a, s, err)
+			}
+			if got.Address != a.Email {
+				t.Fatalf("%+v renders as %q, which net/mail reads as %q", a, s, got.Address)
+			}
+			if utf8.ValidString(a.Name) && !HasControl(a.Name) && got.Name != a.Name {
+				t.Fatalf("%+v renders as %q, which net/mail reads with the name %q", a, s, got.Name)
+			}
+			if own, strict := ParseAddressList(s); !strict || len(own) != 1 || own[0].Email != a.Email {
+				t.Fatalf("%+v renders as %q, which this package reads as %+v (strict %v)", a, s, own, strict)
+			}
+		}
+	})
+}
+
+// FuzzLenientAddressIsOutsideQuotes holds that an address read from a
+// list the standard parser refused was written outside every quoted
+// string and comment, where a sender would write one to pass it off as
+// the sender. Space is ignored, since net/mail reads "a @ b" as a@b, and
+// a local part net/mail unquotes, "a"@b, is held by its domain.
+func FuzzLenientAddressIsOutsideQuotes(f *testing.F) {
+	for _, v := range []string{
+		`"Boss <boss@bank.example>" <attacker@evil.example> x`,
+		"(boss@bank.example) attacker@evil.example;;",
+		`"boss@bank.example" <attacker@evil.example`,
+		"(x <a, boss@bank.example) attacker@evil.example x",
+		`"a\" <boss@bank.example>" <attacker@evil.example> x`,
+		`Ada <ada@example.com, "Bo <bo@example.com>" bo@example.org`,
+		`"x"@evil.example (boss@bank.example) y`,
+	} {
+		f.Add(v)
+	}
+	f.Fuzz(func(t *testing.T, v string) {
+		list, strict := ParseAddressList(v)
+		if strict {
+			return
+		}
+		squash := func(s string) string { return strings.Join(strings.Fields(s), "") }
+		open := squash(outsideQuotes(v))
+		for _, a := range list {
+			if a.Email == "" {
+				continue
+			}
+			domain := squash(a.Email[max(strings.LastIndexByte(a.Email, '@'), 0):])
+			unquoted := strings.Contains(open, domain) && strings.Contains(squash(v), `"`+domain)
+			if !strings.Contains(open, squash(a.Email)) && !unquoted {
+				t.Fatalf("%q shows %q, written inside a quoted string or a comment", v, a.Email)
+			}
+		}
 	})
 }
 

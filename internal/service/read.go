@@ -2,6 +2,7 @@ package service
 
 import (
 	"context"
+	"regexp"
 	"strings"
 
 	"github.com/mmedum/google-mail-mcp/v2/internal/gapi"
@@ -12,6 +13,12 @@ import (
 
 // rfc822Prefix marks an id given as an RFC 5322 Message-ID (§6.1).
 const rfc822Prefix = "rfc822:"
+
+// msgIDShape is one Message-ID as a header writes it, `<local@domain>`
+// (RFC 5322 §3.6.4), each side dot-atom text. It goes into a search, so
+// it holds no space, quote, parenthesis, brace or colon: nothing after
+// it can be read as another search term.
+var msgIDShape = regexp.MustCompile("^<[A-Za-z0-9!#$%&'*+/=?^_`|~.-]+@[A-Za-z0-9!#$%&'*+/=?^_`|~.-]+>$")
 
 // Profile reads the account.
 func (s *Service) Profile(ctx context.Context) (model.Profile, error) {
@@ -181,6 +188,9 @@ func (s *Service) byRFC822ID(ctx context.Context, mid string) (string, error) {
 	mid = strings.TrimSpace(mid)
 	if mid == "" {
 		return "", gapi.Errf(gapi.ClassInvalid, "rfc822: needs a Message-ID after it")
+	}
+	if !msgIDShape.MatchString(mid) {
+		return "", gapi.Errf(gapi.ClassInvalid, "rfc822: takes one Message-ID, written <local@domain>, and nothing else")
 	}
 	res, err := s.client.ListMessages(ctx, gapi.ListOptions{Q: "rfc822msgid:" + mid, IncludeSpamTrash: true, Max: 2})
 	if err != nil {

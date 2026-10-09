@@ -9,12 +9,14 @@ import (
 	"os"
 	"reflect"
 	"slices"
+	"strconv"
 	"strings"
 )
 
-// schemaDiffBaseline is the released surface a change may add to and
-// never take from (CLAUDE.md rule 14). It is committed, so the gate
-// works before the first tag.
+// schemaDiffBaseline is the surface of the CHANGELOG's newest release,
+// recorded in that release's commit. A change may add to it and never
+// take from it (CLAUDE.md rule 14). It is a committed file, never a tag:
+// CI's checkout is shallow and has no tags.
 const schemaDiffBaseline = "testdata/schema-baseline.json"
 
 // schemaDiffMinTools is the floor on the built surface: every tool of
@@ -27,9 +29,18 @@ const schemaDiffMinTools = 27
 // the SDK lists it, resources and templates — with the baseline.
 //
 // Breaking, and failed: a tool, resource or template removed; an input
-// or output field lost, at any depth; an input newly required. Reported:
-// what was added, and any other change to a tool (description,
-// annotations, _meta, a schema reshaped), so a reviewer looks at it.
+// or output field lost or retyped, at any depth; an input newly
+// required, or taking fewer values of an enum; an output no longer
+// required, so no longer always there. Reported: what was added, and any other change to a tool
+// (description, annotations, _meta, a schema reshaped), so a reviewer
+// looks at it.
+//
+// It also fails when the baseline is not the newest release's: an older
+// one protects an older surface, so whatever shipped since could be
+// dropped and nothing would say. With nothing under [Unreleased] the
+// build is that release, so its surface must be the baseline's exactly,
+// which proves a release commit recorded the baseline rather than
+// relabeling it.
 func schemaDiff(out io.Writer, args []string) error {
 	bin, cleanup, err := serverBinary(args)
 	if err != nil {
@@ -40,27 +51,72 @@ func schemaDiff(out io.Writer, args []string) error {
 	if err != nil {
 		return err
 	}
+	changelog, err := os.ReadFile(changelogFile)
+	if err != nil {
+		return err
+	}
 	baseline, err := os.ReadFile(schemaDiffBaseline)
 	if errors.Is(err, os.ErrNotExist) {
-		return fmt.Errorf("no baseline at %s: run `go run ./scripts/gates schema-baseline` and commit it; "+
-			"a missing baseline must not pass as an unchanged surface", schemaDiffBaseline)
+		return fmt.Errorf("no baseline at %s: record the newest release's surface with `make schema-baseline VERSION=vX.Y.Z` "+
+			"and commit it; a missing baseline must not pass as an unchanged surface", schemaDiffBaseline)
 	}
 	if err != nil {
 		return err
 	}
-	return schemaDiffCompare(out, baseline, current)
+	return schemaDiffCheck(out, string(changelog), baseline, current)
+}
+
+// schemaDiffCheck is the gate on what it reads: the CHANGELOG, the
+// baseline and the built binary's dump.
+func schemaDiffCheck(out io.Writer, changelog string, baselineBytes, currentBytes []byte) error {
+	old, err := schemaDiffDecode(baselineBytes, schemaDiffBaseline)
+	if err != nil {
+		return err
+	}
+	now, err := schemaDiffDecode(currentBytes, "the built binary")
+	if err != nil {
+		return err
+	}
+	if len(now.tools) < schemaDiffMinTools {
+		return fmt.Errorf("the built surface has %d tools, below the floor of %d", len(now.tools), schemaDiffMinTools)
+	}
+	breaking := schemaDiffReport(out, old, now)
+
+	want := schemaBaselineVersion(changelog)
+	var problems []string
+	if want != "" && old.version != want {
+		problems = append(problems, fmt.Sprintf("the baseline is the %q surface, but %s's newest release is %s; "+
+			"record it in that release's commit with `make schema-baseline VERSION=%s`",
+			old.version, changelogFile, want, want))
+	}
+	if len(breaking) > 0 {
+		problems = append(problems, fmt.Sprintf("%d breaking change(s) against %s", len(breaking), schemaDiffBaseline))
+	}
+	if len(problems) == 0 && want != "" && strings.TrimSpace(stalenessUnreleased(changelog)) == "" &&
+		!schemaDiffSame(baselineBytes, currentBytes) {
+		problems = append(problems, fmt.Sprintf("nothing is under [Unreleased], so this build is %s, and its surface "+
+			"differs from the baseline; in %s's release commit, run `make schema-baseline VERSION=%s`, "+
+			"otherwise say what changed under [Unreleased]", want, want, want))
+	}
+	if len(problems) > 0 {
+		return errors.New(strings.Join(problems, "; "))
+	}
+	return nil
 }
 
 // schemaDiffSurface is a dump decoded generically, so every field a
 // client can read is compared, including ones no type here names.
 type schemaDiffSurface struct {
+	version   string
+	kinds     map[string]string
 	tools     map[string]map[string]any
 	resources map[string]map[string]any
 	templates map[string]map[string]any
 }
 
 func schemaDiffDecode(b []byte, source string) (*schemaDiffSurface, error) {
-	if _, err := parseDump(b, source); err != nil {
+	d, err := parseDump(b, source)
+	if err != nil {
 		return nil, err
 	}
 	var raw struct {
@@ -71,8 +127,8 @@ func schemaDiffDecode(b []byte, source string) (*schemaDiffSurface, error) {
 	if err := json.Unmarshal(b, &raw); err != nil {
 		return nil, fmt.Errorf("%s: %w", source, err)
 	}
-	s := &schemaDiffSurface{tools: map[string]map[string]any{}, resources: map[string]map[string]any{},
-		templates: map[string]map[string]any{}}
+	s := &schemaDiffSurface{version: d.Version, kinds: d.Kinds, tools: map[string]map[string]any{},
+		resources: map[string]map[string]any{}, templates: map[string]map[string]any{}}
 	index := func(items []map[string]any, key string, into map[string]map[string]any) error {
 		for _, it := range items {
 			k, _ := it[key].(string)
@@ -98,19 +154,9 @@ func schemaDiffDecode(b []byte, source string) (*schemaDiffSurface, error) {
 	return s, nil
 }
 
-func schemaDiffCompare(out io.Writer, baselineBytes, currentBytes []byte) error {
-	old, err := schemaDiffDecode(baselineBytes, schemaDiffBaseline)
-	if err != nil {
-		return err
-	}
-	now, err := schemaDiffDecode(currentBytes, "the built binary")
-	if err != nil {
-		return err
-	}
-	if len(now.tools) < schemaDiffMinTools {
-		return fmt.Errorf("the built surface has %d tools, below the floor of %d", len(now.tools), schemaDiffMinTools)
-	}
-
+// schemaDiffReport prints what changed from old to now, and returns what
+// breaks a caller.
+func schemaDiffReport(out io.Writer, old, now *schemaDiffSurface) []string {
 	var breaking, changed []string
 	breaking = append(breaking, schemaDiffRemoved("tool", old.tools, now.tools)...)
 	breaking = append(breaking, schemaDiffRemoved("resource", old.resources, now.resources)...)
@@ -129,6 +175,10 @@ func schemaDiffCompare(out io.Writer, baselineBytes, currentBytes []byte) error 
 				changed = append(changed, name+": "+key+" changed")
 			}
 		}
+		// The kind decides which setting a tool sits behind.
+		if k, n := old.kinds[name], now.kinds[name]; k != n {
+			changed = append(changed, fmt.Sprintf("%s: kind changed from %q to %q", name, k, n))
+		}
 	}
 	for _, kind := range []struct {
 		what     string
@@ -145,21 +195,35 @@ func schemaDiffCompare(out io.Writer, baselineBytes, currentBytes []byte) error 
 	added = append(added, schemaDiffRemoved("resource", now.resources, old.resources)...)
 	added = append(added, schemaDiffRemoved("resource template", now.templates, old.templates)...)
 
-	_, _ = fmt.Fprintf(out, "schema-diff: baseline %d tools, %d resources, %d templates; built %d tools, %d resources, %d templates\n",
-		len(old.tools), len(old.resources), len(old.templates), len(now.tools), len(now.resources), len(now.templates))
+	_, _ = fmt.Fprintf(out, "schema-diff: baseline (%s) %d tools, %d resources, %d templates; built %d tools, %d resources, %d templates\n",
+		old.version, len(old.tools), len(old.resources), len(old.templates), len(now.tools), len(now.resources), len(now.templates))
 	for _, a := range added {
 		_, _ = fmt.Fprintln(out, "  added: "+strings.TrimSuffix(a, " removed"))
 	}
 	for _, c := range changed {
 		_, _ = fmt.Fprintln(out, "  look at this: "+c)
 	}
-	if len(breaking) > 0 {
-		for _, b := range breaking {
-			_, _ = fmt.Fprintln(out, "  BREAKING: "+b)
-		}
-		return fmt.Errorf("%d breaking change(s) against %s", len(breaking), schemaDiffBaseline)
+	for _, b := range breaking {
+		_, _ = fmt.Fprintln(out, "  BREAKING: "+b)
 	}
-	return nil
+	return breaking
+}
+
+// schemaDiffSame reports whether two dumps publish the same surface,
+// field for field: tools, resources, templates and kinds. The version
+// and SDK stamps are not part of it, and neither is the order of keys
+// or of the lists.
+func schemaDiffSame(a, b []byte) bool {
+	var surfaces [2]map[string]any
+	for i, raw := range [][]byte{a, b} {
+		norm, _, err := baselineNormalize(raw)
+		if err != nil || json.Unmarshal(norm, &surfaces[i]) != nil {
+			return false
+		}
+		delete(surfaces[i], "version")
+		delete(surfaces[i], "sdk_version")
+	}
+	return reflect.DeepEqual(surfaces[0], surfaces[1])
 }
 
 func schemaDiffUnion(a, b map[string]any) map[string]bool {
@@ -199,8 +263,13 @@ func schemaDiffTool(name string, was, now map[string]any) []string {
 }
 
 // schemaDiffFields walks two object schemas together. A property lost
-// at any depth is breaking; for inputs, so is a property newly
-// required, including a nested one under a property that existed.
+// or retyped at any depth is breaking; for inputs, so is a property
+// newly required, including a nested one under a property that existed;
+// for outputs, a property no longer required, which a caller read as
+// always there.
+//
+// A path names a field the way a caller reaches it: `opts.deep`, and
+// `messages[].id` for a field of each element of a list.
 func schemaDiffFields(where, prefix string, was, now map[string]any, input bool) []string {
 	if was == nil || now == nil {
 		return nil
@@ -214,35 +283,183 @@ func schemaDiffFields(where, prefix string, was, now map[string]any, input bool)
 			out = append(out, fmt.Sprintf("%s: field %s%s removed", where, prefix, p))
 			continue
 		}
-		wc := schemaDiffObject(wasProps[p])
-		nc := schemaDiffObject(child)
-		out = append(out, schemaDiffFields(where, prefix+p+".", wc, nc, input)...)
+		out = append(out, schemaDiffField(where, prefix+p, schemaDiffNode(wasProps[p]), schemaDiffNode(child), input)...)
 	}
+	wasRequired, nowRequired := schemaDiffSet(was["required"]), schemaDiffSet(now["required"])
 	if input {
-		required := map[string]bool{}
-		for _, r := range schemaDiffStrings(was["required"]) {
-			required[r] = true
-		}
 		for _, r := range schemaDiffStrings(now["required"]) {
-			if !required[r] {
+			if !wasRequired[r] {
 				out = append(out, fmt.Sprintf("%s: field %s%s newly required", where, prefix, r))
 			}
+		}
+		return out
+	}
+	for _, r := range schemaDiffStrings(was["required"]) {
+		// A field removed is reported as removed.
+		if _, kept := nowProps[r]; kept && !nowRequired[r] {
+			out = append(out, fmt.Sprintf("%s: field %s%s no longer always there", where, prefix, r))
 		}
 	}
 	return out
 }
 
-// schemaDiffObject is a property's object schema, looking through an
-// array's items.
-func schemaDiffObject(v any) map[string]any {
-	m, ok := v.(map[string]any)
-	if !ok {
+func schemaDiffSet(v any) map[string]bool {
+	set := map[string]bool{}
+	for _, s := range schemaDiffStrings(v) {
+		set[s] = true
+	}
+	return set
+}
+
+// schemaDiffEnumBreaks says how an input's enum change breaks a caller,
+// or "" when it does not: a value it took and no longer takes, or a
+// limit to a list where it took any value.
+func schemaDiffEnumBreaks(was, now any) string {
+	nowList, limited := now.([]any)
+	if !limited {
+		return ""
+	}
+	wasList, _ := was.([]any)
+	if wasList == nil {
+		b, _ := json.Marshal(nowList)
+		return "now takes only " + string(b)
+	}
+	var lost []any
+	for _, v := range wasList {
+		if !slices.ContainsFunc(nowList, func(w any) bool { return reflect.DeepEqual(v, w) }) {
+			lost = append(lost, v)
+		}
+	}
+	if len(lost) == 0 {
+		return ""
+	}
+	b, _ := json.Marshal(lost)
+	return "no longer takes " + string(b)
+}
+
+// schemaDiffField compares one field both schemas have: its type, then
+// the fields inside it, then a list's elements. A list with no schema
+// for its elements takes any, as the schema `true` does.
+func schemaDiffField(where, path string, was, now map[string]any, input bool) []string {
+	if was == nil || now == nil {
 		return nil
 	}
-	if items, ok := m["items"].(map[string]any); ok {
-		return items
+	var out []string
+	if b := schemaDiffTypeBreaks(was["type"], now["type"], input); b != "" {
+		out = append(out, fmt.Sprintf("%s: field %s %s", where, path, b))
 	}
-	return m
+	if input && schemaDiffAny(now) {
+		// An input that takes any value breaks no caller, whatever was
+		// inside it before.
+		return out
+	}
+	if b := schemaDiffEnumBreaks(was["enum"], now["enum"]); input && b != "" {
+		out = append(out, fmt.Sprintf("%s: field %s %s", where, path, b))
+	}
+	out = append(out, schemaDiffFields(where, path+".", was, now, input)...)
+	wasItems, nowItems := schemaDiffNode(was["items"]), schemaDiffNode(now["items"])
+	if wasItems != nil || nowItems != nil {
+		if wasItems == nil {
+			wasItems = map[string]any{}
+		}
+		if nowItems == nil {
+			nowItems = map[string]any{}
+		}
+		out = append(out, schemaDiffField(where, path+"[]", wasItems, nowItems, input)...)
+	}
+	return out
+}
+
+// schemaDiffNode is a schema as an object. JSON Schema lets a schema be
+// a boolean: `true` takes any value and reads as an object with no type,
+// `false` takes none and reads as one whose type list is empty. Anything
+// else is nil.
+func schemaDiffNode(v any) map[string]any {
+	switch s := v.(type) {
+	case map[string]any:
+		return s
+	case bool:
+		if s {
+			return map[string]any{}
+		}
+		return map[string]any{"type": []any{}}
+	}
+	return nil
+}
+
+// schemaDiffAny reports a schema that takes any value: no type, enum,
+// fields or elements of its own.
+func schemaDiffAny(s map[string]any) bool {
+	for _, k := range []string{"type", "enum", "properties", "items"} {
+		if _, ok := s[k]; ok {
+			return false
+		}
+	}
+	return true
+}
+
+// schemaDiffTypeBreaks says how a field's type change breaks a caller,
+// or "" when it does not. An input may take more types than it did, and
+// an output may return fewer; the other way round a caller that sent or
+// read the old type is broken. `"string"` to `["null","string"]` is a
+// break in an output, where a caller read the field as always there.
+// No type at all is any type.
+func schemaDiffTypeBreaks(was, now any, input bool) string {
+	if reflect.DeepEqual(was, now) {
+		return ""
+	}
+	wide, narrow := now, was
+	if !input {
+		wide, narrow = was, now
+	}
+	if schemaDiffTypesCover(wide, narrow) {
+		return ""
+	}
+	spell := func(t any) string {
+		switch {
+		case t == nil:
+			return "any"
+		case len(schemaDiffTypeList(t)) == 0:
+			return "none"
+		}
+		b, _ := json.Marshal(t)
+		return string(b)
+	}
+	return fmt.Sprintf("changed type from %s to %s", spell(was), spell(now))
+}
+
+// schemaDiffTypesCover reports whether every type narrow allows, wide
+// allows too.
+func schemaDiffTypesCover(wide, narrow any) bool {
+	if wide == nil {
+		return true
+	}
+	if narrow == nil {
+		return false
+	}
+	allowed := map[string]bool{}
+	for _, t := range schemaDiffTypeList(wide) {
+		allowed[t] = true
+	}
+	// An integer is a number.
+	if allowed["number"] {
+		allowed["integer"] = true
+	}
+	for _, t := range schemaDiffTypeList(narrow) {
+		if !allowed[t] {
+			return false
+		}
+	}
+	return true
+}
+
+// schemaDiffTypeList is a schema's type as a list, whether it was
+// written as one name or several.
+func schemaDiffTypeList(t any) []string {
+	if s, ok := t.(string); ok {
+		return []string{s}
+	}
+	return schemaDiffStrings(t)
 }
 
 func schemaDiffStrings(v any) []string {
@@ -254,4 +471,34 @@ func schemaDiffStrings(v any) []string {
 		}
 	}
 	return out
+}
+
+// schemaBaselineVersion is the release whose surface the baseline must
+// hold: the CHANGELOG's newest version heading, or empty before the
+// first release.
+//
+// Between releases that heading is the last tag. In a release commit it
+// is the release being cut, and the baseline is recorded in that same
+// commit. Recording it after the tag instead would fail every branch
+// from the moment the tag is pushed until a second change lands.
+func schemaBaselineVersion(changelog string) string {
+	if m := changelogVersionHeading.FindStringSubmatch(changelog); m != nil {
+		return "v" + m[1]
+	}
+	return ""
+}
+
+// schemaNewMajor reports whether release to is a later major version
+// than release from. An unreadable version is not.
+func schemaNewMajor(from, to string) bool {
+	major := func(v string) int {
+		head, _, _ := strings.Cut(strings.TrimPrefix(v, "v"), ".")
+		n, err := strconv.Atoi(head)
+		if err != nil {
+			return -1
+		}
+		return n
+	}
+	f, t := major(from), major(to)
+	return f >= 0 && t > f
 }
