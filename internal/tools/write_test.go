@@ -517,6 +517,29 @@ func TestCreateDraftForwardLeavesOutBcc(t *testing.T) {
 	}
 }
 
+// A forward, reply or quote by rfc822: takes one Message-ID: one with a
+// search term after it is refused before any search, so it cannot
+// attach or quote a message the caller never saw.
+func TestRFC822WithASearchTermIsRefused(t *testing.T) {
+	h, fake := connectFake(t, config.Config{})
+	id := fake.Scenario(gmailtest.ScenarioInternational).MessageIDs[0]
+	smuggled := "rfc822:<fixture." + id + `@mail.example.com> OR subject:"password reset"`
+	fake.ResetAccounting()
+	for _, args := range []map[string]any{
+		{"forward": smuggled},
+		{"reply_to": smuggled, "body": "Yes."},
+		{"reply_to": smuggled, "body": "Yes.", "quote": true},
+	} {
+		text := refused(t, h, "create_draft", args, gapi.ClassInvalid)
+		if !strings.Contains(text, "rfc822: takes one Message-ID, written <local@domain>, and nothing else") {
+			t.Errorf("%v: %s", args, text)
+		}
+	}
+	if n := len(fake.CallsOf("gmail.users.messages.list")); n != 0 || writeCalls(fake) != 0 {
+		t.Errorf("%d searches and %d writes ran; want none", n, writeCalls(fake))
+	}
+}
+
 // An original over what one read carries is refused, naming the limit,
 // before anything is written.
 func TestCreateDraftForwardRefusesAnOriginalTooLargeToRead(t *testing.T) {

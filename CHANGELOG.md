@@ -40,6 +40,7 @@ lifted verbatim.
 
 ### Security
 
+- `rfc822:` takes exactly one Message-ID, written `<local@domain>`, and refuses anything else as `[invalid]` before searching. Text after the id went into Gmail's search, so a forward, reply or quote could take a message the caller never saw.
 - Built with Go 1.27.2 and `golang.org/x/net` v0.60.0, which fix ten advisories in `net/http`, its HTTP/2 code, `crypto/tls` and `net/textproto` that `govulncheck` found reachable from this server.
 
 ## [2.1.0] - 2026-10-06
