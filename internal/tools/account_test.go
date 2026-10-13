@@ -68,6 +68,44 @@ func TestGetSettingsLeadsWithForwarding(t *testing.T) {
 	}
 }
 
+// An empty name or signature is said, and its field kept, so a caller
+// can tell Gmail's empty answer from one not reported. A signature of
+// images alone is set though it has no text.
+func TestGetSettingsSaysWhatIsEmpty(t *testing.T) {
+	h, fake := connectFake(t, config.Config{ReadOnly: true})
+	fake.UpdateSettings(func(s *gmailtest.Settings) {
+		s.SendAs[0].DisplayName, s.SendAs[0].Signature = "", ""
+		s.SendAs[1].Signature = `<div><img src="https://example.org/logo.png"></div>`
+	})
+	var out struct {
+		SendAs []map[string]any `json:"send_as"`
+	}
+	text := call(t, h, "get_settings", nil, &out)
+	want := []map[string]any{
+		{"display_name": "", "untrusted_signature": "", "signature_set": false},
+		{"display_name": "Rae (projects)", "untrusted_signature": "", "signature_set": true},
+	}
+	if len(out.SendAs) != len(want) {
+		t.Fatalf("send_as = %v; want %d addresses", out.SendAs, len(want))
+	}
+	for i, fields := range want {
+		for k, v := range fields {
+			if got, ok := out.SendAs[i][k]; !ok || got != v {
+				t.Errorf("send_as[%d].%s = %#v (present %v); want %#v", i, k, got, ok, v)
+			}
+		}
+	}
+	for _, line := range []string{
+		"\n  reader@example.com · no name set · primary · default\nsignature: none\n",
+		"\n  rae.alias@example.org · name Rae (projects) · accepted · alias · replies to reader@example.com\n" +
+			"signature: set, with no text to show (images or hidden text only)\n",
+	} {
+		if !strings.Contains(text, line) {
+			t.Errorf("get_settings does not say %q:\n%s", line, text)
+		}
+	}
+}
+
 func TestListFiltersFlagsForwarding(t *testing.T) {
 	h, _ := connectFake(t, config.Config{})
 	var out tools.FiltersOut

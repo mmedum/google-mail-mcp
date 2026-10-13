@@ -29,7 +29,9 @@ type SignatureOut struct {
 	DryRun          bool            `json:"dry_run"`
 	Address         string          `json:"address" jsonschema:"the send-as address whose signature changed"`
 	UntrustedBefore model.Untrusted `json:"untrusted_before" jsonschema:"the signature before, as text"`
+	BeforeSet       bool            `json:"before_set" jsonschema:"the address had a signature; true with an empty untrusted_before when it was images or hidden text only"`
 	UntrustedAfter  model.Untrusted `json:"untrusted_after" jsonschema:"the signature after, as text"`
+	AfterSet        bool            `json:"after_set" jsonschema:"the address has a signature after the change"`
 	Rendered
 	Cost
 }
@@ -105,16 +107,16 @@ func registerSettings(s *mcp.Server, d Deps) {
 
 	register(s, d, Spec{Name: "update_signature", Kind: Settings, Description: "Set the signature of one of the " +
 		"account's send-as addresses, the default one unless send_as names another. The text is plain: line breaks " +
-		"are kept, markup is not applied, and a web address becomes a link. An empty signature clears it. Gmail adds the signature to mail written " +
-		"in Gmail itself; drafts this server writes carry none. The result shows the signature before and after. " +
+		"are kept, markup is not applied, and a web address becomes a link. An empty signature clears it. Gmail adds the signature to new emails " +
+		"written in Gmail; drafts this server writes carry none. The result shows the signature before and after. " +
 		"101 units." + dryRunNote + untrustedNote},
 		func(ctx context.Context, in UpdateSignatureIn) (SignatureOut, error) {
 			sw, err := svc.UpdateSignature(ctx, in.SendAs, in.Signature)
 			if err != nil {
 				return SignatureOut{}, err
 			}
-			return SignatureOut{DryRun: sw.DryRun, Address: sw.Address, UntrustedBefore: sw.Before,
-				UntrustedAfter: sw.After, Rendered: readOf(render.SignatureWrite(sw, render.Options{}))}, nil
+			return SignatureOut{DryRun: sw.DryRun, Address: sw.Address, UntrustedBefore: sw.Before.Text, BeforeSet: sw.Before.Set,
+				UntrustedAfter: sw.After.Text, AfterSet: sw.After.Set, Rendered: readOf(render.SignatureWrite(sw, render.Options{}))}, nil
 		})
 
 	register(s, d, Spec{Name: "create_filter", Kind: Settings, AskUnits: "2 more units, when it trashes", Description: "Create a filter: mail that arrives " +

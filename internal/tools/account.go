@@ -74,13 +74,14 @@ type Vacation struct {
 // SendAs is an address the account sends as.
 type SendAs struct {
 	Address            string          `json:"address"`
-	DisplayName        string          `json:"display_name,omitempty"`
+	DisplayName        string          `json:"display_name" jsonschema:"the name in the From header; empty when none is set"`
 	ReplyTo            string          `json:"reply_to,omitempty"`
 	Primary            bool            `json:"primary"`
 	Default            bool            `json:"default"`
 	Alias              bool            `json:"alias"`
 	VerificationStatus string          `json:"verification_status,omitempty"`
-	UntrustedSignature model.Untrusted `json:"untrusted_signature,omitempty"`
+	UntrustedSignature model.Untrusted `json:"untrusted_signature" jsonschema:"the signature Gmail adds to new emails written in Gmail, as text; empty when there is none or it has no text"`
+	SignatureSet       bool            `json:"signature_set" jsonschema:"the address has a signature; true with an empty untrusted_signature when it is images or hidden text only"`
 }
 
 // Imap is IMAP access.
@@ -183,7 +184,7 @@ func registerAccount(s *mcp.Server, d Deps) {
 
 	register(s, d, Spec{Name: "get_settings", Kind: Read, Description: "The account's mail settings, read-only: " +
 		"whether incoming mail is forwarded and where, the forwarding addresses, the vacation reply, the addresses it " +
-		"sends as with their signatures, IMAP, POP and the display language." + settingsChange +
+		"sends as with the signature Gmail adds to new emails (the API holds none for replies), IMAP, POP and the display language." + settingsChange +
 		" Seven units." + untrustedNote},
 		func(ctx context.Context, _ GetSettingsIn) (SettingsOut, error) {
 			st, err := svc.Settings(ctx)
@@ -224,7 +225,8 @@ func settingsOut(st model.Settings) SettingsOut {
 		Vacation: vacation(st.Vacation),
 		SendAs: mapSlice(st.SendAs, func(s model.SendAs) SendAs {
 			return SendAs{Address: s.Address, DisplayName: s.DisplayName, ReplyTo: s.ReplyTo, Primary: s.Primary,
-				Default: s.Default, Alias: s.Alias, VerificationStatus: s.VerificationStatus, UntrustedSignature: s.Signature}
+				Default: s.Default, Alias: s.Alias, VerificationStatus: s.VerificationStatus, UntrustedSignature: s.Signature.Text,
+				SignatureSet: s.Signature.Set}
 		}),
 		Imap: Imap{Enabled: st.Imap.Enabled, AutoExpunge: st.Imap.AutoExpunge, ExpungeBehavior: st.Imap.ExpungeBehavior,
 			MaxFolderSize: int(st.Imap.MaxFolderSize)},

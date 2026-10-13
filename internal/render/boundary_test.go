@@ -278,7 +278,8 @@ func TestSenderTextNeverReachesTheServersVoice(t *testing.T) {
 			"attachment html":  Attachment(hostileAttachment(msgs[1], mime.ReadHTML), small),
 			"attached message": Attachment(hostileAttachment(msgs[2], mime.ReadMessage), o),
 			"signature": SignatureWrite(model.SignatureWrite{Address: "reader@example.com",
-				Before: model.Untrusted(h.mark()), After: model.Untrusted(h.mark())}, o),
+				Before: model.Signature{Text: model.Untrusted(h.mark()), Set: true},
+				After:  model.Signature{Text: model.Untrusted(h.mark()), Set: true}}, o),
 			"vacation": VacationWrite(model.VacationWrite{
 				Before: model.Vacation{Enabled: true, Subject: model.Untrusted(h.mark()), Body: model.Untrusted(h.mark())},
 				After: model.Vacation{Enabled: true, RestrictToContacts: true, Subject: model.Untrusted(h.mark()),

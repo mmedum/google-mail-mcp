@@ -44,20 +44,20 @@ func (s *Service) UpdateSignature(ctx context.Context, sendAs, text string) (mod
 		return out, err
 	}
 	current := list.SendAs[i]
-	out.Address, out.Before = current.SendAsEmail, model.HTMLText(current.Signature)
+	out.Address, out.Before = current.SendAsEmail, model.NewSignature(current.Signature)
 	sig := signatureHTML(text)
 	if n := utf8.RuneCountInString(sig); n > MaxSignature {
 		return out, gapi.Errf(gapi.ClassInvalid, "the signature is %d characters as HTML, over the %d Gmail keeps", n, MaxSignature)
 	}
 	if out.DryRun {
-		out.After = model.HTMLText(sig)
+		out.After = model.NewSignature(sig)
 		return out, nil
 	}
 	patched, err := s.client.PatchSignature(ctx, current.SendAsEmail, sig)
 	if err != nil {
 		return out, err
 	}
-	out.After = model.HTMLText(patched.Signature)
+	out.After = model.NewSignature(patched.Signature)
 	return out, nil
 }
 

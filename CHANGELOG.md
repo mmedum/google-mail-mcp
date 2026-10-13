@@ -15,6 +15,15 @@ lifted verbatim.
 
 ## [Unreleased]
 
+### Added
+
+- `get_settings` send-as entries carry `signature_set`, and `update_signature` results carry `before_set` and `after_set`: whether the signature holds anything, which its text alone cannot say when it is images or hidden text.
+
+### Fixed
+
+- `get_settings` says when a send-as address has no name or no signature, and keeps `display_name` and `untrusted_signature` when they are empty. Both were left out, which read as "no signature". The text and the description also say the signature is the one Gmail adds to new emails, the only one its API reports.
+- `update_signature` says a signature of images or hidden text alone is set. A dry run reported "signature before: none" over a logo the write then replaced. It also says Gmail adds the signature to new emails, not to all mail written in Gmail.
+
 ## [2.2.0] - 2026-10-09
 
 ### Added

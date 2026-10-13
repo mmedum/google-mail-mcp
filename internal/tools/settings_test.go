@@ -417,6 +417,34 @@ func TestSetVacation(t *testing.T) {
 	}
 }
 
+// A signature with no text to show is set when it holds an image or
+// hidden text, so a dry run says there is one to lose; markup an emptied
+// editor leaves is none.
+func TestUpdateSignatureSaysWhetherASignatureWithNoTextIsSet(t *testing.T) {
+	for _, tc := range []struct {
+		name, html string
+		set        bool
+		line       string
+	}{
+		{"images alone", `<div><img src="https://example.org/logo.png"></div>`, true,
+			"signature before: set, with no text to show (images or hidden text only)\n"},
+		{"hidden text alone", `<div style="display:none">Rae Reader</div>`, true,
+			"signature before: set, with no text to show (images or hidden text only)\n"},
+		{"markup an emptied editor leaves", `<div dir="ltr"><br></div>`, false, "signature before: none\n"},
+	} {
+		h, fake := connectSettings(t, settingsOn)
+		fake.UpdateSettings(func(s *gmailtest.Settings) { s.SendAs[0].Signature = tc.html })
+		var out tools.SignatureOut
+		text := call(t, h, "update_signature", map[string]any{"signature": "", "dry_run": true}, &out)
+		if out.UntrustedBefore != "" || out.BeforeSet != tc.set || out.UntrustedAfter != "" || out.AfterSet {
+			t.Errorf("%s: clearing it gives %+v; want before_set %t with no text, after not set", tc.name, out, tc.set)
+		}
+		if !strings.Contains(text, tc.line+"signature after: none\n") {
+			t.Errorf("%s: update_signature does not say %q:\n%s", tc.name, tc.line, text)
+		}
+	}
+}
+
 // A description is what a model takes as the truth, so what get_settings
 // and list_filters say this server can change follows the flags.
 func TestSettingsDescriptionsFollowTheFlags(t *testing.T) {

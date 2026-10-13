@@ -386,10 +386,10 @@ func TestSendAsOverTheBudget(t *testing.T) {
 	var st model.Settings
 	for i := range 40 {
 		st.SendAs = append(st.SendAs, model.SendAs{Address: fmt.Sprintf("alias%02d@example.com", i),
-			Signature: model.Untrusted(strings.Repeat("Signature line. ", 90))})
+			Signature: model.Signature{Text: model.Untrusted(strings.Repeat("Signature line. ", 90)), Set: true}})
 	}
 	res := Settings(st, Options{Tokens: seq("T")})
-	shown := strings.Count(res.Text, "@example.com · name ")
+	shown := strings.Count(res.Text, "@example.com · ")
 	if n := utf8.RuneCountInString(res.Text); n > res.Budget {
 		t.Errorf("%d characters for a budget of %d", n, res.Budget)
 	}

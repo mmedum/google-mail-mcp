@@ -148,6 +148,10 @@ func originText(s string) string {
 // num is a count or offset.
 func num(n int) part { return part{strconv.Itoa(n)} }
 
+// named is a phrase as a part, for a line that starts with what it is
+// about. A phrase is a literal, so it is shown as written.
+func named(what phrase) part { return part{string(what)} }
+
 // plural is a count with its noun.
 func plural(n int, one, many phrase) part {
 	if n == 1 {

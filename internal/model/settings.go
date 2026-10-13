@@ -59,8 +59,27 @@ type SendAs struct {
 	Primary, Default   bool
 	Alias              bool
 	VerificationStatus string
-	// Signature is the signature as text, converted from its HTML.
-	Signature Untrusted
+	Signature          Signature
+}
+
+// Signature is a send-as address's signature: the one Gmail adds to new
+// emails written in Gmail, the only one its API holds (§18 row 88).
+type Signature struct {
+	// Text is the signature as text, converted from its HTML.
+	Text Untrusted
+	// Set is whether the signature holds anything: text, an image or
+	// hidden text. One of images alone converts to no text and is set;
+	// markup left by an emptied editor is not.
+	Set bool
+}
+
+// NewSignature converts a signature's HTML.
+func NewSignature(html string) Signature {
+	if html == "" {
+		return Signature{}
+	}
+	t := mime.HTMLToText([]byte(html))
+	return Signature{Text: Untrusted(t.Text), Set: t.Text != "" || t.Images > 0 || len(t.Hidden) > 0}
 }
 
 // NewSettings converts the seven settings reads.
@@ -83,7 +102,7 @@ func NewSettings(v gmail.VacationSettings, af gmail.AutoForwarding, fwd []gmail.
 		out.SendAs = append(out.SendAs, SendAs{
 			Address: s.SendAsEmail, DisplayName: s.DisplayName, ReplyTo: s.ReplyToAddress,
 			Primary: s.IsPrimary, Default: s.IsDefault, Alias: s.TreatAsAlias,
-			VerificationStatus: s.VerificationStatus, Signature: HTMLText(s.Signature),
+			VerificationStatus: s.VerificationStatus, Signature: NewSignature(s.Signature),
 		})
 	}
 	return out

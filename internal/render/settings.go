@@ -53,7 +53,7 @@ func Settings(st model.Settings, o Options) Result {
 		w.vacationText(v)
 
 		w.blank()
-		w.say("send as:")
+		w.say("send as (a signature is the one Gmail adds to new emails, the only one its API reports; a different one for replies and forwards, or one added another way, is not shown):")
 		for i, s := range st.SendAs {
 			// Room for the lines after the list; the rest are named.
 			if w.len() > res.Budget-sendAsReserve {
@@ -78,10 +78,12 @@ func Settings(st model.Settings, o Options) Result {
 			if s.VerificationStatus != "" {
 				status = fill(" · %s", oneOf(s.VerificationStatus, "accepted", "pending"))
 			}
-			w.say("  %s · name %s%s%s%s", setting(s.Address), setting(s.DisplayName), status, flags, replyTo(s.ReplyTo))
-			if s.Signature != "" {
-				w.settingText("signature", string(s.Signature))
+			name := fill("no name set")
+			if s.DisplayName != "" {
+				name = fill("name %s", setting(s.DisplayName))
 			}
+			w.say("  %s · %s%s%s%s", setting(s.Address), name, status, flags, replyTo(s.ReplyTo))
+			w.signature("signature", s.Signature)
 		}
 
 		w.blank()
@@ -120,6 +122,19 @@ func (w *writer) settingText(what phrase, text string) {
 	w.block(what, "", "", text)
 	if total > maxSettingText {
 		w.say("cut: %s of %s characters shown; the structured result has the whole text.", num(maxSettingText), num(total))
+	}
+}
+
+// signature writes a signature in a block, or says it has none or no
+// text, so a missing line is never read as "no signature" (§18 row 88).
+func (w *writer) signature(what phrase, s model.Signature) {
+	switch {
+	case s.Text != "":
+		w.settingText(what, string(s.Text))
+	case s.Set:
+		w.say("%s: set, with no text to show (images or hidden text only)", named(what))
+	default:
+		w.say("%s: none", named(what))
 	}
 }
 

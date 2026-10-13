@@ -129,7 +129,7 @@ func TestSettings(t *testing.T) {
 	if !st.Vacation.BodyFromHTML || st.Vacation.Body != "Away." || st.Vacation.Start.IsZero() {
 		t.Errorf("vacation = %+v; want the HTML body as text, hidden text dropped, and dates", st.Vacation)
 	}
-	if len(st.SendAs) != 2 || st.SendAs[0].Signature != "Rae Reader\nExample Org" {
+	if len(st.SendAs) != 2 || st.SendAs[0].Signature != (model.Signature{Text: "Rae Reader\nExample Org", Set: true}) {
 		t.Errorf("send-as = %+v; want the signature as text", st.SendAs)
 	}
 	if got := fake.Units(); got != 7 {
