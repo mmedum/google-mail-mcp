@@ -450,28 +450,6 @@ func TestUpdateSignatureSaysWhetherASignatureWithNoTextIsSet(t *testing.T) {
 	}
 }
 
-// Setting a signature where Gmail returned none may add a new one to
-// Gmail's list rather than change one the person sees, and the result
-// says so. Markup alone is a signature Gmail holds, changed in place.
-func TestUpdateSignatureSaysGmailMayAddANewSignature(t *testing.T) {
-	const note = "note: the address had no signature for new emails, so Gmail may save this one as a new signature in its list"
-	for _, tc := range []struct {
-		name, html string
-		want       bool
-	}{
-		{"none", "", true},
-		{"markup alone", `<div dir="ltr"><br></div>`, false},
-		{"text", "<div>Rae Reader</div>", false},
-	} {
-		h, fake := connectSettings(t, settingsOn)
-		fake.UpdateSettings(func(s *gmailtest.Settings) { s.SendAs[0].Signature = tc.html })
-		text := call(t, h, "update_signature", map[string]any{"signature": "Rae", "dry_run": true}, &tools.SignatureOut{})
-		if strings.Contains(text, note) != tc.want {
-			t.Errorf("%s: says Gmail may add a new signature: %t; want %t\n%s", tc.name, !tc.want, tc.want, text)
-		}
-	}
-}
-
 // A description is what a model takes as the truth, so what get_settings
 // and list_filters say this server can change follows the flags.
 func TestSettingsDescriptionsFollowTheFlags(t *testing.T) {

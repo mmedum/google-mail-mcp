@@ -322,9 +322,6 @@ type SignatureWrite struct {
 	// Before is what Gmail held; After is what Gmail answered with, or
 	// would hold.
 	Before, After SettingText
-	// HadNone is set when Gmail returned no signature at all, not even
-	// markup: the address had no default signature (§18 row 88).
-	HadNone bool
 }
 
 // FilterWrite is create_filter's or delete_filter's result.

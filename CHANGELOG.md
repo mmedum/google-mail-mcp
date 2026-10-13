@@ -15,6 +15,8 @@ lifted verbatim.
 
 ## [Unreleased]
 
+## [2.3.0] - 2026-10-13
+
 ### Added
 
 - `get_settings` send-as entries carry `signature_set`, and `update_signature` results carry `before_set` and `after_set`: whether the signature holds anything, which its text alone cannot say when it is images or hidden text.
@@ -23,7 +25,7 @@ lifted verbatim.
 ### Fixed
 
 - `get_settings` says when a send-as address has no name or no signature, and keeps `display_name` and `untrusted_signature` when they are empty. Both were left out, which read as "no signature". The text and the description also say the signature is the one Gmail adds to new emails, the only one its API reports.
-- `update_signature` says a signature of images or hidden text alone is set. A dry run reported "signature before: none" over a logo the write then replaced. It also says Gmail adds the signature to new emails, not to all mail written in Gmail, and that setting one where there was none may add a new signature to Gmail's list.
+- `update_signature` says a signature of images or hidden text alone is set. A dry run reported "signature before: none" over a logo the write then replaced. It also says Gmail adds the signature to new emails, not to all mail written in Gmail.
 - A vacation reply whose body is an image alone reads as set up. It read as no reply at all.
 
 ### Security
@@ -185,7 +187,8 @@ lifted verbatim.
 - Repository gates run by `make check` and CI: leaks, pins, error classes, API coverage, schema diff, smoke, staleness and more.
 - Signed release archives for six platforms with SBOMs, build provenance, a Claude Desktop bundle and an MCP registry entry.
 
-[Unreleased]: https://github.com/mmedum/google-mail-mcp/compare/v2.2.0...HEAD
+[Unreleased]: https://github.com/mmedum/google-mail-mcp/compare/v2.3.0...HEAD
+[2.3.0]: https://github.com/mmedum/google-mail-mcp/compare/v2.2.0...v2.3.0
 [2.2.0]: https://github.com/mmedum/google-mail-mcp/compare/v2.1.0...v2.2.0
 [2.1.0]: https://github.com/mmedum/google-mail-mcp/compare/v2.0.4...v2.1.0
 [2.0.4]: https://github.com/mmedum/google-mail-mcp/compare/v2.0.3...v2.0.4
