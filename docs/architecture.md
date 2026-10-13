@@ -1,7 +1,10 @@
 # Architecture — google-mail-mcp
 
-**Status: 2.3.0 is cut, 2026-10-13, from `main`, after a live run of 95
-steps with none failed. `get_settings` says when an address has no name
+**Status: 2.3.0 is released, 2026-10-13, from `main`, after a live run
+of 95 steps with none failed, and verified from outside: checksums, the
+cosign signature and the provenance attestation, each also against a
+tampered copy, the version in all five places, the registry entry, and
+the Go proxy resolving v2.3.0. `get_settings` says when an address has no name
 or signature, a signature or vacation reply of images or hidden text
 alone is set, and their hidden text is counted (issue #29). 2.2.0 was
 released 2026-10-09, after a live run
