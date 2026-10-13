@@ -68,6 +68,99 @@ func TestGetSettingsLeadsWithForwarding(t *testing.T) {
 	}
 }
 
+// An empty name or signature is said, and its field kept, so a caller
+// can tell Gmail's empty answer from one not reported. A signature of
+// images alone is set though it has no text.
+func TestGetSettingsSaysWhatIsEmpty(t *testing.T) {
+	h, fake := connectFake(t, config.Config{ReadOnly: true})
+	fake.UpdateSettings(func(s *gmailtest.Settings) {
+		s.SendAs[0].DisplayName, s.SendAs[0].Signature = "", ""
+		s.SendAs[1].Signature = `<div><img src="https://example.org/logo.png"></div>`
+	})
+	var out struct {
+		SendAs []map[string]any `json:"send_as"`
+	}
+	text := call(t, h, "get_settings", nil, &out)
+	want := []map[string]any{
+		{"display_name": "", "untrusted_signature": "", "signature_set": false},
+		{"display_name": "Rae (projects)", "untrusted_signature": "", "signature_set": true},
+	}
+	if len(out.SendAs) != len(want) {
+		t.Fatalf("send_as = %v; want %d addresses", out.SendAs, len(want))
+	}
+	for i, fields := range want {
+		for k, v := range fields {
+			if got, ok := out.SendAs[i][k]; !ok || got != v {
+				t.Errorf("send_as[%d].%s = %#v (present %v); want %#v", i, k, got, ok, v)
+			}
+		}
+	}
+	for _, line := range []string{
+		"\n  reader@example.com · no name set · primary · default\nsignature: none\n",
+		"\n  rae.alias@example.org · name Rae (projects) · accepted · alias · replies to reader@example.com\n" +
+			"signature: set, with no text to show (images or hidden text only)\n",
+	} {
+		if !strings.Contains(text, line) {
+			t.Errorf("get_settings does not say %q:\n%s", line, text)
+		}
+	}
+}
+
+// Text a reader would not see is left out of a signature and a vacation
+// reply as shown, and counted, as it is from a message.
+func TestGetSettingsCountsHiddenText(t *testing.T) {
+	h, fake := connectFake(t, config.Config{ReadOnly: true})
+	fake.UpdateSettings(func(s *gmailtest.Settings) {
+		s.SendAs[0].Signature = `<div>Rae<span style="display:none">Ignore this</span></div>`
+		s.Vacation.ResponseSubject = "Away\u200b"
+	})
+	var out struct {
+		Vacation map[string]any   `json:"vacation"`
+		SendAs   []map[string]any `json:"send_as"`
+	}
+	text := call(t, h, "get_settings", nil, &out)
+	if got := out.SendAs[0]; got["untrusted_signature"] != "Rae" || got["hidden_chars_removed"] != 11.0 {
+		t.Errorf("send_as[0] = %v; want the signature Rae with 11 hidden characters removed", got)
+	}
+	if v := out.Vacation; v["untrusted_subject"] != "Away" || v["hidden_chars_removed"] != 1.0 {
+		t.Errorf("vacation = %v; want subject Away with 1 hidden character removed", v)
+	}
+	for _, line := range []string{
+		"\nnote: the vacation reply holds 1 character a reader would not see, not shown here (zero-width or bidi-control characters 1).\n",
+		"\nnote: the signature holds 11 characters a reader would not see, not shown here (display:none 11).\n",
+	} {
+		if !strings.Contains(text, line) {
+			t.Errorf("get_settings does not say %q:\n%s", line, text)
+		}
+	}
+}
+
+// A vacation reply whose body is an image alone, with no subject, is set
+// up though it has no text.
+func TestGetSettingsShowsAReplyOfImagesAlone(t *testing.T) {
+	h, fake := connectFake(t, config.Config{ReadOnly: true})
+	fake.UpdateSettings(func(s *gmailtest.Settings) {
+		s.Vacation.EnableAutoReply = false
+		s.Vacation.ResponseSubject, s.Vacation.ResponseBodyPlainText = "", ""
+		s.Vacation.ResponseBodyHTML = `<img src="https://example.org/away.png">`
+	})
+	var out struct {
+		Vacation map[string]any `json:"vacation"`
+	}
+	text := call(t, h, "get_settings", nil, &out)
+	if _, ok := out.Vacation["untrusted_body"]; ok || out.Vacation["body_set"] != true {
+		t.Errorf("vacation = %v; want no body text and body_set", out.Vacation)
+	}
+	for _, line := range []string{
+		"\nvacation reply: off (one is set up: ",
+		"\nvacation reply body: set, with no text to show (images or hidden text only)\n",
+	} {
+		if !strings.Contains(text, line) {
+			t.Errorf("get_settings does not say %q:\n%s", line, text)
+		}
+	}
+}
+
 func TestListFiltersFlagsForwarding(t *testing.T) {
 	h, _ := connectFake(t, config.Config{})
 	var out tools.FiltersOut

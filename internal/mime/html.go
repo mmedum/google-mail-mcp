@@ -58,6 +58,9 @@ type HTMLText struct {
 	Text   string
 	Hidden []HiddenCount
 	Links  []Link
+	// Images counts the images a reader would see, with alt text or
+	// without; one without is in no other field.
+	Images int
 }
 
 // HiddenTotal sums the hidden counts.
@@ -85,7 +88,18 @@ func HTMLToText(src []byte) HTMLText {
 	c.walk(doc, state{})
 	text, inv := StripInvisible(c.out.finish())
 	c.hidden[HiddenInvisible] += inv
-	return HTMLText{Text: text, Hidden: sortedHidden(c.hidden), Links: c.links}
+	return HTMLText{Text: text, Hidden: sortedHidden(c.hidden), Links: c.links, Images: c.images}
+}
+
+// MergeHidden adds hidden counts up by reason.
+func MergeHidden(lists ...[]HiddenCount) []HiddenCount {
+	m := map[string]int{}
+	for _, l := range lists {
+		for _, h := range l {
+			m[h.Reason] += h.Chars
+		}
+	}
+	return sortedHidden(m)
 }
 
 func sortedHidden(m map[string]int) []HiddenCount {
@@ -116,6 +130,7 @@ type converter struct {
 	out    textOut
 	hidden map[string]int
 	links  []Link
+	images int
 	sheet  styleSheet
 	depth  int
 	// lists is the open lists, innermost last: 0 for an unordered list,
@@ -206,6 +221,7 @@ func (c *converter) element(n *html.Node, st state) {
 		c.out.para(st.quote)
 		return
 	case atom.Img:
+		c.images++
 		if alt := strings.TrimSpace(attr(n, "alt")); alt != "" {
 			c.out.words("[image: "+collapse(alt)+"]", st.quote)
 		}
@@ -309,6 +325,7 @@ func (c *converter) link(n *html.Node, href string, st state) {
 		sub.walk(ch, inner)
 	}
 	c.links = append(c.links, sub.links...)
+	c.images += sub.images
 	text := collapse(sub.out.finish())
 
 	l := Link{Text: text, Href: strings.TrimSpace(href)}

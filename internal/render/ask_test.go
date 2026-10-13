@@ -89,7 +89,7 @@ func TestQuestionsAreInertMarkdown(t *testing.T) {
 			Recipients: []model.SendRecipient{send("to")}, Files: []model.File{{Name: model.Untrusted(hostile)}}}),
 		"create_filter": AskCreateFilter(filter),
 		"delete_filter": AskDeleteFilter(filter),
-		"set_vacation":  AskVacation(model.Vacation{Subject: model.Untrusted(hostile), Body: model.Untrusted(hostile), RestrictToContacts: true}),
+		"set_vacation":  AskVacation(model.Vacation{Subject: model.SettingFromText(hostile), Body: model.SettingFromText(hostile), RestrictToContacts: true}),
 	}
 	// Every hostile field reaches its own span: the label; the draft's 3
 	// addresses and subject; the send's address, subject and body; each
@@ -170,6 +170,27 @@ func TestAskCreateFilterNamesTheSize(t *testing.T) {
 	}
 }
 
+// A vacation reply holding characters a reader would not see is sent
+// with them, and the question says so rather than show it as clean.
+func TestAskVacationSaysHiddenTextIsSent(t *testing.T) {
+	q := AskVacation(model.Vacation{Subject: model.SettingFromText("Away\u200b"), Body: model.SettingFromText("Back on Monday."),
+		RestrictToContacts: true})
+	want := "note: the vacation reply holds 1 character a reader would not see, not shown here " +
+		"(zero-width or bidi-control characters 1).\n\nThey are sent as given."
+	if !strings.Contains(q.Text, want) {
+		t.Errorf("the question does not say %q:\n%s", want, q.Text)
+	}
+	if q := AskVacation(model.Vacation{Subject: model.SettingFromText("Away"), RestrictToContacts: true}); strings.Contains(q.Text, "sent as given") {
+		t.Errorf("a reply with nothing hidden is said to hold some:\n%s", q.Text)
+	}
+	q = AskVacation(model.Vacation{Subject: model.SettingFromText("\u200b"), Body: model.SettingFromText("\u200b"), RestrictToContacts: true})
+	for _, want := range []string{"subject: invisible characters only\n", "body: invisible characters only\n"} {
+		if !strings.Contains(q.Text, want) {
+			t.Errorf("a reply of invisible characters only: no %q in\n%s", want, q.Text)
+		}
+	}
+}
+
 // A question with nothing quoted says nothing about quotes.
 func TestAskWithoutQuotes(t *testing.T) {
 	q := AskDeletePermanently(2, 0)
@@ -187,9 +208,9 @@ func TestAskBinds(t *testing.T) {
 	if a, b := AskSend(sw), AskSend(changed); a.Text != b.Text || a.Bind == b.Bind {
 		t.Error("a change past the shown start of the body is not bound")
 	}
-	v := model.Vacation{Subject: "Away", Body: model.Untrusted(strings.Repeat("a", 400))}
+	v := model.Vacation{Subject: model.SettingFromText("Away"), Body: model.SettingFromText(strings.Repeat("a", 400))}
 	vc := v
-	vc.Body = model.Untrusted(strings.Repeat("a", 399) + "b")
+	vc.Body = model.SettingFromText(strings.Repeat("a", 399) + "b")
 	if AskVacation(v).Bind == AskVacation(vc).Bind {
 		t.Error("the vacation body is not bound")
 	}

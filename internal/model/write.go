@@ -319,9 +319,9 @@ type SignatureWrite struct {
 	DryRun bool
 	// Address is the send-as address whose signature changed.
 	Address string
-	// Before and After are the signature as text; After is what Gmail
-	// answered with, or would hold.
-	Before, After Untrusted
+	// Before is what Gmail held; After is what Gmail answered with, or
+	// would hold.
+	Before, After SettingText
 }
 
 // FilterWrite is create_filter's or delete_filter's result.

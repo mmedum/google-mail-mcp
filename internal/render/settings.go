@@ -6,6 +6,7 @@ import (
 	"strings"
 	"unicode/utf8"
 
+	"github.com/mmedum/google-mail-mcp/v2/internal/mime"
 	"github.com/mmedum/google-mail-mcp/v2/internal/model"
 )
 
@@ -45,7 +46,7 @@ func Settings(st model.Settings, o Options) Result {
 		switch {
 		case v.Enabled:
 			w.say("vacation reply: ON · to %s · %s", recipients(v), period(w, v))
-		case v.Subject != "" || v.Body != "":
+		case v.SetUp():
 			w.say("vacation reply: off (one is set up: %s · %s)", recipients(v), period(w, v))
 		default:
 			w.say("vacation reply: off")
@@ -53,7 +54,7 @@ func Settings(st model.Settings, o Options) Result {
 		w.vacationText(v)
 
 		w.blank()
-		w.say("send as:")
+		w.say("send as (a signature is the one Gmail adds to new emails, the only one its API reports; a different one for replies and forwards, or one added another way, is not shown):")
 		for i, s := range st.SendAs {
 			// Room for the lines after the list; the rest are named.
 			if w.len() > res.Budget-sendAsReserve {
@@ -78,10 +79,12 @@ func Settings(st model.Settings, o Options) Result {
 			if s.VerificationStatus != "" {
 				status = fill(" · %s", oneOf(s.VerificationStatus, "accepted", "pending"))
 			}
-			w.say("  %s · name %s%s%s%s", setting(s.Address), setting(s.DisplayName), status, flags, replyTo(s.ReplyTo))
-			if s.Signature != "" {
-				w.settingText("signature", string(s.Signature))
+			name := fill("no name set")
+			if s.DisplayName != "" {
+				name = fill("name %s", setting(s.DisplayName))
 			}
+			w.say("  %s · %s%s%s%s", setting(s.Address), name, status, flags, replyTo(s.ReplyTo))
+			w.signature("signature", s.Signature)
 		}
 
 		w.blank()
@@ -120,6 +123,35 @@ func (w *writer) settingText(what phrase, text string) {
 	w.block(what, "", "", text)
 	if total > maxSettingText {
 		w.say("cut: %s of %s characters shown; the structured result has the whole text.", num(maxSettingText), num(total))
+	}
+}
+
+// signature writes a signature in a block, or says it has none or no
+// text, so a missing line is never read as "no signature" (§18 row 88).
+func (w *writer) signature(what phrase, s model.SettingText) {
+	switch {
+	case s.Text != "":
+		w.settingText(what, string(s.Text))
+	case s.NoText():
+		w.noText(what)
+	default:
+		w.say("%s: none", named(what))
+	}
+	w.hiddenSetting(what, s.Hidden)
+}
+
+// noText says a setting holds something with no text to show.
+func (w *writer) noText(what phrase) {
+	w.say("%s: set, with no text to show (images or hidden text only)", named(what))
+}
+
+// hiddenSetting says how much of a setting's text a reader would not
+// see is left out of what is shown, and why. Gmail keeps it, so it is
+// not said to be removed.
+func (w *writer) hiddenSetting(what phrase, hs []mime.HiddenCount) {
+	if n := mime.HiddenTotal(hs); n > 0 {
+		w.say("note: the %s holds %s a reader would not see, not shown here (%s).",
+			named(what), plural(n, "character", "characters"), hiddenList(hs))
 	}
 }
 
@@ -205,10 +237,19 @@ func (w *writer) filterBody(f model.Filter) {
 // vacationText is the reply's subject and body in a block, as
 // get_settings and set_vacation show it.
 func (w *writer) vacationText(v model.Vacation) {
-	if v.Subject == "" && v.Body == "" {
+	if !v.SetUp() {
 		return
 	}
-	w.settingText("vacation reply", "Subject: "+string(v.Subject)+"\n\n"+string(v.Body))
+	if v.Subject.Text != "" || v.Body.Text != "" {
+		w.settingText("vacation reply", "Subject: "+string(v.Subject.Text)+"\n\n"+string(v.Body.Text))
+	}
+	if v.Subject.NoText() {
+		w.noText("vacation reply subject")
+	}
+	if v.Body.NoText() {
+		w.noText("vacation reply body")
+	}
+	w.hiddenSetting("vacation reply", v.Hidden())
 	if v.BodyFromHTML {
 		w.say("note: the vacation reply was converted from HTML; nothing was fetched.")
 	}

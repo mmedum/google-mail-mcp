@@ -123,10 +123,24 @@ func AskVacation(v model.Vacation) Question {
 	q := ask(func(w *writer) {
 		w.say("set_vacation: turn the vacation reply on? It answers mail automatically, to %s, %s.",
 			recipients(v), period(w, v))
-		w.say("subject: %s", quoted(string(v.Subject), quotedLen))
-		w.askBody(string(v.Body))
+		// Text is stripped of what a reader would not see; one that held
+		// only that is said to, not shown as empty.
+		if v.Subject.NoText() {
+			w.say("subject: invisible characters only")
+		} else {
+			w.say("subject: %s", quoted(string(v.Subject.Text), quotedLen))
+		}
+		if v.Body.NoText() {
+			w.say("body: invisible characters only")
+		} else {
+			w.askBody(string(v.Body.Text))
+		}
+		if hs := v.Hidden(); len(hs) > 0 {
+			w.hiddenSetting("vacation reply", hs)
+			w.say("They are sent as given.")
+		}
 	})
-	q.Bind = q.Text + "\x00" + bodySum(string(v.Body))
+	q.Bind = q.Text + "\x00" + bodySum(string(v.Body.Text))
 	return q
 }
 

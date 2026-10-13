@@ -278,11 +278,11 @@ func TestSenderTextNeverReachesTheServersVoice(t *testing.T) {
 			"attachment html":  Attachment(hostileAttachment(msgs[1], mime.ReadHTML), small),
 			"attached message": Attachment(hostileAttachment(msgs[2], mime.ReadMessage), o),
 			"signature": SignatureWrite(model.SignatureWrite{Address: "reader@example.com",
-				Before: model.Untrusted(h.mark()), After: model.Untrusted(h.mark())}, o),
+				Before: model.SettingFromText(h.mark()), After: model.SettingFromText(h.mark())}, o),
 			"vacation": VacationWrite(model.VacationWrite{
-				Before: model.Vacation{Enabled: true, Subject: model.Untrusted(h.mark()), Body: model.Untrusted(h.mark())},
-				After: model.Vacation{Enabled: true, RestrictToContacts: true, Subject: model.Untrusted(h.mark()),
-					Body: model.Untrusted(h.mark())}}, small),
+				Before: model.Vacation{Enabled: true, Subject: model.SettingFromText(h.mark()), Body: model.SettingFromText(h.mark())},
+				After: model.Vacation{Enabled: true, RestrictToContacts: true, Subject: model.SettingFromText(h.mark()),
+					Body: model.SettingFromText(h.mark())}}, small),
 		}
 		for name, res := range results {
 			if name == "thread omitted" && len(res.Omitted) == 0 {

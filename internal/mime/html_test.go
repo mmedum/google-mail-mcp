@@ -109,6 +109,27 @@ func TestHTMLToTextHidden(t *testing.T) {
 	}
 }
 
+// An image counts whether or not it has alt text, and one a reader would
+// not see does not.
+func TestHTMLToTextCountsImages(t *testing.T) {
+	cases := []struct {
+		name, in string
+		want     int
+	}{
+		{"none", `<div dir="ltr"><br></div>`, 0},
+		{"without alt", `<img src="https://example.org/logo.png">`, 1},
+		{"with alt and without", `<img alt="Logo"><p>x</p><img src="https://example.org/p.gif">`, 2},
+		{"hidden", `<div style="display:none"><img src="https://example.org/logo.png"></div>`, 0},
+		{"inside a link with no host", `<a href="#"><img src="https://example.org/logo.png"></a>`, 1},
+		{"inside a web link", `<a href="https://example.org/"><img src="https://example.org/logo.png"></a>`, 1},
+	}
+	for _, c := range cases {
+		if got := HTMLToText([]byte(c.in)).Images; got != c.want {
+			t.Errorf("%s: %q has %d images; want %d", c.name, c.in, got, c.want)
+		}
+	}
+}
+
 func TestHTMLLinks(t *testing.T) {
 	cases := []struct {
 		name, in string
