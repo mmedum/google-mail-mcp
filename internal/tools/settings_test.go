@@ -429,8 +429,13 @@ func TestUpdateSignatureSaysWhetherASignatureWithNoTextIsSet(t *testing.T) {
 		{"images alone", `<div><img src="https://example.org/logo.png"></div>`, true,
 			"signature before: set, with no text to show (images or hidden text only)\n"},
 		{"hidden text alone", `<div style="display:none">Rae Reader</div>`, true,
+			"signature before: set, with no text to show (images or hidden text only)\n" +
+				"note: the signature before holds 10 characters a reader would not see, not shown here (display:none 10).\n"},
+		{"a linked logo", `<a href="#"><img src="https://example.org/logo.png"></a>`, true,
 			"signature before: set, with no text to show (images or hidden text only)\n"},
 		{"markup an emptied editor leaves", `<div dir="ltr"><br></div>`, false, "signature before: none\n"},
+		{"a comment an editor leaves", `<div dir="ltr"><!--StartFragment--><br></div>`, false,
+			"signature before: none\nnote: the signature before holds 13 characters a reader would not see, not shown here (HTML comment 13).\n"},
 	} {
 		h, fake := connectSettings(t, settingsOn)
 		fake.UpdateSettings(func(s *gmailtest.Settings) { s.SendAs[0].Signature = tc.html })
@@ -441,6 +446,28 @@ func TestUpdateSignatureSaysWhetherASignatureWithNoTextIsSet(t *testing.T) {
 		}
 		if !strings.Contains(text, tc.line+"signature after: none\n") {
 			t.Errorf("%s: update_signature does not say %q:\n%s", tc.name, tc.line, text)
+		}
+	}
+}
+
+// Setting a signature where Gmail returned none may add a new one to
+// Gmail's list rather than change one the person sees, and the result
+// says so. Markup alone is a signature Gmail holds, changed in place.
+func TestUpdateSignatureSaysGmailMayAddANewSignature(t *testing.T) {
+	const note = "note: the address had no signature for new emails, so Gmail may save this one as a new signature in its list"
+	for _, tc := range []struct {
+		name, html string
+		want       bool
+	}{
+		{"none", "", true},
+		{"markup alone", `<div dir="ltr"><br></div>`, false},
+		{"text", "<div>Rae Reader</div>", false},
+	} {
+		h, fake := connectSettings(t, settingsOn)
+		fake.UpdateSettings(func(s *gmailtest.Settings) { s.SendAs[0].Signature = tc.html })
+		text := call(t, h, "update_signature", map[string]any{"signature": "Rae", "dry_run": true}, &tools.SignatureOut{})
+		if strings.Contains(text, note) != tc.want {
+			t.Errorf("%s: says Gmail may add a new signature: %t; want %t\n%s", tc.name, !tc.want, tc.want, text)
 		}
 	}
 }

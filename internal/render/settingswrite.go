@@ -15,6 +15,11 @@ func SignatureWrite(sw model.SignatureWrite, o Options) Result {
 		w.say("Gmail adds it to new emails written in Gmail; drafts this server writes carry no signature.")
 		w.signature("signature before", sw.Before)
 		w.signature("signature after", sw.After)
+		// GAM's wiki: with no default signature, the API adds one named
+		// "My signature" (§18 row 88).
+		if sw.HadNone && sw.After.Set {
+			w.say("note: the address had no signature for new emails, so Gmail may save this one as a new signature in its list; Gmail's web settings show which signature new emails and replies use.")
+		}
 		return Result{Budget: o.budget()}
 	})
 }

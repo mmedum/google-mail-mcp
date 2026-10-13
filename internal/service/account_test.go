@@ -8,6 +8,7 @@ import (
 
 	"github.com/mmedum/google-mail-mcp/v2/internal/gapi"
 	"github.com/mmedum/google-mail-mcp/v2/internal/gapi/gmailtest"
+	"github.com/mmedum/google-mail-mcp/v2/internal/mime"
 	"github.com/mmedum/google-mail-mcp/v2/internal/model"
 	"github.com/mmedum/google-mail-mcp/v2/internal/service"
 )
@@ -126,10 +127,11 @@ func TestSettings(t *testing.T) {
 	if !st.AutoForwarding.Enabled || st.AutoForwarding.Address != gmailtest.BackupAddress {
 		t.Errorf("auto-forwarding = %+v", st.AutoForwarding)
 	}
-	if !st.Vacation.BodyFromHTML || st.Vacation.Body != "Away." || st.Vacation.Start.IsZero() {
-		t.Errorf("vacation = %+v; want the HTML body as text, hidden text dropped, and dates", st.Vacation)
+	if !st.Vacation.BodyFromHTML || st.Vacation.Body.Text != "Away." || mime.HiddenTotal(st.Vacation.Body.Hidden) != 6 ||
+		st.Vacation.Start.IsZero() {
+		t.Errorf("vacation = %+v; want the HTML body as text, the 6 hidden characters counted, and dates", st.Vacation)
 	}
-	if len(st.SendAs) != 2 || st.SendAs[0].Signature != (model.Signature{Text: "Rae Reader\nExample Org", Set: true}) {
+	if len(st.SendAs) != 2 || st.SendAs[0].Signature.Text != "Rae Reader\nExample Org" || !st.SendAs[0].Signature.Set {
 		t.Errorf("send-as = %+v; want the signature as text", st.SendAs)
 	}
 	if got := fake.Units(); got != 7 {

@@ -6,6 +6,7 @@ import (
 
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 
+	"github.com/mmedum/google-mail-mcp/v2/internal/mime"
 	"github.com/mmedum/google-mail-mcp/v2/internal/model"
 	"github.com/mmedum/google-mail-mcp/v2/internal/render"
 	"github.com/mmedum/google-mail-mcp/v2/internal/service"
@@ -65,6 +66,8 @@ type Vacation struct {
 	Enabled            bool            `json:"enabled"`
 	UntrustedSubject   model.Untrusted `json:"untrusted_subject,omitempty"`
 	UntrustedBody      model.Untrusted `json:"untrusted_body,omitempty"`
+	BodySet            bool            `json:"body_set" jsonschema:"a body is written; true with no untrusted_body when it is images or hidden text only"`
+	HiddenCharsRemoved int             `json:"hidden_chars_removed,omitempty" jsonschema:"characters a reader would not see, removed from the subject and body"`
 	RestrictToContacts bool            `json:"restrict_to_contacts"`
 	RestrictToDomain   bool            `json:"restrict_to_domain"`
 	Start              *time.Time      `json:"start,omitempty"`
@@ -82,6 +85,7 @@ type SendAs struct {
 	VerificationStatus string          `json:"verification_status,omitempty"`
 	UntrustedSignature model.Untrusted `json:"untrusted_signature" jsonschema:"the signature Gmail adds to new emails written in Gmail, as text; empty when there is none or it has no text"`
 	SignatureSet       bool            `json:"signature_set" jsonschema:"the address has a signature; true with an empty untrusted_signature when it is images or hidden text only"`
+	HiddenCharsRemoved int             `json:"hidden_chars_removed,omitempty" jsonschema:"characters a reader would not see, removed from the signature"`
 }
 
 // Imap is IMAP access.
@@ -226,7 +230,7 @@ func settingsOut(st model.Settings) SettingsOut {
 		SendAs: mapSlice(st.SendAs, func(s model.SendAs) SendAs {
 			return SendAs{Address: s.Address, DisplayName: s.DisplayName, ReplyTo: s.ReplyTo, Primary: s.Primary,
 				Default: s.Default, Alias: s.Alias, VerificationStatus: s.VerificationStatus, UntrustedSignature: s.Signature.Text,
-				SignatureSet: s.Signature.Set}
+				SignatureSet: s.Signature.Set, HiddenCharsRemoved: mime.HiddenTotal(s.Signature.Hidden)}
 		}),
 		Imap: Imap{Enabled: st.Imap.Enabled, AutoExpunge: st.Imap.AutoExpunge, ExpungeBehavior: st.Imap.ExpungeBehavior,
 			MaxFolderSize: int(st.Imap.MaxFolderSize)},

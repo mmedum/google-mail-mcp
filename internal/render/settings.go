@@ -6,6 +6,7 @@ import (
 	"strings"
 	"unicode/utf8"
 
+	"github.com/mmedum/google-mail-mcp/v2/internal/mime"
 	"github.com/mmedum/google-mail-mcp/v2/internal/model"
 )
 
@@ -45,7 +46,7 @@ func Settings(st model.Settings, o Options) Result {
 		switch {
 		case v.Enabled:
 			w.say("vacation reply: ON · to %s · %s", recipients(v), period(w, v))
-		case v.Subject != "" || v.Body != "":
+		case v.SetUp():
 			w.say("vacation reply: off (one is set up: %s · %s)", recipients(v), period(w, v))
 		default:
 			w.say("vacation reply: off")
@@ -127,14 +128,30 @@ func (w *writer) settingText(what phrase, text string) {
 
 // signature writes a signature in a block, or says it has none or no
 // text, so a missing line is never read as "no signature" (§18 row 88).
-func (w *writer) signature(what phrase, s model.Signature) {
+func (w *writer) signature(what phrase, s model.SettingText) {
 	switch {
 	case s.Text != "":
 		w.settingText(what, string(s.Text))
-	case s.Set:
-		w.say("%s: set, with no text to show (images or hidden text only)", named(what))
+	case s.NoText():
+		w.noText(what)
 	default:
 		w.say("%s: none", named(what))
+	}
+	w.hiddenSetting(what, s.Hidden)
+}
+
+// noText says a setting holds something with no text to show.
+func (w *writer) noText(what phrase) {
+	w.say("%s: set, with no text to show (images or hidden text only)", named(what))
+}
+
+// hiddenSetting says how much of a setting's text a reader would not
+// see is left out of what is shown, and why. Gmail keeps it, so it is
+// not said to be removed.
+func (w *writer) hiddenSetting(what phrase, hs []mime.HiddenCount) {
+	if n := mime.HiddenTotal(hs); n > 0 {
+		w.say("note: the %s holds %s a reader would not see, not shown here (%s).",
+			named(what), plural(n, "character", "characters"), hiddenList(hs))
 	}
 }
 
@@ -220,10 +237,19 @@ func (w *writer) filterBody(f model.Filter) {
 // vacationText is the reply's subject and body in a block, as
 // get_settings and set_vacation show it.
 func (w *writer) vacationText(v model.Vacation) {
-	if v.Subject == "" && v.Body == "" {
+	if !v.SetUp() {
 		return
 	}
-	w.settingText("vacation reply", "Subject: "+string(v.Subject)+"\n\n"+string(v.Body))
+	if v.Subject.Text != "" || v.Body.Text != "" {
+		w.settingText("vacation reply", "Subject: "+string(v.Subject.Text)+"\n\n"+string(v.Body.Text))
+	}
+	if v.Subject.NoText() {
+		w.noText("vacation reply subject")
+	}
+	if v.Body.NoText() {
+		w.noText("vacation reply body")
+	}
+	w.hiddenSetting("vacation reply", v.Hidden())
 	if v.BodyFromHTML {
 		w.say("note: the vacation reply was converted from HTML; nothing was fetched.")
 	}

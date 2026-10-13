@@ -91,6 +91,17 @@ func HTMLToText(src []byte) HTMLText {
 	return HTMLText{Text: text, Hidden: sortedHidden(c.hidden), Links: c.links, Images: c.images}
 }
 
+// MergeHidden adds hidden counts up by reason.
+func MergeHidden(lists ...[]HiddenCount) []HiddenCount {
+	m := map[string]int{}
+	for _, l := range lists {
+		for _, h := range l {
+			m[h.Reason] += h.Chars
+		}
+	}
+	return sortedHidden(m)
+}
+
 func sortedHidden(m map[string]int) []HiddenCount {
 	var out []HiddenCount
 	for r, n := range m {
@@ -314,6 +325,7 @@ func (c *converter) link(n *html.Node, href string, st state) {
 		sub.walk(ch, inner)
 	}
 	c.links = append(c.links, sub.links...)
+	c.images += sub.images
 	text := collapse(sub.out.finish())
 
 	l := Link{Text: text, Href: strings.TrimSpace(href)}

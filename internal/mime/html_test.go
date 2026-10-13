@@ -120,6 +120,8 @@ func TestHTMLToTextCountsImages(t *testing.T) {
 		{"without alt", `<img src="https://example.org/logo.png">`, 1},
 		{"with alt and without", `<img alt="Logo"><p>x</p><img src="https://example.org/p.gif">`, 2},
 		{"hidden", `<div style="display:none"><img src="https://example.org/logo.png"></div>`, 0},
+		{"inside a link with no host", `<a href="#"><img src="https://example.org/logo.png"></a>`, 1},
+		{"inside a web link", `<a href="https://example.org/"><img src="https://example.org/logo.png"></a>`, 1},
 	}
 	for _, c := range cases {
 		if got := HTMLToText([]byte(c.in)).Images; got != c.want {

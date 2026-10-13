@@ -386,7 +386,7 @@ func TestSendAsOverTheBudget(t *testing.T) {
 	var st model.Settings
 	for i := range 40 {
 		st.SendAs = append(st.SendAs, model.SendAs{Address: fmt.Sprintf("alias%02d@example.com", i),
-			Signature: model.Signature{Text: model.Untrusted(strings.Repeat("Signature line. ", 90)), Set: true}})
+			Signature: model.SettingFromText(strings.Repeat("Signature line. ", 90))})
 	}
 	res := Settings(st, Options{Tokens: seq("T")})
 	shown := strings.Count(res.Text, "@example.com · ")
@@ -404,13 +404,24 @@ func TestSendAsOverTheBudget(t *testing.T) {
 // A vacation reply set up with only a subject, or only a body, is shown.
 func TestAVacationReplyWithOneHalfIsShown(t *testing.T) {
 	for _, v := range []model.Vacation{
-		{Subject: "Away this week"},
-		{Body: "Back on Monday."},
+		{Subject: model.SettingFromText("Away this week")},
+		{Body: model.SettingFromText("Back on Monday.")},
 	} {
 		text := Settings(model.Settings{Vacation: v}, Options{Tokens: seq("T")}).Text
-		want := "Subject: " + string(v.Subject) + "\n\n" + string(v.Body)
+		want := "Subject: " + string(v.Subject.Text) + "\n\n" + string(v.Body.Text)
 		if !strings.Contains(text, strings.TrimSpace(want)+"\n") {
 			t.Errorf("vacation %+v: no %q in\n%s", v, want, text)
+		}
+	}
+}
+
+// A vacation reply whose subject holds only what a reader would not see
+// is set up, and says its subject has no text to show.
+func TestAVacationSubjectWithNoTextIsSaid(t *testing.T) {
+	text := Settings(model.Settings{Vacation: model.Vacation{Subject: model.SettingFromText("\u200b")}}, Options{Tokens: seq("T")}).Text
+	for _, want := range []string{"vacation reply: off (one is set up: ", "\nvacation reply subject: set, with no text to show (images or hidden text only)\n"} {
+		if !strings.Contains(text, want) {
+			t.Errorf("no %q in\n%s", want, text)
 		}
 	}
 }

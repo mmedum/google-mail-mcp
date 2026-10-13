@@ -3,6 +3,7 @@ package model
 import (
 	"slices"
 	"strconv"
+	"strings"
 	"time"
 
 	"github.com/mmedum/google-mail-mcp/v2/internal/gmail"
@@ -27,8 +28,8 @@ type Settings struct {
 // Vacation is the vacation responder.
 type Vacation struct {
 	Enabled            bool
-	Subject            Untrusted
-	Body               Untrusted
+	Subject            SettingText
+	Body               SettingText
 	BodyFromHTML       bool
 	RestrictToContacts bool
 	RestrictToDomain   bool
@@ -59,28 +60,58 @@ type SendAs struct {
 	Primary, Default   bool
 	Alias              bool
 	VerificationStatus string
-	Signature          Signature
+	// Signature is the one Gmail adds to new emails written in Gmail, the
+	// only one its API holds (§18 row 88).
+	Signature SettingText
 }
 
-// Signature is a send-as address's signature: the one Gmail adds to new
-// emails written in Gmail, the only one its API holds (§18 row 88).
-type Signature struct {
-	// Text is the signature as text, converted from its HTML.
+// SettingText is free text from the account's settings — a signature,
+// a vacation reply — as a reader would see it.
+type SettingText struct {
 	Text Untrusted
-	// Set is whether the signature holds anything: text, an image or
-	// hidden text. One of images alone converts to no text and is set;
-	// markup left by an emptied editor is not.
+	// Set is whether it holds anything: text, an image or hidden text.
+	// One of images alone has no text and is set; markup left by an
+	// emptied editor is not.
 	Set bool
+	// Hidden is what a reader would not see, removed from Text.
+	Hidden []mime.HiddenCount
 }
 
-// NewSignature converts a signature's HTML.
-func NewSignature(html string) Signature {
+// SettingFromHTML converts settings HTML the way a message body is
+// converted: nothing fetched, hidden text removed and counted.
+func SettingFromHTML(html string) SettingText {
 	if html == "" {
-		return Signature{}
+		return SettingText{}
 	}
 	t := mime.HTMLToText([]byte(html))
-	return Signature{Text: Untrusted(t.Text), Set: t.Text != "" || t.Images > 0 || len(t.Hidden) > 0}
+	return settingText(t.Text, t.Images, t.Hidden)
 }
+
+// SettingFromText takes settings plain text with its invisible
+// characters removed and counted.
+func SettingFromText(s string) SettingText {
+	text, n := mime.StripInvisible(s)
+	var hidden []mime.HiddenCount
+	if n > 0 {
+		hidden = []mime.HiddenCount{{Reason: mime.HiddenInvisible, Chars: n}}
+	}
+	return settingText(text, 0, hidden)
+}
+
+// settingText decides whether a setting is set, one way for HTML and
+// plain text. Blank text is none, and a comment is markup, not content.
+func settingText(text string, images int, hidden []mime.HiddenCount) SettingText {
+	if strings.TrimSpace(text) == "" {
+		text = ""
+	}
+	set := text != "" || images > 0 || slices.ContainsFunc(hidden, func(h mime.HiddenCount) bool {
+		return h.Reason != mime.HiddenComment
+	})
+	return SettingText{Text: Untrusted(text), Set: set, Hidden: hidden}
+}
+
+// NoText reports whether a setting holds something with no text to show.
+func (s SettingText) NoText() bool { return s.Set && s.Text == "" }
 
 // NewSettings converts the seven settings reads.
 func NewSettings(v gmail.VacationSettings, af gmail.AutoForwarding, fwd []gmail.ForwardingAddress,
@@ -102,7 +133,7 @@ func NewSettings(v gmail.VacationSettings, af gmail.AutoForwarding, fwd []gmail.
 		out.SendAs = append(out.SendAs, SendAs{
 			Address: s.SendAsEmail, DisplayName: s.DisplayName, ReplyTo: s.ReplyToAddress,
 			Primary: s.IsPrimary, Default: s.IsDefault, Alias: s.TreatAsAlias,
-			VerificationStatus: s.VerificationStatus, Signature: NewSignature(s.Signature),
+			VerificationStatus: s.VerificationStatus, Signature: SettingFromHTML(s.Signature),
 		})
 	}
 	return out
@@ -111,24 +142,24 @@ func NewSettings(v gmail.VacationSettings, af gmail.AutoForwarding, fwd []gmail.
 // NewVacation converts the vacation responder.
 func NewVacation(v gmail.VacationSettings) Vacation {
 	out := Vacation{
-		Enabled: v.EnableAutoReply, Subject: Untrusted(v.ResponseSubject),
-		Body:               Untrusted(v.ResponseBodyPlainText),
+		Enabled: v.EnableAutoReply, Subject: SettingFromText(v.ResponseSubject),
+		Body:               SettingFromText(v.ResponseBodyPlainText),
 		RestrictToContacts: v.RestrictToContacts, RestrictToDomain: v.RestrictToDomain,
 		Start: millis(v.StartTime), End: millis(v.EndTime),
 	}
-	if out.Body == "" && v.ResponseBodyHTML != "" {
-		out.Body, out.BodyFromHTML = HTMLText(v.ResponseBodyHTML), true
+	if !out.Body.Set && v.ResponseBodyHTML != "" {
+		out.Body, out.BodyFromHTML = SettingFromHTML(v.ResponseBodyHTML), true
 	}
 	return out
 }
 
-// HTMLText converts settings HTML to text the way a message body is
-// converted: nothing fetched, hidden text dropped.
-func HTMLText(s string) Untrusted {
-	if s == "" {
-		return ""
-	}
-	return Untrusted(mime.HTMLToText([]byte(s)).Text)
+// SetUp reports whether a reply is written, on or off.
+func (v Vacation) SetUp() bool { return v.Subject.Set || v.Body.Set }
+
+// Hidden is what a reader would not see, removed from the subject and
+// the body.
+func (v Vacation) Hidden() []mime.HiddenCount {
+	return mime.MergeHidden(v.Subject.Hidden, v.Body.Hidden)
 }
 
 // millis reads a settings time, milliseconds since the epoch as a

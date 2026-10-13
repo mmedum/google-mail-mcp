@@ -18,11 +18,17 @@ lifted verbatim.
 ### Added
 
 - `get_settings` send-as entries carry `signature_set`, and `update_signature` results carry `before_set` and `after_set`: whether the signature holds anything, which its text alone cannot say when it is images or hidden text.
+- A vacation reply in `get_settings` and `set_vacation` carries `body_set`, and it and each send-as entry carry `hidden_chars_removed`.
 
 ### Fixed
 
 - `get_settings` says when a send-as address has no name or no signature, and keeps `display_name` and `untrusted_signature` when they are empty. Both were left out, which read as "no signature". The text and the description also say the signature is the one Gmail adds to new emails, the only one its API reports.
-- `update_signature` says a signature of images or hidden text alone is set. A dry run reported "signature before: none" over a logo the write then replaced. It also says Gmail adds the signature to new emails, not to all mail written in Gmail.
+- `update_signature` says a signature of images or hidden text alone is set. A dry run reported "signature before: none" over a logo the write then replaced. It also says Gmail adds the signature to new emails, not to all mail written in Gmail, and that setting one where there was none may add a new signature to Gmail's list.
+- A vacation reply whose body is an image alone reads as set up. It read as no reply at all.
+
+### Security
+
+- Text a reader would not see is left out of a signature and a vacation reply as shown, and counted in the text and in `hidden_chars_removed`, as from a message. Hidden HTML was dropped without a count, and zero-width and bidi-control characters in a plain-text vacation reply reached the result. `set_vacation`'s question says when the reply holds such characters, which are sent as given.
 
 ## [2.2.0] - 2026-10-09
 

@@ -320,3 +320,31 @@ func TestChanges(t *testing.T) {
 		t.Fatalf("changes %+v", cs)
 	}
 }
+
+// A setting is set when it holds text, an image or hidden text; blank
+// text, markup and a comment an editor leaves are none. Plain text and
+// HTML decide it the same way.
+func TestSettingTextIsSetWhenItHoldsSomething(t *testing.T) {
+	for _, tc := range []struct {
+		name string
+		got  model.SettingText
+		text model.Untrusted
+		set  bool
+	}{
+		{"empty text", model.SettingFromText(""), "", false},
+		{"blank text", model.SettingFromText("  \n"), "", false},
+		{"text", model.SettingFromText("Away"), "Away", true},
+		{"invisible characters only", model.SettingFromText("\u200b"), "", true},
+		{"empty HTML", model.SettingFromHTML(""), "", false},
+		{"markup only", model.SettingFromHTML(`<div dir="ltr"><br></div>`), "", false},
+		{"a comment only", model.SettingFromHTML(`<div dir="ltr"><!--StartFragment--><br></div>`), "", false},
+		{"an image", model.SettingFromHTML(`<img src="https://example.org/logo.png">`), "", true},
+		{"a linked image", model.SettingFromHTML(`<a href="#"><img src="https://example.org/logo.png"></a>`), "", true},
+		{"hidden text", model.SettingFromHTML(`<div style="display:none">Rae</div>`), "", true},
+		{"HTML text", model.SettingFromHTML(`<div>Rae</div>`), "Rae", true},
+	} {
+		if tc.got.Text != tc.text || tc.got.Set != tc.set {
+			t.Errorf("%s: text %q, set %t; want %q, %t", tc.name, tc.got.Text, tc.got.Set, tc.text, tc.set)
+		}
+	}
+}

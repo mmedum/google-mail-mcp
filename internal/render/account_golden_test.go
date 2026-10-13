@@ -51,7 +51,7 @@ func TestGoldenSettingsWrites(t *testing.T) {
 	b := newBox(t)
 	st := b.s.Settings()
 	golden(t, "signature_update", render.SignatureWrite(model.SignatureWrite{Address: gmailtest.Account,
-		Before: model.NewSignature(st.SendAs[0].Signature), After: model.NewSignature("Rae Reader<br>Operations")}, opts()).Text)
+		Before: model.SettingFromHTML(st.SendAs[0].Signature), After: model.SettingFromHTML("Rae Reader<br>Operations")}, opts()).Text)
 	golden(t, "signature_clear_dry_run", render.SignatureWrite(model.SignatureWrite{DryRun: true,
 		Address: gmailtest.AliasAddress}, opts()).Text)
 

@@ -10,6 +10,7 @@ Subject: Away until Monday
 
 Back on Monday.
 <<<end-untrusted-mail TESTTOKEN>>>
+note: the vacation reply holds 30 characters a reader would not see, not shown here (display:none 30).
 note: the vacation reply was converted from HTML; nothing was fetched.
 
 send as (a signature is the one Gmail adds to new emails, the only one its API reports; a different one for replies and forwards, or one added another way, is not shown):

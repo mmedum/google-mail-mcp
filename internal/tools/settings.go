@@ -8,6 +8,7 @@ import (
 
 	"github.com/mmedum/google-mail-mcp/v2/internal/gapi"
 	"github.com/mmedum/google-mail-mcp/v2/internal/gmail"
+	"github.com/mmedum/google-mail-mcp/v2/internal/mime"
 	"github.com/mmedum/google-mail-mcp/v2/internal/model"
 	"github.com/mmedum/google-mail-mcp/v2/internal/render"
 	"github.com/mmedum/google-mail-mcp/v2/internal/service"
@@ -175,7 +176,8 @@ func filterWriteOut(fw model.FilterWrite) FilterWriteOut {
 }
 
 func vacation(v model.Vacation) Vacation {
-	return Vacation{Enabled: v.Enabled, UntrustedSubject: v.Subject, UntrustedBody: v.Body,
+	return Vacation{Enabled: v.Enabled, UntrustedSubject: v.Subject.Text, UntrustedBody: v.Body.Text, BodySet: v.Body.Set,
+		HiddenCharsRemoved: mime.HiddenTotal(v.Hidden()),
 		RestrictToContacts: v.RestrictToContacts, RestrictToDomain: v.RestrictToDomain,
 		Start: timePtr(v.Start), End: timePtr(v.End)}
 }
