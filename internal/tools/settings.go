@@ -38,36 +38,22 @@ type SignatureOut struct {
 	Cost
 }
 
-// FilterMatch is what a filter to create matches, in Gmail's filter
-// criteria: create_filter's and create_trash_filter's.
-type FilterMatch struct {
-	From           string `json:"from,omitempty" jsonschema:"match mail from this sender"`
-	To             string `json:"to,omitempty" jsonschema:"match mail to this recipient"`
-	Subject        string `json:"subject,omitempty" jsonschema:"match mail whose subject contains this"`
-	Query          string `json:"query,omitempty" jsonschema:"match mail that fits this Gmail search"`
-	NegatedQuery   string `json:"negated_query,omitempty" jsonschema:"leave out mail that fits this Gmail search"`
-	HasAttachment  bool   `json:"has_attachment,omitempty" jsonschema:"match only mail with an attachment"`
-	ExcludeChats   bool   `json:"exclude_chats,omitempty" jsonschema:"leave out chats"`
-	Size           int    `json:"size,omitempty" jsonschema:"a size in bytes, with size_comparison"`
-	SizeComparison string `json:"size_comparison,omitempty" jsonschema:"larger or smaller, with size"`
-}
-
 // criteria is the match as Gmail takes it. A size out of Gmail's range is
 // refused here, before any call.
-func (m FilterMatch) criteria() (gmail.FilterCriteria, error) {
-	if m.Size < 0 || m.Size > math.MaxInt32 {
+func (c FilterCriteria) criteria() (gmail.FilterCriteria, error) {
+	if c.Size < 0 || c.Size > math.MaxInt32 {
 		return gmail.FilterCriteria{}, gapi.Errf(gapi.ClassInvalid, "size is bytes, from 1 to %d", math.MaxInt32)
 	}
-	return gmail.FilterCriteria{From: m.From, To: m.To, Subject: m.Subject, Query: m.Query,
-		NegatedQuery: m.NegatedQuery, HasAttachment: m.HasAttachment, ExcludeChats: m.ExcludeChats,
-		Size: int32(m.Size), SizeComparison: m.SizeComparison}, nil //nolint:gosec // bounded above
+	return gmail.FilterCriteria{From: c.From, To: c.To, Subject: c.Subject, Query: c.Query,
+		NegatedQuery: c.NegatedQuery, HasAttachment: c.HasAttachment, ExcludeChats: c.ExcludeChats,
+		Size: int32(c.Size), SizeComparison: c.SizeComparison}, nil //nolint:gosec // bounded above
 }
 
 // CreateFilterIn is a filter to create. What it matches uses Gmail's
 // filter criteria; what it does is labels added or removed, and the
 // common ones as flags. Trashing is create_trash_filter's alone.
 type CreateFilterIn struct {
-	FilterMatch
+	FilterCriteria
 	AddLabels    []string `json:"add_labels,omitempty" jsonschema:"labels to add, by name or id: a user label, STARRED, IMPORTANT, or a category"`
 	RemoveLabels []string `json:"remove_labels,omitempty" jsonschema:"labels to remove, by name or id: INBOX archives, UNREAD marks read, SPAM keeps mail out of spam"`
 	Archive      bool     `json:"archive,omitempty" jsonschema:"skip the inbox"`
@@ -79,7 +65,7 @@ type CreateFilterIn struct {
 // CreateTrashFilterIn is a filter that moves what it matches to the
 // trash as it arrives.
 type CreateTrashFilterIn struct {
-	FilterMatch
+	FilterCriteria
 	Confirm bool `json:"confirm,omitempty" jsonschema:"must be true: matching mail goes to the trash as it arrives, unseen, and Gmail deletes it from there after 30 days"`
 	DryRun  bool `json:"dry_run,omitempty" jsonschema:"check the filter and report it without creating it"`
 }
@@ -89,9 +75,9 @@ type DeleteFilterIn struct {
 	FilterID string `json:"filter_id" jsonschema:"the filter's id, from list_filters"`
 	// Criteria put what is deleted into the call, where a client's
 	// prompt shows it (§4.13).
-	Criteria FilterMatch `json:"criteria" jsonschema:"the filter's criteria, as list_filters gives them; checked, never changed: the delete is refused as stale if they are not the filter's"`
-	Confirm  bool        `json:"confirm,omitempty" jsonschema:"must be true: a deleted filter cannot be restored"`
-	DryRun   bool        `json:"dry_run,omitempty" jsonschema:"read the filter and report it without deleting it"`
+	Criteria FilterCriteria `json:"criteria" jsonschema:"the filter's criteria, as list_filters gives them; checked, never changed: the delete is refused as stale if they are not the filter's"`
+	Confirm  bool           `json:"confirm,omitempty" jsonschema:"must be true: a deleted filter cannot be restored"`
+	DryRun   bool           `json:"dry_run,omitempty" jsonschema:"read the filter and report it without deleting it"`
 }
 
 // FilterWriteOut is a filter created or deleted.

@@ -117,9 +117,13 @@ func TestSendDraftReply(t *testing.T) {
 	}
 
 	refused(t, h, "send_draft", with(args, "message_id", sc.MessageIDs[1]), gapi.ClassStale)
+	fake.ResetAccounting()
 	text = refused(t, h, "send_draft", args, gapi.ClassBlocked)
 	if !strings.Contains(text, "1 of draft "+sc.DraftID+"'s recipients are not in confirm_recipients: to[0]") || sends(fake) != 0 {
 		t.Fatalf("a participant left out of confirm_recipients: %d sends, %s", sends(fake), text)
+	}
+	if n := len(fake.CallsOf("gmail.users.threads.get")); n != 0 {
+		t.Errorf("the refused send read the thread %d times; the guard needs none", n)
 	}
 
 	args["confirm_recipients"] = []any{gmailtest.Freya.Email}

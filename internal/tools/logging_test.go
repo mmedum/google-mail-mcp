@@ -87,6 +87,18 @@ func canaryGmail(t *testing.T) (srv *httptest.Server, writes *atomic.Int64) {
 	return srv, writes
 }
 
+// guardedArgs is argsFor with the tool's guards, confirm and enable, set
+// true, so a call can reach its write; guarded says it has one.
+func guardedArgs(tool *mcp.Tool) (args map[string]any, guarded bool) {
+	args = argsFor(tool)
+	for _, guard := range []string{"confirm", "enable"} {
+		if _, ok := args[guard]; ok {
+			args[guard], guarded = true, true
+		}
+	}
+	return args, guarded
+}
+
 // argsFor fills every property of a tool's input schema with a canary
 // of the right type, so the caller's own words are traceable through
 // the logs as well as Google's.
@@ -190,12 +202,7 @@ func TestLogsNeverCarryThePayload(t *testing.T) {
 	// its guards set so the call reaches its write.
 	var guardedWrites int64
 	for _, tool := range surface {
-		args, guarded := argsFor(tool), false
-		for _, guard := range []string{"confirm", "enable"} {
-			if _, ok := args[guard]; ok {
-				args[guard], guarded = true, true
-			}
-		}
+		args, guarded := guardedArgs(tool)
 		before := writes.Load()
 		// Every third request to the canary server fails, so a call is
 		// made three times to meet it at each point of that cycle.

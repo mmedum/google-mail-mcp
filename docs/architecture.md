@@ -1125,8 +1125,7 @@ only one the API holds, and the list's heading says so (§18 row 88).
 Text a reader would not see is left out of a signature and a vacation
 reply as shown, and counted, as from a message (§4.1): hidden HTML, and
 invisible characters in a plain-text reply. Gmail keeps them, so the
-note says the text holds them rather than that they were removed, and
-`set_vacation`'s question says they are sent as given. A reply whose
+note says the text holds them rather than that they were removed. A reply whose
 body is an image alone is set up, and `body_set` says so.
 
 ### 7.8 Sending
@@ -1136,8 +1135,9 @@ body is an image alone is set up, and `body_set` says so.
 `subject` and `first_line` witnesses, `confirm_recipients` and
 `dry_run`. It reads the draft (`format=full`, for the attachments),
 compares the witnesses, then checks what needs no thread — a recipient at all, at
-most 50, no confirmation of an address the draft does not send to — and
-then reads its thread's `From`, `To` and `Cc` (§4.2). A dry run
+most 50, no confirmation of an address the draft does not send to, and,
+unless it is a dry run, every recipient confirmed — and then reads its
+thread's `From`, `To` and `Cc` (§4.2). A dry run
 reports the recipients the guard would stop instead of refusing, since
 that is how the caller learns whom to confirm. A draft with no recipient
 is `[invalid]`. The send is one `drafts.send`; the result names the sent
@@ -1513,7 +1513,8 @@ generated from `internal/scopes` and gated (§5a, `staleness`).
   guards set, and floors on a write reaching Gmail.
 - **Nobody is asked** (§4.13): the test harness's client declares
   elicitation and fails any call that asks, so every tool test holds
-  the server to asking nobody; `register` refuses a kind that cannot be
+  the server to asking nobody, and `forbidigo` refuses a call to
+  `ServerSession.Elicit` anywhere in the server; `register` refuses a kind that cannot be
   undone without `confirm`, and `confirm` under a kind not annotated
   destructive; only the two widest deletes carry the mark, read from the
   whole surface.
@@ -2170,7 +2171,8 @@ decided 2026-10-22, and this server's port, approved by the maintainer
   state, its rendering and `GMAIL_REQUIRE_PROMPT` are gone; the setting,
   set to anything but `false`, refuses to start, and its flag no longer
   parses. The test harness declares elicitation and fails any call that
-  asks, and the live driver fails the step that draws a question.
+  asks, the live driver fails the step that draws a question, and
+  `forbidigo` refuses `ServerSession.Elicit`.
 - `create_filter` no longer takes `trash` or `confirm`;
   `create_trash_filter` makes a filter that trashes, with
   `confirm: true`, behind the settings and destructive flags. A client
@@ -2195,7 +2197,8 @@ decided 2026-10-22, and this server's port, approved by the maintainer
 - `schema-diff` accepts a break the unreleased CHANGELOG declares under
   **Breaking:**, naming the tool, when no version heading there keeps
   the baseline's major. `staleness` holds the README's
-  `permissions.ask` rules to the registered tools.
+  `permissions.ask` rules to the registered tools, and requires one for
+  every tool annotated destructive.
 - The module path is `/v3`.
 
 Owed: a live run, its transcript read (the steps §15 names), and

@@ -34,9 +34,9 @@ type Session struct {
 	// go out, so a call cannot be made without being counted.
 	onCall  func(tool string, args map[string]any)
 	options map[string][]string
-	// onElicit answers the server's questions to the person; when set,
-	// Initialize declares form elicitation.
-	onElicit func(message string) (action string)
+	// onElicit is told of each question the server puts to the person;
+	// when set, Initialize declares form elicitation.
+	onElicit func()
 
 	mu     sync.Mutex
 	stderr []string
@@ -127,7 +127,7 @@ func (s *Session) request(method string, params any) (map[string]any, error) {
 			// A request of the server's own, made while it serves ours:
 			// an elicitation to answer, or one this client does not take.
 			if rid, hasID := reply["id"]; hasID {
-				if err := s.answer(rid, method, reply["params"]); err != nil {
+				if err := s.answer(rid, method); err != nil {
 					return nil, err
 				}
 			}
@@ -151,23 +151,16 @@ func (s *Session) request(method string, params any) (map[string]any, error) {
 }
 
 // answer replies to one request the server sent: ping with an empty
-// result, elicitation/create through onElicit, anything else with
-// method-not-found.
-func (s *Session) answer(id any, method string, params any) error {
+// result, elicitation/create with a decline, unread, after telling
+// onElicit, anything else with method-not-found.
+func (s *Session) answer(id any, method string) error {
 	frame := map[string]any{"jsonrpc": "2.0", "id": id}
 	switch {
 	case method == "ping":
 		frame["result"] = map[string]any{}
 	case method == "elicitation/create" && s.onElicit != nil:
-		p, _ := params.(map[string]any)
-		message, _ := p["message"].(string)
-		result := map[string]any{"action": s.onElicit(message)}
-		if result["action"] == "accept" {
-			// An accept carries the form's content, empty for a form with
-			// no fields.
-			result["content"] = map[string]any{}
-		}
-		frame["result"] = result
+		s.onElicit()
+		frame["result"] = map[string]any{"action": "decline"}
 	default:
 		frame["error"] = map[string]any{"code": -32601, "message": "this client does not take " + method}
 	}
@@ -268,10 +261,10 @@ func (s *Session) Initialize(name string) (protocol string, tools []string, err 
 func (s *Session) OnCall(f func(tool string, args map[string]any)) { s.onCall = f }
 
 // OnElicit makes the session a client that can ask the person: it
-// declares form elicitation at Initialize, so it is set before, and f
-// answers each question the server puts with an action: accept,
-// decline or cancel.
-func (s *Session) OnElicit(f func(message string) (action string)) { s.onElicit = f }
+// declares form elicitation at Initialize, so it is set before. Each
+// question the server puts is declined unread, since it could quote the
+// mailbox, and f is told of it: these servers ask nobody (§4.13).
+func (s *Session) OnElicit(f func()) { s.onElicit = f }
 
 // Options is the tool surface the server published at initialize: each
 // registered tool and the option names its schema declares.

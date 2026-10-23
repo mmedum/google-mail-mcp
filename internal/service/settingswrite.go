@@ -169,7 +169,7 @@ func (s *Service) CreateFilter(ctx context.Context, sp FilterSpec) (model.Filter
 		}
 	}
 	if len(add) == 0 && len(remove) == 0 {
-		return out, gapi.Errf(gapi.ClassInvalid, "a filter needs an action: add_labels, remove_labels, archive, mark_read, star or trash")
+		return out, gapi.Errf(gapi.ClassInvalid, "a filter needs an action: add_labels, remove_labels, archive, mark_read or star")
 	}
 	if err := addedAndRemoved(add, remove); err != nil {
 		return out, err

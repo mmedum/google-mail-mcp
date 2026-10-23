@@ -174,21 +174,19 @@ func asRPC(err error, target **RPCError) bool {
 	return ok
 }
 
-// A session that answers questions declares so, and answers the one the
-// server puts in the middle of a call before the call's own reply.
-func TestElicitationIsDeclaredAndAnswered(t *testing.T) {
+// A session that can be asked declares so, and declines the question
+// the server puts in the middle of a call, before the call's own reply,
+// telling its caller.
+func TestElicitationIsDeclaredAndDeclined(t *testing.T) {
 	s := startFake(t)
-	var asked []string
-	s.OnElicit(func(message string) string {
-		asked = append(asked, message)
-		return "accept"
-	})
+	asked := 0
+	s.OnElicit(func() { asked++ })
 	if _, _, err := s.Initialize("test"); err != nil {
 		t.Fatal(err)
 	}
 	text, _, err := s.CallTool("ask", nil)
-	if err != nil || text != "q1 accept" || !slices.Equal(asked, []string{"Delete it?"}) {
-		t.Errorf("ask = %q, %v; asked %v", text, err, asked)
+	if err != nil || text != "q1 decline" || asked != 1 {
+		t.Errorf("ask = %q, %v; asked %d", text, err, asked)
 	}
 
 	quiet := startFake(t)

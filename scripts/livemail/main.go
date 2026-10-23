@@ -209,10 +209,11 @@ func drive(ctx context.Context, o options, tr *transcript.Transcript, box mailbo
 		return err
 	}
 	defer session.Close()
+	e := &env{ctx: ctx, session: session, tr: tr, seed: seed, localDir: localDir, sendTo: o.sendTo, full: box.FullScope(),
+		settings: box.SettingsScope(), signatureAddress: saved.address}
 	// The driver can be asked, and the server asks nobody (§4.13): a
 	// question is declined, and fails the step that drew it.
-	questions := &noQuestions{}
-	session.OnElicit(questions.answer)
+	session.OnElicit(func() { e.asked++ })
 	protocol, tools, err := session.Initialize("livemail")
 	if err != nil {
 		return err
@@ -221,8 +222,6 @@ func drive(ctx context.Context, o options, tr *transcript.Transcript, box mailbo
 
 	rec := livecover.NewRecorder()
 	session.OnCall(rec.Sent)
-	e := &env{ctx: ctx, session: session, tr: tr, seed: seed, localDir: localDir, sendTo: o.sendTo, full: box.FullScope(),
-		settings: box.SettingsScope(), signatureAddress: saved.address, questions: questions}
 
 	failed := 0
 	for _, s := range slices.Concat(steps, writeSteps, gatedSteps, settingsSteps) {

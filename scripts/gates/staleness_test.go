@@ -1,6 +1,7 @@
 package main
 
 import (
+	"encoding/json"
 	"fmt"
 	"slices"
 	"strings"
@@ -262,27 +263,52 @@ func TestStalenessScopeSourceIsWired(t *testing.T) {
 func TestStalenessReadmeToolsBothWays(t *testing.T) {
 	readme := "# x\n\n## Tools\n\n| Tool | What |\n|---|---|\n| `get_profile` | a |\n| `list_labels` | b |\n\n## Safety\n" +
 		"\n```json\n{\"permissions\": {\"ask\": [\"mcp__google-mail__get_profile\"]}}\n```\n"
-	if n, p := stalenessReadmeTools(readme, []string{"get_profile", "list_labels"}); n != 2 || len(p) != 0 {
+	if n, p := stalenessReadmeTools(readme, []string{"get_profile", "list_labels"}, []string{"get_profile"}); n != 2 || len(p) != 0 {
 		t.Errorf("an agreeing table: %d rows, %v", n, p)
 	}
-	_, p := stalenessReadmeTools(readme, []string{"get_profile", "get_thread"})
+	_, p := stalenessReadmeTools(readme, []string{"get_profile", "get_thread"}, []string{"get_profile"})
 	if len(p) != 2 || !strings.Contains(strings.Join(p, "\n"), "get_thread") || !strings.Contains(strings.Join(p, "\n"), "list_labels") {
 		t.Errorf("a table missing one tool and listing another: %v", p)
 	}
-	if _, p := stalenessReadmeTools("# x\n", []string{"get_profile"}); len(p) != 1 {
+	if _, p := stalenessReadmeTools("# x\n", []string{"get_profile"}, nil); len(p) != 1 {
 		t.Errorf("no table at all: %v", p)
 	}
 }
 
 // A Claude Code permission rule in the README names a tool the binary
-// registers, or it asks nobody; and the README gives at least one.
+// registers, or it asks nobody; the README gives at least one; and every
+// tool annotated destructive has one, or a client runs it unasked.
 func TestStalenessReadmePermissionRules(t *testing.T) {
-	table := "# x\n\n## Tools\n\n| Tool | What |\n|---|---|\n| `get_profile` | a |\n"
-	_, p := stalenessReadmeTools(table+"\n\"mcp__google-mail__get_profile\", \"mcp__google-mail__send_drafts\"\n",
-		[]string{"get_profile"})
+	table := "# x\n\n## Tools\n\n| Tool | What |\n|---|---|\n| `get_profile` | a |\n| `send_draft` | b |\n"
+	tools := []string{"get_profile", "send_draft"}
+	_, p := stalenessReadmeTools(table+"\n\"mcp__google-mail__send_draft\", \"mcp__google-mail__send_drafts\"\n",
+		tools, []string{"send_draft"})
 	if len(p) != 1 || p[0] != "README.md gives a permission rule for send_drafts, which the binary does not register" {
 		t.Errorf("a rule for no tool: %q", p)
 	}
-	_, p = stalenessReadmeTools(table, []string{"get_profile"})
+	_, p = stalenessReadmeTools(table+"\n\"mcp__google-mail__get_profile\"\n", tools, []string{"send_draft"})
+	if len(p) != 1 || p[0] != "README.md's permissions.ask block has no rule for send_draft, which is annotated destructive" {
+		t.Errorf("a destructive tool left out: %q", p)
+	}
+	_, p = stalenessReadmeTools(table+"\n\"mcp__google-mail__send_draft\"\n", tools, nil)
+	stalenessHas(t, p, "registers no tool annotated destructive")
+	_, p = stalenessReadmeTools(table, tools, []string{"send_draft"})
 	stalenessHas(t, p, "README.md gives no Claude Code permission rule")
+}
+
+// A client reads a tool as destructive unless it is read-only or says it
+// is not, as MCP's defaults have it.
+func TestDumpDestructive(t *testing.T) {
+	for annotations, want := range map[string]bool{
+		``:                          true,
+		`{"readOnlyHint":true}`:     false,
+		`{"destructiveHint":false}`: false,
+		`{"destructiveHint":true}`:  true,
+		`{"openWorldHint":true}`:    true,
+		`{"readOnlyHint":false,"destructiveHint":false}`: false,
+	} {
+		if got := dumpDestructive(dumpTool{Name: "x", Annotations: json.RawMessage(annotations)}); got != want {
+			t.Errorf("%s: %v, want %v", annotations, got, want)
+		}
+	}
 }

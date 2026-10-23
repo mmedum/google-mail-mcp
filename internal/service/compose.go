@@ -688,6 +688,17 @@ type Revise struct {
 	LocalDir       string
 }
 
+// draftMoved refuses a write to a draft that holds another message than
+// the witness the caller read (§4.4); then is what to do after reading
+// it again.
+func draftMoved(draftID, held, witness, then string) error {
+	if held == witness {
+		return nil
+	}
+	return gapi.Errf(gapi.ClassStale, "draft %s changed since it was read: it holds message %s now, not %s. Read it again "+
+		"with get_draft %s", draftID, held, witness, then)
+}
+
 // UpdateDraft re-reads a draft, checks the witness, applies only what
 // was given, and saves it (§4.4). Everything not named is carried over
 // from what Gmail stored, byte for byte. The window between the re-read
@@ -714,10 +725,8 @@ func (s *Service) UpdateDraft(ctx context.Context, in Revise) (model.DraftWrite,
 	if d.Message == nil || d.Message.Raw == "" {
 		return out, gapi.Errf(gapi.ClassUnavailable, "Gmail returned draft %s without its message", in.DraftID)
 	}
-	if d.Message.ID != in.Witness {
-		return out, gapi.Errf(gapi.ClassStale,
-			"draft %s changed since it was read: it holds message %s now, not %s. Read it again with get_draft and reapply the change",
-			in.DraftID, d.Message.ID, in.Witness)
+	if err := draftMoved(in.DraftID, d.Message.ID, in.Witness, "and reapply the change"); err != nil {
+		return out, err
 	}
 	raw, err := mime.DecodeBase64URL(d.Message.Raw)
 	if err != nil {
@@ -913,10 +922,8 @@ func (s *Service) DeleteDraft(ctx context.Context, id, witness string, confirm b
 		return out, gapi.Wrap(gapi.ClassUnavailable, err, "Gmail returned draft %s without its message", id)
 	}
 	m := d.Message
-	if m.ID != witness {
-		return out, gapi.Errf(gapi.ClassStale,
-			"draft %s changed since it was read: it holds message %s now, not %s. Read it again with get_draft before deleting it",
-			id, m.ID, witness)
+	if err := draftMoved(id, m.ID, witness, "before deleting it"); err != nil {
+		return out, err
 	}
 	out.MessageID, out.ThreadID, out.Subject, out.RFC822MessageID = m.ID, m.ThreadID, m.Subject, m.RFC822MessageID
 	if len(m.From) > 0 {

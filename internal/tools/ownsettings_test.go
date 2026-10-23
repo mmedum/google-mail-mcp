@@ -77,12 +77,7 @@ func TestNoToolWritesTheServersOwnSettings(t *testing.T) {
 				t.Errorf("%s takes %s, which is one of the server's own settings", tool.Name, name)
 			}
 		}
-		guarded := maps.Clone(args)
-		for _, guard := range []string{"confirm", "enable"} {
-			if _, ok := guarded[guard]; ok {
-				guarded[guard] = true
-			}
-		}
+		guarded, _ := guardedArgs(tool)
 		for _, a := range []map[string]any{args, guarded} {
 			if _, err := h.Client.CallTool(context.Background(), &mcp.CallToolParams{Name: tool.Name, Arguments: a}); err != nil {
 				t.Fatalf("call %s: %v", tool.Name, err)

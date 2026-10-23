@@ -7,7 +7,6 @@ package testutil
 import (
 	"context"
 	"encoding/json"
-	"fmt"
 	"testing"
 
 	"github.com/modelcontextprotocol/go-sdk/mcp"
@@ -44,37 +43,29 @@ func Connect(t *testing.T, register func(*mcp.Server)) *Harness {
 // call.
 func ConnectServer(t *testing.T, server *mcp.Server) *Harness {
 	t.Helper()
-	h, err := connect(context.Background(), server, &mcp.ClientOptions{
+	ctx := context.Background()
+	ct, st := mcp.NewInMemoryTransports()
+	ss, err := server.Connect(ctx, st, nil)
+	if err != nil {
+		t.Fatalf("server connect: %v", err)
+	}
+	client := mcp.NewClient(&mcp.Implementation{Name: "test-client", Version: "test"}, &mcp.ClientOptions{
 		ElicitationHandler: func(_ context.Context, req *mcp.ElicitRequest) (*mcp.ElicitResult, error) {
 			t.Errorf("the server asked the person: %q", req.Params.Message)
 			return &mcp.ElicitResult{Action: "decline"}, nil
 		},
 	})
-	if err != nil {
-		t.Fatal(err)
-	}
-	t.Cleanup(h.Close)
-	return h
-}
-
-// connect connects a client with opts to server over an in-memory
-// transport, at the SDK's newest protocol version.
-func connect(ctx context.Context, server *mcp.Server, opts *mcp.ClientOptions) (*Harness, error) {
-	ct, st := mcp.NewInMemoryTransports()
-	ss, err := server.Connect(ctx, st, nil)
-	if err != nil {
-		return nil, fmt.Errorf("server connect: %w", err)
-	}
-	client := mcp.NewClient(&mcp.Implementation{Name: "test-client", Version: "test"}, opts)
 	cs, err := client.Connect(ctx, ct, nil)
 	if err != nil {
 		_ = ss.Close()
-		return nil, fmt.Errorf("client connect: %w", err)
+		t.Fatalf("client connect: %v", err)
 	}
-	return &Harness{Client: cs, closeFn: func() {
+	h := &Harness{Client: cs, closeFn: func() {
 		_ = cs.Close()
 		_ = ss.Close()
-	}}, nil
+	}}
+	t.Cleanup(h.Close)
+	return h
 }
 
 // Call calls one tool. A transport error fails the test; a tool error

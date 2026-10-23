@@ -81,10 +81,8 @@ func (s *Service) SendDraft(ctx context.Context, in Dispatch) (model.SendWrite, 
 		return out, gapi.Wrap(gapi.ClassUnavailable, err, "Gmail returned draft %s without its message", out.DraftID)
 	}
 	m := d.Message
-	if m.ID != witness {
-		return out, gapi.Errf(gapi.ClassStale,
-			"draft %s changed since it was read: it holds message %s now, not %s. Read it again with get_draft before sending",
-			out.DraftID, m.ID, witness)
+	if err := draftMoved(out.DraftID, m.ID, witness, "before sending"); err != nil {
+		return out, err
 	}
 	if m, err = s.sameContent(ctx, g.Message, m, in); err != nil {
 		return out, err
@@ -112,6 +110,14 @@ func (s *Service) SendDraft(ctx context.Context, in Dispatch) (model.SendWrite, 
 	if err := validate(out, confirmed); err != nil {
 		return out, err
 	}
+	// A dry run is how the caller learns whom to confirm: it reports the
+	// recipients the guard would stop instead of refusing. A send the
+	// guard stops is refused before the thread is read.
+	if !out.DryRun {
+		if err := unconfirmed(out); err != nil {
+			return out, err
+		}
+	}
 	th, err := s.participants(ctx, m)
 	if err != nil {
 		return out, err
@@ -120,13 +126,8 @@ func (s *Service) SendDraft(ctx context.Context, in Dispatch) (model.SendWrite, 
 	for i, r := range out.Recipients {
 		out.Recipients[i].Participant = th.seen[strings.ToLower(r.Address.Email)]
 	}
-	// A dry run is how the caller learns whom to confirm: it reports the
-	// recipients the guard would stop instead of refusing.
 	if out.DryRun {
 		return out, nil
-	}
-	if err := unconfirmed(out); err != nil {
-		return out, err
 	}
 	sent, err := s.client.SendDraft(ctx, out.DraftID)
 	if err != nil {

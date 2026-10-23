@@ -43,6 +43,11 @@ linters:
           msg: "stdout carries only MCP JSON-RPC frames; write to an io.Writer the caller passed in, or slog to stderr"
         - pattern: ^os\.Stdout$
           msg: "only main names the process's streams; take an io.Writer instead"
+        # The server asks the person nothing; per-call approval is the
+        # client's (docs/architecture.md §4.13).
+        - pattern: ^mcp\.\*?ServerSession\.Elicit$
+          pkg: ^github\.com/modelcontextprotocol/go-sdk/mcp$
+          msg: "the server asks the person nothing; per-call approval is the client's (§4.13)"
     gocyclo:
       min-complexity: 25
     gosec:

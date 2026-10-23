@@ -45,16 +45,6 @@ type step struct {
 	needs func(e *env) string
 }
 
-// noQuestions answers the server's questions to the person, which it
-// must never put (§4.13): each is declined and counted, unread, since
-// it could quote the mailbox.
-type noQuestions struct{ asked int }
-
-func (q *noQuestions) answer(string) string {
-	q.asked++
-	return "decline"
-}
-
 // A thread or message id in a rendering, 16 hex digits after its noun.
 var (
 	threadIDIn  = regexp.MustCompile(`thread ([0-9a-f]{16})`)
@@ -408,8 +398,9 @@ type env struct {
 	// predicted is each item's labels after, as the last dry run said,
 	// for the write that follows to match (§18 row 70).
 	predicted map[string][]string
-	// questions counts what the server asked the person: nothing.
-	questions *noQuestions
+	// asked counts the questions the server put to the person, which it
+	// never does (§4.13).
+	asked int
 }
 
 // unsubscribeIs holds a row of the last listing to one web address,
@@ -591,15 +582,12 @@ func (e *env) runStep(s step) error {
 		return err
 	}
 	e.tr.Sayf("=== %s %s ===", s.tool, mcpstdio.Encode(args))
-	asked := 0
-	if e.questions != nil {
-		asked = e.questions.asked
-	}
+	asked := e.asked
 	text, structured, isError, err := e.session.CallToolStructured(s.tool, args)
 	if err != nil {
 		return err
 	}
-	if e.questions != nil && e.questions.asked != asked {
+	if e.asked != asked {
 		return errors.New("the server asked the person, and it asks nobody")
 	}
 	e.structured = structured

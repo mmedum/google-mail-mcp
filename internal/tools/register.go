@@ -182,10 +182,11 @@ func register[In any, Out Renderer](s *mcp.Server, d Deps, sp Spec, h Handler[In
 	if !sp.Kind.allowed(d.Config) {
 		return
 	}
-	if sp.Kind.confirmsEveryCall() && !takesConfirm[In]() {
+	confirms := takesConfirm[In]()
+	if sp.Kind.confirmsEveryCall() && !confirms {
 		panic("tools: " + sp.Name + " is " + sp.Kind.String() + ", which cannot be undone, and takes no confirm")
 	}
-	if d := sp.Kind.annotations().DestructiveHint; takesConfirm[In]() && (d == nil || !*d) {
+	if hint := sp.Kind.annotations().DestructiveHint; confirms && (hint == nil || !*hint) {
 		panic("tools: " + sp.Name + " takes confirm, and its kind " + sp.Kind.String() + " is not annotated destructive")
 	}
 	if d.registered != nil {

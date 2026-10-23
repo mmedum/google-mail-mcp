@@ -204,17 +204,13 @@ func resourceKind(r *mcp.ReadResourceRequest) string {
 // this server's own message and is not logged.
 var classPrefix = regexp.MustCompile(`^\[([a-z_]+)\]`)
 
-// outcome is "ok", "error" for a protocol error, "input_required" for a
-// call that stopped to ask the person (§4.13), or the class of a tool
+// outcome is "ok", "error" for a protocol error, or the class of a tool
 // error, which comes from the closed vocabulary of §6.5.
 func outcome(res mcp.Result, err error) string {
 	if err != nil {
 		return "error"
 	}
 	ctr, ok := res.(*mcp.CallToolResult)
-	if ok && ctr.InputRequests != nil {
-		return "input_required"
-	}
 	if !ok || !ctr.IsError {
 		return "ok"
 	}
