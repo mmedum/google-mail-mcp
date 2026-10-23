@@ -1,15 +1,18 @@
 # Architecture — google-mail-mcp
 
-**Status: 3.0.0 is unreleased, on the branch `client-decides`: per-call
-approval is the client's (§4.13). The server asks nobody, and a set
+**Status: 3.0.0 is cut, 2026-10-23, after a live run of 99 steps with
+none failed, its transcript read, and the code and security reviews
+(§16a). The run had no `-send-to`, so its seven steps that send were
+skipped: `send_draft`'s refusals and dry runs ran, a send did not.
+Per-call approval is the client's (§4.13). The server asks nobody, and a set
 `GMAIL_REQUIRE_PROMPT` refuses to start; a filter that trashes is its
 own tool, `create_trash_filter`, and it and `delete_filter` need the
 destructive flag too; `send_draft` names every recipient, participants
 included, and the draft's subject and first line; `delete_filter` takes
 the filter's criteria; `delete_draft` takes the draft's `message_id`; only
 `delete_permanently` and `delete_label` carry the mark; the module path
-is `/v3`. Owed before it counts: a live run with its transcript read,
-and the reviews. 2.3.0 is released, 2026-10-13, from `main`, after a live run
+is `/v3`; it is built with Go 1.27.3, which fixes GO-2026-6809 in
+`crypto/x509`. 2.3.0 is released, 2026-10-13, from `main`, after a live run
 of 95 steps with none failed, and verified from outside: checksums, the
 cosign signature and the provenance attestation, each also against a
 tampered copy, the version in all five places, the registry entry, and
@@ -42,7 +45,8 @@ outside: checksums, the cosign signature and the provenance attestation,
 each also against a tampered copy, the registry entry, and the Go proxy
 resolving the `/v2` module path. From 2.0.0 to 2.3.0 the server asked
 the person through the MCP client before each write that takes
-`confirm`.** Still unproven: the bundle installed in Claude Desktop.
+`confirm`.** Still unproven: a 3.0.0 send, and the bundle installed in
+Claude Desktop.
 
 ## 1. Mission and scope
 
@@ -625,7 +629,7 @@ sibling.** Three siblings' newest pins already trailed upstream:
 
 | Tool | Version |
 |---|---|
-| Go | 1.27.2 (`go-version-file: go.mod` in CI) |
+| Go | 1.27.3 (`go-version-file: go.mod` in CI) |
 | MCP Go SDK | v1.8.0 |
 | golangci-lint | v2.14.0 |
 | goreleaser | v2.18.2 |
@@ -1731,7 +1735,7 @@ approved on 2026-09-26 to send in phase 2 (§14), to that address only,
 passed to the driver as a flag. They sent six messages in one run; the
 second run sent none. Phase 3's run answered B and C.
 
-- **3.0.0 — the client decides (owed).** A run with the settings
+- **3.0.0 — the client decides.** A run with the settings
   scope and `-send-to`, its transcript read: no step draws a question;
   `delete_draft` refuses another draft's message id as `[stale]` and
   deletes with the right one; `create_trash_filter` refuses without
@@ -1745,6 +1749,20 @@ second run sent none. Phase 3's run answered B and C.
   gave and the first line the run wrote, the long paragraph's draft
   included; `delete_filter` refuses other criteria as `[stale]`, and
   deletes each filter with the criteria its create gave.
+
+  **Run 2026-10-23, with the settings scope and without `-send-to`:**
+  99 steps passed, none failed, and none drew a question. `delete_draft`
+  refused another message id as `[stale]` and deleted with the right
+  one. `create_trash_filter` refused without `confirm`, showed its
+  filter on a dry run, created it and refused an identical one, and
+  `delete_filter` removed it. A reply-all's dry run named both
+  recipients unconfirmed, one of them a participant. `send_draft`
+  refused unconfirmed recipients, an old message id, another subject and
+  another first line, each with nothing sent. `delete_filter` refused
+  other criteria as `[stale]` and deleted each filter with the criteria
+  its create gave. Still owed: the seven steps that need `-send-to`,
+  which are the send itself, the long paragraph's draft, and the reply
+  to a participant refused until confirmed, then deleted unsent.
 
 ## 16. Delivery phases
 
@@ -2166,7 +2184,7 @@ both showed the paragraph flowing in Gmail's web reader (§18 row 73).
   body-only update, and spike M reads the stored and the sent bytes
   (§15).
 
-**3.0.0 — the client decides (unreleased).** The shared standard's §3,
+**3.0.0 — the client decides (released 2026-10-23).** The shared standard's §3,
 decided 2026-10-22, and this server's port, approved by the maintainer
 2026-10-23 (§14).
 
@@ -2205,8 +2223,9 @@ decided 2026-10-22, and this server's port, approved by the maintainer
   every tool annotated destructive.
 - The module path is `/v3`.
 
-Owed: a live run, its transcript read (the steps §15 names), and
-`/code-review high` and `/security-review`.
+Done: `/code-review high` and `/security-review` (§16a), and a live
+run, its transcript read (§15). Owed: the steps of §15 that need
+`-send-to`.
 
 ### 16a. Found by review, and fixed
 
