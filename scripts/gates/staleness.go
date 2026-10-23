@@ -627,11 +627,17 @@ func stalenessReadmeTools(readme string, tools, destructive []string) (int, []st
 		problems = append(problems, "README.md gives no Claude Code permission rule for a tool, in the form "+
 			"\"mcp__google-mail__<tool>\"; the README's permissions.ask block is missing")
 	}
-	asked := map[string]bool{}
 	for _, m := range rules {
-		asked[m[1]] = true
 		if !slices.Contains(tools, m[1]) {
 			problems = append(problems, "README.md gives a permission rule for "+m[1]+", which the binary does not register")
+		}
+	}
+	// Only a rule inside an "ask" list asks: one under "allow" lets the
+	// tool run unasked.
+	asked := map[string]bool{}
+	for _, block := range stalenessAskList.FindAllStringSubmatch(readme, -1) {
+		for _, m := range stalenessPermissionRule.FindAllStringSubmatch(block[1], -1) {
+			asked[m[1]] = true
 		}
 	}
 	if len(destructive) == 0 {
@@ -665,6 +671,10 @@ func dumpDestructive(t dumpTool) bool {
 // stalenessPermissionRule is a Claude Code permission rule for one of
 // this server's tools, under the server name the README uses.
 var stalenessPermissionRule = regexp.MustCompile(`"mcp__google-mail__([a-z0-9_]+)"`)
+
+// stalenessAskList is a permissions "ask" list in a JSON block, its
+// entries captured.
+var stalenessAskList = regexp.MustCompile(`"ask"\s*:\s*\[([^\]]*)\]`)
 
 func stalenessToolCounts(arch string, tools []string, toolsErr error) (int, []string) {
 	section := markdownSection(arch, "## 8. Tool surface")

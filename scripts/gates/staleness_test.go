@@ -281,14 +281,23 @@ func TestStalenessReadmeToolsBothWays(t *testing.T) {
 func TestStalenessReadmePermissionRules(t *testing.T) {
 	table := "# x\n\n## Tools\n\n| Tool | What |\n|---|---|\n| `get_profile` | a |\n| `send_draft` | b |\n"
 	tools := []string{"get_profile", "send_draft"}
-	_, p := stalenessReadmeTools(table+"\n\"mcp__google-mail__send_draft\", \"mcp__google-mail__send_drafts\"\n",
+	_, p := stalenessReadmeTools(table+"\n{\"ask\": [\"mcp__google-mail__send_draft\", \"mcp__google-mail__send_drafts\"]}\n",
 		tools, []string{"send_draft"})
 	if len(p) != 1 || p[0] != "README.md gives a permission rule for send_drafts, which the binary does not register" {
 		t.Errorf("a rule for no tool: %q", p)
 	}
-	_, p = stalenessReadmeTools(table+"\n\"mcp__google-mail__get_profile\"\n", tools, []string{"send_draft"})
+	_, p = stalenessReadmeTools(table+"\n{\"ask\": [\"mcp__google-mail__get_profile\"]}\n", tools, []string{"send_draft"})
 	if len(p) != 1 || p[0] != "README.md's permissions.ask block has no rule for send_draft, which is annotated destructive" {
 		t.Errorf("a destructive tool left out: %q", p)
+	}
+	_, p = stalenessReadmeTools(table+"\n{\"allow\": [\"mcp__google-mail__send_draft\"]}\n", tools, []string{"send_draft"})
+	if len(p) != 1 || p[0] != "README.md's permissions.ask block has no rule for send_draft, which is annotated destructive" {
+		t.Errorf("a destructive tool allowed rather than asked: %q", p)
+	}
+	_, p = stalenessReadmeTools(table+"\n{\"ask\": [\n  \"mcp__google-mail__get_profile\",\n  \"mcp__google-mail__send_draft\"\n]}\n",
+		tools, []string{"send_draft"})
+	if len(p) != 0 {
+		t.Errorf("an ask list over lines: %q", p)
 	}
 	_, p = stalenessReadmeTools(table+"\n\"mcp__google-mail__send_draft\"\n", tools, nil)
 	stalenessHas(t, p, "registers no tool annotated destructive")

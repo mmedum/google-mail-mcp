@@ -1134,10 +1134,11 @@ body is an image alone is set up, and `body_set` says so.
 `GMAIL_ENABLE_SEND=true`. It takes `draft_id`, the `message_id`,
 `subject` and `first_line` witnesses, `confirm_recipients` and
 `dry_run`. It reads the draft (`format=full`, for the attachments),
-compares the witnesses, then checks what needs no thread — a recipient at all, at
-most 50, no confirmation of an address the draft does not send to, and,
-unless it is a dry run, every recipient confirmed — and then reads its
-thread's `From`, `To` and `Cc` (§4.2). A dry run
+compares `message_id` and `subject`, then checks what needs no thread —
+a recipient at all, at most 50, no confirmation of an address the draft
+does not send to, and, unless it is a dry run, every recipient
+confirmed — then `first_line`, and then reads its thread's `From`, `To`
+and `Cc` (§4.2). A dry run
 reports the recipients the guard would stop instead of refusing, since
 that is how the caller learns whom to confirm. A draft with no recipient
 is `[invalid]`. The send is one `drafts.send`; the result names the sent
@@ -1162,7 +1163,8 @@ Both are compared without the spaces around them. Neither is repeated
 in the refusal, since a draft's text can come from someone else's
 message. When Gmail keeps part of the body behind an attachment id, it
 is read first, 20 units a part, so a long draft is not refused for a
-first line the server never read.
+first line the server never read; that is why `first_line` is compared
+after the checks that cost nothing.
 
 ### 7.9 Settings writes
 
@@ -1513,8 +1515,9 @@ generated from `internal/scopes` and gated (§5a, `staleness`).
   guards set, and floors on a write reaching Gmail.
 - **Nobody is asked** (§4.13): the test harness's client declares
   elicitation and fails any call that asks, so every tool test holds
-  the server to asking nobody, and `forbidigo` refuses a call to
-  `ServerSession.Elicit` anywhere in the server; `register` refuses a kind that cannot be
+  the server to asking nobody, and `forbidigo` refuses both ways of
+  asking, `ServerSession.Elicit` and an input-required result, anywhere
+  in the server; `register` refuses a kind that cannot be
   undone without `confirm`, and `confirm` under a kind not annotated
   destructive; only the two widest deletes carry the mark, read from the
   whole surface.
@@ -2172,7 +2175,8 @@ decided 2026-10-22, and this server's port, approved by the maintainer
   set to anything but `false`, refuses to start, and its flag no longer
   parses. The test harness declares elicitation and fails any call that
   asks, the live driver fails the step that draws a question, and
-  `forbidigo` refuses `ServerSession.Elicit`.
+  `forbidigo` refuses `ServerSession.Elicit` and an input-required
+  result.
 - `create_filter` no longer takes `trash` or `confirm`;
   `create_trash_filter` makes a filter that trashes, with
   `confirm: true`, behind the settings and destructive flags. A client
@@ -2863,6 +2867,28 @@ what fixed them.
   settings text can be written back and sent. Run live 2026-10-13
   without `-send-to`: 95 steps passed and the 3 that send were skipped.
 
+- **3.0.0, the port's review.** Two things the question showed were
+  in no argument: a send's subject and the start of its body, and a
+  deleted filter's criteria. `send_draft` takes `subject` and
+  `first_line`, and `delete_filter` `criteria`, each refused `[stale]`
+  when it is not Gmail's (§4.13). Simplify: `delete_filter` takes
+  `list_filters`' own criteria type; a send the recipient guard stops
+  is refused before the thread is read; one helper refuses a moved
+  draft; `staleness` requires an `ask` rule for every tool annotated
+  destructive; `forbidigo` refuses both ways of asking; what the
+  question left behind came out. Code review, fixed, each with a test
+  that failed first: the first line was read, at 20 units a part
+  stored apart, before the checks that cost nothing; the README check
+  counted a rule under `allow` as asking; `smoke` read a tool with no
+  annotations as a send; a stale subject named the draft as given, not
+  as trimmed. Also fixed: the bundle's toggles said filters were
+  deleted under settings alone; a comment named versions. Kept on
+  purpose: deleting a filter needs the destructive flag, and so the
+  full-mail scope, as §14 records; `schema-diff` counts a tool named in
+  any **Breaking:** line as declaring its breaks, as every server of the
+  family does; the per-service `confirm` checks stay, each with its own
+  words, where one in `wrap` would hold a new tool to it too (§17a).
+
 ### Closing a phase
 
 1. `make check` green; the live driver run and its transcript read.
@@ -2960,7 +2986,21 @@ what fixed them.
 
 ### 17a. Deferred cleanups
 
-None open. Written off:
+Open:
+
+- **`confirm` checked in `wrap`, not in each service.** `register`
+  holds that a kind that cannot be undone takes `confirm`, but five
+  service functions each refuse a call without it, in their own words.
+  A check in `wrap`, dry runs aside, would hold a new tool to it too.
+  Deferred from the port's review (§16a): it moves every refusal's
+  wording and order, and each of the five tools' own tests refuses a
+  call without `confirm`.
+- **`schema-diff` reads a break's subject back from its message.** A
+  break reported in a new shape could take the wrong subject. Returning
+  the subject with each break is the change, made with the other
+  servers of the family, whose gate is built the same way.
+
+Written off:
 
 - **Revoke the replaced refresh token at login.** Not buildable. Google
   revokes the grant, not one token, so revoking the replaced token would

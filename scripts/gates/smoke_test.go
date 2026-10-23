@@ -182,8 +182,10 @@ func TestSmokeKindFollowsRegister(t *testing.T) {
 		// A send no client prompts for by annotation, and a marked send.
 		{`{"destructiveHint":false,"openWorldHint":true}`, ``, ""},
 		{`{"destructiveHint":true,"openWorldHint":true}`, `{"anthropic/requiresUserInteraction":true}`, ""},
-		// The MCP defaults are a send's hints.
-		{`{}`, ``, smokeKindSend},
+		// The MCP defaults are a send's hints, which register writes out:
+		// a tool with none is no Kind's.
+		{`{}`, ``, ""},
+		{`{"destructiveHint":true}`, ``, ""},
 		{`{"readOnlyHint":true}`, `{"anthropic/requiresUserInteraction":true}`, ""},
 	} {
 		got, err := smokeKind("t", json.RawMessage(tc.annotations), json.RawMessage(tc.meta))

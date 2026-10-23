@@ -84,7 +84,7 @@ func (s *Service) SendDraft(ctx context.Context, in Dispatch) (model.SendWrite, 
 	if err := draftMoved(out.DraftID, m.ID, witness, "before sending"); err != nil {
 		return out, err
 	}
-	if m, err = s.sameContent(ctx, g.Message, m, in); err != nil {
+	if err := sameSubject(out.DraftID, in.Subject, m); err != nil {
 		return out, err
 	}
 	if err := readWhole(out.DraftID, m); err != nil {
@@ -117,6 +117,11 @@ func (s *Service) SendDraft(ctx context.Context, in Dispatch) (model.SendWrite, 
 		if err := unconfirmed(out); err != nil {
 			return out, err
 		}
+	}
+	// The first line is checked last of the free checks: it may cost a
+	// read of the text Gmail stored apart.
+	if m, err = s.sameFirstLine(ctx, g.Message, m, out.DraftID, in.FirstLine); err != nil {
+		return out, err
 	}
 	th, err := s.participants(ctx, m)
 	if err != nil {
@@ -160,24 +165,29 @@ func parseConfirm(list []string) (map[string]bool, error) {
 	return out, nil
 }
 
-// sameContent refuses a send whose subject or first line is not the
-// draft's, comparing them without the spaces around them. Neither is
-// repeated in the refusal: both are the draft's text, which may come
-// from someone else's message. It returns m with its text whole, read
-// first when Gmail stored part of it apart.
-func (s *Service) sameContent(ctx context.Context, g *gmail.Message, m model.Message, in Dispatch) (model.Message, error) {
-	if strings.TrimSpace(in.Subject) != strings.TrimSpace(string(m.Subject)) {
-		return m, gapi.Errf(gapi.ClassStale, "subject is not the subject draft %s holds; nothing was sent. Read it with "+
-			"get_draft and pass its subject, after checking it is still the draft to send", in.DraftID)
+// sameSubject refuses a send whose subject is not the draft's, compared
+// without the spaces around them. The refusal does not repeat it: it is
+// the draft's text, which may come from someone else's message.
+func sameSubject(draftID, given string, m model.Message) error {
+	if strings.TrimSpace(given) == strings.TrimSpace(string(m.Subject)) {
+		return nil
 	}
+	return gapi.Errf(gapi.ClassStale, "subject is not the subject draft %s holds; nothing was sent. Read it with "+
+		"get_draft and pass its subject, after checking it is still the draft to send", draftID)
+}
+
+// sameFirstLine refuses a send whose first line is not the first line of
+// the draft's body, as sameSubject does a subject. It returns m with its
+// text whole, read first when Gmail stored part of it apart.
+func (s *Service) sameFirstLine(ctx context.Context, g *gmail.Message, m model.Message, draftID, given string) (model.Message, error) {
 	m, _, err := s.wholeText(ctx, g, m)
 	if err != nil {
 		return m, err
 	}
-	if strings.TrimSpace(in.FirstLine) != firstLine(m.Body.Text) {
+	if strings.TrimSpace(given) != firstLine(m.Body.Text) {
 		return m, gapi.Errf(gapi.ClassStale, "first_line is not the first line of draft %s's body; nothing was sent. "+
 			"Read it with get_draft and pass the first line of its body, alone (show_quoted shows one that starts "+
-			"with a quote or a signature), after checking it is still the draft to send", in.DraftID)
+			"with a quote or a signature), after checking it is still the draft to send", draftID)
 	}
 	return m, nil
 }

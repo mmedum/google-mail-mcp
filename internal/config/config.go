@@ -135,8 +135,8 @@ type Settings struct {
 	RequirePrompt string
 }
 
-// removedRequirePrompt is the setting that refused, from 2.0.0 to 2.3.0,
-// the writes that asked the person when the client could not ask them.
+// removedRequirePrompt is the setting that refused, while the server
+// asked the person, the writes that asked when the client could not.
 // The server asks nobody now (§4.13). Off, its old default, is still
 // accepted. On, or a value that is not a boolean, is refused at start:
 // ignored, it would quietly allow what its owner set it to stop. Its

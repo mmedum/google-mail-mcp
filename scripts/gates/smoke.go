@@ -201,19 +201,12 @@ var smokeFamily = map[string]string{
 const smokeUserInteraction = "anthropic/requiresUserInteraction"
 
 // smokeKind reads a tool's kind from its annotations and _meta, the way
-// Kind.annotations and Kind.requiresUserInteraction write them. An
-// absent hint takes the MCP default: destructive and open-world. A
+// Kind.annotations and Kind.requiresUserInteraction write them. A
 // combination no Kind produces is an error.
 func smokeKind(name string, annotations, meta json.RawMessage) (string, error) {
-	var a struct {
-		ReadOnly    *bool `json:"readOnlyHint"`
-		Destructive *bool `json:"destructiveHint"`
-		OpenWorld   *bool `json:"openWorldHint"`
-	}
-	if len(annotations) > 0 {
-		if err := json.Unmarshal(annotations, &a); err != nil {
-			return "", fmt.Errorf("%s: annotations: %w", name, err)
-		}
+	ro, de, ow, err := smokeHints(name, annotations)
+	if err != nil {
+		return "", err
 	}
 	var m map[string]any
 	if len(meta) > 0 {
@@ -221,13 +214,6 @@ func smokeKind(name string, annotations, meta json.RawMessage) (string, error) {
 			return "", fmt.Errorf("%s: _meta: %w", name, err)
 		}
 	}
-	hint := func(v *bool, def bool) bool {
-		if v == nil {
-			return def
-		}
-		return *v
-	}
-	ro, de, ow := hint(a.ReadOnly, false), hint(a.Destructive, true), hint(a.OpenWorld, true)
 	ui := m[smokeUserInteraction] == true
 	switch {
 	case ro && !ui:
@@ -243,6 +229,32 @@ func smokeKind(name string, annotations, meta json.RawMessage) (string, error) {
 	}
 	return "", fmt.Errorf("%s is annotated readOnly=%v destructive=%v openWorld=%v with %s=%v, which no Kind "+
 		"in internal/tools produces", name, ro, de, ow, smokeUserInteraction, ui)
+}
+
+// smokeHints reads a tool's annotations. register writes out every hint
+// a write's kind sets, so a write that leaves its destructive or
+// open-world hint to the MCP default is no Kind's: the defaults are a
+// send's hints, and a tool that lost its annotations would otherwise
+// pass for one.
+func smokeHints(name string, annotations json.RawMessage) (ro, de, ow bool, err error) {
+	var a struct {
+		ReadOnly    *bool `json:"readOnlyHint"`
+		Destructive *bool `json:"destructiveHint"`
+		OpenWorld   *bool `json:"openWorldHint"`
+	}
+	if len(annotations) > 0 {
+		if err := json.Unmarshal(annotations, &a); err != nil {
+			return false, false, false, fmt.Errorf("%s: annotations: %w", name, err)
+		}
+	}
+	switch {
+	case a.ReadOnly != nil && *a.ReadOnly:
+		return true, false, false, nil
+	case a.Destructive == nil || a.OpenWorld == nil:
+		return false, false, false, fmt.Errorf("%s leaves its destructiveHint or openWorldHint to the MCP default, "+
+			"which no Kind in internal/tools does", name)
+	}
+	return false, *a.Destructive, *a.OpenWorld, nil
 }
 
 // smokeDumpKinds is every dumped tool's kind, by name, as the dump

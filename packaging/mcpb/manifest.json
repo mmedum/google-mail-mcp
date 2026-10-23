@@ -71,14 +71,14 @@
     "enable_destructive": {
       "type": "boolean",
       "title": "Allow permanent deletion",
-      "description": "Register permanent deletion. It asks Google for full mail access, needs a new login, and every call still has to confirm. Off by default: removal is trash.",
+      "description": "Register permanent deletion, and, with settings changes allowed too, deleting filters and filters that trash mail. It asks Google for full mail access, needs a new login, and every call still has to confirm. Off by default: removal is trash.",
       "default": false,
       "required": false
     },
     "enable_settings": {
       "type": "boolean",
       "title": "Allow settings changes",
-      "description": "Register setting a signature and creating or deleting filters, which cannot forward. With sending allowed too, also the vacation reply, for contacts or your domain only. It asks Google for gmail.settings.basic and needs a new login. Off by default.",
+      "description": "Register setting a signature and creating filters, which cannot forward or trash. With permanent deletion allowed too, also deleting filters and filters that trash mail; with sending allowed too, the vacation reply, for contacts or your domain only. It asks Google for gmail.settings.basic and needs a new login. Off by default.",
       "default": false,
       "required": false
     },

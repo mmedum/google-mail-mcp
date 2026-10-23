@@ -164,6 +164,10 @@ func TestSendDraftNeedsItsSubjectAndFirstLine(t *testing.T) {
 			}
 		}
 	}
+	text := refused(t, h, "send_draft", with(with(args, "draft_id", " "+sc.DraftID+" "), "subject", "Re: Budget"), gapi.ClassStale)
+	if !strings.Contains(text, "the subject draft "+sc.DraftID+" holds") {
+		t.Errorf("the refusal does not name the draft as read: %s", text)
+	}
 	if sends(fake) != 0 {
 		t.Fatalf("%d sends before the witnesses matched", sends(fake))
 	}
@@ -189,10 +193,17 @@ func TestSendDraftReadsTheFirstLineWhole(t *testing.T) {
 	_, backed := fake.AddBackedThread()
 	var d tools.DraftOut
 	call(t, h, "get_draft", map[string]any{"draft_id": backed}, &d)
+	args = map[string]any{"draft_id": backed, "message_id": d.MessageID, "subject": "Re: Long notes",
+		"first_line": "Backed draft body."}
+	// A send the recipient guard stops reads nothing it would not need.
+	fake.ResetAccounting()
+	refused(t, h, "send_draft", args, gapi.ClassBlocked)
+	if n := len(fake.CallsOf("gmail.users.messages.attachments.get")); n != 0 {
+		t.Errorf("a send the guard stops read %d parts of the body", n)
+	}
 	fake.ResetAccounting()
 	var out tools.SendDraftOut
-	call(t, h, "send_draft", map[string]any{"draft_id": backed, "message_id": d.MessageID, "subject": "Re: Long notes",
-		"first_line": "Backed draft body.", "confirm_recipients": []any{gmailtest.Dmitri.Email}}, &out)
+	call(t, h, "send_draft", with(args, "confirm_recipients", []any{gmailtest.Dmitri.Email}), &out)
 	if !out.Sent || out.Units != 20+20+40+100 || sends(fake) != 1 {
 		t.Fatalf("send %+v, %d sends", out, sends(fake))
 	}

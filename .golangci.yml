@@ -45,7 +45,7 @@ linters:
           msg: "only main names the process's streams; take an io.Writer instead"
         # The server asks the person nothing; per-call approval is the
         # client's (docs/architecture.md §4.13).
-        - pattern: ^mcp\.\*?ServerSession\.Elicit$
+        - pattern: ^mcp\.(\*?ServerSession\.Elicit|CallToolResult\.InputRequests|InputRequest(Map)?|ElicitParams)$
           pkg: ^github\.com/modelcontextprotocol/go-sdk/mcp$
           msg: "the server asks the person nothing; per-call approval is the client's (§4.13)"
     gocyclo:
