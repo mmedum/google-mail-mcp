@@ -4,11 +4,14 @@ package main
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"net/url"
+	"os"
+	"path/filepath"
 	"regexp"
 	"slices"
 	"strings"
@@ -89,11 +92,15 @@ func (f *fakeMailbox) FullScope() bool { return false }
 
 func (f *fakeMailbox) SettingsScope() bool { return false }
 
-func (f *fakeMailbox) SaveSettings(context.Context) (savedSettings, error) {
+func (f *fakeMailbox) ReadSettings(context.Context) (savedSettings, error) {
 	return savedSettings{}, nil
 }
 
-func (f *fakeMailbox) RestoreSettings(context.Context, savedSettings) error { return nil }
+func (f *fakeMailbox) WriteSignature(_ context.Context, _, signature string) (string, error) {
+	return signature, nil
+}
+
+func (f *fakeMailbox) WriteVacation(context.Context, json.RawMessage) error { return nil }
 
 func (f *fakeMailbox) FiltersFrom(context.Context, string) ([]string, error) { return nil, nil }
 
@@ -196,7 +203,7 @@ func TestTheGuardRefusesReadsOutsideTheRun(t *testing.T) {
 		{"download_attachment", map[string]any{"message_id": "0000000000000001", "part_id": "1"}, true},
 		{"download_attachment", map[string]any{"message_id": "0000000000000009", "part_id": "1"}, false},
 	} {
-		err := e.guard(tc.tool, tc.args)
+		err := e.guard(step{tool: tc.tool}, tc.args)
 		if (err == nil) != tc.ok {
 			t.Errorf("guard(%s, %v) = %v, want ok=%v", tc.tool, tc.args, err, tc.ok)
 		}
@@ -289,7 +296,7 @@ func TestTheGuardHoldsWritesToTheRun(t *testing.T) {
 		{"update_label", map[string]any{"label": "Receipts", "name": r.name + "-x"}, false},
 		{"delete_draft", map[string]any{"draft_id": "r9"}, false},
 	} {
-		err := e.guard(tc.tool, tc.args)
+		err := e.guard(step{tool: tc.tool}, tc.args)
 		if (err == nil) != tc.ok {
 			t.Errorf("guard(%s, %v) = %v, want ok=%v", tc.tool, tc.args, err, tc.ok)
 		}
@@ -367,7 +374,7 @@ func TestTheGuardHoldsSendsToSendTo(t *testing.T) {
 		{with, "delete_label", map[string]any{"label": r.name + "-renamed", "confirm": true}, true},
 		{with, "delete_label", map[string]any{"label": "Receipts", "confirm": true}, false},
 	} {
-		err := tc.e.guard(tc.tool, tc.args)
+		err := tc.e.guard(step{tool: tc.tool}, tc.args)
 		if (err == nil) != tc.ok {
 			t.Errorf("guard(%s, %v) with send-to %q = %v, want ok=%v", tc.tool, tc.args, tc.e.sendTo, err, tc.ok)
 		}
@@ -493,7 +500,7 @@ func TestTheGuardHoldsTheSettingsSteps(t *testing.T) {
 		{"set_vacation", map[string]any{"enable": true, "body": "Synthetic reply for " + r.name}, false},
 		{"set_vacation", map[string]any{"enable": false}, true},
 	} {
-		if err := e.guard(tc.tool, tc.args); (err == nil) != tc.ok {
+		if err := e.guard(step{tool: tc.tool}, tc.args); (err == nil) != tc.ok {
 			t.Errorf("guard(%s, %v) = %v, want ok=%v", tc.tool, tc.args, err, tc.ok)
 		}
 	}
@@ -506,7 +513,7 @@ func TestTheGuardHoldsTheSettingsSteps(t *testing.T) {
 			t.Errorf("%s runs with no filter to delete", s.name)
 		}
 		args := s.args(e)
-		if err := e.guard(s.tool, args); err != nil {
+		if err := e.guard(s, args); err != nil {
 			t.Errorf("%s: its own arguments fail the guard: %v", s.name, err)
 		}
 	}
@@ -541,5 +548,323 @@ func TestCleanupRepeatsOverlappingFilterDeletes(t *testing.T) {
 	n, err := m.DeleteFiltersFrom(context.Background(), "run@filters.invalid")
 	if err != nil || n != 2 || len(refusals) != 2 {
 		t.Fatalf("deleted %d (%v) after refusals %v; want 2 deleted, each refused twice first", n, err, refusals)
+	}
+}
+
+// settingsBox is a mailbox whose settings a test sets: each ReadSettings
+// answers the next of reads, and a signature write answers sigErr, or
+// sigStored when it is set. It records every write, and how many copies
+// of the settings were in dir at each signature write.
+type settingsBox struct {
+	fakeMailbox
+	dir           string
+	reads         []savedSettings
+	sigErr        error
+	sigStored     string
+	signatures    []string
+	vacations     []json.RawMessage
+	copiesAtWrite []int
+}
+
+func (b *settingsBox) ReadSettings(context.Context) (savedSettings, error) {
+	s := b.reads[0]
+	if len(b.reads) > 1 {
+		b.reads = b.reads[1:]
+	}
+	return s, nil
+}
+
+func (b *settingsBox) WriteSignature(_ context.Context, _, signature string) (string, error) {
+	copies, _ := filepath.Glob(filepath.Join(b.dir, "*-settings.json"))
+	b.copiesAtWrite = append(b.copiesAtWrite, len(copies))
+	b.signatures = append(b.signatures, signature)
+	switch {
+	case b.sigErr != nil:
+		return "", b.sigErr
+	case b.sigStored != "":
+		return b.sigStored, nil
+	}
+	return signature, nil
+}
+
+func (b *settingsBox) WriteVacation(_ context.Context, v json.RawMessage) error {
+	b.vacations = append(b.vacations, v)
+	return nil
+}
+
+// syntheticSettings are an account's settings as a run might find them.
+func syntheticSettings() savedSettings {
+	return savedSettings{address: "reader@example.com",
+		signature: `<div dir="ltr">Synthetic <b>signature</b> &amp; a second line</div>`,
+		vacation:  json.RawMessage(`{"enableAutoReply":false,"responseSubject":"Synthetic away","restrictToContacts":true}`)}
+}
+
+// Before anything changes, the settings are in a file named for the run
+// that only the account can read, and the transcript names the file but
+// never what it holds. A copy that cannot be written stops the run
+// before anything changes.
+func TestTheSettingsAreKeptBeforeAnythingChanges(t *testing.T) {
+	dir, r, saved := t.TempDir(), newRunLabel(time.Now()), syntheticSettings()
+	box := &settingsBox{dir: dir, reads: []savedSettings{saved}}
+	var out strings.Builder
+	k, err := keepSettings(context.Background(), box, transcript.NewTo(redact.NewRedactor(false), &out, &out), dir, r, true)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if k.path != filepath.Join(dir, r.name+"-settings.json") {
+		t.Errorf("the copy is %s, not named for the run in %s", k.path, dir)
+	}
+	if info, err := os.Stat(k.path); err != nil || info.Mode().Perm() != 0o600 {
+		t.Fatalf("the copy: %v, %v; want mode 0600", info, err)
+	}
+	data, err := os.ReadFile(k.path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var kept settingsCopy
+	if err := json.Unmarshal(data, &kept); err != nil {
+		t.Fatal(err)
+	}
+	if kept.Address != saved.address || kept.Signature != saved.signature || !sameJSON(kept.Vacation, saved.vacation) {
+		t.Errorf("the copy holds %+v, not the settings read", kept)
+	}
+	if !slices.Equal(box.copiesAtWrite, []int{1}) {
+		t.Errorf("copies in the directory at each signature write: %v; want the one copy before the first", box.copiesAtWrite)
+	}
+	if !strings.Contains(out.String(), filepath.Base(k.path)) {
+		t.Errorf("the transcript does not name the copy: %q", out.String())
+	}
+	for _, s := range []string{"Synthetic <b>signature", "Synthetic away"} {
+		if strings.Contains(out.String(), s) {
+			t.Errorf("the transcript prints the settings themselves: %q", out.String())
+		}
+	}
+
+	// The same run's copy is already there: nothing is written.
+	again := &settingsBox{dir: dir, reads: []savedSettings{saved}}
+	if _, err := keepSettings(context.Background(), again, transcript.NewTo(redact.NewRedactor(false), &out, &out),
+		dir, r, true); err == nil || len(again.signatures) != 0 {
+		t.Errorf("keepSettings over an existing copy = %v, and wrote signatures %v; want an error and no write",
+			err, again.signatures)
+	}
+}
+
+// A signature Gmail refuses, or stores changed, when it is written back
+// as it was is one the restore could not put back, so no signature step
+// runs and the restore leaves the signature alone. One Gmail takes back
+// unchanged lets them run, and is written back at the end.
+func TestASignatureGmailWillNotTakeBackIsNeverChanged(t *testing.T) {
+	saved := syntheticSettings()
+	for _, tc := range []struct {
+		name      string
+		box       *settingsBox
+		skip      string
+		restores  int
+		stepsSkip bool
+	}{
+		{"refused", &settingsBox{sigErr: errors.New(`PATCH settings/sendAs/x: HTTP 400, reason "invalidArgument"`)},
+			`reason "invalidArgument"`, 1, true},
+		{"stored changed", &settingsBox{sigStored: "<div>Synthetic</div>"}, "stored the account's own signature changed", 1, true},
+		{"taken back", &settingsBox{}, "", 2, false},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			tc.box.dir, tc.box.reads = t.TempDir(), []savedSettings{saved}
+			var out strings.Builder
+			k, err := keepSettings(context.Background(), tc.box, transcript.NewTo(redact.NewRedactor(false), &out, &out),
+				tc.box.dir, newRunLabel(time.Now()), true)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if tc.skip == "" && k.signatureSkip != "" || !strings.Contains(k.signatureSkip, tc.skip) {
+				t.Errorf("signatureSkip = %q, want %q in it", k.signatureSkip, tc.skip)
+			}
+			e := &env{settings: true, signatureSkip: k.signatureSkip}
+			for _, s := range settingsSteps {
+				if s.tool != "update_signature" {
+					continue
+				}
+				if skipped := s.needs(e) != ""; skipped != tc.stepsSkip {
+					t.Errorf("%s: skipped %v, want %v", s.name, skipped, tc.stepsSkip)
+				}
+			}
+			if err := k.restore(context.Background(), tc.box); err != nil {
+				t.Fatal(err)
+			}
+			if len(tc.box.signatures) != tc.restores {
+				t.Errorf("the signature was written %d times, want %d: the write back, and the restore only when the "+
+					"steps ran", len(tc.box.signatures), tc.restores)
+			}
+		})
+	}
+
+	// A run that drives no signature step does not write the signature.
+	box := &settingsBox{dir: t.TempDir(), reads: []savedSettings{saved}}
+	var out strings.Builder
+	k, err := keepSettings(context.Background(), box, transcript.NewTo(redact.NewRedactor(false), &out, &out), box.dir,
+		newRunLabel(time.Now()), drivesSignature(regexp.MustCompile("filter")))
+	if err != nil || k.signature || len(box.signatures) != 0 {
+		t.Errorf("a run without signature steps: %v, restore writes it %v, written %v", err, k.signature, box.signatures)
+	}
+	if !drivesSignature(regexp.MustCompile("")) || !drivesSignature(regexp.MustCompile("clear the signature")) {
+		t.Error("a run that drives a signature step is not seen to")
+	}
+}
+
+// The restore reads the settings back, and deletes the copy only when
+// they are as the run found them. Otherwise it fails and names the copy,
+// and the copy stays.
+func TestTheRestoreIsReadBack(t *testing.T) {
+	saved := syntheticSettings()
+	otherSignature, otherVacation, reordered := saved, saved, saved
+	otherSignature.signature = "<div>Synthetic signature for a run</div>"
+	otherVacation.vacation = json.RawMessage(`{"enableAutoReply":false,"responseSubject":"Synthetic run","restrictToContacts":true}`)
+	reordered.vacation = json.RawMessage(`{ "restrictToContacts": true, "responseSubject": "Synthetic away", "enableAutoReply": false }`)
+	for _, tc := range []struct {
+		name string
+		now  savedSettings
+		want string
+	}{
+		{"as found", saved, ""},
+		{"as found, keys in another order", reordered, ""},
+		{"another signature", otherSignature, "the signature reads back other than the run found it"},
+		{"another vacation reply", otherVacation, "the vacation reply reads back other than the run found it"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			dir, r := t.TempDir(), newRunLabel(time.Now())
+			path, err := writeSettingsCopy(dir, r, saved)
+			if err != nil {
+				t.Fatal(err)
+			}
+			box := &settingsBox{dir: dir, reads: []savedSettings{tc.now}}
+			err = keptSettings{saved: saved, path: path, signature: true}.restore(context.Background(), box)
+			_, statErr := os.Stat(path)
+			if tc.want == "" {
+				if err != nil || !errors.Is(statErr, os.ErrNotExist) {
+					t.Errorf("restore = %v, copy %v; want nil and the copy deleted", err, statErr)
+				}
+				return
+			}
+			if err == nil || !strings.Contains(err.Error(), tc.want) || !strings.Contains(err.Error(), path) {
+				t.Errorf("restore = %v; want %q and the copy's path", err, tc.want)
+			}
+			if statErr != nil {
+				t.Errorf("the copy is gone after a restore that did not read back: %v", statErr)
+			}
+			if strings.Contains(err.Error(), "Synthetic") {
+				t.Errorf("the failure prints the settings: %v", err)
+			}
+			if len(box.vacations) != 1 || !sameJSON(box.vacations[0], saved.vacation) || !slices.Equal(box.signatures, []string{saved.signature}) {
+				t.Errorf("the restore wrote signatures %v and vacations %s, not the saved ones", box.signatures, box.vacations)
+			}
+		})
+	}
+}
+
+// A restore Gmail refuses is reported with its status and Google's
+// reason, and never the signature, which the refusal's message may repeat.
+func TestARefusedRestoreSaysWhyNotWhat(t *testing.T) {
+	saved := syntheticSettings()
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch {
+		case r.Method == http.MethodPatch:
+			w.WriteHeader(http.StatusBadRequest)
+			_ = json.NewEncoder(w).Encode(map[string]any{"error": map[string]any{"code": 400,
+				"message": "Bad signature: " + saved.signature, "status": "INVALID_ARGUMENT",
+				"errors": []any{map[string]any{"message": "Bad signature: " + saved.signature, "reason": "invalidArgument"}}}})
+		case r.Method == http.MethodPut:
+			_, _ = w.Write([]byte(`{}`))
+		case r.URL.Path == "/settings/sendAs":
+			_ = json.NewEncoder(w).Encode(map[string]any{"sendAs": []any{map[string]any{"sendAsEmail": saved.address,
+				"signature": "", "isDefault": true}}})
+		default:
+			_, _ = w.Write(saved.vacation)
+		}
+	}))
+	t.Cleanup(srv.Close)
+	m := &restMailbox{http: srv.Client(), base: srv.URL + "/"}
+	path, err := writeSettingsCopy(t.TempDir(), newRunLabel(time.Now()), saved)
+	if err != nil {
+		t.Fatal(err)
+	}
+	err = keptSettings{saved: saved, path: path, signature: true}.restore(context.Background(), m)
+	if err == nil {
+		t.Fatal("a refused restore was not reported")
+	}
+	for _, s := range []string{"put the signature back", "HTTP 400", `reason "invalidArgument"`, path} {
+		if !strings.Contains(err.Error(), s) {
+			t.Errorf("the failure does not say %q: %v", s, err)
+		}
+	}
+	if strings.Contains(err.Error(), "Synthetic") {
+		t.Errorf("the failure prints the signature: %v", err)
+	}
+}
+
+// The first-line step confirms every recipient the draft has, so the
+// server's recipient guard, which comes first, lets it reach the first
+// line; and the driver's guard lets it, since the step expects a refusal.
+func TestTheFirstLineStepGetsPastTheRecipientGuard(t *testing.T) {
+	r := newRunLabel(time.Now())
+	e := &env{seed: &seeded{label: r, drafts: []string{"r1"}, draftMessages: []string{"0000000000000003"}},
+		draftID: "r1", draftMessage: "0000000000000003"}
+	addresses := func(args map[string]any, keys ...string) []string {
+		var out []string
+		for _, key := range keys {
+			list, _ := args[key].([]any)
+			for _, v := range list {
+				as, _ := mime.ParseAddressList(v.(string))
+				for _, a := range as {
+					out = append(out, strings.ToLower(a.Email))
+				}
+			}
+		}
+		slices.Sort(out)
+		return out
+	}
+	var draft, confirmed []string
+	var send step
+	for _, s := range writeSteps {
+		if s.name == "update the draft" {
+			draft = addresses(s.args(e), "to", "cc", "bcc")
+		}
+	}
+	for _, s := range gatedSteps {
+		if s.name == "a send with another first line is refused" {
+			send, confirmed = s, addresses(s.args(e), "confirm_recipients")
+		}
+	}
+	if len(draft) == 0 || !slices.Equal(draft, confirmed) {
+		t.Errorf("the draft goes to %v, and the step confirms %v", draft, confirmed)
+	}
+	if err := e.guard(send, send.args(e)); err != nil {
+		t.Errorf("the step's own arguments fail the guard: %v", err)
+	}
+	reserved := map[string]any{"draft_id": "r1", "message_id": "0000000000000003", "confirm_recipients": []any{rcptCc}}
+	if err := e.guard(step{tool: "send_draft"}, reserved); !errors.Is(err, errUnscoped) {
+		t.Errorf("a send the step expects to go confirms a reserved address: %v", err)
+	}
+	other := map[string]any{"draft_id": "r1", "message_id": "0000000000000003", "confirm_recipients": []any{"third@example.net"}}
+	if err := e.guard(step{tool: "send_draft", refuses: "stale"}, other); !errors.Is(err, errUnscoped) {
+		t.Errorf("a send the step expects refused confirms an address outside the reserved domains: %v", err)
+	}
+}
+
+// A step that runs without -send-to names nothing the -send-to steps
+// make: those were skipped, so it would name an id the run never had.
+// The steps that can are the ones after them.
+func TestStepsWithoutSendToNameNothingItsStepsMake(t *testing.T) {
+	r := newRunLabel(time.Now())
+	e := &env{full: true, settings: true, filters: []string{"ANe1Bmg1"},
+		seed: &seeded{label: r, messages: []string{"0000000000000001", "0000000000000002", "0000000000000003"},
+			threads: []string{"0000000000000001", "0000000000000002", "0000000000000003"}},
+		sent: sentDraft{draftID: "sent:draft", draftMessage: "sent:draft-message", rfc822: "sent:rfc822",
+			sentMessage: "sent:message", replyDraft: "sent:reply", replyMessage: "sent:reply-message"}}
+	for _, s := range slices.Concat(gatedSteps, settingsSteps) {
+		if s.needs != nil && s.needs(e) != "" {
+			continue
+		}
+		if args := fmt.Sprint(s.args(e)); strings.Contains(args, "sent:") {
+			t.Errorf("%s runs without -send-to and names what a -send-to step made: %s", s.name, args)
+		}
 	}
 }

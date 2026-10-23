@@ -511,7 +511,8 @@ var (
 
 // guardWrite holds a write step to the run's own mail, drafts, labels and
 // files, and a draft's addresses to reserved domains.
-func (e *env) guardWrite(tool string, args map[string]any) error {
+func (e *env) guardWrite(s step, args map[string]any) error {
+	tool := s.tool
 	if !writeTools[tool] {
 		return nil
 	}
@@ -536,10 +537,9 @@ func (e *env) guardWrite(tool string, args map[string]any) error {
 			}
 		}
 	}
-	// A send reaches only -send-to: the only address a step may vouch for.
 	confirm, _ := args["confirm_recipients"].([]any)
 	for _, v := range confirm {
-		if a, _ := v.(string); !e.isSendTo(a) {
+		if a, _ := v.(string); !e.mayVouchFor(s, a) {
 			return fmt.Errorf("%w: confirm_recipients names an address that is not -send-to", errUnscoped)
 		}
 	}
@@ -563,6 +563,16 @@ func (e *env) guardWrite(tool string, args map[string]any) error {
 		}
 	}
 	return nil
+}
+
+// mayVouchFor reports whether a step may name an address in
+// confirm_recipients. A send that goes reaches only -send-to: the only
+// address a step may vouch for. A step that expects the send refused may
+// also vouch for a reserved address, to get past the recipient guard to a
+// later check; a server that sent it anyway would send to a domain that
+// is never delivered.
+func (e *env) mayVouchFor(s step, address string) bool {
+	return e.isSendTo(address) || s.refuses != "" && reservedAddress(address)
 }
 
 // isSendTo reports whether an entry is exactly -send-to, when one was

@@ -45,6 +45,12 @@ type step struct {
 	needs func(e *env) string
 }
 
+// needing is s, run only when needs says nothing against it.
+func (s step) needing(needs func(e *env) string) step {
+	s.needs = needs
+	return s
+}
+
 // A thread or message id in a rendering, 16 hex digits after its noun.
 var (
 	threadIDIn  = regexp.MustCompile(`thread ([0-9a-f]{16})`)
@@ -393,6 +399,8 @@ type env struct {
 	// signatureAddress is the default send-as address, whose signature
 	// the run saved and changes; no other one is touched.
 	signatureAddress string
+	// signatureSkip is why the signature steps may not run, or "".
+	signatureSkip string
 	// sent is what the send step read, for spikes B and C.
 	sent sentDraft
 	// predicted is each item's labels after, as the last dry run said,
@@ -530,10 +538,11 @@ func (e *env) ownsAll(re *regexp.Regexp, text string, n int) error {
 // errUnscoped is the guard refusing a read outside the run's own mail.
 var errUnscoped = errors.New("refused: the live driver reads only what it inserted")
 
-// guard holds a call to §9.1 before it is sent: a search must carry the
-// run's label, a draft listing the run's name, and a read by id must name
-// an id the run made.
-func (e *env) guard(tool string, args map[string]any) error {
+// guard holds a step's call to §9.1 before it is sent: a search must
+// carry the run's label, a draft listing the run's name, and a read by id
+// must name an id the run made.
+func (e *env) guard(s step, args map[string]any) error {
+	tool := s.tool
 	q, _ := args["q"].(string)
 	switch tool {
 	case "search_threads", "search_messages":
@@ -551,7 +560,7 @@ func (e *env) guard(tool string, args map[string]any) error {
 			return fmt.Errorf("%w: list_changes without label %s", errUnscoped, e.seed.label.name)
 		}
 	}
-	if err := e.guardWrite(tool, args); err != nil {
+	if err := e.guardWrite(s, args); err != nil {
 		return err
 	}
 	if err := e.guardSettings(tool, args); err != nil {
@@ -578,7 +587,7 @@ func (e *env) guard(tool string, args map[string]any) error {
 // runStep calls one step's tool through the guard and checks the result.
 func (e *env) runStep(s step) error {
 	args := s.args(e)
-	if err := e.guard(s.tool, args); err != nil {
+	if err := e.guard(s, args); err != nil {
 		return err
 	}
 	e.tr.Sayf("=== %s %s ===", s.tool, mcpstdio.Encode(args))

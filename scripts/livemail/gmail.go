@@ -71,7 +71,7 @@ func (m *restMailbox) FullScope() bool { return m.full }
 
 func (m *restMailbox) SettingsScope() bool { return m.settings }
 
-func (m *restMailbox) SaveSettings(ctx context.Context) (savedSettings, error) {
+func (m *restMailbox) ReadSettings(ctx context.Context) (savedSettings, error) {
 	var out savedSettings
 	var list struct {
 		SendAs []struct {
@@ -97,14 +97,17 @@ func (m *restMailbox) SaveSettings(ctx context.Context) (savedSettings, error) {
 	return out, nil
 }
 
-func (m *restMailbox) RestoreSettings(ctx context.Context, s savedSettings) error {
-	sig := m.call(ctx, http.MethodPatch, "settings/sendAs/"+url.PathEscape(s.address), nil,
-		map[string]string{"signature": s.signature}, nil)
-	var vacation map[string]any
-	if err := json.Unmarshal(s.vacation, &vacation); err != nil {
-		return errors.Join(sig, err)
+func (m *restMailbox) WriteSignature(ctx context.Context, address, signature string) (string, error) {
+	var out struct {
+		Signature string `json:"signature"`
 	}
-	return errors.Join(sig, m.call(ctx, http.MethodPut, "settings/vacation", nil, vacation, nil))
+	err := m.call(ctx, http.MethodPatch, "settings/sendAs/"+url.PathEscape(address), nil,
+		map[string]string{"signature": signature}, &out)
+	return out.Signature, err
+}
+
+func (m *restMailbox) WriteVacation(ctx context.Context, vacation json.RawMessage) error {
+	return m.call(ctx, http.MethodPut, "settings/vacation", nil, vacation, nil)
 }
 
 func (m *restMailbox) FiltersFrom(ctx context.Context, from string) ([]string, error) {
@@ -232,9 +235,28 @@ func (m *restMailbox) callRaw(ctx context.Context, method, path string, q url.Va
 		return resp.StatusCode, resp.Header, nil, err
 	}
 	if resp.StatusCode/100 != 2 {
-		return resp.StatusCode, resp.Header, data, fmt.Errorf("%s %s: HTTP %d", method, path, resp.StatusCode)
+		return resp.StatusCode, resp.Header, data, fmt.Errorf("%s %s: HTTP %d, reason %q", method, path, resp.StatusCode,
+			googleReason(data))
 	}
 	return resp.StatusCode, resp.Header, data, nil
+}
+
+// googleReason is the reason Google gives for a refusal, a short code
+// such as "invalidArgument", or "" when the body names none. A refusal is
+// reported by its status and this alone: the body's message can repeat
+// what the call sent, such as a signature.
+func googleReason(body []byte) string {
+	var out struct {
+		Error struct {
+			Errors []struct {
+				Reason string `json:"reason"`
+			} `json:"errors"`
+		} `json:"error"`
+	}
+	if json.Unmarshal(body, &out) != nil || len(out.Error.Errors) == 0 {
+		return ""
+	}
+	return out.Error.Errors[0].Reason
 }
 
 func (m *restMailbox) CreateLabel(ctx context.Context, name string) (string, error) {

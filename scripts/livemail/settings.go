@@ -3,25 +3,33 @@
 package main
 
 import (
+	"bytes"
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"maps"
 	"net/http"
 	"net/url"
+	"os"
+	"path/filepath"
+	"reflect"
 	"regexp"
 	"slices"
 	"strings"
 	"sync"
 	"time"
+
+	"github.com/mmedum/google-mail-mcp/v3/scripts/internal/transcript"
 )
 
 // The settings steps, run only when the profile's login granted
 // gmail.settings.basic. drive saves the default address's signature and
-// the vacation reply before them and restores both after, exactly, with
-// its own client: update_signature takes plain text and could not put an
-// HTML signature back. Filters match only the run's own sender address,
-// which no mail comes from, and are deleted by the steps or by cleanup.
+// the vacation reply before them, to a file as well, and restores both
+// after, exactly, with its own client: update_signature takes plain text
+// and could not put an HTML signature back. Filters match only the run's
+// own sender address, which no mail comes from, and are deleted by the
+// steps or by cleanup.
 
 // needSettings keeps a settings step to profiles whose login granted the
 // one scope Gmail accepts for it.
@@ -30,6 +38,150 @@ func needSettings(e *env) string {
 		return "the profile's login did not grant gmail.settings.basic; log in with GMAIL_ENABLE_SETTINGS=true to drive it"
 	}
 	return ""
+}
+
+// needSignature keeps a signature step to a run that can put the
+// account's own signature back: Gmail took it back unchanged before any
+// step changed it.
+func needSignature(e *env) string {
+	if why := needSettings(e); why != "" {
+		return why
+	}
+	return e.signatureSkip
+}
+
+// keptSettings are the account's own settings as the run found them, and
+// where a copy of them waits until they are put back.
+type keptSettings struct {
+	saved savedSettings
+	// path is the copy: a file only the account can read.
+	path string
+	// signature is whether the restore writes the signature: the run
+	// drives a step that changes it, and Gmail took it back unchanged.
+	signature bool
+	// signatureSkip is why the signature steps may not run, or "".
+	signatureSkip string
+}
+
+// keepSettings reads the settings the steps change and, before anything
+// changes them, writes them to a file in dir named for the run, which
+// only the account can read. It prints the file's path, never what it
+// holds. If the restore fails, the settings are still there to put back
+// by hand.
+//
+// When the run drives a signature step, it then writes the signature back
+// as it was. The restore writes the same thing, so a signature Gmail
+// refuses, or stores changed, could not be put back once a step cleared
+// it: the signature steps are skipped, saying why.
+func keepSettings(ctx context.Context, box mailbox, tr *transcript.Transcript, dir string, r runLabel,
+	signatureSteps bool) (keptSettings, error) {
+	saved, err := box.ReadSettings(ctx)
+	if err != nil {
+		return keptSettings{}, err
+	}
+	k := keptSettings{saved: saved}
+	if k.path, err = writeSettingsCopy(dir, r, saved); err != nil {
+		return keptSettings{}, fmt.Errorf("keep a copy of the settings before the run changes them: %w", err)
+	}
+	tr.Sayf("saved the signature and the vacation reply, as the run found them, to %s in the system's temporary "+
+		"directory; the file is deleted once both are put back and read back", k.path)
+	if !signatureSteps {
+		return k, nil
+	}
+	stored, err := box.WriteSignature(ctx, saved.address, saved.signature)
+	switch {
+	case err != nil:
+		k.signatureSkip = fmt.Sprintf("Gmail refused the account's own signature written back unchanged (%v), "+
+			"so the run could not put it back", err)
+	case stored != saved.signature:
+		k.signatureSkip = "Gmail stored the account's own signature changed when it was written back unchanged, " +
+			"so the run could not put it back"
+	default:
+		k.signature = true
+	}
+	return k, nil
+}
+
+// drivesSignature reports whether the run drives a signature step, which
+// is the only reason to write the signature at all.
+func drivesSignature(run *regexp.Regexp) bool {
+	return slices.ContainsFunc(settingsSteps, func(s step) bool {
+		return s.tool == "update_signature" && run.MatchString(s.name)
+	})
+}
+
+// settingsCopy is what the copy holds: the default address, its
+// signature's HTML and the vacation resource, each as Gmail gave it.
+type settingsCopy struct {
+	Address   string          `json:"send_as_address"`
+	Signature string          `json:"signature_html"`
+	Vacation  json.RawMessage `json:"vacation"`
+}
+
+// writeSettingsCopy writes s to a new file in dir named for the run, with
+// mode 0600. It refuses a file that is already there.
+func writeSettingsCopy(dir string, r runLabel, s savedSettings) (string, error) {
+	var b bytes.Buffer
+	enc := json.NewEncoder(&b)
+	enc.SetEscapeHTML(false)
+	enc.SetIndent("", "  ")
+	if err := enc.Encode(settingsCopy{Address: s.address, Signature: s.signature, Vacation: s.vacation}); err != nil {
+		return "", err
+	}
+	path := filepath.Join(dir, r.name+"-settings.json")
+	f, err := os.OpenFile(path, os.O_WRONLY|os.O_CREATE|os.O_EXCL, 0o600)
+	if err != nil {
+		return "", err
+	}
+	_, err = f.Write(b.Bytes())
+	if err = errors.Join(err, f.Close()); err != nil {
+		return "", errors.Join(err, os.Remove(path))
+	}
+	return path, nil
+}
+
+// restore puts back what keepSettings saved and reads both back. Only a
+// restore that reads back as the run found them deletes the copy; any
+// other outcome fails, naming it, so the settings can be put back by hand.
+func (k keptSettings) restore(ctx context.Context, box mailbox) error {
+	var errs []error
+	if k.signature {
+		if _, err := box.WriteSignature(ctx, k.saved.address, k.saved.signature); err != nil {
+			errs = append(errs, fmt.Errorf("put the signature back: %w", err))
+		}
+	}
+	if err := box.WriteVacation(ctx, k.saved.vacation); err != nil {
+		errs = append(errs, fmt.Errorf("put the vacation reply back: %w", err))
+	}
+	now, err := box.ReadSettings(ctx)
+	if err != nil {
+		errs = append(errs, fmt.Errorf("read the settings back: %w", err))
+	} else {
+		if now.address != k.saved.address || now.signature != k.saved.signature {
+			errs = append(errs, errors.New("the signature reads back other than the run found it"))
+		}
+		if !sameJSON(now.vacation, k.saved.vacation) {
+			errs = append(errs, errors.New("the vacation reply reads back other than the run found it"))
+		}
+	}
+	if len(errs) > 0 {
+		return fmt.Errorf("%w\n!! the signature and the vacation reply, as the run found them, are in %s in the "+
+			"system's temporary directory: put them back by hand, then delete the file", errors.Join(errs...), k.path)
+	}
+	if err := os.Remove(k.path); err != nil {
+		return fmt.Errorf("both read back as the run found them, but the copy in %s could not be deleted: %w", k.path, err)
+	}
+	return nil
+}
+
+// sameJSON reports whether two JSON documents hold the same values,
+// whatever their key order and spacing.
+func sameJSON(a, b json.RawMessage) bool {
+	var x, y any
+	if json.Unmarshal(a, &x) != nil || json.Unmarshal(b, &y) != nil {
+		return false
+	}
+	return reflect.DeepEqual(x, y)
 }
 
 // filterSender is the run's own sender address for its filters: at a
@@ -87,13 +239,13 @@ var settingsSteps = []step{
 	// text is quiet: not printed. Every signature step's "before" can be
 	// the real one, and the vacation reply turned off shows its text, the
 	// account's own if an earlier step did not run.
-	{name: "set the signature, dry run", tool: "update_signature", quiet: true, needs: needSettings,
+	{name: "set the signature, dry run", tool: "update_signature", quiet: true, needs: needSignature,
 		args: func(e *env) map[string]any {
 			return map[string]any{"signature": "Synthetic signature for " + e.seed.label.name, "dry_run": true}
 		},
 		check: func(_ *env, text string) error { return want(text, "dry run: would set the signature of") }},
 
-	{name: "set the signature", tool: "update_signature", quiet: true, needs: needSettings,
+	{name: "set the signature", tool: "update_signature", quiet: true, needs: needSignature,
 		args: func(e *env) map[string]any {
 			return map[string]any{"send_as": e.signatureAddress, "signature": "Synthetic signature for " + e.seed.label.name + "\nline two"}
 		},
@@ -104,7 +256,7 @@ var settingsSteps = []step{
 			return want(text, "Synthetic signature for "+e.seed.label.name+"\nline two")
 		}},
 
-	{name: "clear the signature", tool: "update_signature", quiet: true, needs: needSettings,
+	{name: "clear the signature", tool: "update_signature", quiet: true, needs: needSignature,
 		args:  func(*env) map[string]any { return map[string]any{"signature": ""} },
 		check: func(_ *env, text string) error { return want(text, "signature after: none") }},
 

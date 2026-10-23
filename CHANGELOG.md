@@ -35,6 +35,10 @@ lifted verbatim.
 - **Breaking:** `create_filter` no longer takes `trash` or `confirm`; a filter that trashes is `create_trash_filter`.
 - **Breaking:** `GMAIL_REQUIRE_PROMPT` and `--require-prompt` are gone, and the variable set to anything but `false` stops the server from starting, rather than quietly allow what it was set to stop; unset it.
 
+### Fixed
+
+- The live driver saves the account's signature and vacation reply to a private file before changing them, skips the signature steps when Gmail will not take the signature back unchanged, and fails, naming the file, when they do not read back as it found them.
+
 ## [2.3.0] - 2026-10-13
 
 ### Added

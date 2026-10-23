@@ -104,10 +104,14 @@ var gatedSteps = []step{
 			return want(text, "subject is not the subject draft "+e.draftID+" holds; nothing was sent")
 		}},
 
+	// The server checks the first line after the recipients, so the step
+	// confirms the ones "update the draft" gave it: at reserved domains,
+	// which the guard lets a step vouch for only on a send it expects
+	// refused.
 	{name: "a send with another first line is refused", tool: "send_draft", refuses: "stale",
 		args: func(e *env) map[string]any {
 			return map[string]any{"draft_id": e.draftID, "message_id": e.draftMessage, "subject": e.subjects[e.draftID],
-				"first_line": "Not this one."}
+				"first_line": "Not this one.", "confirm_recipients": []any{rcptCc, rcptBcc}}
 		},
 		check: func(e *env, text string) error {
 			return want(text, "first_line is not the first line of draft "+e.draftID+"'s body; nothing was sent")
@@ -192,9 +196,10 @@ var gatedSteps = []step{
 		},
 		check: func(_ *env, text string) error { return want(text, "recipients: 1 · 1 in the thread · 0 confirmed") }},
 
+	// The reply is made only with -send-to, so it is deleted only then.
 	deleteStepDraft("delete the reply to the sent message", func(e *env) (string, string) {
 		return e.sent.replyDraft, e.sent.replyMessage
-	}),
+	}).needing(needSendTo),
 
 	{name: "a label delete without confirm is refused", tool: "delete_label", refuses: "blocked",
 		args:  func(e *env) map[string]any { return map[string]any{"label": e.seed.label.name + "-renamed"} },
