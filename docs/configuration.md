@@ -98,7 +98,10 @@ on every delete and on `create_trash_filter` and `set_vacation`, which
 the model sets as a witness that it meant the call; every recipient of
 a send written out in `confirm_recipients`; the draft's `message_id` on
 `update_draft`, `send_draft` and `delete_draft`, refused `[stale]` when
-the draft changed since it was read; and `dry_run` on every write.
+the draft changed since it was read; the draft's subject and first line
+on `send_draft`, and the filter's criteria on `delete_filter`, refused
+`[stale]` when they are not what Gmail holds, so the call your client
+shows you says what it sends or deletes; and `dry_run` on every write.
 
 A client that runs with nobody watching, such as `claude -p` with this
 server's tools allowed, makes every write that is registered. Leave

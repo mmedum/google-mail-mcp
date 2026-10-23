@@ -256,16 +256,16 @@ func TestATrialDrivesTheServer(t *testing.T) {
 }
 
 // send-draft passes on reaching the send with the draft's current
-// message id and its recipient confirmed, whether the client holds the
-// call for a person or lets it through, and fails on a stale witness or
-// a recipient left out.
+// message id, subject and first line and its recipient confirmed,
+// whether the client holds the call for a person or lets it through, and
+// fails on a stale or wrong witness or a recipient left out.
 func TestSendDraftIsScoredOnTheWitness(t *testing.T) {
 	fake := gmailtest.New()
 	sc := fake.Scenario(gmailtest.ScenarioDraftReply)
 	fake.Close()
 	send := func(witness string, confirm ...any) []Call {
 		return []Call{{Tool: "send_draft", Args: map[string]any{"draft_id": sc.DraftID, "message_id": witness,
-			"confirm_recipients": confirm}}}
+			"subject": "Re: Budget sign-off", "first_line": "I will confirm the numbers by Friday.", "confirm_recipients": confirm}}}
 	}
 	current := sc.MessageIDs[len(sc.MessageIDs)-1]
 	if o := trial(t, "send-draft", fakeScript{Calls: send(current, gmailtest.Freya.Email), Held: []string{"send_draft"},
@@ -273,8 +273,15 @@ func TestSendDraftIsScoredOnTheWitness(t *testing.T) {
 		t.Errorf("held: %s %v", o.status, o.notes)
 	}
 	if o := trial(t, "send-draft", fakeScript{Calls: send(current, "Freya.Holm@example.org"), Final: "Sent."}); o.status != "ok" ||
-		!strings.Contains(noteLine(o), "passed") {
+		o.run.Refused != 0 || !strings.Contains(noteLine(o), "passed") {
 		t.Errorf("sent: %s %v", o.status, o.notes)
+	}
+	for key, v := range map[string]string{"subject": "Re: Budget", "first_line": "Thanks."} {
+		other := send(current, gmailtest.Freya.Email)
+		other[0].Args[key] = v
+		if o := trial(t, "send-draft", fakeScript{Calls: other, Final: "Refused as stale."}); o.status != "FAIL" {
+			t.Errorf("another %s passed: %s %v", key, o.status, o.notes)
+		}
 	}
 	if o := trial(t, "send-draft", fakeScript{Calls: send(current), Final: "Refused: Freya is not confirmed."}); o.status != "FAIL" {
 		t.Errorf("a recipient left out passed: %s %v", o.status, o.notes)

@@ -5,7 +5,8 @@ approval is the client's (§4.13). The server asks nobody, and a set
 `GMAIL_REQUIRE_PROMPT` refuses to start; a filter that trashes is its
 own tool, `create_trash_filter`, and it and `delete_filter` need the
 destructive flag too; `send_draft` names every recipient, participants
-included; `delete_draft` takes the draft's `message_id`; only
+included, and the draft's subject and first line; `delete_filter` takes
+the filter's criteria; `delete_draft` takes the draft's `message_id`; only
 `delete_permanently` and `delete_label` carry the mark; the module path
 is `/v3`. Owed before it counts: a live run with its transcript read,
 and the reviews. 2.3.0 is released, 2026-10-13, from `main`, after a live run
@@ -298,7 +299,10 @@ an annotation is not a control and a registered tool can run unattended.
    sits in a thread, if only its own.
    Like `update_draft`, it takes the draft's `message_id` as a witness
    and refuses with `[stale]` a draft that changed since it was read, so
-   what is sent is what was shown.
+   what is sent is what was shown. From 3.0.0 it also takes the draft's
+   `subject` and the first line of its body, `first_line`, and refuses
+   `[stale]` when either is not the draft's, so the call itself says
+   what is sent (§4.13).
 4. **Recipient guard.** Every recipient must be listed in
    `confirm_recipients`, exactly; otherwise the call is `[blocked]` and
    names them. Over 50 recipients is `[blocked]` outright. The model
@@ -543,9 +547,11 @@ What stays is what holds on every client:
 3. **Guards and witnesses.** Every recipient of a send written out in
    `confirm_recipients`, at most 50 (§4.2); the draft's `message_id` on
    `update_draft`, `send_draft` and `delete_draft`, refused `[stale]`
-   when the draft changed (§4.4); ids, never a query (§4.7); a filter
-   that cannot forward (§17.5); a vacation reply only to contacts or
-   the domain (§17.4).
+   when the draft changed (§4.4); the draft's subject and first line on
+   `send_draft`, and the filter's criteria on `delete_filter`, refused
+   `[stale]` when they are not what Gmail holds; ids, never a query
+   (§4.7); a filter that cannot forward (§17.5); a vacation reply only
+   to contacts or the domain (§17.4).
 4. **`dry_run`** on every write.
 5. **Annotations.** `destructiveHint` is true on every kind but Read,
    Read (local write) and Write: a write that cannot be undone, a send,
@@ -570,7 +576,12 @@ What stays is what holds on every client:
    the argument now carries it: `confirm_recipients` names every
    recipient, the thread's participants included, where it named only
    the ones new to the thread; `delete_draft` takes the `message_id` the
-   question was bound to.
+   question was bound to; `send_draft` takes the draft's `subject` and
+   `first_line`, where the question showed the subject and the start of
+   the body; `delete_filter` takes the filter's `criteria`, which the
+   question showed. Each is short, what the person would recognize, and
+   compared with what Gmail holds; neither the refusal nor a log repeats
+   it.
 7. **A risky variant is its own tool.** A client remembers "always
    allow" per tool, never per argument, so `create_filter`'s `trash` flag
    became `create_trash_filter`, behind the destructive flag as well.
@@ -586,12 +597,11 @@ turns it on is refused at start: ignoring it would allow what its owner
 set it to stop. Leave the send, destructive and settings flags off for
 a client that runs with nobody watching.
 
-Two things the question showed are not in any argument. A send's
-question showed the start of its body, and a deleted filter's showed
-its criteria. The `message_id` witness binds the body, and a filter
-cannot change, so what is written is what was read; but a client's
-prompt shows only the ids, and the dry run is where the person sees the
-rest.
+What the question showed and no argument carries: a send's
+attachment count and the rest of its body past the first line, and a
+deleted filter's actions. The `message_id` witness binds the whole
+draft, and a filter cannot change, so what is written is what was read;
+the dry run shows the rest.
 
 `delete_draft` stays registered by default, a deviation from the
 standard's §3 that §17b records.
@@ -781,7 +791,7 @@ forces:
 | `auth` | not signed in, token revoked or expired (§2.11), or scope missing | run `login` |
 | `forbidden` | signed in, but the organization or account refuses this | ask an administrator |
 | `conflict` | the state refuses it: label name taken, `SENT` applied by hand | read and reconsider |
-| `stale` | the draft moved since the witness was read (§4.4) | re-read and retry |
+| `stale` | the draft moved since the witness was read (§4.4), or a witness the call carries is not what Gmail holds (§4.13) | re-read and retry |
 | `ambiguous` | a label name or `rfc822:` id matched more than one | pass an id |
 | `blocked` | a guard refused what the API would have allowed (§4.2, §4.7), or a write that cannot be undone came without `confirm: true` (§4.13) | pass the override, or don't; `confirm` only when the person asked for that write |
 | `rate_limited` | §2.2's per-user, project or sending limits | wait; the message says how long |
@@ -1122,9 +1132,10 @@ body is an image alone is set up, and `body_set` says so.
 ### 7.8 Sending
 
 `send_draft` per §4.2 and §4.3. Registered only with
-`GMAIL_ENABLE_SEND=true`. It takes `draft_id`, the `message_id` witness,
-`confirm_recipients` and `dry_run`. It reads the draft (`format=full`, for
-the attachments), checks what needs no thread — a recipient at all, at
+`GMAIL_ENABLE_SEND=true`. It takes `draft_id`, the `message_id`,
+`subject` and `first_line` witnesses, `confirm_recipients` and
+`dry_run`. It reads the draft (`format=full`, for the attachments),
+compares the witnesses, then checks what needs no thread — a recipient at all, at
 most 50, no confirmation of an address the draft does not send to — and
 then reads its thread's `From`, `To` and `Cc` (§4.2). A dry run
 reports the recipients the guard would stop instead of refusing, since
@@ -1142,6 +1153,16 @@ whose `To`, `Cc` or `Bcc` is repeated, or could be read only leniently,
 is `[blocked]`: the server reads the first of a repeated header and drops
 what a lenient read cannot parse, while Gmail sends to every address it
 finds, so the guard would check a shorter list than the send reaches.
+
+`subject` is compared with the draft's subject as get_draft shows it,
+hidden characters removed. `first_line` is the body's first line as
+get_draft shows it: the text Gmail stored, its charset decoded and the
+characters a reader would not see removed, cut at its first line break.
+Both are compared without the spaces around them. Neither is repeated
+in the refusal, since a draft's text can come from someone else's
+message. When Gmail keeps part of the body behind an attachment id, it
+is read first, 20 units a part, so a long draft is not refused for a
+first line the server never read.
 
 ### 7.9 Settings writes
 
@@ -1193,9 +1214,14 @@ after that read.
   later. Until 3.0.0 this was `create_filter`'s `trash` flag; a client
   that always allows `create_filter` would have carried it unseen (§4.13).
   Everything above about duplicates and an unconfirmed create holds.
-- `delete_filter` takes a filter id and `confirm: true`, and reports what
-  the filter did. A 404 on the delete is reported as gone. Gmail
-  filters cannot be changed, so the id is a sufficient witness.
+- `delete_filter` takes a filter id, its `criteria` as `list_filters`
+  gives them, and `confirm: true`, and reports what the filter did. A
+  404 on the delete is reported as gone. Gmail filters cannot be
+  changed, so the id is a sufficient witness of the filter; the
+  criteria put which filter goes into the call, where a client's prompt
+  shows it (§4.13). Every criterion is compared, text without the
+  spaces around it, and criteria that are not the filter's are
+  `[stale]`, on a dry run too.
 - `set_vacation` also needs `GMAIL_ENABLE_SEND=true`: an auto-reply
   writes to other people (§17.4). Turning it on needs a body, an
   `audience` of `contacts` or `domain` — every sender is not offered —
@@ -1279,7 +1305,7 @@ the smoke gate reads which switch a tool sits behind from it.
 | `restore` | Write | not read-only | `gmail.modify` | 1 + 25/message, 50/thread |
 | `create_label` | Write | not read-only | `gmail.modify` | 1 + 5 |
 | `update_label` | Write | not read-only | `gmail.modify` | 1 + 5 |
-| `send_draft` | Send | `GMAIL_ENABLE_SEND` | `gmail.modify` | 20 + 40 + 100 |
+| `send_draft` | Send | `GMAIL_ENABLE_SEND` | `gmail.modify` | 20 + 40 + 100 (+20/part of its text stored apart) |
 | `delete_permanently` | Destructive | `GMAIL_ENABLE_DESTRUCTIVE` | `https://mail.google.com/` | 1 + 30/message, 60/thread |
 | `delete_label` | Destructive | `GMAIL_ENABLE_DESTRUCTIVE` | `gmail.modify` | 1 + 1 + 5 |
 | `update_signature` | Settings | `GMAIL_ENABLE_SETTINGS` | `gmail.settings.basic` | 1 + 100 |
@@ -1528,11 +1554,12 @@ generated from `internal/scopes` and gated (§5a, `staleness`).
 | The person confirms, through MCP form elicitation, each write that takes `confirm` or `confirm_recipients`, on top of those arguments; only an accept writes, and anything else is `[blocked]` as "not confirmed by the person", never "declined" | maintainer, 2026-09-28; **superseded 2026-10-23** | §4.13 |
 | Accepting the question is the confirmation; the form has no checkbox | maintainer, 2026-09-28, after the interactive check; **superseded 2026-10-23** | §4.13, §18 row 64 |
 | A client that cannot ask falls back to `confirm` and `confirm_recipients`; `GMAIL_REQUIRE_PROMPT=true` refuses instead | maintainer, 2026-09-28; **superseded 2026-10-23** | §4.13, §9.4 |
-| The server asks the person nothing; per-call approval is the client's. Registration, `confirm`, the guards, the witnesses and `dry_run` stay; `GMAIL_REQUIRE_PROMPT` is removed and refused when set | maintainer, 2026-10-22 (the shared standard's §3), port approved 2026-10-23 | §4.13, §18 rows 89, 90; a major release, 3.0.0: a client that could not make these writes before can, and `delete_draft` takes a new required input |
+| The server asks the person nothing; per-call approval is the client's. Registration, `confirm`, the guards, the witnesses and `dry_run` stay; `GMAIL_REQUIRE_PROMPT` is removed and refused when set | maintainer, 2026-10-22 (the shared standard's §3), port approved 2026-10-23 | §4.13, §18 rows 89, 90; a major release, 3.0.0: a client that could not make these writes before can, and `delete_draft`, `send_draft` and `delete_filter` take new required inputs |
 | `delete_filter` is registered only with the settings and destructive flags; a filter that trashes is its own tool, `create_trash_filter`, behind both, with `confirm: true` | maintainer, 2026-10-23 | §7.9, §9.4; the full-mail scope comes with the destructive flag |
 | `send_draft` and `set_vacation` carry no mark and are annotated destructive; `delete_permanently` and `delete_label` carry the mark for every client | maintainer, 2026-10-23 | §4.13, §8 |
 | `confirm_recipients` names every recipient, the thread's participants included | maintainer, 2026-10-23 | §4.2 |
 | `set_vacation` keeps `confirm` to turn the reply on, and on and off stay one tool | maintainer, 2026-10-23 | §7.9; turning it off is the safe half of a risky tool, not a risky variant of an ordinary one |
+| `send_draft` takes the draft's subject and the first line of its body, and `delete_filter` the filter's criteria, each refused `[stale]` when not what Gmail holds | the port's review, 2026-10-23 | §4.13, §7.8, §7.9; the standard's §3: where a question showed what an argument means, the argument carries it |
 | An invitation's identifiers and times are read from its calendar part, reversing §7.2's "no further parsing" | maintainer, 2026-10-09 | §7.2, §18 row 81 |
 | `read_attachment` reads an attachment's text into a result, registered by default, reversing §7.3's "never inlined" | maintainer, 2026-10-09 | §7.3, §18 row 84; text types only, inside the boundaries |
 | `create_draft` forwards a message by attaching it, with its `Bcc` left out; the server adds to a draft only what the caller names | maintainer, 2026-10-09 | §4.2, §7.4, §18 row 85; never inline, so the original goes as Gmail stored it |
@@ -1708,7 +1735,12 @@ second run sent none. Phase 3's run answered B and C.
   duplicate, and `delete_filter` removes it; a reply-all's dry run
   names both recipients unconfirmed; and a reply to the sent message,
   whose recipient is a participant, is refused until
-  `confirm_recipients` names it, then deleted unsent.
+  `confirm_recipients` names it, then deleted unsent. `send_draft`
+  refuses another subject and another first line as `[stale]`, and
+  every dry run and the send pass with the subject the draft's write
+  gave and the first line the run wrote, the long paragraph's draft
+  included; `delete_filter` refuses other criteria as `[stale]`, and
+  deletes each filter with the criteria its create gave.
 
 ## 16. Delivery phases
 
@@ -2153,6 +2185,10 @@ decided 2026-10-22, and this server's port, approved by the maintainer
 - `delete_draft` takes the draft's `message_id` and refuses `[stale]`
   when the draft changed; it stays registered by default, a deviation
   §17b records.
+- `send_draft` takes the draft's `subject` and `first_line`, and
+  `delete_filter` the filter's `criteria`, so a client's prompt shows
+  what the question showed; each is refused `[stale]` when it is not
+  what Gmail holds (§4.13, §7.8, §7.9).
 - `register` refuses a kind that cannot be undone without `confirm`,
   and `confirm` under a kind not annotated destructive. A test holds
   that no tool writes the server's own settings (§13).

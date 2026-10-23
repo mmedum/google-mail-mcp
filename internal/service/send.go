@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"github.com/mmedum/google-mail-mcp/v3/internal/gapi"
+	"github.com/mmedum/google-mail-mcp/v3/internal/gmail"
 	"github.com/mmedum/google-mail-mcp/v3/internal/mime"
 	"github.com/mmedum/google-mail-mcp/v3/internal/model"
 )
@@ -42,6 +43,11 @@ type Dispatch struct {
 	// Witness is the message id get_draft or create_draft returned; the
 	// send is refused if the draft holds another now.
 	Witness string
+	// Subject and FirstLine are the draft's subject and the first line
+	// of its body that has text, as get_draft shows them. They put what
+	// is sent into the call, where a client's prompt shows it (§4.13),
+	// and the send is refused if the draft holds others.
+	Subject, FirstLine string
 	// Confirm names the recipients the caller vouches for: every one the
 	// draft sends to.
 	Confirm []string
@@ -79,6 +85,9 @@ func (s *Service) SendDraft(ctx context.Context, in Dispatch) (model.SendWrite, 
 		return out, gapi.Errf(gapi.ClassStale,
 			"draft %s changed since it was read: it holds message %s now, not %s. Read it again with get_draft before sending",
 			out.DraftID, m.ID, witness)
+	}
+	if m, err = s.sameContent(ctx, g.Message, m, in); err != nil {
+		return out, err
 	}
 	if err := readWhole(out.DraftID, m); err != nil {
 		return out, err
@@ -148,6 +157,35 @@ func parseConfirm(list []string) (map[string]bool, error) {
 		out[strings.ToLower(as[0].Email)] = true
 	}
 	return out, nil
+}
+
+// sameContent refuses a send whose subject or first line is not the
+// draft's, comparing them without the spaces around them. Neither is
+// repeated in the refusal: both are the draft's text, which may come
+// from someone else's message. It returns m with its text whole, read
+// first when Gmail stored part of it apart.
+func (s *Service) sameContent(ctx context.Context, g *gmail.Message, m model.Message, in Dispatch) (model.Message, error) {
+	if strings.TrimSpace(in.Subject) != strings.TrimSpace(string(m.Subject)) {
+		return m, gapi.Errf(gapi.ClassStale, "subject is not the subject draft %s holds; nothing was sent. Read it with "+
+			"get_draft and pass its subject, after checking it is still the draft to send", in.DraftID)
+	}
+	m, _, err := s.wholeText(ctx, g, m)
+	if err != nil {
+		return m, err
+	}
+	if strings.TrimSpace(in.FirstLine) != firstLine(m.Body.Text) {
+		return m, gapi.Errf(gapi.ClassStale, "first_line is not the first line of draft %s's body; nothing was sent. "+
+			"Read it with get_draft and pass the first line of its body, alone (show_quoted shows one that starts "+
+			"with a quote or a signature), after checking it is still the draft to send", in.DraftID)
+	}
+	return m, nil
+}
+
+// firstLine is the first line of a body's text, without the spaces
+// around it. mime trims the text, so no blank line comes before it.
+func firstLine(text string) string {
+	line, _, _ := strings.Cut(text, "\n")
+	return strings.TrimSpace(line)
 }
 
 // readWhole refuses a draft whose recipients this server cannot read

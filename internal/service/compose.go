@@ -335,7 +335,7 @@ func (s *Service) replyParent(ctx context.Context, replyTo, thread string, quote
 	if err != nil || !quote {
 		return m, 0, err
 	}
-	return s.quotedParts(ctx, g, m)
+	return s.wholeText(ctx, g, m)
 }
 
 // threadParent is a thread's newest answerable message, and the wire
@@ -382,11 +382,11 @@ func (s *Service) messageParent(ctx context.Context, replyTo string) (model.Mess
 	return m, g, nil
 }
 
-// quotedParts reads the parts of m's text that Gmail stored behind an
-// attachment id, 20 units each, and returns m with its text whole. An
-// invitation's calendar part, which a read would also fetch, is not
-// quoted and not read.
-func (s *Service) quotedParts(ctx context.Context, g *gmail.Message, m model.Message) (model.Message, int, error) {
+// wholeText reads the parts of m's text that Gmail stored behind an
+// attachment id, 20 units each, and returns m with its text whole, for a
+// quote or a send's witness. An invitation's calendar part, which a read
+// would also fetch, is not read.
+func (s *Service) wholeText(ctx context.Context, g *gmail.Message, m model.Message) (model.Message, int, error) {
 	var text []mime.PartRef
 	for _, p := range m.NeedsFetch {
 		if p.MimeType == "text/plain" || p.MimeType == "text/html" {

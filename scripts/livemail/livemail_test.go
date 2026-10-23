@@ -346,7 +346,8 @@ func TestTheGuardHoldsSendsToSendTo(t *testing.T) {
 		draftMessages: []string{"0000000000000003"}}
 	without := &env{seed: seed}
 	with := &env{seed: seed, sendTo: "second@example.net", full: true}
-	send := map[string]any{"draft_id": "r1", "message_id": "0000000000000003", "confirm_recipients": []any{"second@example.net"}}
+	send := map[string]any{"draft_id": "r1", "message_id": "0000000000000003", "subject": r.name + " draft 1",
+		"first_line": "Synthetic.", "confirm_recipients": []any{"second@example.net"}}
 	for _, tc := range []struct {
 		e    *env
 		tool string

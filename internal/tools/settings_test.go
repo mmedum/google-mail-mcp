@@ -229,7 +229,7 @@ func TestParallelFilterWritesDoNotOverlap(t *testing.T) {
 		jobs = append(jobs, job{"create_filter", map[string]any{"from": fmt.Sprintf("sender%d@example.org", i), "star": true}})
 	}
 	for _, id := range []string{gmailtest.FilterNewsletters, gmailtest.FilterReceipts} {
-		jobs = append(jobs, job{"delete_filter", map[string]any{"filter_id": id, "confirm": true}})
+		jobs = append(jobs, job{"delete_filter", map[string]any{"filter_id": id, "criteria": fixtureCriteria[id], "confirm": true}})
 	}
 	failed := make([]string, len(jobs))
 	var wg sync.WaitGroup
@@ -368,9 +368,18 @@ func TestCreateTrashFilter(t *testing.T) {
 	}
 }
 
+// fixtureCriteria are gmailtest's filters' criteria, as list_filters
+// gives them.
+var fixtureCriteria = map[string]map[string]any{
+	gmailtest.FilterNewsletters: {"from": "news@harbor-weekly.invalid"},
+	gmailtest.FilterForward:     {"query": "invoice", "has_attachment": true},
+	gmailtest.FilterReceipts: {"subject": "receipt", "negated_query": "from:winner@prizes.invalid", "size": 1048576,
+		"size_comparison": "smaller"},
+}
+
 func TestDeleteFilter(t *testing.T) {
 	h, fake := connectSettings(t, filterDeletesOn)
-	args := map[string]any{"filter_id": gmailtest.FilterNewsletters}
+	args := map[string]any{"filter_id": gmailtest.FilterNewsletters, "criteria": fixtureCriteria[gmailtest.FilterNewsletters]}
 	refused(t, h, "delete_filter", args, gapi.ClassBlocked)
 
 	var dry tools.FilterWriteOut
@@ -384,6 +393,38 @@ func TestDeleteFilter(t *testing.T) {
 		t.Fatalf("delete %+v", out)
 	}
 	refused(t, h, "delete_filter", with(args, "confirm", true), gapi.ClassNotFound)
+}
+
+// A delete carries the filter's criteria, so a client's prompt shows
+// which filter goes. Criteria that are not the filter's, every one of
+// them compared, are refused as stale, on a dry run too, and the refusal
+// repeats none of them (§4.13). Spaces around them are not read.
+func TestDeleteFilterNeedsItsCriteria(t *testing.T) {
+	h, fake := connectSettings(t, filterDeletesOn)
+	args := map[string]any{"filter_id": gmailtest.FilterReceipts, "confirm": true}
+	for _, dry := range []bool{true, false} {
+		for name, criteria := range map[string]map[string]any{
+			"another filter's": fixtureCriteria[gmailtest.FilterForward],
+			"none":             {},
+			"one of them":      {"subject": "receipt"},
+			"another size": {"subject": "receipt", "negated_query": "from:winner@prizes.invalid", "size": 1048575,
+				"size_comparison": "smaller"},
+		} {
+			text := refused(t, h, "delete_filter", with(with(args, "criteria", criteria), "dry_run", dry), gapi.ClassStale)
+			if !strings.Contains(text, "criteria are not filter "+gmailtest.FilterReceipts+"'s") ||
+				strings.Contains(text, "receipt") || strings.Contains(text, "winner") || strings.Contains(text, "invoice") {
+				t.Errorf("dry run %v, %s: %s", dry, name, text)
+			}
+		}
+	}
+	if len(fake.CallsOf("gmail.users.settings.filters.delete")) != 0 {
+		t.Fatal("a delete was sent before the criteria matched")
+	}
+	call(t, h, "delete_filter", with(args, "criteria", map[string]any{"subject": " receipt ",
+		"negated_query": "from:winner@prizes.invalid\t", "size": 1048576, "size_comparison": " smaller"}), &tools.FilterWriteOut{})
+	if slices.ContainsFunc(fake.Settings().Filters, func(f gmail.Filter) bool { return f.ID == gmailtest.FilterReceipts }) {
+		t.Fatal("the filter is still there")
+	}
 }
 
 func TestSetVacation(t *testing.T) {
@@ -558,8 +599,8 @@ func TestAmbiguousFilterDeleteIsSettledByReading(t *testing.T) {
 				r.Then = func(s *gmailtest.Server) { s.Fail(gmailtest.Failure{Method: list, Status: 403, Reason: "forbidden"}) }
 			}
 			fake.Fail(r)
-			text := refused(t, h, "delete_filter", map[string]any{"filter_id": gmailtest.FilterReceipts, "confirm": true},
-				gapi.ClassAmbiguousOutcome)
+			text := refused(t, h, "delete_filter", map[string]any{"filter_id": gmailtest.FilterReceipts,
+				"criteria": fixtureCriteria[gmailtest.FilterReceipts], "confirm": true}, gapi.ClassAmbiguousOutcome)
 			there := slices.ContainsFunc(fake.Settings().Filters, func(f gmail.Filter) bool { return f.ID == gmailtest.FilterReceipts })
 			if !strings.Contains(text, tc.want) || there == tc.served {
 				t.Errorf("filter there %v; %s", there, text)

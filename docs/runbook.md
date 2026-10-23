@@ -142,6 +142,14 @@ runs with nobody watching, leave `GMAIL_ENABLE_SEND`,
 `GMAIL_ENABLE_DESTRUCTIVE` and `GMAIL_ENABLE_SETTINGS` off; the README
 gives Claude Code `permissions.ask` rules for the rest.
 
+## `[stale]` from `send_draft` or `delete_filter`
+
+What the call says it sends or deletes is not what Gmail holds. The
+draft changed since it was read, or the subject or first line given is
+not the draft's; or the criteria given are not the filter's. Read the
+draft with `get_draft`, or the filters with `list_filters`, check it is
+still the one meant, and pass what they show.
+
 ## `[ambiguous_outcome]` from `send_draft`
 
 The request left, and the answer did not come back. The server has

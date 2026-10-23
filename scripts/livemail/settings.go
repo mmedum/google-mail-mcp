@@ -47,13 +47,23 @@ func needFilter(e *env) string {
 	return ""
 }
 
-// recordFilter keeps the id of a filter a step created.
+// recordFilter keeps the id of a filter a step created, and its criteria
+// as the result gives them, which delete_filter takes as a witness.
 func recordFilter(e *env, text string) error {
 	m := filterIDIn.FindStringSubmatch(text)
 	if m == nil {
 		return errors.New("the result names no filter")
 	}
+	f, _ := e.structured["filter"].(map[string]any)
+	criteria, ok := f["criteria"].(map[string]any)
+	if !ok {
+		return errors.New("the result gives no criteria for the filter")
+	}
+	if e.filterCriteria == nil {
+		e.filterCriteria = map[string]any{}
+	}
 	e.filters = append(e.filters, m[1])
+	e.filterCriteria[m[1]] = criteria
 	return nil
 }
 
@@ -217,24 +227,46 @@ var settingsSteps = []step{
 		}},
 
 	{name: "a filter delete without confirm is refused", tool: "delete_filter", refuses: "blocked", needs: needFilter,
-		args:  func(e *env) map[string]any { return map[string]any{"filter_id": e.filters[0]} },
+		args: func(e *env) map[string]any {
+			return map[string]any{"filter_id": e.filters[0], "criteria": e.filterCriteria[e.filters[0]]}
+		},
 		check: func(_ *env, text string) error { return want(text, "confirm: true") }},
 
 	{name: "delete a filter, dry run", tool: "delete_filter", needs: needFilter,
-		args:  func(e *env) map[string]any { return map[string]any{"filter_id": e.filters[0], "dry_run": true} },
+		args: func(e *env) map[string]any {
+			return map[string]any{"filter_id": e.filters[0], "criteria": e.filterCriteria[e.filters[0]], "dry_run": true}
+		},
 		check: func(_ *env, text string) error { return want(text, "dry run: would delete filter") }},
 
+	// The criteria say which filter goes, and are the filter's.
+	{name: "a filter delete with other criteria is refused", tool: "delete_filter", refuses: "stale", needs: needFilter,
+		args: func(e *env) map[string]any {
+			return map[string]any{"filter_id": e.filters[0], "criteria": map[string]any{"from": filterSender(e.seed.label)},
+				"confirm": true}
+		},
+		check: func(e *env, text string) error {
+			return want(text, "criteria are not filter "+e.filters[0]+"'s; nothing was deleted")
+		}},
+
 	{name: "delete the filter", tool: "delete_filter", needs: needFilter, check: deletedFirst,
-		args: func(e *env) map[string]any { return map[string]any{"filter_id": e.filters[0], "confirm": true} }},
+		args: func(e *env) map[string]any {
+			return map[string]any{"filter_id": e.filters[0], "criteria": e.filterCriteria[e.filters[0]], "confirm": true}
+		}},
 
 	{name: "delete the trashing filter", tool: "delete_filter", needs: needFilter, check: deletedFirst,
-		args: func(e *env) map[string]any { return map[string]any{"filter_id": e.filters[0], "confirm": true} }},
+		args: func(e *env) map[string]any {
+			return map[string]any{"filter_id": e.filters[0], "criteria": e.filterCriteria[e.filters[0]], "confirm": true}
+		}},
 
 	{name: "delete the archiving filter", tool: "delete_filter", needs: needFilter, check: deletedFirst,
-		args: func(e *env) map[string]any { return map[string]any{"filter_id": e.filters[0], "confirm": true} }},
+		args: func(e *env) map[string]any {
+			return map[string]any{"filter_id": e.filters[0], "criteria": e.filterCriteria[e.filters[0]], "confirm": true}
+		}},
 
 	{name: "delete the filter that keeps mail out of spam", tool: "delete_filter", needs: needFilter, check: deletedFirst,
-		args: func(e *env) map[string]any { return map[string]any{"filter_id": e.filters[0], "confirm": true} }},
+		args: func(e *env) map[string]any {
+			return map[string]any{"filter_id": e.filters[0], "criteria": e.filterCriteria[e.filters[0]], "confirm": true}
+		}},
 
 	{name: "a vacation reply without an audience is refused", tool: "set_vacation", refuses: "invalid", needs: needSettings,
 		args: func(e *env) map[string]any {
@@ -280,8 +312,9 @@ var (
 		// Checked below.
 		"send_as": true, "signature": true, "from": true, "to": true, "add_labels": true, "filter_id": true,
 		"start": true, "body": true, "subject": true,
-		// Flags, and criteria that name nothing of the account's.
-		"dry_run": true, "confirm": true, "enable": true, "audience": true, "end": true, "query": true,
+		// Flags, and criteria that name nothing of the account's; criteria
+		// on a delete are a witness, compared and never written.
+		"dry_run": true, "confirm": true, "enable": true, "audience": true, "end": true, "query": true, "criteria": true,
 		"negated_query": true, "has_attachment": true, "exclude_chats": true, "size": true, "size_comparison": true,
 		"remove_labels": true, "archive": true, "mark_read": true, "star": true,
 	}

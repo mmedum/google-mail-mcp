@@ -87,8 +87,11 @@ type CreateTrashFilterIn struct {
 // DeleteFilterIn names the filter delete_filter removes.
 type DeleteFilterIn struct {
 	FilterID string `json:"filter_id" jsonschema:"the filter's id, from list_filters"`
-	Confirm  bool   `json:"confirm,omitempty" jsonschema:"must be true: a deleted filter cannot be restored"`
-	DryRun   bool   `json:"dry_run,omitempty" jsonschema:"read the filter and report it without deleting it"`
+	// Criteria put what is deleted into the call, where a client's
+	// prompt shows it (§4.13).
+	Criteria FilterMatch `json:"criteria" jsonschema:"the filter's criteria, as list_filters gives them; checked, never changed: the delete is refused as stale if they are not the filter's"`
+	Confirm  bool        `json:"confirm,omitempty" jsonschema:"must be true: a deleted filter cannot be restored"`
+	DryRun   bool        `json:"dry_run,omitempty" jsonschema:"read the filter and report it without deleting it"`
 }
 
 // FilterWriteOut is a filter created or deleted.
@@ -185,10 +188,15 @@ func registerSettings(s *mcp.Server, d Deps) {
 		})
 
 	register(s, d, Spec{Name: "delete_filter", Kind: SettingsForGood, Description: "Delete a filter by the id " +
-		"list_filters gives. Mail it already acted on stays as it is. It cannot be restored, so confirm must be " +
-		"true. The result shows what the filter did. 7 units." + dryRunNote},
+		"list_filters gives, with its criteria as list_filters gives them, so the call says which filter goes; " +
+		"criteria that are not the filter's are refused as stale. Mail it already acted on stays as it is. It " +
+		"cannot be restored, so confirm must be true. The result shows what the filter did. 7 units." + dryRunNote},
 		func(ctx context.Context, in DeleteFilterIn) (FilterWriteOut, error) {
-			fw, err := svc.DeleteFilter(ctx, in.FilterID, in.Confirm)
+			c, err := in.Criteria.criteria()
+			if err != nil {
+				return FilterWriteOut{}, err
+			}
+			fw, err := svc.DeleteFilter(ctx, in.FilterID, c, in.Confirm)
 			if err != nil {
 				return FilterWriteOut{}, err
 			}

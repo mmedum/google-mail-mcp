@@ -24,6 +24,8 @@ lifted verbatim.
 - **Breaking:** the server no longer asks you before a write; your MCP client approves each call. A client that runs with nobody watching now makes every write that is registered, so leave `GMAIL_ENABLE_SEND`, `GMAIL_ENABLE_DESTRUCTIVE` and `GMAIL_ENABLE_SETTINGS` off for one; the README gives Claude Code `permissions.ask` rules for the writes that send, change a setting or delete.
 - **Breaking:** `send_draft` needs every recipient in `confirm_recipients`, the thread's own participants included.
 - **Breaking:** `delete_draft` takes the draft's `message_id` and refuses `[stale]` when the draft changed since it was read.
+- **Breaking:** `send_draft` takes the draft's `subject` and the first line of its body as `first_line`, and refuses `[stale]` when either is not the draft's, so your client's prompt shows what is sent.
+- **Breaking:** `delete_filter` takes the filter's `criteria` as `list_filters` gives them, and refuses `[stale]` when they are not the filter's.
 - **Breaking:** `delete_filter` is registered only with `GMAIL_ENABLE_DESTRUCTIVE=true` as well as `GMAIL_ENABLE_SETTINGS=true`, and the destructive flag asks for `https://mail.google.com/` at login.
 - `send_draft` and `set_vacation` no longer carry `requiresUserInteraction` and are annotated destructive, so claude.ai and Codex prompt for them; `delete_permanently` and `delete_label` carry it for every client, so Claude Code prompts on every call of either.
 - **Breaking:** the Go module path is now `github.com/mmedum/google-mail-mcp/v3`; install with `go install github.com/mmedum/google-mail-mcp/v3/cmd/google-mail-mcp@latest`.

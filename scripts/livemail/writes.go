@@ -81,6 +81,7 @@ func (e *env) updated(text string) (draftID, messageID, was string, err error) {
 		return "", "", "", errors.New("the result names no updated draft")
 	}
 	e.seed.draftMessages = append(e.seed.draftMessages, m[2])
+	e.noteSubject(m[1])
 	return m[1], m[2], m[3], nil
 }
 
@@ -93,7 +94,17 @@ func (e *env) composed(text string) (draftID, messageID string, err error) {
 	}
 	e.seed.drafts = append(e.seed.drafts, m[1])
 	e.seed.draftMessages = append(e.seed.draftMessages, m[2])
+	e.noteSubject(m[1])
 	return m[1], m[2], nil
+}
+
+// noteSubject keeps a draft's subject as the last step's result gives
+// it, for send_draft's witness.
+func (e *env) noteSubject(draftID string) {
+	if e.subjects == nil {
+		e.subjects = map[string]string{}
+	}
+	e.subjects[draftID], _ = e.structured["untrusted_subject"].(string)
 }
 
 var writeSteps = []step{
@@ -146,7 +157,7 @@ var writeSteps = []step{
 		args: func(e *env) map[string]any {
 			return map[string]any{"draft_id": e.draftID, "message_id": e.draftMessage,
 				"to": []any{rcptCc}, "cc": []any{}, "bcc": []any{rcptBcc}, "subject": e.seed.label.name + " revised",
-				"body": "Revised.", "body_html": "<p>Revised.</p>",
+				"body": revisedLine, "body_html": "<p>" + revisedLine + "</p>",
 				"add_attachments": []any{secondName(e.seed.label)}, "remove_attachments": []any{"1"}}
 		},
 		check: func(e *env, text string) error {
@@ -214,7 +225,7 @@ var writeSteps = []step{
 
 	{name: "reply to all in an inserted thread", tool: "create_draft",
 		args: func(e *env) map[string]any {
-			return map[string]any{"reply_to_thread": e.seed.threads[2], "reply_all": true, "body": "A synthetic reply to all."}
+			return map[string]any{"reply_to_thread": e.seed.threads[2], "reply_all": true, "body": replyAllLine}
 		},
 		check: func(e *env, text string) error {
 			var err error
@@ -491,7 +502,8 @@ var (
 		"draft_id": true, "message_id": true, "reply_to": true, "reply_to_thread": true, "forward": true, "confirm_recipients": true,
 		// Carry no id, address or file: text, flags, part ids of the run's
 		// own drafts, and the system labels STARRED and IMPORTANT.
-		"dry_run": true, "confirm": true, "reply_all": true, "quote": true, "subject": true, "body": true, "body_html": true, "plain_only": true,
+		"dry_run": true, "confirm": true, "reply_all": true, "quote": true, "subject": true, "first_line": true, "body": true,
+		"body_html": true, "plain_only": true,
 		"remove_attachments": true, "add": true, "remove": true, "in_label_list": true, "in_message_list": true,
 		"text_color": true, "background_color": true,
 	}

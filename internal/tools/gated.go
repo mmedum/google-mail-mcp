@@ -19,6 +19,10 @@ type SendDraftIn struct {
 	DraftID string `json:"draft_id" jsonschema:"the draft to send"`
 	// MessageID is the witness of §4.4, held for a send as for an update.
 	MessageID string `json:"message_id" jsonschema:"the message_id get_draft, create_draft or update_draft returned; the send is refused as stale if the draft changed since"`
+	// Subject and FirstLine put what is sent into the call, where a
+	// client's prompt shows it (§4.13).
+	Subject   string `json:"subject" jsonschema:"the draft's subject, as get_draft shows it; checked, never changed: the send is refused as stale if it is not the draft's"`
+	FirstLine string `json:"first_line" jsonschema:"the first line of the draft's body, as get_draft shows it, or empty for a body with no text; checked like subject"`
 	// ConfirmRecipients is the guard of §4.2.
 	ConfirmRecipients []string `json:"confirm_recipients,omitempty" jsonschema:"every recipient of the draft, To, Cc and Bcc, the thread's own participants included, each address written out, as ada@example.com"`
 	DryRun            bool     `json:"dry_run,omitempty" jsonschema:"read the draft and report who it would reach and whom to confirm, without sending"`
@@ -90,16 +94,18 @@ func registerGated(s *mcp.Server, d Deps) {
 
 	register(s, d, Spec{Name: "send_draft", Kind: Send, Description: "Send a draft to its recipients. This reaches " +
 		"other people and cannot be recalled. Pass the draft's message_id, as get_draft or create_draft returned it; " +
-		"the send is refused as stale if the draft changed since. Every recipient — To, Cc and Bcc, the thread's own " +
+		"the send is refused as stale if the draft changed since. Pass its subject and the first line of its body as " +
+		"get_draft shows them, so the call says what it sends; either one not the draft's is refused as stale. Every recipient — To, Cc and Bcc, the thread's own " +
 		"participants included — must be written out in confirm_recipients, or the " +
 		"send is [blocked]; more than 50 recipients is [blocked] outright. Run it first with dry_run: it lists the " +
 		"recipients, the subject, the attachments and the thread, and whom to confirm. The body goes exactly as the " +
 		"draft holds it. A send is never retried: if Gmail does not confirm it, the result is [ambiguous_outcome] with " +
 		"what a read found afterwards, and the draft must not be sent again without the person. 160 units: the " +
-		"draft, its thread and the send." + dryRunNote + untrustedNote},
+		"draft, its thread and the send, and 20 more for each part of its text Gmail stored apart." + dryRunNote +
+		untrustedNote},
 		func(ctx context.Context, in SendDraftIn) (SendDraftOut, error) {
 			sw, err := svc.SendDraft(ctx, service.Dispatch{DraftID: in.DraftID, Witness: in.MessageID,
-				Confirm: in.ConfirmRecipients})
+				Subject: in.Subject, FirstLine: in.FirstLine, Confirm: in.ConfirmRecipients})
 			if err != nil {
 				return SendDraftOut{}, err
 			}

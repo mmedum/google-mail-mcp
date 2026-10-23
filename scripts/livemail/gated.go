@@ -44,10 +44,20 @@ func needFull(e *env) string {
 	return ""
 }
 
+// The first lines of the bodies the run writes into the drafts it sends
+// or dry-runs: a witness send_draft takes.
+const (
+	revisedLine   = "Revised."
+	replyAllLine  = "A synthetic reply to all."
+	sendLine      = "A synthetic message, sent by the live driver through send_draft."
+	neverSentLine = "A synthetic reply, never sent."
+)
+
 var gatedSteps = []step{
 	{name: "send a draft, dry run", tool: "send_draft",
 		args: func(e *env) map[string]any {
-			return map[string]any{"draft_id": e.draftID, "message_id": e.draftMessage, "dry_run": true}
+			return map[string]any{"draft_id": e.draftID, "message_id": e.draftMessage, "subject": e.subjects[e.draftID],
+				"first_line": revisedLine, "dry_run": true}
 		},
 		check: func(_ *env, text string) error {
 			if err := want(text, "it starts a new conversation"); err != nil {
@@ -60,7 +70,8 @@ var gatedSteps = []step{
 	// its sender wrote is not (§17.8). Both still need confirming (§4.2).
 	{name: "a reply-all names the sender a participant, dry run", tool: "send_draft",
 		args: func(e *env) map[string]any {
-			return map[string]any{"draft_id": e.replyAll, "message_id": e.replyAllMessage, "dry_run": true}
+			return map[string]any{"draft_id": e.replyAll, "message_id": e.replyAllMessage, "subject": e.subjects[e.replyAll],
+				"first_line": replyAllLine, "dry_run": true}
 		},
 		check: func(_ *env, text string) error {
 			if err := want(text, "recipients: 2 · 1 in the thread · 0 confirmed"); err != nil {
@@ -71,20 +82,41 @@ var gatedSteps = []step{
 
 	{name: "a send with unconfirmed recipients is refused", tool: "send_draft", refuses: "blocked",
 		args: func(e *env) map[string]any {
-			return map[string]any{"draft_id": e.draftID, "message_id": e.draftMessage}
+			return map[string]any{"draft_id": e.draftID, "message_id": e.draftMessage, "subject": e.subjects[e.draftID],
+				"first_line": revisedLine}
 		},
 		check: func(_ *env, text string) error { return want(text, "name each address in confirm_recipients") }},
 
 	{name: "a send against an old message id is refused", tool: "send_draft", refuses: "stale",
 		args: func(e *env) map[string]any {
-			return map[string]any{"draft_id": e.draftID, "message_id": e.staleMessage}
+			return map[string]any{"draft_id": e.draftID, "message_id": e.staleMessage, "subject": e.subjects[e.draftID],
+				"first_line": revisedLine}
 		},
 		check: func(_ *env, text string) error { return want(text, "changed since it was read") }},
+
+	// The subject and first line say what is sent, and are the draft's.
+	{name: "a send with another subject is refused", tool: "send_draft", refuses: "stale",
+		args: func(e *env) map[string]any {
+			return map[string]any{"draft_id": e.draftID, "message_id": e.draftMessage,
+				"subject": e.seed.label.name + " not this one", "first_line": revisedLine}
+		},
+		check: func(e *env, text string) error {
+			return want(text, "subject is not the subject draft "+e.draftID+" holds; nothing was sent")
+		}},
+
+	{name: "a send with another first line is refused", tool: "send_draft", refuses: "stale",
+		args: func(e *env) map[string]any {
+			return map[string]any{"draft_id": e.draftID, "message_id": e.draftMessage, "subject": e.subjects[e.draftID],
+				"first_line": "Not this one."}
+		},
+		check: func(e *env, text string) error {
+			return want(text, "first_line is not the first line of draft "+e.draftID+"'s body; nothing was sent")
+		}},
 
 	{name: "compose a draft to -send-to", tool: "create_draft", needs: needSendTo,
 		args: func(e *env) map[string]any {
 			return map[string]any{"to": []any{e.sendTo}, "subject": e.seed.label.name + " send_draft",
-				"body": "A synthetic message, sent by the live driver through send_draft.\n"}
+				"body": sendLine + "\n"}
 		},
 		check: func(e *env, text string) error {
 			var err error
@@ -97,7 +129,7 @@ var gatedSteps = []step{
 	{name: "give the draft to -send-to a long paragraph", tool: "update_draft", needs: needSendTo,
 		args: func(e *env) map[string]any {
 			return map[string]any{"draft_id": e.sent.draftID, "message_id": e.sent.draftMessage,
-				"body": "A synthetic message, sent by the live driver through send_draft.\n\n" + longParagraph + "\n"}
+				"body": sendLine + "\n\n" + longParagraph + "\n"}
 		},
 		check: func(e *env, text string) error {
 			draft, msg, _, err := e.updated(text)
@@ -114,7 +146,7 @@ var gatedSteps = []step{
 	{name: "send the draft to -send-to", tool: "send_draft", needs: needSendTo,
 		args: func(e *env) map[string]any {
 			return map[string]any{"draft_id": e.sent.draftID, "message_id": e.sent.draftMessage,
-				"confirm_recipients": []any{e.sendTo}}
+				"subject": e.subjects[e.sent.draftID], "first_line": sendLine, "confirm_recipients": []any{e.sendTo}}
 		},
 		check: func(e *env, text string) error {
 			m := sentDraftIn.FindStringSubmatch(text)
@@ -136,7 +168,7 @@ var gatedSteps = []step{
 	// confirm_recipients names it (§4.2). The reply is deleted, never sent.
 	{name: "reply to the sent message", tool: "create_draft", needs: needSendTo,
 		args: func(e *env) map[string]any {
-			return map[string]any{"reply_to": e.sent.sentMessage, "body": "A synthetic reply, never sent."}
+			return map[string]any{"reply_to": e.sent.sentMessage, "body": neverSentLine}
 		},
 		check: func(e *env, text string) error {
 			var err error
@@ -146,7 +178,8 @@ var gatedSteps = []step{
 
 	{name: "a reply to a participant is refused until confirmed", tool: "send_draft", refuses: "blocked", needs: needSendTo,
 		args: func(e *env) map[string]any {
-			return map[string]any{"draft_id": e.sent.replyDraft, "message_id": e.sent.replyMessage}
+			return map[string]any{"draft_id": e.sent.replyDraft, "message_id": e.sent.replyMessage,
+				"subject": e.subjects[e.sent.replyDraft], "first_line": neverSentLine}
 		},
 		check: func(e *env, text string) error {
 			return want(text, "1 of draft "+e.sent.replyDraft+"'s recipients are not in confirm_recipients: to[0]")
@@ -154,7 +187,8 @@ var gatedSteps = []step{
 
 	{name: "the reply's participant, dry run", tool: "send_draft", needs: needSendTo,
 		args: func(e *env) map[string]any {
-			return map[string]any{"draft_id": e.sent.replyDraft, "message_id": e.sent.replyMessage, "dry_run": true}
+			return map[string]any{"draft_id": e.sent.replyDraft, "message_id": e.sent.replyMessage,
+				"subject": e.subjects[e.sent.replyDraft], "first_line": neverSentLine, "dry_run": true}
 		},
 		check: func(_ *env, text string) error { return want(text, "recipients: 1 · 1 in the thread · 0 confirmed") }},
 

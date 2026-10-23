@@ -153,13 +153,13 @@ be saved to; `GMAIL_PROFILE` lets one machine hold several accounts.
 | `restore` | Take messages or threads out of the trash |
 | `create_label` | Create a user label |
 | `update_label` | Rename a user label or change how it shows |
-| `send_draft` | Send a draft, naming every recipient; only with `GMAIL_ENABLE_SEND=true` |
+| `send_draft` | Send a draft, naming every recipient, its subject and its first line; only with `GMAIL_ENABLE_SEND=true` |
 | `delete_permanently` | Delete up to 100 messages or threads for good, with `confirm: true`; only with `GMAIL_ENABLE_DESTRUCTIVE=true` |
 | `delete_label` | Delete a user label, with `confirm: true`; only with `GMAIL_ENABLE_DESTRUCTIVE=true` |
 | `update_signature` | Set the signature of one of the account's addresses; only with `GMAIL_ENABLE_SETTINGS=true` |
 | `create_filter` | Create a filter for mail that arrives from now on; it cannot forward or trash; only with `GMAIL_ENABLE_SETTINGS=true` |
 | `create_trash_filter` | Create a filter that moves matching mail to the trash as it arrives, with `confirm: true`; only with `GMAIL_ENABLE_SETTINGS=true` and `GMAIL_ENABLE_DESTRUCTIVE=true` |
-| `delete_filter` | Delete a filter, with `confirm: true`; only with `GMAIL_ENABLE_SETTINGS=true` and `GMAIL_ENABLE_DESTRUCTIVE=true` |
+| `delete_filter` | Delete a filter, naming its criteria, with `confirm: true`; only with `GMAIL_ENABLE_SETTINGS=true` and `GMAIL_ENABLE_DESTRUCTIVE=true` |
 | `set_vacation` | Turn the vacation reply on for contacts or the domain, or off; only with `GMAIL_ENABLE_SETTINGS=true` and `GMAIL_ENABLE_SEND=true` |
 
 Searches take Gmail's own search language in `q`, plus `after` and
@@ -191,8 +191,9 @@ For clients that attach rather than call, `gmail://threads/{id}`,
 - **Sending is opt-in and goes through a draft.** With
   `GMAIL_ENABLE_SEND=true`, `send_draft` sends a draft exactly as it is
   stored. Every recipient, the thread's own participants included, must
-  be written out in `confirm_recipients`, and a send Gmail does not
-  confirm is never repeated.
+  be written out in `confirm_recipients`, the call carries the draft's
+  subject and first line, so your client's prompt shows what goes, and a
+  send Gmail does not confirm is never repeated.
 - **Removal is trash.** Gmail keeps trashed mail for 30 days, and
   `restore` brings it back. By default the only permanent removal is
   `delete_draft`, which needs the message the draft holds and

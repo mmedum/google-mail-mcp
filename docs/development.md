@@ -120,7 +120,8 @@ scorers without a model.
 - The server's tools are allowed for the CLI, and `send_draft` carries
   no mark, so a send with every recipient confirmed goes to the
   in-memory mailbox. `send-draft` scores reaching the send with the
-  right witness and the recipient named in `confirm_recipients`.
+  right witnesses, the draft's message id, subject and first line, and
+  the recipient named in `confirm_recipients`.
 - A trial the CLI stopped, on turns or budget, is `UNFINISHED`; one that
   never produced an answer is `ERROR`. Neither is a verdict on the
   tools.

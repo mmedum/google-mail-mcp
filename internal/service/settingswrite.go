@@ -123,10 +123,7 @@ var (
 // type it writes has no such field (§17.5).
 func (s *Service) CreateFilter(ctx context.Context, sp FilterSpec) (model.FilterWrite, error) {
 	out := model.FilterWrite{Op: "create", DryRun: gapi.WritesForbidden(ctx)}
-	c := sp.Criteria
-	for _, f := range []*string{&c.From, &c.To, &c.Subject, &c.Query, &c.NegatedQuery, &c.SizeComparison} {
-		*f = strings.TrimSpace(*f)
-	}
+	c := trimmed(sp.Criteria)
 	// exclude_chats narrows a match; alone it matches nothing in particular.
 	match := c
 	match.ExcludeChats = false
@@ -196,6 +193,14 @@ func (s *Service) CreateFilter(ctx context.Context, sp FilterSpec) (model.Filter
 	}
 	out.Filter = model.NewFilters([]gmail.Filter{made}, ls.index)[0]
 	return out, nil
+}
+
+// trimmed is c without the spaces around each text criterion.
+func trimmed(c gmail.FilterCriteria) gmail.FilterCriteria {
+	for _, f := range []*string{&c.From, &c.To, &c.Subject, &c.Query, &c.NegatedQuery, &c.SizeComparison} {
+		*f = strings.TrimSpace(*f)
+	}
+	return c
 }
 
 // filterLabels resolves a filter's labels, refusing the ones it may not
@@ -295,7 +300,10 @@ func (s *Service) settleFilter(ctx context.Context, w gmail.FilterWrite, before 
 // DeleteFilter deletes a filter. Mail it already acted on stays as it
 // is. The filter is read from the list first, so the result says what it
 // did; filters.get is written off, since the list returns the same.
-func (s *Service) DeleteFilter(ctx context.Context, id string, confirm bool) (model.FilterWrite, error) {
+// criteria are the filter's criteria as list_filters gives them. They put
+// what is deleted into the call, where a client's prompt shows it
+// (§4.13), and the delete is refused if the filter's are others.
+func (s *Service) DeleteFilter(ctx context.Context, id string, criteria gmail.FilterCriteria, confirm bool) (model.FilterWrite, error) {
 	out := model.FilterWrite{Op: "delete", DryRun: gapi.WritesForbidden(ctx)}
 	id = strings.TrimSpace(id)
 	if id == "" {
@@ -318,6 +326,10 @@ func (s *Service) DeleteFilter(ctx context.Context, id string, confirm bool) (mo
 		return out, gapi.Errf(gapi.ClassNotFound, "no filter has id %s; list_filters shows them", id)
 	}
 	out.Filter = model.NewFilters(res.Filter[i:i+1], ls.index)[0]
+	if trimmed(out.Filter.Criteria) != trimmed(criteria) {
+		return out, gapi.Errf(gapi.ClassStale, "criteria are not filter %s's; nothing was deleted. Pass the criteria "+
+			"list_filters gives for it, after checking it is still the filter to delete", id)
+	}
 	if out.DryRun {
 		return out, nil
 	}

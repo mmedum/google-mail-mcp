@@ -139,6 +139,11 @@ pasted — a debug log, `doctor` and `status` — are the ones that mask.
   returned, read the draft again, and refuse with `[stale]` if it
   changed. Gmail offers no lock, so a change landing between that read
   and the write can still be lost; the window is one round trip.
+- **Send or delete what the call does not show.** `send_draft` takes
+  the draft's subject and the first line of its body, and
+  `delete_filter` the filter's criteria, and each is refused with
+  `[stale]` when it is not what Gmail holds. A client that shows a call's
+  arguments before it runs so shows what goes, not only an id.
 - **Act on a query.** Writes take explicit ids, at most 100 per call.
 - **Read or write files outside `GMAIL_LOCAL_DIR`.** Unset means no file
   transfer at all.

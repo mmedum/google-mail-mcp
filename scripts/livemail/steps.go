@@ -369,6 +369,9 @@ type env struct {
 	// replyAll and replyAllMessage are the reply-all draft the recipient
 	// guard's dry run reads.
 	replyAll, replyAllMessage string
+	// subjects are each draft's subject as its last create or update gave
+	// it, by draft id: a witness send_draft takes.
+	subjects map[string]string
 	// forwardDraft and forwardMessage are the forward the forward steps
 	// make, read back and delete.
 	forwardDraft, forwardMessage string
@@ -386,6 +389,9 @@ type env struct {
 	settings   bool
 	filters    []string
 	filterArgs map[string]any
+	// filterCriteria are each filter's criteria as its create gave them,
+	// by id: the witness delete_filter takes.
+	filterCriteria map[string]any
 	// archiveFilter is the archiving filter a step made, which a later
 	// step looks for SPAM on (§18 row 56).
 	archiveFilter string
