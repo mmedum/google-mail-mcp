@@ -1,6 +1,6 @@
 package render
 
-import "github.com/mmedum/google-mail-mcp/v2/internal/model"
+import "github.com/mmedum/google-mail-mcp/v3/internal/model"
 
 // SignatureWrite renders update_signature's result: the signature before
 // and after, each in a block, since either may hold text the account's

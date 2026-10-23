@@ -19,15 +19,15 @@ import (
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 	"golang.org/x/oauth2"
 
-	"github.com/mmedum/google-mail-mcp/v2/internal/auth"
-	"github.com/mmedum/google-mail-mcp/v2/internal/config"
-	"github.com/mmedum/google-mail-mcp/v2/internal/credentials"
-	"github.com/mmedum/google-mail-mcp/v2/internal/gapi"
-	"github.com/mmedum/google-mail-mcp/v2/internal/redact"
-	"github.com/mmedum/google-mail-mcp/v2/internal/scopes"
-	"github.com/mmedum/google-mail-mcp/v2/internal/server"
-	"github.com/mmedum/google-mail-mcp/v2/internal/tools"
-	"github.com/mmedum/google-mail-mcp/v2/internal/userconfig"
+	"github.com/mmedum/google-mail-mcp/v3/internal/auth"
+	"github.com/mmedum/google-mail-mcp/v3/internal/config"
+	"github.com/mmedum/google-mail-mcp/v3/internal/credentials"
+	"github.com/mmedum/google-mail-mcp/v3/internal/gapi"
+	"github.com/mmedum/google-mail-mcp/v3/internal/redact"
+	"github.com/mmedum/google-mail-mcp/v3/internal/scopes"
+	"github.com/mmedum/google-mail-mcp/v3/internal/server"
+	"github.com/mmedum/google-mail-mcp/v3/internal/tools"
+	"github.com/mmedum/google-mail-mcp/v3/internal/userconfig"
 )
 
 // Profile is one configured profile: where its files are, what the last

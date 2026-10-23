@@ -4,7 +4,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/mmedum/google-mail-mcp/v2/internal/gapi"
+	"github.com/mmedum/google-mail-mcp/v3/internal/gapi"
 )
 
 // An answer counts through the last second before its question

@@ -5,9 +5,9 @@ import (
 
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 
-	"github.com/mmedum/google-mail-mcp/v2/internal/model"
-	"github.com/mmedum/google-mail-mcp/v2/internal/render"
-	"github.com/mmedum/google-mail-mcp/v2/internal/service"
+	"github.com/mmedum/google-mail-mcp/v3/internal/model"
+	"github.com/mmedum/google-mail-mcp/v3/internal/render"
+	"github.com/mmedum/google-mail-mcp/v3/internal/service"
 )
 
 // The tools behind a flag: send_draft behind GMAIL_ENABLE_SEND (§4.2),

@@ -10,7 +10,7 @@ import (
 
 	"github.com/zalando/go-keyring"
 
-	"github.com/mmedum/google-mail-mcp/v2/internal/credentials"
+	"github.com/mmedum/google-mail-mcp/v3/internal/credentials"
 )
 
 // fakeKeyring is an in-memory Backend. failGet/failSet make it behave

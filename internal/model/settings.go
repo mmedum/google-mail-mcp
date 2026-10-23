@@ -6,8 +6,8 @@ import (
 	"strings"
 	"time"
 
-	"github.com/mmedum/google-mail-mcp/v2/internal/gmail"
-	"github.com/mmedum/google-mail-mcp/v2/internal/mime"
+	"github.com/mmedum/google-mail-mcp/v3/internal/gmail"
+	"github.com/mmedum/google-mail-mcp/v3/internal/mime"
 )
 
 // Settings are the account's settings, read-only (§7.7). The addresses

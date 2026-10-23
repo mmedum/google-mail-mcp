@@ -1,4 +1,4 @@
-module github.com/mmedum/google-mail-mcp/v2
+module github.com/mmedum/google-mail-mcp/v3
 
 go 1.27.2
 

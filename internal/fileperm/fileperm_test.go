@@ -7,7 +7,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/mmedum/google-mail-mcp/v2/internal/fileperm"
+	"github.com/mmedum/google-mail-mcp/v3/internal/fileperm"
 )
 
 // TestRestrictToOwnerNarrowsAWideFile is the case the Unix path exists

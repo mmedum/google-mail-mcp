@@ -15,6 +15,10 @@ lifted verbatim.
 
 ## [Unreleased]
 
+### Changed
+
+- **Breaking:** the Go module path is now `github.com/mmedum/google-mail-mcp/v3`; install with `go install github.com/mmedum/google-mail-mcp/v3/cmd/google-mail-mcp@latest`.
+
 ## [2.3.0] - 2026-10-13
 
 ### Added

@@ -16,9 +16,9 @@ import (
 	"testing"
 	"time"
 
-	"github.com/mmedum/google-mail-mcp/v2/internal/mime"
-	"github.com/mmedum/google-mail-mcp/v2/scripts/internal/redact"
-	"github.com/mmedum/google-mail-mcp/v2/scripts/internal/transcript"
+	"github.com/mmedum/google-mail-mcp/v3/internal/mime"
+	"github.com/mmedum/google-mail-mcp/v3/scripts/internal/redact"
+	"github.com/mmedum/google-mail-mcp/v3/scripts/internal/transcript"
 )
 
 // fakeMailbox records what the driver did to the mailbox.
