@@ -2888,6 +2888,10 @@ what fixed them.
   any **Breaking:** line as declaring its breaks, as every server of the
   family does; the per-service `confirm` checks stay, each with its own
   words, where one in `wrap` would hold a new tool to it too (§17a).
+  Security review: no finding at confidence 8 or above. One note
+  acted on: the CHANGELOG now says, under **Breaking:**, that a Claude
+  Code allow rule for `send_draft` or `set_vacation` takes effect once
+  the mark is gone, where the mark used to override it (§18 row 49).
 
 ### Closing a phase
 
