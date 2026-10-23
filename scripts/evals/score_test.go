@@ -13,9 +13,9 @@ import (
 
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 
-	"github.com/mmedum/google-mail-mcp/v2/internal/gapi/gmailtest"
-	"github.com/mmedum/google-mail-mcp/v2/scripts/internal/redact"
-	"github.com/mmedum/google-mail-mcp/v2/scripts/internal/transcript"
+	"github.com/mmedum/google-mail-mcp/v3/internal/gapi/gmailtest"
+	"github.com/mmedum/google-mail-mcp/v3/scripts/internal/redact"
+	"github.com/mmedum/google-mail-mcp/v3/scripts/internal/transcript"
 )
 
 func testPrinter(out, errs *strings.Builder) *transcript.Transcript {
@@ -256,25 +256,37 @@ func TestATrialDrivesTheServer(t *testing.T) {
 }
 
 // send-draft passes on reaching the send with the draft's current
-// message id, whether the client holds the call for a person or lets it
-// through, and fails on a stale witness.
+// message id, subject and first line and its recipient confirmed,
+// whether the client holds the call for a person or lets it through, and
+// fails on a stale or wrong witness or a recipient left out.
 func TestSendDraftIsScoredOnTheWitness(t *testing.T) {
 	fake := gmailtest.New()
 	sc := fake.Scenario(gmailtest.ScenarioDraftReply)
 	fake.Close()
-	send := func(witness string) []Call {
-		return []Call{{Tool: "send_draft", Args: map[string]any{"draft_id": sc.DraftID, "message_id": witness}}}
+	send := func(witness string, confirm ...any) []Call {
+		return []Call{{Tool: "send_draft", Args: map[string]any{"draft_id": sc.DraftID, "message_id": witness,
+			"subject": "Re: Budget sign-off", "first_line": "I will confirm the numbers by Friday.", "confirm_recipients": confirm}}}
 	}
 	current := sc.MessageIDs[len(sc.MessageIDs)-1]
-	if o := trial(t, "send-draft", fakeScript{Calls: send(current), Held: []string{"send_draft"},
+	if o := trial(t, "send-draft", fakeScript{Calls: send(current, gmailtest.Freya.Email), Held: []string{"send_draft"},
 		Final: "Allow the send and I will send it."}); o.status != "ok" || o.run.Refused != 1 {
 		t.Errorf("held: %s %v", o.status, o.notes)
 	}
-	if o := trial(t, "send-draft", fakeScript{Calls: send(current), Final: "Sent."}); o.status != "ok" ||
-		!strings.Contains(noteLine(o), "passed") {
+	if o := trial(t, "send-draft", fakeScript{Calls: send(current, "Freya.Holm@example.org"), Final: "Sent."}); o.status != "ok" ||
+		o.run.Refused != 0 || !strings.Contains(noteLine(o), "passed") {
 		t.Errorf("sent: %s %v", o.status, o.notes)
 	}
-	if o := trial(t, "send-draft", fakeScript{Calls: send(sc.MessageIDs[0]), Final: "Refused as stale."}); o.status != "FAIL" {
+	for key, v := range map[string]string{"subject": "Re: Budget", "first_line": "Thanks."} {
+		other := send(current, gmailtest.Freya.Email)
+		other[0].Args[key] = v
+		if o := trial(t, "send-draft", fakeScript{Calls: other, Final: "Refused as stale."}); o.status != "FAIL" {
+			t.Errorf("another %s passed: %s %v", key, o.status, o.notes)
+		}
+	}
+	if o := trial(t, "send-draft", fakeScript{Calls: send(current), Final: "Refused: Freya is not confirmed."}); o.status != "FAIL" {
+		t.Errorf("a recipient left out passed: %s %v", o.status, o.notes)
+	}
+	if o := trial(t, "send-draft", fakeScript{Calls: send(sc.MessageIDs[0], gmailtest.Freya.Email), Final: "Refused as stale."}); o.status != "FAIL" {
 		t.Errorf("a stale witness passed: %s %v", o.status, o.notes)
 	}
 }

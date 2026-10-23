@@ -33,7 +33,9 @@ const schemaDiffMinTools = 27
 // required, or taking fewer values of an enum; an output no longer
 // required, so no longer always there. Reported: what was added, and any other change to a tool
 // (description, annotations, _meta, a schema reshaped), so a reviewer
-// looks at it.
+// looks at it. A break passes only when the unreleased CHANGELOG
+// declares it: a **Breaking:** entry names its tool, and no version
+// heading there keeps the baseline's major (CLAUDE.md rule 14).
 //
 // It also fails when the baseline is not the newest release's: an older
 // one protects an older surface, so whatever shipped since could be
@@ -90,7 +92,21 @@ func schemaDiffCheck(out io.Writer, changelog string, baselineBytes, currentByte
 			old.version, changelogFile, want, want))
 	}
 	if len(breaking) > 0 {
-		problems = append(problems, fmt.Sprintf("%d breaking change(s) against %s", len(breaking), schemaDiffBaseline))
+		undeclared, err := schemaDiffUndeclared(breaking, changelog, old.version)
+		switch {
+		case err != nil:
+			problems = append(problems, err.Error())
+		case len(undeclared) > 0:
+			for _, u := range undeclared {
+				_, _ = fmt.Fprintln(out, "  undeclared: "+u)
+			}
+			problems = append(problems, fmt.Sprintf("%d breaking change(s) against %s that the CHANGELOG does not declare; "+
+				"a release that makes one names its tool, in backticks, in a **Breaking:** entry above [%s], and "+
+				"raises the major version", len(undeclared), schemaDiffBaseline, strings.TrimPrefix(old.version, "v")))
+		default:
+			_, _ = fmt.Fprintf(out, "  %d breaking change(s), each declared under **Breaking:** for a major release\n",
+				len(breaking))
+		}
 	}
 	if len(problems) == 0 && want != "" && strings.TrimSpace(stalenessUnreleased(changelog)) == "" &&
 		!schemaDiffSame(baselineBytes, currentBytes) {
@@ -486,6 +502,57 @@ func schemaBaselineVersion(changelog string) string {
 		return "v" + m[1]
 	}
 	return ""
+}
+
+// schemaDiffUndeclared is each breaking change that the unreleased part
+// of the CHANGELOG, everything above the baseline's own heading, does
+// not declare: a **Breaking:** entry there names its tool, resource or
+// template in backticks. A version heading there that does not raise
+// the baseline's major is one too, since only a major release may break
+// the surface.
+func schemaDiffUndeclared(breaking []string, changelog, baseline string) ([]string, error) {
+	version := strings.TrimPrefix(baseline, "v")
+	unreleased, _, found := strings.Cut(changelog, "\n## ["+version+"]")
+	if !found {
+		return nil, fmt.Errorf("%s has no ## [%s] heading for the baseline %s, so no break can be declared against it",
+			changelogFile, version, baseline)
+	}
+	named := map[string]bool{}
+	for line := range strings.Lines(unreleased) {
+		if !strings.Contains(line, "**Breaking:**") {
+			continue
+		}
+		for _, m := range stalenessCodeSpan.FindAllStringSubmatch(line, -1) {
+			named[m[1]] = true
+		}
+	}
+	var out []string
+	for _, b := range breaking {
+		if !named[schemaDiffSubject(b)] {
+			out = append(out, b)
+		}
+	}
+	for _, m := range changelogVersionHeading.FindAllStringSubmatch(unreleased, -1) {
+		if !schemaNewMajor(baseline, "v"+m[1]) {
+			out = append(out, fmt.Sprintf("release %s breaks the surface without raising the major version from %s", m[1], version))
+		}
+	}
+	return out, nil
+}
+
+// schemaDiffSubject is what a breaking change is about: the tool,
+// resource or template a CHANGELOG entry names.
+func schemaDiffSubject(b string) string {
+	for _, what := range []string{"tool ", "resource template ", "resource "} {
+		if rest, ok := strings.CutPrefix(b, what); ok {
+			if name, ok := strings.CutSuffix(rest, " removed"); ok {
+				return name
+			}
+		}
+	}
+	name, _, _ := strings.Cut(b, ":")
+	name, _, _ = strings.Cut(name, " ")
+	return name
 }
 
 // schemaNewMajor reports whether release to is a later major version

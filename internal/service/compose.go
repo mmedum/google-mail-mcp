@@ -12,11 +12,10 @@ import (
 	"sync"
 	"unicode/utf8"
 
-	"github.com/mmedum/google-mail-mcp/v2/internal/gapi"
-	"github.com/mmedum/google-mail-mcp/v2/internal/gmail"
-	"github.com/mmedum/google-mail-mcp/v2/internal/mime"
-	"github.com/mmedum/google-mail-mcp/v2/internal/model"
-	"github.com/mmedum/google-mail-mcp/v2/internal/render"
+	"github.com/mmedum/google-mail-mcp/v3/internal/gapi"
+	"github.com/mmedum/google-mail-mcp/v3/internal/gmail"
+	"github.com/mmedum/google-mail-mcp/v3/internal/mime"
+	"github.com/mmedum/google-mail-mcp/v3/internal/model"
 )
 
 // Compose is what create_draft was asked for (§7.4).
@@ -336,7 +335,7 @@ func (s *Service) replyParent(ctx context.Context, replyTo, thread string, quote
 	if err != nil || !quote {
 		return m, 0, err
 	}
-	return s.quotedParts(ctx, g, m)
+	return s.wholeText(ctx, g, m)
 }
 
 // threadParent is a thread's newest answerable message, and the wire
@@ -383,11 +382,11 @@ func (s *Service) messageParent(ctx context.Context, replyTo string) (model.Mess
 	return m, g, nil
 }
 
-// quotedParts reads the parts of m's text that Gmail stored behind an
-// attachment id, 20 units each, and returns m with its text whole. An
-// invitation's calendar part, which a read would also fetch, is not
-// quoted and not read.
-func (s *Service) quotedParts(ctx context.Context, g *gmail.Message, m model.Message) (model.Message, int, error) {
+// wholeText reads the parts of m's text that Gmail stored behind an
+// attachment id, 20 units each, and returns m with its text whole, for a
+// quote or a send's witness. An invitation's calendar part, which a read
+// would also fetch, is not read.
+func (s *Service) wholeText(ctx context.Context, g *gmail.Message, m model.Message) (model.Message, int, error) {
 	var text []mime.PartRef
 	for _, p := range m.NeedsFetch {
 		if p.MimeType == "text/plain" || p.MimeType == "text/html" {
@@ -689,6 +688,17 @@ type Revise struct {
 	LocalDir       string
 }
 
+// draftMoved refuses a write to a draft that holds another message than
+// the witness the caller read (§4.4); then is what to do after reading
+// it again.
+func draftMoved(draftID, held, witness, then string) error {
+	if held == witness {
+		return nil
+	}
+	return gapi.Errf(gapi.ClassStale, "draft %s changed since it was read: it holds message %s now, not %s. Read it again "+
+		"with get_draft %s", draftID, held, witness, then)
+}
+
 // UpdateDraft re-reads a draft, checks the witness, applies only what
 // was given, and saves it (§4.4). Everything not named is carried over
 // from what Gmail stored, byte for byte. The window between the re-read
@@ -715,10 +725,8 @@ func (s *Service) UpdateDraft(ctx context.Context, in Revise) (model.DraftWrite,
 	if d.Message == nil || d.Message.Raw == "" {
 		return out, gapi.Errf(gapi.ClassUnavailable, "Gmail returned draft %s without its message", in.DraftID)
 	}
-	if d.Message.ID != in.Witness {
-		return out, gapi.Errf(gapi.ClassStale,
-			"draft %s changed since it was read: it holds message %s now, not %s. Read it again with get_draft and reapply the change",
-			in.DraftID, d.Message.ID, in.Witness)
+	if err := draftMoved(in.DraftID, d.Message.ID, in.Witness, "and reapply the change"); err != nil {
+		return out, err
 	}
 	raw, err := mime.DecodeBase64URL(d.Message.Raw)
 	if err != nil {
@@ -890,10 +898,17 @@ func dedupe(ids []string) []string {
 }
 
 // DeleteDraft deletes a draft, which Gmail does permanently: a draft
-// never goes to the trash. confirm must be set (§17.1); a dry run reads
-// the draft and deletes nothing.
-func (s *Service) DeleteDraft(ctx context.Context, id string, confirm bool) (model.DraftWrite, error) {
+// never goes to the trash. confirm must be set (§17.1), and witness is
+// the message the caller read the draft holding, as for an update
+// (§4.4): a draft changed since is refused [stale], so what is deleted
+// is what was read. A dry run reads the draft and deletes nothing.
+func (s *Service) DeleteDraft(ctx context.Context, id, witness string, confirm bool) (model.DraftWrite, error) {
 	out := model.DraftWrite{Op: "delete", DryRun: gapi.WritesForbidden(ctx), DraftID: id}
+	witness = strings.TrimSpace(witness)
+	if witness == "" {
+		return out, gapi.Errf(gapi.ClassInvalid,
+			"message_id is required: pass the message_id get_draft returned, so a draft changed since is not deleted")
+	}
 	if !confirm && !out.DryRun {
 		return out, gapi.Errf(gapi.ClassBlocked,
 			"delete_draft deletes the draft permanently; drafts do not go to the trash. Pass confirm: true to delete it")
@@ -907,6 +922,9 @@ func (s *Service) DeleteDraft(ctx context.Context, id string, confirm bool) (mod
 		return out, gapi.Wrap(gapi.ClassUnavailable, err, "Gmail returned draft %s without its message", id)
 	}
 	m := d.Message
+	if err := draftMoved(id, m.ID, witness, "before deleting it"); err != nil {
+		return out, err
+	}
 	out.MessageID, out.ThreadID, out.Subject, out.RFC822MessageID = m.ID, m.ThreadID, m.Subject, m.RFC822MessageID
 	if len(m.From) > 0 {
 		out.From = &m.From[0]
@@ -914,9 +932,6 @@ func (s *Service) DeleteDraft(ctx context.Context, id string, confirm bool) (mod
 	out.Recipients = keptRecipients(m.To, m.Cc, m.Bcc, nil)
 	if out.DryRun {
 		return out, nil
-	}
-	if err := ask(ctx, render.AskDeleteDraft(out)); err != nil {
-		return out, err
 	}
 	if err := s.client.DeleteDraft(ctx, id); err != nil {
 		if c, _ := gapi.ClassOf(err); c != gapi.ClassNotFound {

@@ -6,7 +6,7 @@ GO        ?= go
 EXE       := $(if $(filter Windows_NT,$(OS)),.exe,)
 BIN       ?= ./google-mail-mcp$(EXE)
 VERSION   ?= dev
-PKG        = github.com/mmedum/google-mail-mcp/v2
+PKG        = github.com/mmedum/google-mail-mcp/v3
 LDFLAGS    = -s -w -X $(PKG)/internal/version.Version=$(VERSION)
 # The same list CI's coverage step uses, cmd/ included.
 COVERPKG   = ./cmd/...,./internal/...

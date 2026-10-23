@@ -7,10 +7,10 @@ import (
 	"strings"
 	"time"
 
-	"github.com/mmedum/google-mail-mcp/v2/internal/gapi"
-	"github.com/mmedum/google-mail-mcp/v2/internal/mime"
-	"github.com/mmedum/google-mail-mcp/v2/internal/model"
-	"github.com/mmedum/google-mail-mcp/v2/internal/render"
+	"github.com/mmedum/google-mail-mcp/v3/internal/gapi"
+	"github.com/mmedum/google-mail-mcp/v3/internal/gmail"
+	"github.com/mmedum/google-mail-mcp/v3/internal/mime"
+	"github.com/mmedum/google-mail-mcp/v3/internal/model"
 )
 
 // MaxSendRecipients is the most recipients one send may have (§4.2).
@@ -43,8 +43,13 @@ type Dispatch struct {
 	// Witness is the message id get_draft or create_draft returned; the
 	// send is refused if the draft holds another now.
 	Witness string
-	// Confirm names the recipients the caller vouches for: every one
-	// that is not already a participant in the thread the draft answers.
+	// Subject and FirstLine are the draft's subject and the first line
+	// of its body that has text, as get_draft shows them. They put what
+	// is sent into the call, where a client's prompt shows it (§4.13),
+	// and the send is refused if the draft holds others.
+	Subject, FirstLine string
+	// Confirm names the recipients the caller vouches for: every one the
+	// draft sends to.
 	Confirm []string
 }
 
@@ -76,16 +81,16 @@ func (s *Service) SendDraft(ctx context.Context, in Dispatch) (model.SendWrite, 
 		return out, gapi.Wrap(gapi.ClassUnavailable, err, "Gmail returned draft %s without its message", out.DraftID)
 	}
 	m := d.Message
-	if m.ID != witness {
-		return out, gapi.Errf(gapi.ClassStale,
-			"draft %s changed since it was read: it holds message %s now, not %s. Read it again with get_draft before sending",
-			out.DraftID, m.ID, witness)
+	if err := draftMoved(out.DraftID, m.ID, witness, "before sending"); err != nil {
+		return out, err
+	}
+	if err := sameSubject(out.DraftID, in.Subject, m); err != nil {
+		return out, err
 	}
 	if err := readWhole(out.DraftID, m); err != nil {
 		return out, err
 	}
 	out.MessageID, out.ThreadID, out.Subject, out.RFC822MessageID = m.ID, m.ThreadID, m.Subject, m.RFC822MessageID
-	out.Body = model.Untrusted(m.Body.Text)
 	if len(m.From) > 0 {
 		out.From = &m.From[0]
 	}
@@ -105,6 +110,19 @@ func (s *Service) SendDraft(ctx context.Context, in Dispatch) (model.SendWrite, 
 	if err := validate(out, confirmed); err != nil {
 		return out, err
 	}
+	// A dry run is how the caller learns whom to confirm: it reports the
+	// recipients the guard would stop instead of refusing. A send the
+	// guard stops is refused before the thread is read.
+	if !out.DryRun {
+		if err := unconfirmed(out); err != nil {
+			return out, err
+		}
+	}
+	// The first line is checked last of the free checks: it may cost a
+	// read of the text Gmail stored apart.
+	if m, err = s.sameFirstLine(ctx, g.Message, m, out.DraftID, in.FirstLine); err != nil {
+		return out, err
+	}
 	th, err := s.participants(ctx, m)
 	if err != nil {
 		return out, err
@@ -113,16 +131,8 @@ func (s *Service) SendDraft(ctx context.Context, in Dispatch) (model.SendWrite, 
 	for i, r := range out.Recipients {
 		out.Recipients[i].Participant = th.seen[strings.ToLower(r.Address.Email)]
 	}
-	// A dry run is how the caller learns whom to confirm: it reports the
-	// recipients the guard would stop instead of refusing.
 	if out.DryRun {
 		return out, nil
-	}
-	if err := unconfirmed(out); err != nil {
-		return out, err
-	}
-	if err := ask(ctx, render.AskSend(out)); err != nil {
-		return out, err
 	}
 	sent, err := s.client.SendDraft(ctx, out.DraftID)
 	if err != nil {
@@ -155,10 +165,44 @@ func parseConfirm(list []string) (map[string]bool, error) {
 	return out, nil
 }
 
+// sameSubject refuses a send whose subject is not the draft's, compared
+// without the spaces around them. The refusal does not repeat it: it is
+// the draft's text, which may come from someone else's message.
+func sameSubject(draftID, given string, m model.Message) error {
+	if strings.TrimSpace(given) == strings.TrimSpace(string(m.Subject)) {
+		return nil
+	}
+	return gapi.Errf(gapi.ClassStale, "subject is not the subject draft %s holds; nothing was sent. Read it with "+
+		"get_draft and pass its subject, after checking it is still the draft to send", draftID)
+}
+
+// sameFirstLine refuses a send whose first line is not the first line of
+// the draft's body, as sameSubject does a subject. It returns m with its
+// text whole, read first when Gmail stored part of it apart.
+func (s *Service) sameFirstLine(ctx context.Context, g *gmail.Message, m model.Message, draftID, given string) (model.Message, error) {
+	m, _, err := s.wholeText(ctx, g, m)
+	if err != nil {
+		return m, err
+	}
+	if strings.TrimSpace(given) != firstLine(m.Body.Text) {
+		return m, gapi.Errf(gapi.ClassStale, "first_line is not the first line of draft %s's body; nothing was sent. "+
+			"Read it with get_draft and pass the first line of its body, alone (show_quoted shows one that starts "+
+			"with a quote or a signature), after checking it is still the draft to send", draftID)
+	}
+	return m, nil
+}
+
+// firstLine is the first line of a body's text, without the spaces
+// around it. mime trims the text, so no blank line comes before it.
+func firstLine(text string) string {
+	line, _, _ := strings.Cut(text, "\n")
+	return strings.TrimSpace(line)
+}
+
 // readWhole refuses a draft whose recipients this server cannot read
 // whole: a To, Cc or Bcc header given twice, of which only the first is
 // read, or one read leniently, which drops what it cannot parse. Gmail
-// would send to every address it finds, so the guard would clear a list
+// would send to every address it finds, so the guard would check a list
 // shorter than the one the mail goes to.
 func readWhole(draftID string, m model.Message) error {
 	for _, name := range recipientHeaders {
@@ -189,13 +233,14 @@ type threadRead struct {
 }
 
 // participants reads who is already in the thread the draft answers,
-// and how many messages it holds. A participant wrote one of its
-// messages, or the account itself sent one of them to that address. The
-// To, Cc and Reply-To of a received message are not read: its sender
-// wrote them, and counting them would let a correspondent widen a
-// reply-all to addresses nobody confirmed (§17.8). A draft is not a
-// participant's message, and neither is spam or trash: a message planted
-// in a thread and then binned must not vouch for its sender.
+// and how many messages it holds. The result shows each recipient's
+// standing, and the guard clears none of them on it: every recipient is
+// confirmed (§4.2). A participant wrote one of its messages, or the
+// account itself sent one of them to that address. The To, Cc and
+// Reply-To of a received message are not read: its sender wrote them
+// (§17.8). A draft is not a participant's message, and neither is spam
+// or trash: a message planted in a thread and then binned does not make
+// its sender look like a participant.
 func (s *Service) participants(ctx context.Context, draft model.Message) (threadRead, error) {
 	out := threadRead{seen: map[string]bool{}, ids: map[string]bool{draft.ID: true}}
 	if draft.ThreadID == "" {
@@ -254,29 +299,26 @@ func validate(out model.SendWrite, confirmed map[string]bool) error {
 	return nil
 }
 
-// unconfirmed is the recipient guard of §4.2: every recipient not in
-// the thread must be confirmed. The refusal names recipients by field
-// and position, never by address: an address can come from a message
-// someone else wrote, and the server does not repeat it in its own
-// voice. The dry run lists them inside a block.
+// unconfirmed is the recipient guard of §4.2: every recipient must be
+// confirmed, the thread's participants included, so the call's own
+// arguments show everyone the send reaches. The refusal names
+// recipients by field and position, never by address: an address can
+// come from a message someone else wrote, and the server does not
+// repeat it in its own voice. The dry run lists them inside a block.
 func unconfirmed(out model.SendWrite) error {
 	var stopped []string
 	for _, r := range out.Recipients {
-		if !r.Cleared() {
+		if !r.Confirmed {
 			stopped = append(stopped, fmt.Sprintf("%s[%d]", r.Field, r.Position))
 		}
 	}
 	if len(stopped) == 0 {
 		return nil
 	}
-	where := "are not participants in the thread this draft answers"
-	if out.Answers == 0 {
-		where = "start a new conversation"
-	}
 	return gapi.Errf(gapi.ClassBlocked,
-		"%d of draft %s's recipients %s and are not in confirm_recipients: %s. "+
+		"%d of draft %s's recipients are not in confirm_recipients: %s. "+
 			"send_draft with dry_run lists them; name each address in confirm_recipients to send",
-		len(stopped), out.DraftID, where, strings.Join(stopped, ", "))
+		len(stopped), out.DraftID, strings.Join(stopped, ", "))
 }
 
 // settle reads what an ambiguous send left behind and returns the

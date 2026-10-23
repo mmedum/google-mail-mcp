@@ -4,17 +4,17 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
-	"log/slog"
 	"slices"
+	"strconv"
 	"strings"
 	"testing"
 	"time"
 
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 
-	"github.com/mmedum/google-mail-mcp/v2/internal/config"
-	"github.com/mmedum/google-mail-mcp/v2/internal/gapi"
-	"github.com/mmedum/google-mail-mcp/v2/internal/server/testutil"
+	"github.com/mmedum/google-mail-mcp/v3/internal/config"
+	"github.com/mmedum/google-mail-mcp/v3/internal/gapi"
+	"github.com/mmedum/google-mail-mcp/v3/internal/server/testutil"
 )
 
 type probeIn struct {
@@ -42,13 +42,11 @@ func probe(ctx context.Context, in probeIn) (probeOut, error) {
 	return probeOut{Seen: in.ID, DryRun: gapi.WritesForbidden(ctx)}, nil
 }
 
-var kinds = []Kind{Read, ReadWritesLocally, Write, WriteForGood, Send, Destructive}
-
 // allKinds is every Kind, for the tests that probe each one.
 var allKinds = []Kind{Read, ReadWritesLocally, Write, WriteForGood, Send, Destructive, Settings, SettingsForGood, AutoReply}
 
-// confirmingProbeIn is probeIn with confirm, which a kind that asks
-// before every write must take.
+// confirmingProbeIn is probeIn with confirm, which a kind that cannot be
+// undone must take.
 type confirmingProbeIn struct {
 	ID      string `json:"id" jsonschema:"an id"`
 	DryRun  bool   `json:"dry_run,omitempty"`
@@ -58,14 +56,12 @@ type confirmingProbeIn struct {
 
 // registerProbes registers one probe per Kind, named after the kind.
 func registerProbes(s *mcp.Server, d Deps) {
-	d.asking = newAsking(slog.New(slog.DiscardHandler))
-	for _, k := range kinds {
+	for _, k := range allKinds {
 		sp := Spec{Name: strings.ReplaceAll(k.String(), "-", "_"), Description: "probe", Kind: k}
-		if !k.asksEveryCall() {
+		if !k.confirmsEveryCall() {
 			register(s, d, sp, probe)
 			continue
 		}
-		sp.AskUnits = "1 more unit"
 		register(s, d, sp, func(ctx context.Context, in confirmingProbeIn) (probeOut, error) {
 			return probe(ctx, probeIn{ID: in.ID, DryRun: in.DryRun, Fail: in.Fail})
 		})
@@ -96,10 +92,16 @@ func TestRegistrationGates(t *testing.T) {
 		{"read-only with local dir", config.Config{ReadOnly: true, LocalDir: "/x"}, []string{"read", "read_writes_locally"}},
 		{"send", config.Config{EnableSend: true}, []string{"read", "send", "write", "write_for_good"}},
 		{"destructive", config.Config{EnableDestructive: true}, []string{"destructive", "read", "write", "write_for_good"}},
+		{"settings", config.Config{EnableSettings: true}, []string{"read", "settings", "write", "write_for_good"}},
+		{"settings and destructive", config.Config{EnableSettings: true, EnableDestructive: true},
+			[]string{"destructive", "read", "settings", "settings_for_good", "write", "write_for_good"}},
+		{"settings and send", config.Config{EnableSettings: true, EnableSend: true},
+			[]string{"auto_reply", "read", "send", "settings", "write", "write_for_good"}},
 		// Config refuses this pair; the gate still holds if it is ever built.
-		{"read-only beats enable", config.Config{ReadOnly: true, EnableSend: true, EnableDestructive: true}, []string{"read"}},
-		{"full surface", FullSurface(config.Config{ReadOnly: true}), []string{"destructive", "read", "read_writes_locally", "send", "write",
-			"write_for_good"}},
+		{"read-only beats enable", config.Config{ReadOnly: true, EnableSend: true, EnableDestructive: true, EnableSettings: true},
+			[]string{"read"}},
+		{"full surface", FullSurface(config.Config{ReadOnly: true}), []string{"auto_reply", "destructive", "read",
+			"read_writes_locally", "send", "settings", "settings_for_good", "write", "write_for_good"}},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
@@ -113,6 +115,9 @@ func TestRegistrationGates(t *testing.T) {
 	}
 }
 
+// The annotations decide each client's prompt (§4.13): claude.ai and
+// Codex prompt by destructiveHint, VS Code on every tool without
+// readOnlyHint, and Claude Code on every call of a tool with the mark.
 func TestAnnotationsAndMetaComeFromKind(t *testing.T) {
 	h := testutil.Connect(t, func(s *mcp.Server) { registerProbes(s, Deps{Config: FullSurface(config.Config{})}) })
 	byName := map[string]*mcp.Tool{}
@@ -127,8 +132,14 @@ func TestAnnotationsAndMetaComeFromKind(t *testing.T) {
 		"read_writes_locally": {},
 		"write":               {},
 		"write_for_good":      {destructive: true, idempotent: true},
-		"send":                {openWorld: true, interaction: true},
+		"send":                {destructive: true, openWorld: true},
 		"destructive":         {destructive: true, idempotent: true, interaction: true},
+		"settings":            {destructive: true, idempotent: true},
+		"settings_for_good":   {destructive: true, idempotent: true},
+		"auto_reply":          {destructive: true, openWorld: true},
+	}
+	if len(wants) != len(allKinds) {
+		t.Fatalf("%d kinds have a want, of %d", len(wants), len(allKinds))
 	}
 	for name, w := range wants {
 		tool := byName[name]
@@ -139,8 +150,8 @@ func TestAnnotationsAndMetaComeFromKind(t *testing.T) {
 		if a.ReadOnlyHint != w.readOnly || a.IdempotentHint != w.idempotent {
 			t.Errorf("%s: readOnly %t idempotent %t", name, a.ReadOnlyHint, a.IdempotentHint)
 		}
-		if a.DestructiveHint != nil && *a.DestructiveHint != w.destructive {
-			t.Errorf("%s: destructive %t", name, *a.DestructiveHint)
+		if (a.DestructiveHint == nil) != w.readOnly || (a.DestructiveHint != nil && *a.DestructiveHint != w.destructive) {
+			t.Errorf("%s: destructiveHint %s, want %t", name, hint(a.DestructiveHint), w.destructive)
 		}
 		if a.OpenWorldHint == nil || *a.OpenWorldHint != w.openWorld {
 			t.Errorf("%s: openWorld %v, want %t", name, a.OpenWorldHint, w.openWorld)
@@ -153,7 +164,7 @@ func TestAnnotationsAndMetaComeFromKind(t *testing.T) {
 			t.Errorf("%s has no output schema", name)
 		}
 	}
-	for _, k := range kinds {
+	for _, k := range allKinds {
 		if strings.HasPrefix(k.String(), "kind(") {
 			t.Errorf("kind %d has no name", int(k))
 		}
@@ -268,42 +279,47 @@ func TestNamesIsWhatToolsListReturns(t *testing.T) {
 	}
 }
 
+// hint is an annotation's value as text, "unset" for none.
+func hint(b *bool) string {
+	if b == nil {
+		return "unset"
+	}
+	return strconv.FormatBool(*b)
+}
+
 type confirmIn struct {
 	Confirm bool `json:"confirm,omitempty"`
 }
 
-// A tool that takes confirm is registered only under a kind that also
-// asks the person (§4.13), so a new one cannot rest on the model alone.
-func TestATakingConfirmToolMustAskThePerson(t *testing.T) {
-	cfg := FullSurface(config.Config{})
+// registers reports whether register accepted a tool of kind k taking
+// In, or panicked.
+func registers[In any](k Kind) (ok bool) {
+	defer func() { ok = recover() == nil }()
+	register(mcp.NewServer(&mcp.Implementation{Name: "t", Version: "0"}, nil), Deps{Config: FullSurface(config.Config{})},
+		Spec{Name: "probe", Description: "probe", Kind: k},
+		func(context.Context, In) (probeOut, error) { return probeOut{}, nil })
+	return true
+}
+
+// confirm says a write cannot be undone (§4.13), so a tool that takes it
+// is annotated destructive, and a client that prompts by annotation
+// prompts for it.
+func TestAToolThatTakesConfirmIsAnnotatedDestructive(t *testing.T) {
 	for _, k := range allKinds {
-		panicked := func() (p bool) {
-			defer func() { p = recover() != nil }()
-			register(mcp.NewServer(&mcp.Implementation{Name: "t", Version: "0"}, nil), Deps{Config: cfg, asking: newAsking(nil)},
-				Spec{Name: "confirming", Description: "probe", Kind: k, AskUnits: "1 more unit"},
-				func(context.Context, confirmIn) (probeOut, error) { return probeOut{}, nil })
-			return false
-		}()
-		if panicked == k.asksPerson() {
-			t.Errorf("%s: panicked %v, asks the person %v", k, panicked, k.asksPerson())
+		want := k != Read && k != ReadWritesLocally && k != Write
+		if got := registers[confirmIn](k); got != want {
+			t.Errorf("%s with confirm: registered %t, want %t", k, got, want)
 		}
 	}
 }
 
-// A tool of a kind that asks before every write must take confirm, or it
-// would drop the requiresUserInteraction mark and never ask in its place.
-func TestAKindThatAlwaysAsksMustTakeConfirm(t *testing.T) {
-	cfg := FullSurface(config.Config{})
+// Every delete, and every kind that cannot be undone, takes confirm: a
+// witness that the caller meant it (§4.13).
+func TestAKindThatCannotBeUndoneTakesConfirm(t *testing.T) {
 	for _, k := range allKinds {
-		panicked := func() (p bool) {
-			defer func() { p = recover() != nil }()
-			register(mcp.NewServer(&mcp.Implementation{Name: "t", Version: "0"}, nil), Deps{Config: cfg, asking: newAsking(nil)},
-				Spec{Name: "unconfirmed", Description: "probe", Kind: k},
-				func(context.Context, probeIn) (probeOut, error) { return probeOut{}, nil })
-			return false
-		}()
-		if want := k == Send || k == Destructive; panicked != want {
-			t.Errorf("%s: panicked %v, want %v", k, panicked, want)
+		want := k != WriteForGood && k != Destructive && k != SettingsForGood
+		if got := registers[probeIn](k); got != want {
+			t.Errorf("%s without confirm: registered %t, want %t", k, got, want)
 		}
 	}
 }

@@ -8,7 +8,7 @@ import (
 
 	"golang.org/x/net/html/charset"
 
-	"github.com/mmedum/google-mail-mcp/v2/internal/gmail"
+	"github.com/mmedum/google-mail-mcp/v3/internal/gmail"
 )
 
 // placeholders are what a plain part says when it only points at the

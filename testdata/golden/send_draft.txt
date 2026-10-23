@@ -1,7 +1,7 @@
 sent draft r0000000000000021 · sent message 0000000000000030 · thread 0000000000000001 · labels: SENT
 the draft held message 0000000000000022.
-it answers a thread of 2 messages; their senders, and whoever this account sent them to, need no confirming.
-recipients: 2 · 1 in the thread · 1 confirmed
+it answers a thread of 2 messages: every recipient needs confirming, its participants included.
+recipients: 2 · 1 in the thread · 2 confirmed
 attachments: 1, 2.0 KB
 <<<untrusted-mail TESTTOKEN: outgoing message in 0000000000000022>>>
 From: Rae Reader <reader@example.com>

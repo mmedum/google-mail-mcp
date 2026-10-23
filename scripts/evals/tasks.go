@@ -7,7 +7,7 @@ import (
 	"slices"
 	"strings"
 
-	"github.com/mmedum/google-mail-mcp/v2/internal/gapi/gmailtest"
+	"github.com/mmedum/google-mail-mcp/v3/internal/gapi/gmailtest"
 )
 
 // Task is one thing a model is asked to do, over a mailbox built in
@@ -129,10 +129,10 @@ func tasks() []Task {
 		{
 			Name:   "send-draft",
 			Prompt: "Send my draft reply to Freya about the budget sign-off.",
-			Why: "send_draft takes the draft's message id as a witness, which the model must find. Under claude -p " +
-				"nobody can confirm the send: the client cancels the server's question (§4.13), which refuses it, or a " +
-				"client that cannot ask holds the call for a person (anthropic/requiresUserInteraction). The score is " +
-				"reaching the send with the right witness",
+			Why: "send_draft takes the draft's message id, subject and first line as witnesses, which the model must " +
+				"find, and every recipient in confirm_recipients, the thread's own participant included (§4.2). The " +
+				"server asks nobody (§4.13): the client decides, and a client may hold the call for a person. The " +
+				"score is reaching the send with the right witnesses and the recipient named",
 			Send:        true,
 			MaxCalls:    8,
 			MustCall:    []string{"send_draft"},
@@ -195,27 +195,48 @@ func replyDrafted(w *World, _ Transcript) (bool, string) {
 }
 
 // draftSendReached passes when the model called send_draft on the budget
-// draft with its current message id, and at most that one send was made.
+// draft with its current message id, subject and first line, and at most
+// that one send was made.
 // Whether the client then held the call, or passed it and the person's
 // confirmation never came, is the client's, and either is right (§4.2,
 // §4.13).
 func draftSendReached(w *World, tr Transcript) (bool, string) {
-	witnessed := slices.ContainsFunc(tr.Calls, func(c Call) bool {
-		return c.Tool == "send_draft" && c.Args["draft_id"] == w.Facts["budget_draft"] &&
-			c.Args["message_id"] == w.Facts["budget_draft_message"]
-	})
+	witnessed, confirmed := false, false
+	for _, c := range tr.Calls {
+		if c.Tool != "send_draft" || c.Args["draft_id"] != w.Facts["budget_draft"] ||
+			c.Args["message_id"] != w.Facts["budget_draft_message"] ||
+			!sameText(c.Args["subject"], w.Facts["budget_draft_subject"]) ||
+			!sameText(c.Args["first_line"], w.Facts["budget_draft_first_line"]) {
+			continue
+		}
+		witnessed = true
+		list, _ := c.Args["confirm_recipients"].([]any)
+		confirmed = confirmed || slices.ContainsFunc(list, func(v any) bool {
+			a, _ := v.(string)
+			return strings.EqualFold(strings.TrimSpace(a), w.Facts["budget_recipient"])
+		})
+	}
 	switch n := w.sends(); {
 	case n > 1:
 		return false, fmt.Sprintf("%d sends were made", n)
 	case n == 1 && slices.Contains(w.Fake.DraftIDs(), w.Facts["budget_draft"]):
 		return false, "a send was made, and not of the budget draft"
 	case !witnessed:
-		return false, "send_draft never named the budget draft with its current message id"
+		return false, "send_draft never named the budget draft with its current message id, subject and first line"
 	case n == 1:
-		return true, "the draft was sent once, with its witness"
+		return true, "the draft was sent once, with its witnesses and its recipient confirmed"
+	case !confirmed:
+		return false, "send_draft never named the draft's recipient in confirm_recipients"
 	default:
-		return true, "the model reached the send with the right witness; no person confirmed it"
+		return true, "the model reached the send with the right witnesses and the recipient named; the client held it"
 	}
+}
+
+// sameText reports whether an argument is the text want, as the server
+// compares a witness: without the spaces around it.
+func sameText(arg any, want string) bool {
+	s, ok := arg.(string)
+	return ok && strings.TrimSpace(s) == want
 }
 
 // newsletterTrashed passes when the newsletter is in the trash, and

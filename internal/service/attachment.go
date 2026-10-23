@@ -15,12 +15,12 @@ import (
 	"strconv"
 	"strings"
 
-	"github.com/mmedum/google-mail-mcp/v2/internal/fileperm"
-	"github.com/mmedum/google-mail-mcp/v2/internal/gapi"
-	"github.com/mmedum/google-mail-mcp/v2/internal/gmail"
-	"github.com/mmedum/google-mail-mcp/v2/internal/mime"
-	"github.com/mmedum/google-mail-mcp/v2/internal/model"
-	"github.com/mmedum/google-mail-mcp/v2/internal/render"
+	"github.com/mmedum/google-mail-mcp/v3/internal/fileperm"
+	"github.com/mmedum/google-mail-mcp/v3/internal/gapi"
+	"github.com/mmedum/google-mail-mcp/v3/internal/gmail"
+	"github.com/mmedum/google-mail-mcp/v3/internal/mime"
+	"github.com/mmedum/google-mail-mcp/v3/internal/model"
+	"github.com/mmedum/google-mail-mcp/v3/internal/render"
 )
 
 // maxSuffix bounds the numbered names tried when a file name is taken.

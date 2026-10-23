@@ -21,7 +21,7 @@ import (
 
 const (
 	// modulePath is this module, as go.mod declares it.
-	modulePath = "github.com/mmedum/google-mail-mcp/v2"
+	modulePath = "github.com/mmedum/google-mail-mcp/v3"
 	// binaryName is the server's command and archive name.
 	binaryName = "google-mail-mcp"
 	// mainPackage is what `go build` builds for the server.

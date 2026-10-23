@@ -56,9 +56,10 @@ type stalenessInputs struct {
 	// built is whether any non-test Go file exists under internal/.
 	built bool
 	// tools are the dumped tool names; nil when the binary was not
-	// available, which is itself a problem.
-	tools    []string
-	toolsErr error
+	// available, which is itself a problem. destructive are the ones a
+	// client reads as destructive.
+	tools, destructive []string
+	toolsErr           error
 	// modes renders the scope block; nil when internal/scopes is not
 	// wired.
 	modes []stalenessMode
@@ -117,7 +118,7 @@ func stalenessCheck(in stalenessInputs) stalenessReport {
 	n, p = stalenessToolCounts(arch, in.tools, in.toolsErr)
 	r.add(fmt.Sprintf("tool counts: %d table rows", n), p)
 
-	n, p = stalenessReadmeTools(in.docs["README.md"], in.tools)
+	n, p = stalenessReadmeTools(in.docs["README.md"], in.tools, in.destructive)
 	r.add(fmt.Sprintf("README tool table: %d rows", n), p)
 
 	n, p = stalenessVerdictCounts(in.docs, in.verdicts, in.surface)
@@ -211,6 +212,9 @@ func stalenessGather(root string, args []string) (stalenessInputs, error) {
 		} else {
 			for _, t := range d.Tools {
 				in.tools = append(in.tools, t.Name)
+				if dumpDestructive(t) {
+					in.destructive = append(in.destructive, t.Name)
+				}
 			}
 		}
 	}
@@ -589,8 +593,11 @@ var stalenessReadmeTool = regexp.MustCompile("(?m)^\\| `([a-z_]+)` \\|")
 // stalenessReadmeTools holds the README's tool table to the tools the
 // built binary registers, both ways: the README is where a person learns
 // what the server does, so a tool it omits does not exist for them, and
-// one it lists that the binary lacks is a promise nothing keeps.
-func stalenessReadmeTools(readme string, tools []string) (int, []string) {
+// one it lists that the binary lacks is a promise nothing keeps. The
+// README's permissions.ask rules name registered tools, and every tool
+// annotated destructive: the writes that send, change a setting or
+// delete, which a new one must not join unasked.
+func stalenessReadmeTools(readme string, tools, destructive []string) (int, []string) {
 	rows := stalenessReadmeTool.FindAllStringSubmatch(markdownSection(readme, "## Tools"), -1)
 	listed := make([]string, 0, len(rows))
 	for _, r := range rows {
@@ -613,8 +620,61 @@ func stalenessReadmeTools(readme string, tools []string) (int, []string) {
 			problems = append(problems, "README.md's tool table lists "+t+", which the binary does not register")
 		}
 	}
+	// A Claude Code permission rule for a tool that does not exist matches
+	// nothing, so the person it was meant to ask is never asked.
+	rules := stalenessPermissionRule.FindAllStringSubmatch(readme, -1)
+	if len(rules) == 0 {
+		problems = append(problems, "README.md gives no Claude Code permission rule for a tool, in the form "+
+			"\"mcp__google-mail__<tool>\"; the README's permissions.ask block is missing")
+	}
+	for _, m := range rules {
+		if !slices.Contains(tools, m[1]) {
+			problems = append(problems, "README.md gives a permission rule for "+m[1]+", which the binary does not register")
+		}
+	}
+	// Only a rule inside an "ask" list asks: one under "allow" lets the
+	// tool run unasked.
+	asked := map[string]bool{}
+	for _, block := range stalenessAskList.FindAllStringSubmatch(readme, -1) {
+		for _, m := range stalenessPermissionRule.FindAllStringSubmatch(block[1], -1) {
+			asked[m[1]] = true
+		}
+	}
+	if len(destructive) == 0 {
+		problems = append(problems, "the binary registers no tool annotated destructive; the permission rules are held to nothing")
+	}
+	for _, t := range destructive {
+		if !asked[t] {
+			problems = append(problems, "README.md's permissions.ask block has no rule for "+t+", which is annotated destructive")
+		}
+	}
 	return len(listed), problems
 }
+
+// dumpDestructive reports whether a client reads a dumped tool as
+// destructive: not read-only, with destructiveHint true or absent, the
+// MCP default.
+func dumpDestructive(t dumpTool) bool {
+	var a struct {
+		ReadOnly    *bool `json:"readOnlyHint"`
+		Destructive *bool `json:"destructiveHint"`
+	}
+	if len(t.Annotations) > 0 && json.Unmarshal(t.Annotations, &a) != nil {
+		return true // unreadable: held to a rule rather than let through
+	}
+	if a.ReadOnly != nil && *a.ReadOnly {
+		return false
+	}
+	return a.Destructive == nil || *a.Destructive
+}
+
+// stalenessPermissionRule is a Claude Code permission rule for one of
+// this server's tools, under the server name the README uses.
+var stalenessPermissionRule = regexp.MustCompile(`"mcp__google-mail__([a-z0-9_]+)"`)
+
+// stalenessAskList is a permissions "ask" list in a JSON block, its
+// entries captured.
+var stalenessAskList = regexp.MustCompile(`"ask"\s*:\s*\[([^\]]*)\]`)
 
 func stalenessToolCounts(arch string, tools []string, toolsErr error) (int, []string) {
 	section := markdownSection(arch, "## 8. Tool surface")

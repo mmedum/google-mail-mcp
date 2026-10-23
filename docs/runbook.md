@@ -126,25 +126,29 @@ Two different limits share this class, and the message says which:
 
 ## `[blocked]` from `send_draft`
 
-The draft reaches someone the call did not vouch for. Every recipient who
-is not already on a message of the thread the draft answers — for a new
-conversation, every recipient — must be written out in
-`confirm_recipients`. The refusal names them by field and position,
-`cc[1]`; `send_draft` with `dry_run: true` lists the addresses. A draft
-with more than 50 recipients is refused outright: send it from Gmail.
+The draft reaches someone the call did not vouch for. Every recipient,
+the people already on the thread the draft answers included, must be
+written out in `confirm_recipients`. The refusal names them by field
+and position, `cc[1]`; `send_draft` with `dry_run: true` lists the
+addresses. A draft with more than 50 recipients is refused outright:
+send it from Gmail.
 
-## `[blocked]`: not confirmed by the person
+## The server will not start: `GMAIL_REQUIRE_PROMPT was removed`
 
-Your client asked you to confirm the write, and the answer was not an
-accept: you declined or dismissed it, the question timed out,
-or the client answered without showing it. `claude -p` and other runs
-with nobody at the keyboard cancel every such question, so they cannot
-make these writes. Nothing was written. Make the call again from a
-client you are watching; it asks again.
+The server no longer asks you before a write; your MCP client
+approves each call. `GMAIL_REQUIRE_PROMPT` went with the question, and
+is refused when set to anything but `false`. Unset it. For a client that
+runs with nobody watching, leave `GMAIL_ENABLE_SEND`,
+`GMAIL_ENABLE_DESTRUCTIVE` and `GMAIL_ENABLE_SETTINGS` off; the README
+gives Claude Code `permissions.ask` rules for the rest.
 
-"GMAIL_REQUIRE_PROMPT is set" means the client cannot ask at all, and
-the setting refuses these writes there. Use a client that supports MCP
-elicitation, or unset it to rely on `confirm` alone.
+## `[stale]` from `send_draft` or `delete_filter`
+
+What the call says it sends or deletes is not what Gmail holds. The
+draft changed since it was read, or the subject or first line given is
+not the draft's; or the criteria given are not the filter's. Read the
+draft with `get_draft`, or the filters with `list_filters`, check it is
+still the one meant, and pass what they show.
 
 ## `[ambiguous_outcome]` from `send_draft`
 

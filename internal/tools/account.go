@@ -6,10 +6,10 @@ import (
 
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 
-	"github.com/mmedum/google-mail-mcp/v2/internal/mime"
-	"github.com/mmedum/google-mail-mcp/v2/internal/model"
-	"github.com/mmedum/google-mail-mcp/v2/internal/render"
-	"github.com/mmedum/google-mail-mcp/v2/internal/service"
+	"github.com/mmedum/google-mail-mcp/v3/internal/mime"
+	"github.com/mmedum/google-mail-mcp/v3/internal/model"
+	"github.com/mmedum/google-mail-mcp/v3/internal/render"
+	"github.com/mmedum/google-mail-mcp/v3/internal/service"
 )
 
 // ListChangesIn asks what changed after a history id.
@@ -118,18 +118,19 @@ type SettingsOut struct {
 // ListFiltersIn takes nothing.
 type ListFiltersIn struct{}
 
-// FilterCriteria is what a filter matches. Written by the account, not
-// by a sender.
+// FilterCriteria is what a filter matches, in Gmail's filter criteria.
+// Written by the account, not by a sender. list_filters gives it, the
+// filter writes take it, and delete_filter takes it back as its witness.
 type FilterCriteria struct {
-	From           string `json:"from,omitempty"`
-	To             string `json:"to,omitempty"`
-	Subject        string `json:"subject,omitempty"`
-	Query          string `json:"query,omitempty"`
-	NegatedQuery   string `json:"negated_query,omitempty"`
-	HasAttachment  bool   `json:"has_attachment,omitempty"`
-	ExcludeChats   bool   `json:"exclude_chats,omitempty"`
-	Size           int    `json:"size,omitempty"`
-	SizeComparison string `json:"size_comparison,omitempty"`
+	From           string `json:"from,omitempty" jsonschema:"match mail from this sender"`
+	To             string `json:"to,omitempty" jsonschema:"match mail to this recipient"`
+	Subject        string `json:"subject,omitempty" jsonschema:"match mail whose subject contains this"`
+	Query          string `json:"query,omitempty" jsonschema:"match mail that fits this Gmail search"`
+	NegatedQuery   string `json:"negated_query,omitempty" jsonschema:"leave out mail that fits this Gmail search"`
+	HasAttachment  bool   `json:"has_attachment,omitempty" jsonschema:"match only mail with an attachment"`
+	ExcludeChats   bool   `json:"exclude_chats,omitempty" jsonschema:"leave out chats"`
+	Size           int    `json:"size,omitempty" jsonschema:"a size in bytes, with size_comparison"`
+	SizeComparison string `json:"size_comparison,omitempty" jsonschema:"larger or smaller, with size"`
 }
 
 // Filter is a mail filter.
@@ -183,7 +184,10 @@ func registerAccount(s *mcp.Server, d Deps) {
 			settingsChange = " update_signature and set_vacation change a signature and the vacation reply; forwarding " +
 				"and the rest cannot be changed here."
 		}
-		filtersChange = " create_filter and delete_filter make and remove filters."
+		filtersChange = " create_filter makes filters; this server cannot remove one."
+		if SettingsForGood.allowed(d.Config) {
+			filtersChange = " create_filter and create_trash_filter make filters, and delete_filter removes one."
+		}
 	}
 
 	register(s, d, Spec{Name: "get_settings", Kind: Read, Description: "The account's mail settings, read-only: " +

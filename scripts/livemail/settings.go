@@ -3,25 +3,33 @@
 package main
 
 import (
+	"bytes"
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"maps"
 	"net/http"
 	"net/url"
+	"os"
+	"path/filepath"
+	"reflect"
 	"regexp"
 	"slices"
 	"strings"
 	"sync"
 	"time"
+
+	"github.com/mmedum/google-mail-mcp/v3/scripts/internal/transcript"
 )
 
 // The settings steps, run only when the profile's login granted
 // gmail.settings.basic. drive saves the default address's signature and
-// the vacation reply before them and restores both after, exactly, with
-// its own client: update_signature takes plain text and could not put an
-// HTML signature back. Filters match only the run's own sender address,
-// which no mail comes from, and are deleted by the steps or by cleanup.
+// the vacation reply before them, to a file as well, and restores both
+// after, exactly, with its own client: update_signature takes plain text
+// and could not put an HTML signature back. Filters match only the run's
+// own sender address, which no mail comes from, and are deleted by the
+// steps or by cleanup.
 
 // needSettings keeps a settings step to profiles whose login granted the
 // one scope Gmail accepts for it.
@@ -30,6 +38,150 @@ func needSettings(e *env) string {
 		return "the profile's login did not grant gmail.settings.basic; log in with GMAIL_ENABLE_SETTINGS=true to drive it"
 	}
 	return ""
+}
+
+// needSignature keeps a signature step to a run that can put the
+// account's own signature back: Gmail took it back unchanged before any
+// step changed it.
+func needSignature(e *env) string {
+	if why := needSettings(e); why != "" {
+		return why
+	}
+	return e.signatureSkip
+}
+
+// keptSettings are the account's own settings as the run found them, and
+// where a copy of them waits until they are put back.
+type keptSettings struct {
+	saved savedSettings
+	// path is the copy: a file only the account can read.
+	path string
+	// signature is whether the restore writes the signature: the run
+	// drives a step that changes it, and Gmail took it back unchanged.
+	signature bool
+	// signatureSkip is why the signature steps may not run, or "".
+	signatureSkip string
+}
+
+// keepSettings reads the settings the steps change and, before anything
+// changes them, writes them to a file in dir named for the run, which
+// only the account can read. It prints the file's path, never what it
+// holds. If the restore fails, the settings are still there to put back
+// by hand.
+//
+// When the run drives a signature step, it then writes the signature back
+// as it was. The restore writes the same thing, so a signature Gmail
+// refuses, or stores changed, could not be put back once a step cleared
+// it: the signature steps are skipped, saying why.
+func keepSettings(ctx context.Context, box mailbox, tr *transcript.Transcript, dir string, r runLabel,
+	signatureSteps bool) (keptSettings, error) {
+	saved, err := box.ReadSettings(ctx)
+	if err != nil {
+		return keptSettings{}, err
+	}
+	k := keptSettings{saved: saved}
+	if k.path, err = writeSettingsCopy(dir, r, saved); err != nil {
+		return keptSettings{}, fmt.Errorf("keep a copy of the settings before the run changes them: %w", err)
+	}
+	tr.Sayf("saved the signature and the vacation reply, as the run found them, to %s in the system's temporary "+
+		"directory; the file is deleted once both are put back and read back", k.path)
+	if !signatureSteps {
+		return k, nil
+	}
+	stored, err := box.WriteSignature(ctx, saved.address, saved.signature)
+	switch {
+	case err != nil:
+		k.signatureSkip = fmt.Sprintf("Gmail refused the account's own signature written back unchanged (%v), "+
+			"so the run could not put it back", err)
+	case stored != saved.signature:
+		k.signatureSkip = "Gmail stored the account's own signature changed when it was written back unchanged, " +
+			"so the run could not put it back"
+	default:
+		k.signature = true
+	}
+	return k, nil
+}
+
+// drivesSignature reports whether the run drives a signature step, which
+// is the only reason to write the signature at all.
+func drivesSignature(run *regexp.Regexp) bool {
+	return slices.ContainsFunc(settingsSteps, func(s step) bool {
+		return s.tool == "update_signature" && run.MatchString(s.name)
+	})
+}
+
+// settingsCopy is what the copy holds: the default address, its
+// signature's HTML and the vacation resource, each as Gmail gave it.
+type settingsCopy struct {
+	Address   string          `json:"send_as_address"`
+	Signature string          `json:"signature_html"`
+	Vacation  json.RawMessage `json:"vacation"`
+}
+
+// writeSettingsCopy writes s to a new file in dir named for the run, with
+// mode 0600. It refuses a file that is already there.
+func writeSettingsCopy(dir string, r runLabel, s savedSettings) (string, error) {
+	var b bytes.Buffer
+	enc := json.NewEncoder(&b)
+	enc.SetEscapeHTML(false)
+	enc.SetIndent("", "  ")
+	if err := enc.Encode(settingsCopy{Address: s.address, Signature: s.signature, Vacation: s.vacation}); err != nil {
+		return "", err
+	}
+	path := filepath.Join(dir, r.name+"-settings.json")
+	f, err := os.OpenFile(path, os.O_WRONLY|os.O_CREATE|os.O_EXCL, 0o600)
+	if err != nil {
+		return "", err
+	}
+	_, err = f.Write(b.Bytes())
+	if err = errors.Join(err, f.Close()); err != nil {
+		return "", errors.Join(err, os.Remove(path))
+	}
+	return path, nil
+}
+
+// restore puts back what keepSettings saved and reads both back. Only a
+// restore that reads back as the run found them deletes the copy; any
+// other outcome fails, naming it, so the settings can be put back by hand.
+func (k keptSettings) restore(ctx context.Context, box mailbox) error {
+	var errs []error
+	if k.signature {
+		if _, err := box.WriteSignature(ctx, k.saved.address, k.saved.signature); err != nil {
+			errs = append(errs, fmt.Errorf("put the signature back: %w", err))
+		}
+	}
+	if err := box.WriteVacation(ctx, k.saved.vacation); err != nil {
+		errs = append(errs, fmt.Errorf("put the vacation reply back: %w", err))
+	}
+	now, err := box.ReadSettings(ctx)
+	if err != nil {
+		errs = append(errs, fmt.Errorf("read the settings back: %w", err))
+	} else {
+		if now.address != k.saved.address || now.signature != k.saved.signature {
+			errs = append(errs, errors.New("the signature reads back other than the run found it"))
+		}
+		if !sameJSON(now.vacation, k.saved.vacation) {
+			errs = append(errs, errors.New("the vacation reply reads back other than the run found it"))
+		}
+	}
+	if len(errs) > 0 {
+		return fmt.Errorf("%w\n!! the signature and the vacation reply, as the run found them, are in %s in the "+
+			"system's temporary directory: put them back by hand, then delete the file", errors.Join(errs...), k.path)
+	}
+	if err := os.Remove(k.path); err != nil {
+		return fmt.Errorf("both read back as the run found them, but the copy in %s could not be deleted: %w", k.path, err)
+	}
+	return nil
+}
+
+// sameJSON reports whether two JSON documents hold the same values,
+// whatever their key order and spacing.
+func sameJSON(a, b json.RawMessage) bool {
+	var x, y any
+	if json.Unmarshal(a, &x) != nil || json.Unmarshal(b, &y) != nil {
+		return false
+	}
+	return reflect.DeepEqual(x, y)
 }
 
 // filterSender is the run's own sender address for its filters: at a
@@ -47,13 +199,23 @@ func needFilter(e *env) string {
 	return ""
 }
 
-// recordFilter keeps the id of a filter a step created.
+// recordFilter keeps the id of a filter a step created, and its criteria
+// as the result gives them, which delete_filter takes as a witness.
 func recordFilter(e *env, text string) error {
 	m := filterIDIn.FindStringSubmatch(text)
 	if m == nil {
 		return errors.New("the result names no filter")
 	}
+	f, _ := e.structured["filter"].(map[string]any)
+	criteria, ok := f["criteria"].(map[string]any)
+	if !ok {
+		return errors.New("the result gives no criteria for the filter")
+	}
+	if e.filterCriteria == nil {
+		e.filterCriteria = map[string]any{}
+	}
 	e.filters = append(e.filters, m[1])
+	e.filterCriteria[m[1]] = criteria
 	return nil
 }
 
@@ -77,13 +239,13 @@ var settingsSteps = []step{
 	// text is quiet: not printed. Every signature step's "before" can be
 	// the real one, and the vacation reply turned off shows its text, the
 	// account's own if an earlier step did not run.
-	{name: "set the signature, dry run", tool: "update_signature", quiet: true, needs: needSettings,
+	{name: "set the signature, dry run", tool: "update_signature", quiet: true, needs: needSignature,
 		args: func(e *env) map[string]any {
 			return map[string]any{"signature": "Synthetic signature for " + e.seed.label.name, "dry_run": true}
 		},
 		check: func(_ *env, text string) error { return want(text, "dry run: would set the signature of") }},
 
-	{name: "set the signature", tool: "update_signature", quiet: true, needs: needSettings,
+	{name: "set the signature", tool: "update_signature", quiet: true, needs: needSignature,
 		args: func(e *env) map[string]any {
 			return map[string]any{"send_as": e.signatureAddress, "signature": "Synthetic signature for " + e.seed.label.name + "\nline two"}
 		},
@@ -94,7 +256,7 @@ var settingsSteps = []step{
 			return want(text, "Synthetic signature for "+e.seed.label.name+"\nline two")
 		}},
 
-	{name: "clear the signature", tool: "update_signature", quiet: true, needs: needSettings,
+	{name: "clear the signature", tool: "update_signature", quiet: true, needs: needSignature,
 		args:  func(*env) map[string]any { return map[string]any{"signature": ""} },
 		check: func(_ *env, text string) error { return want(text, "signature after: none") }},
 
@@ -108,6 +270,7 @@ var settingsSteps = []step{
 				"negated_query": "unrelated", "has_attachment": true, "exclude_chats": true,
 				"size": 1 << 20, "size_comparison": "smaller",
 				"add_labels": []any{e.seed.label.name}, "remove_labels": []any{"IMPORTANT"}, "archive": true, "star": true,
+				"mark_read": true,
 			}
 			e.filterArgs = maps.Clone(args)
 			args["dry_run"] = true
@@ -126,15 +289,27 @@ var settingsSteps = []step{
 			return want(text, "mail already in the mailbox is untouched")
 		}},
 
-	{name: "a trashing filter without confirm is refused", tool: "create_filter", refuses: "blocked", needs: needSettings,
+	// A filter that trashes is its own tool, behind the destructive flag
+	// too, which the run turns on (§7.9).
+	{name: "a trashing filter without confirm is refused", tool: "create_trash_filter", refuses: "blocked", needs: needSettings,
 		args: func(e *env) map[string]any {
-			return map[string]any{"from": filterSender(e.seed.label), "query": "trash", "trash": true}
+			return map[string]any{"from": filterSender(e.seed.label), "query": "trash"}
 		},
 		check: func(_ *env, text string) error { return want(text, "confirm: true") }},
 
-	{name: "create a trashing filter", tool: "create_filter", needs: needSettings,
+	// The dry run carries every criterion, as create_filter's does; the
+	// filter it would make is never made.
+	{name: "create a trashing filter, dry run", tool: "create_trash_filter", needs: needSettings,
 		args: func(e *env) map[string]any {
-			return map[string]any{"from": filterSender(e.seed.label), "query": "trash", "trash": true, "mark_read": true, "confirm": true}
+			return map[string]any{"from": filterSender(e.seed.label), "to": e.account, "subject": e.seed.label.name,
+				"query": "trash", "negated_query": "unrelated", "has_attachment": true, "exclude_chats": true,
+				"size": 1 << 20, "size_comparison": "smaller", "dry_run": true}
+		},
+		check: func(_ *env, text string) error { return want(text, "moves matching mail to the trash") }},
+
+	{name: "create a trashing filter", tool: "create_trash_filter", needs: needSettings,
+		args: func(e *env) map[string]any {
+			return map[string]any{"from": filterSender(e.seed.label), "query": "trash", "confirm": true}
 		},
 		check: func(e *env, text string) error {
 			if err := recordFilter(e, text); err != nil {
@@ -145,9 +320,9 @@ var settingsSteps = []step{
 
 	// Gmail keeps a second identical filter, so the server's check is the
 	// only one. This filter has no size, which Gmail rounds (§18 row 52).
-	{name: "an identical filter is refused", tool: "create_filter", refuses: "conflict", needs: needSettings,
+	{name: "an identical filter is refused", tool: "create_trash_filter", refuses: "conflict", needs: needSettings,
 		args: func(e *env) map[string]any {
-			return map[string]any{"from": filterSender(e.seed.label), "query": "trash", "trash": true, "mark_read": true, "confirm": true}
+			return map[string]any{"from": filterSender(e.seed.label), "query": "trash", "confirm": true}
 		},
 		check: func(_ *env, text string) error { return want(text, "already does this") }},
 
@@ -204,24 +379,46 @@ var settingsSteps = []step{
 		}},
 
 	{name: "a filter delete without confirm is refused", tool: "delete_filter", refuses: "blocked", needs: needFilter,
-		args:  func(e *env) map[string]any { return map[string]any{"filter_id": e.filters[0]} },
+		args: func(e *env) map[string]any {
+			return map[string]any{"filter_id": e.filters[0], "criteria": e.filterCriteria[e.filters[0]]}
+		},
 		check: func(_ *env, text string) error { return want(text, "confirm: true") }},
 
 	{name: "delete a filter, dry run", tool: "delete_filter", needs: needFilter,
-		args:  func(e *env) map[string]any { return map[string]any{"filter_id": e.filters[0], "dry_run": true} },
+		args: func(e *env) map[string]any {
+			return map[string]any{"filter_id": e.filters[0], "criteria": e.filterCriteria[e.filters[0]], "dry_run": true}
+		},
 		check: func(_ *env, text string) error { return want(text, "dry run: would delete filter") }},
 
+	// The criteria say which filter goes, and are the filter's.
+	{name: "a filter delete with other criteria is refused", tool: "delete_filter", refuses: "stale", needs: needFilter,
+		args: func(e *env) map[string]any {
+			return map[string]any{"filter_id": e.filters[0], "criteria": map[string]any{"from": filterSender(e.seed.label)},
+				"confirm": true}
+		},
+		check: func(e *env, text string) error {
+			return want(text, "criteria are not filter "+e.filters[0]+"'s; nothing was deleted")
+		}},
+
 	{name: "delete the filter", tool: "delete_filter", needs: needFilter, check: deletedFirst,
-		args: func(e *env) map[string]any { return map[string]any{"filter_id": e.filters[0], "confirm": true} }},
+		args: func(e *env) map[string]any {
+			return map[string]any{"filter_id": e.filters[0], "criteria": e.filterCriteria[e.filters[0]], "confirm": true}
+		}},
 
 	{name: "delete the trashing filter", tool: "delete_filter", needs: needFilter, check: deletedFirst,
-		args: func(e *env) map[string]any { return map[string]any{"filter_id": e.filters[0], "confirm": true} }},
+		args: func(e *env) map[string]any {
+			return map[string]any{"filter_id": e.filters[0], "criteria": e.filterCriteria[e.filters[0]], "confirm": true}
+		}},
 
 	{name: "delete the archiving filter", tool: "delete_filter", needs: needFilter, check: deletedFirst,
-		args: func(e *env) map[string]any { return map[string]any{"filter_id": e.filters[0], "confirm": true} }},
+		args: func(e *env) map[string]any {
+			return map[string]any{"filter_id": e.filters[0], "criteria": e.filterCriteria[e.filters[0]], "confirm": true}
+		}},
 
 	{name: "delete the filter that keeps mail out of spam", tool: "delete_filter", needs: needFilter, check: deletedFirst,
-		args: func(e *env) map[string]any { return map[string]any{"filter_id": e.filters[0], "confirm": true} }},
+		args: func(e *env) map[string]any {
+			return map[string]any{"filter_id": e.filters[0], "criteria": e.filterCriteria[e.filters[0]], "confirm": true}
+		}},
 
 	{name: "a vacation reply without an audience is refused", tool: "set_vacation", refuses: "invalid", needs: needSettings,
 		args: func(e *env) map[string]any {
@@ -261,15 +458,17 @@ var settingsSteps = []step{
 // settingsTools are the tools guardSettings holds, and settingsKeys every
 // argument it knows, as writeKeys are for the other writes.
 var (
-	settingsTools = map[string]bool{"update_signature": true, "create_filter": true, "delete_filter": true, "set_vacation": true}
-	settingsKeys  = map[string]bool{
+	settingsTools = map[string]bool{"update_signature": true, "create_filter": true, "create_trash_filter": true,
+		"delete_filter": true, "set_vacation": true}
+	settingsKeys = map[string]bool{
 		// Checked below.
 		"send_as": true, "signature": true, "from": true, "to": true, "add_labels": true, "filter_id": true,
 		"start": true, "body": true, "subject": true,
-		// Flags, and criteria that name nothing of the account's.
-		"dry_run": true, "confirm": true, "enable": true, "audience": true, "end": true, "query": true,
+		// Flags, and criteria that name nothing of the account's; criteria
+		// on a delete are a witness, compared and never written.
+		"dry_run": true, "confirm": true, "enable": true, "audience": true, "end": true, "query": true, "criteria": true,
 		"negated_query": true, "has_attachment": true, "exclude_chats": true, "size": true, "size_comparison": true,
-		"remove_labels": true, "archive": true, "mark_read": true, "star": true, "trash": true,
+		"remove_labels": true, "archive": true, "mark_read": true, "star": true,
 	}
 )
 
@@ -300,7 +499,7 @@ func (e *env) guardSettings(tool string, args map[string]any) error {
 		if sig := str("signature"); sig != "" && !strings.Contains(sig, e.seed.label.name) {
 			return fmt.Errorf("%w: the signature is not the run's", errUnscoped)
 		}
-	case "create_filter":
+	case "create_filter", "create_trash_filter":
 		if str("from") != filterSender(e.seed.label) {
 			return fmt.Errorf("%w: a filter must match only the run's own sender", errUnscoped)
 		}

@@ -78,6 +78,37 @@ func TestFromSourceReadsStepsAndHelpers(t *testing.T) {
 	}
 }
 
+const nestedSource = `package driver
+
+type step struct {
+	tool string
+	args func() map[string]any
+}
+
+var steps = []step{
+	{tool: "delete_filter", args: func() map[string]any {
+		return map[string]any{"filter_id": "f1", "criteria": map[string]any{"from": "a"}}
+	}},
+}
+`
+
+func TestFromSourceReadsAMapInsideAnOptionAsItsValue(t *testing.T) {
+	dir := t.TempDir()
+	if err := os.WriteFile(filepath.Join(dir, "driver.go"), []byte(nestedSource), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	sent, err := FromSource(dir, map[string][]string{"delete_filter": {"criteria", "filter_id"}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !sent["delete_filter"]["criteria"] || !sent["delete_filter"]["filter_id"] {
+		t.Errorf("delete_filter options %v, want criteria and filter_id", sent["delete_filter"])
+	}
+	if sent["delete_filter"]["from"] {
+		t.Error("a key of the map inside criteria was read as an option of delete_filter")
+	}
+}
+
 func TestFromSourceRefusesAnEmptyDirectory(t *testing.T) {
 	if _, err := FromSource(t.TempDir(), nil); err == nil {
 		t.Error("a directory with no Go source was accepted")

@@ -15,7 +15,12 @@
    "tool": "send_draft",
    "args": {
     "draft_id": "r-100",
-    "message_id": "18f0000000000005"
+    "message_id": "18f0000000000005",
+    "subject": "Re: Budget sign-off",
+    "first_line": "I will confirm the numbers by Friday.",
+    "confirm_recipients": [
+     "freya.holm@example.org"
+    ]
    }
   }
  ],

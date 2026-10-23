@@ -31,10 +31,10 @@ import (
 	"strconv"
 	"time"
 
-	"github.com/mmedum/google-mail-mcp/v2/scripts/internal/livecover"
-	"github.com/mmedum/google-mail-mcp/v2/scripts/internal/mcpstdio"
-	"github.com/mmedum/google-mail-mcp/v2/scripts/internal/redact"
-	"github.com/mmedum/google-mail-mcp/v2/scripts/internal/transcript"
+	"github.com/mmedum/google-mail-mcp/v3/scripts/internal/livecover"
+	"github.com/mmedum/google-mail-mcp/v3/scripts/internal/mcpstdio"
+	"github.com/mmedum/google-mail-mcp/v3/scripts/internal/redact"
+	"github.com/mmedum/google-mail-mcp/v3/scripts/internal/transcript"
 )
 
 // driverDir is where this source lives, read back at the end of a run to
@@ -178,15 +178,15 @@ func drive(ctx context.Context, o options, tr *transcript.Transcript, box mailbo
 
 	// The settings steps change the account's own signature and vacation
 	// reply. They run only when the login granted their scope, and what
-	// they change is saved first and put back after, before the run's
-	// label goes: a filter the run left names it.
+	// they change is saved to a file first and put back after, before the
+	// run's label goes: a filter the run left names it.
 	serverEnv := []string{"GMAIL_PROFILE=" + o.profile, "GMAIL_LOCAL_DIR=" + localDir,
 		"GMAIL_ENABLE_SEND=true", "GMAIL_ENABLE_DESTRUCTIVE=true"}
-	var saved savedSettings
+	var kept keptSettings
 	if box.SettingsScope() {
-		var saveErr error
-		if saved, saveErr = box.SaveSettings(ctx); saveErr != nil {
-			return saveErr
+		var keepErr error
+		if kept, keepErr = keepSettings(ctx, box, tr, os.TempDir(), r, drivesSignature(o.run)); keepErr != nil {
+			return keepErr
 		}
 		serverEnv = append(serverEnv, "GMAIL_ENABLE_SETTINGS=true")
 		defer func() {
@@ -194,13 +194,19 @@ func drive(ctx context.Context, o options, tr *transcript.Transcript, box mailbo
 			if n > 0 {
 				tr.Sayf("cleanup: deleted %d filter(s) a step left", n)
 			}
-			if restoreErr := errors.Join(filtersErr, box.RestoreSettings(ctx, saved)); restoreErr != nil {
+			if filtersErr != nil {
+				tr.Fail("cleanup: delete the run's filters: %v", filtersErr)
+				if err == nil {
+					err = filtersErr
+				}
+			}
+			if restoreErr := kept.restore(ctx, box); restoreErr != nil {
 				tr.Fail("restore the signature and the vacation reply: %v", restoreErr)
 				if err == nil {
 					err = restoreErr
 				}
 			} else {
-				tr.Sayf("restored the signature and the vacation reply as the run found them")
+				tr.Sayf("restored the signature and the vacation reply as the run found them, read both back, and deleted the copy")
 			}
 		}()
 	}
@@ -209,13 +215,11 @@ func drive(ctx context.Context, o options, tr *transcript.Transcript, box mailbo
 		return err
 	}
 	defer session.Close()
-	// The driver is a client that can ask the person, so every write
-	// that takes confirm goes through the question (§4.13). It is the
-	// maintainer's own scripted run, so it answers for them: accept, but
-	// for the step that checks a refusal. Every question goes in the
-	// transcript.
-	asker := &scriptedPerson{tr: tr}
-	session.OnElicit(asker.answer)
+	e := &env{ctx: ctx, session: session, tr: tr, seed: seed, localDir: localDir, sendTo: o.sendTo, full: box.FullScope(),
+		settings: box.SettingsScope(), signatureAddress: kept.saved.address, signatureSkip: kept.signatureSkip}
+	// The driver can be asked, and the server asks nobody (§4.13): a
+	// question is declined, and fails the step that drew it.
+	session.OnElicit(func() { e.asked++ })
 	protocol, tools, err := session.Initialize("livemail")
 	if err != nil {
 		return err
@@ -224,8 +228,6 @@ func drive(ctx context.Context, o options, tr *transcript.Transcript, box mailbo
 
 	rec := livecover.NewRecorder()
 	session.OnCall(rec.Sent)
-	e := &env{ctx: ctx, session: session, tr: tr, seed: seed, localDir: localDir, sendTo: o.sendTo, full: box.FullScope(),
-		settings: box.SettingsScope(), signatureAddress: saved.address, person: asker}
 
 	failed := 0
 	for _, s := range slices.Concat(steps, writeSteps, gatedSteps, settingsSteps) {

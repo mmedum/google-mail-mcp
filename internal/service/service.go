@@ -10,10 +10,10 @@ import (
 	"sync"
 	"time"
 
-	"github.com/mmedum/google-mail-mcp/v2/internal/gapi"
-	"github.com/mmedum/google-mail-mcp/v2/internal/gmail"
-	"github.com/mmedum/google-mail-mcp/v2/internal/mime"
-	"github.com/mmedum/google-mail-mcp/v2/internal/model"
+	"github.com/mmedum/google-mail-mcp/v3/internal/gapi"
+	"github.com/mmedum/google-mail-mcp/v3/internal/gmail"
+	"github.com/mmedum/google-mail-mcp/v3/internal/mime"
+	"github.com/mmedum/google-mail-mcp/v3/internal/model"
 )
 
 // Page sizes for listings (architecture §7.1). The default is small on

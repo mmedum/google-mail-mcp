@@ -11,9 +11,9 @@ import (
 
 	"golang.org/x/oauth2"
 
-	"github.com/mmedum/google-mail-mcp/v2/internal/gapi"
-	"github.com/mmedum/google-mail-mcp/v2/internal/gapi/gmailtest"
-	"github.com/mmedum/google-mail-mcp/v2/internal/service"
+	"github.com/mmedum/google-mail-mcp/v3/internal/gapi"
+	"github.com/mmedum/google-mail-mcp/v3/internal/gapi/gmailtest"
+	"github.com/mmedum/google-mail-mcp/v3/internal/service"
 )
 
 func newService(t *testing.T) (*service.Service, *gmailtest.Server) {

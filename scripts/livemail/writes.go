@@ -12,8 +12,8 @@ import (
 	"slices"
 	"strings"
 
-	"github.com/mmedum/google-mail-mcp/v2/internal/gapi/gmailtest"
-	"github.com/mmedum/google-mail-mcp/v2/internal/mime"
+	"github.com/mmedum/google-mail-mcp/v3/internal/gapi/gmailtest"
+	"github.com/mmedum/google-mail-mcp/v3/internal/mime"
 )
 
 // The write steps. Everything they touch is the run's own: the messages
@@ -81,6 +81,7 @@ func (e *env) updated(text string) (draftID, messageID, was string, err error) {
 		return "", "", "", errors.New("the result names no updated draft")
 	}
 	e.seed.draftMessages = append(e.seed.draftMessages, m[2])
+	e.noteSubject(m[1])
 	return m[1], m[2], m[3], nil
 }
 
@@ -93,7 +94,17 @@ func (e *env) composed(text string) (draftID, messageID string, err error) {
 	}
 	e.seed.drafts = append(e.seed.drafts, m[1])
 	e.seed.draftMessages = append(e.seed.draftMessages, m[2])
+	e.noteSubject(m[1])
 	return m[1], m[2], nil
+}
+
+// noteSubject keeps a draft's subject as the last step's result gives
+// it, for send_draft's witness.
+func (e *env) noteSubject(draftID string) {
+	if e.subjects == nil {
+		e.subjects = map[string]string{}
+	}
+	e.subjects[draftID], _ = e.structured["untrusted_subject"].(string)
 }
 
 var writeSteps = []step{
@@ -146,7 +157,7 @@ var writeSteps = []step{
 		args: func(e *env) map[string]any {
 			return map[string]any{"draft_id": e.draftID, "message_id": e.draftMessage,
 				"to": []any{rcptCc}, "cc": []any{}, "bcc": []any{rcptBcc}, "subject": e.seed.label.name + " revised",
-				"body": "Revised.", "body_html": "<p>Revised.</p>",
+				"body": revisedLine, "body_html": "<p>" + revisedLine + "</p>",
 				"add_attachments": []any{secondName(e.seed.label)}, "remove_attachments": []any{"1"}}
 		},
 		check: func(e *env, text string) error {
@@ -206,7 +217,7 @@ var writeSteps = []step{
 		},
 		check: func(e *env, text string) error {
 			var err error
-			if e.replyDraft, _, err = e.composed(text); err != nil {
+			if e.replyDraft, e.replyMessage, err = e.composed(text); err != nil {
 				return err
 			}
 			return want(text, "Gmail filed the draft in the parent's thread.")
@@ -214,7 +225,7 @@ var writeSteps = []step{
 
 	{name: "reply to all in an inserted thread", tool: "create_draft",
 		args: func(e *env) map[string]any {
-			return map[string]any{"reply_to_thread": e.seed.threads[2], "reply_all": true, "body": "A synthetic reply to all."}
+			return map[string]any{"reply_to_thread": e.seed.threads[2], "reply_all": true, "body": replyAllLine}
 		},
 		check: func(e *env, text string) error {
 			var err error
@@ -284,7 +295,7 @@ var writeSteps = []step{
 			return want(text, fourScripts)
 		}},
 
-	deleteStepDraft("delete the forward", func(e *env) string { return e.forwardDraft }),
+	deleteStepDraft("delete the forward", func(e *env) (string, string) { return e.forwardDraft, e.forwardMessage }),
 
 	// The parent is the run's 8-bit message, so the quote carries text in
 	// four scripts (§18 row 86).
@@ -294,7 +305,7 @@ var writeSteps = []step{
 		},
 		check: func(e *env, text string) error {
 			var err error
-			if e.quoteDraft, _, err = e.composed(text); err != nil {
+			if e.quoteDraft, e.quoteMessage, err = e.composed(text); err != nil {
 				return err
 			}
 			return want(text, "quoted below the body: ")
@@ -313,7 +324,7 @@ var writeSteps = []step{
 			return nil
 		}},
 
-	deleteStepDraft("delete the quoted reply", func(e *env) string { return e.quoteDraft }),
+	deleteStepDraft("delete the quoted reply", func(e *env) (string, string) { return e.quoteDraft, e.quoteMessage }),
 
 	{name: "a large draft goes as an upload", tool: "create_draft",
 		args: func(e *env) map[string]any {
@@ -328,38 +339,28 @@ var writeSteps = []step{
 		}},
 
 	{name: "a delete without confirm is refused", tool: "delete_draft", refuses: "blocked",
-		args:  func(e *env) map[string]any { return map[string]any{"draft_id": e.replyDraft} },
+		args: func(e *env) map[string]any {
+			return map[string]any{"draft_id": e.replyDraft, "message_id": e.replyMessage}
+		},
 		check: func(_ *env, text string) error { return want(text, "confirm: true") }},
 
 	{name: "delete a draft, dry run", tool: "delete_draft",
-		args:  func(e *env) map[string]any { return map[string]any{"draft_id": e.replyDraft, "dry_run": true} },
+		args: func(e *env) map[string]any {
+			return map[string]any{"draft_id": e.replyDraft, "message_id": e.replyMessage, "dry_run": true}
+		},
 		check: func(_ *env, text string) error { return want(text, "would delete draft") }},
 
-	{name: "a delete the person does not confirm is refused", tool: "delete_draft", refuses: "blocked", declines: true,
-		args: func(e *env) map[string]any { return map[string]any{"draft_id": e.replyDraft, "confirm": true} },
+	// The witness is another of the run's drafts' messages: the draft
+	// holds its own, so the delete is refused and the draft stays (§4.4).
+	{name: "a delete against another message id is refused", tool: "delete_draft", refuses: "stale",
+		args: func(e *env) map[string]any {
+			return map[string]any{"draft_id": e.replyDraft, "message_id": e.draftMessage, "confirm": true}
+		},
 		check: func(e *env, text string) error {
-			if err := want(text, "not confirmed by the person: the client answered decline"); err != nil {
-				return err
-			}
-			q, err := e.asked()
-			if err != nil {
-				return err
-			}
-			return want(q, "delete_draft: delete this draft for good?")
+			return want(text, "holds message "+e.replyMessage+" now, not "+e.draftMessage)
 		}},
 
-	{name: "delete a draft", tool: "delete_draft",
-		args: func(e *env) map[string]any { return map[string]any{"draft_id": e.replyDraft, "confirm": true} },
-		check: func(e *env, text string) error {
-			if err := want(text, "permanently."); err != nil {
-				return err
-			}
-			if _, err := e.asked(); err != nil {
-				return err
-			}
-			e.seed.forget(e.replyDraft)
-			return nil
-		}},
+	deleteStepDraft("delete a draft", func(e *env) (string, string) { return e.replyDraft, e.replyMessage }),
 
 	{name: "star and mark important, dry run", tool: "modify_labels",
 		args: func(e *env) map[string]any {
@@ -470,18 +471,19 @@ var writeSteps = []step{
 }
 
 // deleteStepDraft is a step that deletes a draft an earlier step made,
-// once the person confirms, so later steps never meet it.
-func deleteStepDraft(name string, draft func(e *env) string) step {
+// named with the message it holds, so later steps never meet it.
+func deleteStepDraft(name string, draft func(e *env) (draftID, messageID string)) step {
 	return step{name: name, tool: "delete_draft",
-		args: func(e *env) map[string]any { return map[string]any{"draft_id": draft(e), "confirm": true} },
+		args: func(e *env) map[string]any {
+			id, msg := draft(e)
+			return map[string]any{"draft_id": id, "message_id": msg, "confirm": true}
+		},
 		check: func(e *env, text string) error {
 			if err := want(text, "permanently."); err != nil {
 				return err
 			}
-			if _, err := e.asked(); err != nil {
-				return err
-			}
-			e.seed.forget(draft(e))
+			id, _ := draft(e)
+			e.seed.forget(id)
 			return nil
 		}}
 }
@@ -500,7 +502,8 @@ var (
 		"draft_id": true, "message_id": true, "reply_to": true, "reply_to_thread": true, "forward": true, "confirm_recipients": true,
 		// Carry no id, address or file: text, flags, part ids of the run's
 		// own drafts, and the system labels STARRED and IMPORTANT.
-		"dry_run": true, "confirm": true, "reply_all": true, "quote": true, "subject": true, "body": true, "body_html": true, "plain_only": true,
+		"dry_run": true, "confirm": true, "reply_all": true, "quote": true, "subject": true, "first_line": true, "body": true,
+		"body_html": true, "plain_only": true,
 		"remove_attachments": true, "add": true, "remove": true, "in_label_list": true, "in_message_list": true,
 		"text_color": true, "background_color": true,
 	}
@@ -508,7 +511,8 @@ var (
 
 // guardWrite holds a write step to the run's own mail, drafts, labels and
 // files, and a draft's addresses to reserved domains.
-func (e *env) guardWrite(tool string, args map[string]any) error {
+func (e *env) guardWrite(s step, args map[string]any) error {
+	tool := s.tool
 	if !writeTools[tool] {
 		return nil
 	}
@@ -533,10 +537,9 @@ func (e *env) guardWrite(tool string, args map[string]any) error {
 			}
 		}
 	}
-	// A send reaches only -send-to: the only address a step may vouch for.
 	confirm, _ := args["confirm_recipients"].([]any)
 	for _, v := range confirm {
-		if a, _ := v.(string); !e.isSendTo(a) {
+		if a, _ := v.(string); !e.mayVouchFor(s, a) {
 			return fmt.Errorf("%w: confirm_recipients names an address that is not -send-to", errUnscoped)
 		}
 	}
@@ -560,6 +563,16 @@ func (e *env) guardWrite(tool string, args map[string]any) error {
 		}
 	}
 	return nil
+}
+
+// mayVouchFor reports whether a step may name an address in
+// confirm_recipients. A send that goes reaches only -send-to: the only
+// address a step may vouch for. A step that expects the send refused may
+// also vouch for a reserved address, to get past the recipient guard to a
+// later check; a server that sent it anyway would send to a domain that
+// is never delivered.
+func (e *env) mayVouchFor(s step, address string) bool {
+	return e.isSendTo(address) || s.refuses != "" && reservedAddress(address)
 }
 
 // isSendTo reports whether an entry is exactly -send-to, when one was

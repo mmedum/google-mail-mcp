@@ -8,8 +8,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/mmedum/google-mail-mcp/v2/internal/config"
-	"github.com/mmedum/google-mail-mcp/v2/internal/gapi"
+	"github.com/mmedum/google-mail-mcp/v3/internal/config"
+	"github.com/mmedum/google-mail-mcp/v3/internal/gapi"
 )
 
 // A named pipe in GMAIL_LOCAL_DIR is refused before it is opened, which

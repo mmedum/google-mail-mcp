@@ -44,10 +44,20 @@ func needFull(e *env) string {
 	return ""
 }
 
+// The first lines of the bodies the run writes into the drafts it sends
+// or dry-runs: a witness send_draft takes.
+const (
+	revisedLine   = "Revised."
+	replyAllLine  = "A synthetic reply to all."
+	sendLine      = "A synthetic message, sent by the live driver through send_draft."
+	neverSentLine = "A synthetic reply, never sent."
+)
+
 var gatedSteps = []step{
 	{name: "send a draft, dry run", tool: "send_draft",
 		args: func(e *env) map[string]any {
-			return map[string]any{"draft_id": e.draftID, "message_id": e.draftMessage, "dry_run": true}
+			return map[string]any{"draft_id": e.draftID, "message_id": e.draftMessage, "subject": e.subjects[e.draftID],
+				"first_line": revisedLine, "dry_run": true}
 		},
 		check: func(_ *env, text string) error {
 			if err := want(text, "it starts a new conversation"); err != nil {
@@ -57,34 +67,60 @@ var gatedSteps = []step{
 		}},
 
 	// The parent was received: its sender is in the thread, and the To
-	// its sender wrote is not (§17.8).
-	{name: "a reply-all clears the sender only, dry run", tool: "send_draft",
+	// its sender wrote is not (§17.8). Both still need confirming (§4.2).
+	{name: "a reply-all names the sender a participant, dry run", tool: "send_draft",
 		args: func(e *env) map[string]any {
-			return map[string]any{"draft_id": e.replyAll, "message_id": e.replyAllMessage, "dry_run": true}
+			return map[string]any{"draft_id": e.replyAll, "message_id": e.replyAllMessage, "subject": e.subjects[e.replyAll],
+				"first_line": replyAllLine, "dry_run": true}
 		},
 		check: func(_ *env, text string) error {
 			if err := want(text, "recipients: 2 · 1 in the thread · 0 confirmed"); err != nil {
 				return err
 			}
-			return want(text, "not confirmed: to[1]")
+			return want(text, "not confirmed: to[0], to[1]")
 		}},
 
 	{name: "a send with unconfirmed recipients is refused", tool: "send_draft", refuses: "blocked",
 		args: func(e *env) map[string]any {
-			return map[string]any{"draft_id": e.draftID, "message_id": e.draftMessage}
+			return map[string]any{"draft_id": e.draftID, "message_id": e.draftMessage, "subject": e.subjects[e.draftID],
+				"first_line": revisedLine}
 		},
 		check: func(_ *env, text string) error { return want(text, "name each address in confirm_recipients") }},
 
 	{name: "a send against an old message id is refused", tool: "send_draft", refuses: "stale",
 		args: func(e *env) map[string]any {
-			return map[string]any{"draft_id": e.draftID, "message_id": e.staleMessage}
+			return map[string]any{"draft_id": e.draftID, "message_id": e.staleMessage, "subject": e.subjects[e.draftID],
+				"first_line": revisedLine}
 		},
 		check: func(_ *env, text string) error { return want(text, "changed since it was read") }},
+
+	// The subject and first line say what is sent, and are the draft's.
+	{name: "a send with another subject is refused", tool: "send_draft", refuses: "stale",
+		args: func(e *env) map[string]any {
+			return map[string]any{"draft_id": e.draftID, "message_id": e.draftMessage,
+				"subject": e.seed.label.name + " not this one", "first_line": revisedLine}
+		},
+		check: func(e *env, text string) error {
+			return want(text, "subject is not the subject draft "+e.draftID+" holds; nothing was sent")
+		}},
+
+	// The server checks the first line after the recipients, so the step
+	// confirms the ones "update the draft" gave it: at reserved domains,
+	// which the guard lets a step vouch for only on a send it expects
+	// refused.
+	{name: "a send with another first line is refused", tool: "send_draft", refuses: "stale",
+		args: func(e *env) map[string]any {
+			return map[string]any{"draft_id": e.draftID, "message_id": e.draftMessage, "subject": e.subjects[e.draftID],
+				"first_line": "Not this one.", "confirm_recipients": []any{rcptCc, rcptBcc}}
+		},
+		check: func(e *env, text string) error {
+			return want(text, "first_line is not the first line of draft "+e.draftID+"'s body; nothing was sent")
+		}},
 
 	{name: "compose a draft to -send-to", tool: "create_draft", needs: needSendTo,
 		args: func(e *env) map[string]any {
 			return map[string]any{"to": []any{e.sendTo}, "subject": e.seed.label.name + " send_draft",
-				"body": "A synthetic message, sent by the live driver through send_draft.\n"}
+				"body": sendLine + "\n"}
 		},
 		check: func(e *env, text string) error {
 			var err error
@@ -97,7 +133,7 @@ var gatedSteps = []step{
 	{name: "give the draft to -send-to a long paragraph", tool: "update_draft", needs: needSendTo,
 		args: func(e *env) map[string]any {
 			return map[string]any{"draft_id": e.sent.draftID, "message_id": e.sent.draftMessage,
-				"body": "A synthetic message, sent by the live driver through send_draft.\n\n" + longParagraph + "\n"}
+				"body": sendLine + "\n\n" + longParagraph + "\n"}
 		},
 		check: func(e *env, text string) error {
 			draft, msg, _, err := e.updated(text)
@@ -114,7 +150,7 @@ var gatedSteps = []step{
 	{name: "send the draft to -send-to", tool: "send_draft", needs: needSendTo,
 		args: func(e *env) map[string]any {
 			return map[string]any{"draft_id": e.sent.draftID, "message_id": e.sent.draftMessage,
-				"confirm_recipients": []any{e.sendTo}}
+				"subject": e.subjects[e.sent.draftID], "first_line": sendLine, "confirm_recipients": []any{e.sendTo}}
 		},
 		check: func(e *env, text string) error {
 			m := sentDraftIn.FindStringSubmatch(text)
@@ -130,6 +166,40 @@ var gatedSteps = []step{
 			}
 			return want(text, "recipients: 1 · 0 in the thread · 1 confirmed")
 		}},
+
+	// A reply to the sent message goes to -send-to, whom the account sent
+	// to in the thread: a participant, which the guard still stops until
+	// confirm_recipients names it (§4.2). The reply is deleted, never sent.
+	{name: "reply to the sent message", tool: "create_draft", needs: needSendTo,
+		args: func(e *env) map[string]any {
+			return map[string]any{"reply_to": e.sent.sentMessage, "body": neverSentLine}
+		},
+		check: func(e *env, text string) error {
+			var err error
+			e.sent.replyDraft, e.sent.replyMessage, err = e.composed(text)
+			return err
+		}},
+
+	{name: "a reply to a participant is refused until confirmed", tool: "send_draft", refuses: "blocked", needs: needSendTo,
+		args: func(e *env) map[string]any {
+			return map[string]any{"draft_id": e.sent.replyDraft, "message_id": e.sent.replyMessage,
+				"subject": e.subjects[e.sent.replyDraft], "first_line": neverSentLine}
+		},
+		check: func(e *env, text string) error {
+			return want(text, "1 of draft "+e.sent.replyDraft+"'s recipients are not in confirm_recipients: to[0]")
+		}},
+
+	{name: "the reply's participant, dry run", tool: "send_draft", needs: needSendTo,
+		args: func(e *env) map[string]any {
+			return map[string]any{"draft_id": e.sent.replyDraft, "message_id": e.sent.replyMessage,
+				"subject": e.subjects[e.sent.replyDraft], "first_line": neverSentLine, "dry_run": true}
+		},
+		check: func(_ *env, text string) error { return want(text, "recipients: 1 · 1 in the thread · 0 confirmed") }},
+
+	// The reply is made only with -send-to, so it is deleted only then.
+	deleteStepDraft("delete the reply to the sent message", func(e *env) (string, string) {
+		return e.sent.replyDraft, e.sent.replyMessage
+	}).needing(needSendTo),
 
 	{name: "a label delete without confirm is refused", tool: "delete_label", refuses: "blocked",
 		args:  func(e *env) map[string]any { return map[string]any{"label": e.seed.label.name + "-renamed"} },

@@ -18,8 +18,8 @@ import (
 	"strings"
 	"time"
 
-	"github.com/mmedum/google-mail-mcp/v2/scripts/internal/mcpstdio"
-	"github.com/mmedum/google-mail-mcp/v2/scripts/internal/transcript"
+	"github.com/mmedum/google-mail-mcp/v3/scripts/internal/mcpstdio"
+	"github.com/mmedum/google-mail-mcp/v3/scripts/internal/transcript"
 )
 
 // step is one tool call the driver makes and what it checks.
@@ -43,38 +43,12 @@ type step struct {
 	// needs says why the step cannot run in this run, or "": a send
 	// needs -send-to, a permanent delete a profile that can delete.
 	needs func(e *env) string
-	// declines answers the step's question to the person with decline
-	// rather than accept.
-	declines bool
 }
 
-// scriptedPerson answers the questions the server puts to the person,
-// for the maintainer running the driver (§4.13): accept, unless a step
-// declines. It prints each question.
-type scriptedPerson struct {
-	tr       *transcript.Transcript
-	declines bool
-	// asked is the questions put during the current step.
-	asked []string
-}
-
-func (p *scriptedPerson) answer(message string) string {
-	p.asked = append(p.asked, message)
-	p.tr.Say("--- question put to the person ---\n" + strings.TrimRight(message, "\n"))
-	if p.declines {
-		p.tr.Say("--- answered: decline ---")
-		return "decline"
-	}
-	p.tr.Say("--- answered: accept ---")
-	return "accept"
-}
-
-// asked is the one question put during the step, or an error.
-func (e *env) asked() (string, error) {
-	if e.person == nil || len(e.person.asked) != 1 {
-		return "", errors.New("the server did not put exactly one question to the person")
-	}
-	return e.person.asked[0], nil
+// needing is s, run only when needs says nothing against it.
+func (s step) needing(needs func(e *env) string) step {
+	s.needs = needs
+	return s
 }
 
 // A thread or message id in a rendering, 16 hex digits after its noun.
@@ -386,17 +360,20 @@ type env struct {
 	// plainDraft and plainMessage are the draft the plain_only steps
 	// make plain, give the HTML version and make plain again.
 	plainDraft, plainMessage string
-	// replyDraft is the reply the delete steps delete.
-	replyDraft string
+	// replyDraft and replyMessage are the reply the delete steps delete.
+	replyDraft, replyMessage string
 	// replyAll and replyAllMessage are the reply-all draft the recipient
 	// guard's dry run reads.
 	replyAll, replyAllMessage string
+	// subjects are each draft's subject as its last create or update gave
+	// it, by draft id: a witness send_draft takes.
+	subjects map[string]string
 	// forwardDraft and forwardMessage are the forward the forward steps
 	// make, read back and delete.
 	forwardDraft, forwardMessage string
-	// quoteDraft is the quoting reply the quote steps make, read back
-	// and delete.
-	quoteDraft string
+	// quoteDraft and quoteMessage are the quoting reply the quote steps
+	// make, read back and delete.
+	quoteDraft, quoteMessage string
 	// spikeE is the draft side of spike E, from reading a draft back.
 	spikeE string
 	// sendTo is -send-to, the one address a step may send to; full is
@@ -408,6 +385,9 @@ type env struct {
 	settings   bool
 	filters    []string
 	filterArgs map[string]any
+	// filterCriteria are each filter's criteria as its create gave them,
+	// by id: the witness delete_filter takes.
+	filterCriteria map[string]any
 	// archiveFilter is the archiving filter a step made, which a later
 	// step looks for SPAM on (§18 row 56).
 	archiveFilter string
@@ -419,13 +399,16 @@ type env struct {
 	// signatureAddress is the default send-as address, whose signature
 	// the run saved and changes; no other one is touched.
 	signatureAddress string
+	// signatureSkip is why the signature steps may not run, or "".
+	signatureSkip string
 	// sent is what the send step read, for spikes B and C.
 	sent sentDraft
-	// person answers the server's questions to the person.
-	person *scriptedPerson
 	// predicted is each item's labels after, as the last dry run said,
 	// for the write that follows to match (§18 row 70).
 	predicted map[string][]string
+	// asked counts the questions the server put to the person, which it
+	// never does (§4.13).
+	asked int
 }
 
 // unsubscribeIs holds a row of the last listing to one web address,
@@ -523,6 +506,9 @@ func (e *env) asPredicted() error {
 // message it held and its Message-ID, and the message Gmail filed in SENT.
 type sentDraft struct {
 	draftID, draftMessage, rfc822, sentMessage string
+	// replyDraft and replyMessage are the reply to the sent message,
+	// which the guard refuses and the run deletes.
+	replyDraft, replyMessage string
 }
 
 func want(text, s string) error {
@@ -552,10 +538,11 @@ func (e *env) ownsAll(re *regexp.Regexp, text string, n int) error {
 // errUnscoped is the guard refusing a read outside the run's own mail.
 var errUnscoped = errors.New("refused: the live driver reads only what it inserted")
 
-// guard holds a call to §9.1 before it is sent: a search must carry the
-// run's label, a draft listing the run's name, and a read by id must name
-// an id the run made.
-func (e *env) guard(tool string, args map[string]any) error {
+// guard holds a step's call to §9.1 before it is sent: a search must
+// carry the run's label, a draft listing the run's name, and a read by id
+// must name an id the run made.
+func (e *env) guard(s step, args map[string]any) error {
+	tool := s.tool
 	q, _ := args["q"].(string)
 	switch tool {
 	case "search_threads", "search_messages":
@@ -573,7 +560,7 @@ func (e *env) guard(tool string, args map[string]any) error {
 			return fmt.Errorf("%w: list_changes without label %s", errUnscoped, e.seed.label.name)
 		}
 	}
-	if err := e.guardWrite(tool, args); err != nil {
+	if err := e.guardWrite(s, args); err != nil {
 		return err
 	}
 	if err := e.guardSettings(tool, args); err != nil {
@@ -600,16 +587,17 @@ func (e *env) guard(tool string, args map[string]any) error {
 // runStep calls one step's tool through the guard and checks the result.
 func (e *env) runStep(s step) error {
 	args := s.args(e)
-	if err := e.guard(s.tool, args); err != nil {
+	if err := e.guard(s, args); err != nil {
 		return err
 	}
 	e.tr.Sayf("=== %s %s ===", s.tool, mcpstdio.Encode(args))
-	if e.person != nil {
-		e.person.asked, e.person.declines = nil, s.declines
-	}
+	asked := e.asked
 	text, structured, isError, err := e.session.CallToolStructured(s.tool, args)
 	if err != nil {
 		return err
+	}
+	if e.asked != asked {
+		return errors.New("the server asked the person, and it asks nobody")
 	}
 	e.structured = structured
 	switch {

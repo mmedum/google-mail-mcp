@@ -15,7 +15,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/mmedum/google-mail-mcp/v2/internal/gmail"
+	"github.com/mmedum/google-mail-mcp/v3/internal/gmail"
 )
 
 // The write handlers model what the server's logic depends on (§13):

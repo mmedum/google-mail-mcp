@@ -11,7 +11,7 @@ import (
 	"encoding/hex"
 	"errors"
 	"fmt"
-	"github.com/mmedum/google-mail-mcp/v2/internal/mime"
+	"github.com/mmedum/google-mail-mcp/v3/internal/mime"
 	"net/url"
 	"slices"
 	"strings"
@@ -88,11 +88,16 @@ type mailbox interface {
 	// SettingsScope is whether the profile's login granted
 	// gmail.settings.basic, which the settings steps need.
 	SettingsScope() bool
-	// SaveSettings reads what the settings steps change — the default
-	// address's signature, exactly, and the vacation reply — so
-	// RestoreSettings can put it back. Neither is printed.
-	SaveSettings(ctx context.Context) (savedSettings, error)
-	RestoreSettings(ctx context.Context, s savedSettings) error
+	// ReadSettings reads what the settings steps change: the default
+	// address's signature, exactly, and the vacation reply. The run reads
+	// them before the steps, to put back, and after the restore, to
+	// check it. Neither is printed.
+	ReadSettings(ctx context.Context) (savedSettings, error)
+	// WriteSignature sets an address's signature, and returns the one
+	// Gmail answers that it stored.
+	WriteSignature(ctx context.Context, address, signature string) (stored string, err error)
+	// WriteVacation sets the vacation reply to a resource as Gmail gave it.
+	WriteVacation(ctx context.Context, vacation json.RawMessage) error
 	// FiltersFrom lists the ids of the filters that match mail from from:
 	// the run's own filters.
 	FiltersFrom(ctx context.Context, from string) ([]string, error)

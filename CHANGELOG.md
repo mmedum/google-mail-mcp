@@ -15,6 +15,36 @@ lifted verbatim.
 
 ## [Unreleased]
 
+## [3.0.0] - 2026-10-23
+
+### Added
+
+- `create_trash_filter` makes a filter that moves matching mail to the trash as it arrives, with `confirm: true`; registered only with `GMAIL_ENABLE_SETTINGS=true` and `GMAIL_ENABLE_DESTRUCTIVE=true`.
+
+### Changed
+
+- **Breaking:** the server no longer asks you before a write; your MCP client approves each call. A client that runs with nobody watching now makes every write that is registered, so leave `GMAIL_ENABLE_SEND`, `GMAIL_ENABLE_DESTRUCTIVE` and `GMAIL_ENABLE_SETTINGS` off for one; the README gives Claude Code `permissions.ask` rules for the writes that send, change a setting or delete.
+- **Breaking:** `send_draft` needs every recipient in `confirm_recipients`, the thread's own participants included.
+- **Breaking:** `delete_draft` takes the draft's `message_id` and refuses `[stale]` when the draft changed since it was read.
+- **Breaking:** `send_draft` takes the draft's `subject` and the first line of its body as `first_line`, and refuses `[stale]` when either is not the draft's, so your client's prompt shows what is sent.
+- **Breaking:** `delete_filter` takes the filter's `criteria` as `list_filters` gives them, and refuses `[stale]` when they are not the filter's.
+- **Breaking:** `delete_filter` is registered only with `GMAIL_ENABLE_DESTRUCTIVE=true` as well as `GMAIL_ENABLE_SETTINGS=true`, and the destructive flag asks for `https://mail.google.com/` at login.
+- **Breaking:** `send_draft` and `set_vacation` no longer carry `requiresUserInteraction`, so a Claude Code `permissions.allow` rule for either now lets it run unasked; they are annotated destructive, so claude.ai and Codex prompt for them. `delete_permanently` and `delete_label` carry it for every client, so Claude Code prompts on every call of either.
+- **Breaking:** the Go module path is now `github.com/mmedum/google-mail-mcp/v3`; install with `go install github.com/mmedum/google-mail-mcp/v3/cmd/google-mail-mcp@latest`.
+
+### Removed
+
+- **Breaking:** `create_filter` no longer takes `trash` or `confirm`; a filter that trashes is `create_trash_filter`.
+- **Breaking:** `GMAIL_REQUIRE_PROMPT` and `--require-prompt` are gone, and the variable set to anything but `false` stops the server from starting, rather than quietly allow what it was set to stop; unset it.
+
+### Fixed
+
+- The live driver saves the account's signature and vacation reply to a private file before changing them, skips the signature steps when Gmail will not take the signature back unchanged, and fails, naming the file, when they do not read back as it found them.
+
+### Security
+
+- Built with Go 1.27.3, which fixes GO-2026-6809 in crypto/x509, which govulncheck found reachable: intermediate certificates known to be compromised are no longer trusted.
+
 ## [2.3.0] - 2026-10-13
 
 ### Added
@@ -187,7 +217,8 @@ lifted verbatim.
 - Repository gates run by `make check` and CI: leaks, pins, error classes, API coverage, schema diff, smoke, staleness and more.
 - Signed release archives for six platforms with SBOMs, build provenance, a Claude Desktop bundle and an MCP registry entry.
 
-[Unreleased]: https://github.com/mmedum/google-mail-mcp/compare/v2.3.0...HEAD
+[Unreleased]: https://github.com/mmedum/google-mail-mcp/compare/v3.0.0...HEAD
+[3.0.0]: https://github.com/mmedum/google-mail-mcp/compare/v2.3.0...v3.0.0
 [2.3.0]: https://github.com/mmedum/google-mail-mcp/compare/v2.2.0...v2.3.0
 [2.2.0]: https://github.com/mmedum/google-mail-mcp/compare/v2.1.0...v2.2.0
 [2.1.0]: https://github.com/mmedum/google-mail-mcp/compare/v2.0.4...v2.1.0

@@ -95,10 +95,11 @@ var smokeModes = []smokeMode{
 	{name: "destructive", env: []string{"GMAIL_ENABLE_DESTRUCTIVE=true"}, localDir: true,
 		registers: append(slices.Clone(smokeDefaultKinds), smokeKindDestructive)},
 	{name: "settings", env: []string{"GMAIL_ENABLE_SETTINGS=true"}, localDir: true,
-		registers: append(slices.Clone(smokeDefaultKinds), smokeKindSettings, smokeKindSettingsForGood)},
+		registers: append(slices.Clone(smokeDefaultKinds), smokeKindSettings)},
+	{name: "settings and destructive", env: []string{"GMAIL_ENABLE_SETTINGS=true", "GMAIL_ENABLE_DESTRUCTIVE=true"}, localDir: true,
+		registers: append(slices.Clone(smokeDefaultKinds), smokeKindDestructive, smokeKindSettings, smokeKindSettingsForGood)},
 	{name: "settings and send", env: []string{"GMAIL_ENABLE_SETTINGS=true", "GMAIL_ENABLE_SEND=true"}, localDir: true,
-		registers: append(slices.Clone(smokeDefaultKinds), smokeKindSend, smokeKindSettings, smokeKindSettingsForGood,
-			smokeKindAutoReply)},
+		registers: append(slices.Clone(smokeDefaultKinds), smokeKindSend, smokeKindSettings, smokeKindAutoReply)},
 }
 
 // smokeDefaultKinds are the kinds the default mode registers, with
@@ -106,8 +107,9 @@ var smokeModes = []smokeMode{
 var smokeDefaultKinds = []string{smokeKindRead, smokeKindReadLocal, smokeKindWrite, smokeKindWriteForGood}
 
 // smokeMinModes is the floor on modes driven: default, read-only, send,
-// destructive, settings, and settings with send.
-const smokeMinModes = 6
+// destructive, settings, settings with destructive, and settings with
+// send.
+const smokeMinModes = 7
 
 // environ is the mode's environment on top of base.
 func (m smokeMode) environ(base []string, localDir string) []string {
@@ -187,31 +189,24 @@ const (
 
 // smokeFamily is the annotations each dumped kind must carry, as
 // smokeKind names them: a settings write looks like a write for good to
-// a client, and the vacation reply like a send.
+// a client, and the vacation reply like a send. Only a destructive tool
+// carries the mark.
 var smokeFamily = map[string]string{
 	smokeKindRead: smokeKindRead, smokeKindReadLocal: smokeKindWrite, smokeKindWrite: smokeKindWrite,
 	smokeKindWriteForGood: smokeKindWriteForGood, smokeKindSend: smokeKindSend, smokeKindDestructive: smokeKindDestructive,
 	smokeKindSettings: smokeKindWriteForGood, smokeKindSettingsForGood: smokeKindWriteForGood, smokeKindAutoReply: smokeKindSend,
 }
 
-// smokeUserInteraction is the _meta key a send or destructive tool
-// carries.
+// smokeUserInteraction is the _meta key a destructive tool carries.
 const smokeUserInteraction = "anthropic/requiresUserInteraction"
 
 // smokeKind reads a tool's kind from its annotations and _meta, the way
-// Kind.annotations and Kind.requiresUserInteraction write them. An
-// absent hint takes the MCP default: destructive and open-world. A
+// Kind.annotations and Kind.requiresUserInteraction write them. A
 // combination no Kind produces is an error.
 func smokeKind(name string, annotations, meta json.RawMessage) (string, error) {
-	var a struct {
-		ReadOnly    *bool `json:"readOnlyHint"`
-		Destructive *bool `json:"destructiveHint"`
-		OpenWorld   *bool `json:"openWorldHint"`
-	}
-	if len(annotations) > 0 {
-		if err := json.Unmarshal(annotations, &a); err != nil {
-			return "", fmt.Errorf("%s: annotations: %w", name, err)
-		}
+	ro, de, ow, err := smokeHints(name, annotations)
+	if err != nil {
+		return "", err
 	}
 	var m map[string]any
 	if len(meta) > 0 {
@@ -219,18 +214,11 @@ func smokeKind(name string, annotations, meta json.RawMessage) (string, error) {
 			return "", fmt.Errorf("%s: _meta: %w", name, err)
 		}
 	}
-	hint := func(v *bool, def bool) bool {
-		if v == nil {
-			return def
-		}
-		return *v
-	}
-	ro, de, ow := hint(a.ReadOnly, false), hint(a.Destructive, true), hint(a.OpenWorld, true)
 	ui := m[smokeUserInteraction] == true
 	switch {
 	case ro && !ui:
 		return smokeKindRead, nil
-	case !ro && ui && ow && !de:
+	case !ro && !ui && ow && de:
 		return smokeKindSend, nil
 	case !ro && ui && de && !ow:
 		return smokeKindDestructive, nil
@@ -241,6 +229,32 @@ func smokeKind(name string, annotations, meta json.RawMessage) (string, error) {
 	}
 	return "", fmt.Errorf("%s is annotated readOnly=%v destructive=%v openWorld=%v with %s=%v, which no Kind "+
 		"in internal/tools produces", name, ro, de, ow, smokeUserInteraction, ui)
+}
+
+// smokeHints reads a tool's annotations. register writes out every hint
+// a write's kind sets, so a write that leaves its destructive or
+// open-world hint to the MCP default is no Kind's: the defaults are a
+// send's hints, and a tool that lost its annotations would otherwise
+// pass for one.
+func smokeHints(name string, annotations json.RawMessage) (ro, de, ow bool, err error) {
+	var a struct {
+		ReadOnly    *bool `json:"readOnlyHint"`
+		Destructive *bool `json:"destructiveHint"`
+		OpenWorld   *bool `json:"openWorldHint"`
+	}
+	if len(annotations) > 0 {
+		if err := json.Unmarshal(annotations, &a); err != nil {
+			return false, false, false, fmt.Errorf("%s: annotations: %w", name, err)
+		}
+	}
+	switch {
+	case a.ReadOnly != nil && *a.ReadOnly:
+		return true, false, false, nil
+	case a.Destructive == nil || a.OpenWorld == nil:
+		return false, false, false, fmt.Errorf("%s leaves its destructiveHint or openWorldHint to the MCP default, "+
+			"which no Kind in internal/tools does", name)
+	}
+	return false, *a.Destructive, *a.OpenWorld, nil
 }
 
 // smokeDumpKinds is every dumped tool's kind, by name, as the dump

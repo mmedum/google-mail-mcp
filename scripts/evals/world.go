@@ -14,11 +14,11 @@ import (
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 	"golang.org/x/oauth2"
 
-	"github.com/mmedum/google-mail-mcp/v2/internal/config"
-	"github.com/mmedum/google-mail-mcp/v2/internal/gapi"
-	"github.com/mmedum/google-mail-mcp/v2/internal/gapi/gmailtest"
-	"github.com/mmedum/google-mail-mcp/v2/internal/server"
-	"github.com/mmedum/google-mail-mcp/v2/internal/tools"
+	"github.com/mmedum/google-mail-mcp/v3/internal/config"
+	"github.com/mmedum/google-mail-mcp/v3/internal/gapi"
+	"github.com/mmedum/google-mail-mcp/v3/internal/gapi/gmailtest"
+	"github.com/mmedum/google-mail-mcp/v3/internal/server"
+	"github.com/mmedum/google-mail-mcp/v3/internal/tools"
 )
 
 // World is one task's mailbox and the server in front of it. Every task
@@ -72,7 +72,13 @@ func facts(fake *gmailtest.Server, t Task) (Facts, error) {
 		"budget_draft":  budget.DraftID,
 		// The scenario records the draft's message last.
 		"budget_draft_message": budget.MessageIDs[len(budget.MessageIDs)-1],
-		"newsletter":           fake.Scenario(gmailtest.ScenarioNewsletter).MessageIDs[0],
+		// What send_draft also witnesses: the draft's subject and the
+		// first line of its body, as the seed writes them.
+		"budget_draft_subject":    "Re: Budget sign-off",
+		"budget_draft_first_line": "I will confirm the numbers by Friday.",
+		// The draft answers Freya, a participant who is confirmed all the same.
+		"budget_recipient": gmailtest.Freya.Email,
+		"newsletter":       fake.Scenario(gmailtest.ScenarioNewsletter).MessageIDs[0],
 	}
 	if inj := t.Injection; inj != nil {
 		raw, _ := fake.Raw(fake.Scenario(inj.Scenario).MessageIDs[0])

@@ -1,12 +1,13 @@
 package render_test
 
 import (
+	"slices"
 	"testing"
 
-	"github.com/mmedum/google-mail-mcp/v2/internal/gapi/gmailtest"
-	"github.com/mmedum/google-mail-mcp/v2/internal/mime"
-	"github.com/mmedum/google-mail-mcp/v2/internal/model"
-	"github.com/mmedum/google-mail-mcp/v2/internal/render"
+	"github.com/mmedum/google-mail-mcp/v3/internal/gapi/gmailtest"
+	"github.com/mmedum/google-mail-mcp/v3/internal/mime"
+	"github.com/mmedum/google-mail-mcp/v3/internal/model"
+	"github.com/mmedum/google-mail-mcp/v3/internal/render"
 )
 
 func addr(p gmailtest.Person) mime.Address { return mime.Address{Name: p.Name, Email: p.Email} }
@@ -135,7 +136,7 @@ func TestGoldenSendDraft(t *testing.T) {
 	sent := model.SendWrite{DraftID: "r0000000000000021", MessageID: "0000000000000022", ThreadID: "0000000000000001",
 		Answers: 2, From: &from, Subject: "Re: Budget sign-off", RFC822MessageID: "<draft.22@mail.example.com>",
 		Recipients: []model.SendRecipient{
-			{Address: addr(gmailtest.Freya), Field: "to", Participant: true},
+			{Address: addr(gmailtest.Freya), Field: "to", Participant: true, Confirmed: true},
 			{Address: addr(gmailtest.Ada), Field: "cc", Confirmed: true},
 		},
 		Files:  []model.File{{Name: "totals.csv", MediaType: "text/csv", Size: 2048, PartID: "1"}},
@@ -147,8 +148,8 @@ func TestGoldenSendDraft(t *testing.T) {
 	dry := sent
 	dry.DryRun, dry.SentID, dry.SentThreadID, dry.SentLabels = true, "", "", nil
 	dry.Answers = 0
-	dry.Recipients = append(dry.Recipients, model.SendRecipient{Address: addr(gmailtest.Bruno), Field: "cc", Position: 1})
-	dry.Recipients[0].Participant = false
+	dry.Recipients = append(slices.Clone(dry.Recipients), model.SendRecipient{Address: addr(gmailtest.Bruno), Field: "cc", Position: 1})
+	dry.Recipients[0].Participant, dry.Recipients[0].Confirmed = false, false
 	golden(t, "send_draft_dry_run", render.SendDraft(dry, opts()).Text)
 }
 

@@ -17,9 +17,8 @@ once rather than one per run.
 | `GMAIL_CLIENT_SECRET` | `--client-secret` | the profile's `client_secret.json` | Path to the Desktop-app OAuth client JSON from the Cloud console. |
 | `GMAIL_READ_ONLY` | `--read-only` | `false` | Register only the read tools, and ask for `gmail.readonly` at login. Refused together with any `ENABLE_` setting. |
 | `GMAIL_ENABLE_SEND` | `--enable-send` | `false` | Register `send_draft`. Scopes do not change: the default scope can already send, which is why the tool, not the scope, is the control. |
-| `GMAIL_ENABLE_DESTRUCTIVE` | `--enable-destructive` | `false` | Register `delete_permanently` and `delete_label`, and ask for `https://mail.google.com/` at login — the only scope Google accepts for permanent deletion. Each call still needs `confirm: true`. |
-| `GMAIL_ENABLE_SETTINGS` | `--enable-settings` | `false` | Register `update_signature`, `create_filter` and `delete_filter`, and ask for `gmail.settings.basic` at login — the only scope Google accepts for those writes. With `GMAIL_ENABLE_SEND` as well, also `set_vacation`. |
-| `GMAIL_REQUIRE_PROMPT` | `--require-prompt` | `false` | Refuse, as `[blocked]`, every write that takes `confirm` or `confirm_recipients` when the client cannot ask you to confirm it. By default such a client falls back to `confirm` alone. See [Confirming a write](#confirming-a-write). |
+| `GMAIL_ENABLE_DESTRUCTIVE` | `--enable-destructive` | `false` | Register `delete_permanently` and `delete_label`, and ask for `https://mail.google.com/` at login — the only scope Google accepts for permanent deletion. With `GMAIL_ENABLE_SETTINGS` as well, also `create_trash_filter` and `delete_filter`. Each call still needs `confirm: true`. |
+| `GMAIL_ENABLE_SETTINGS` | `--enable-settings` | `false` | Register `update_signature` and `create_filter`, and ask for `gmail.settings.basic` at login — the only scope Google accepts for those writes. With `GMAIL_ENABLE_DESTRUCTIVE` as well, also `create_trash_filter` and `delete_filter`; with `GMAIL_ENABLE_SEND` as well, also `set_vacation`. |
 | `GMAIL_LOCAL_DIR` | `--local-dir` | unset | The one directory attachments are written to, and read from to attach to a draft. An absolute path to a directory that exists. **Unset means no file transfer**: `download_attachment` and `download_attachments` are not registered, and `create_draft` and `update_draft` refuse attachments. |
 | `GMAIL_LOG_LEVEL` | `--log-level` | `info` | `debug`, `info`, `warn` or `error`. Logs go to stderr. |
 | `GMAIL_LOG_FORMAT` | `--log-format` | `text` | `text` or `json`. |
@@ -80,26 +79,44 @@ scopes with the ones it needs at startup and says so on stderr, and
 destructive or settings off — needs no new login, but the stored token keeps the
 wider scope until you `logout` and `login`.
 
-## Confirming a write
+## Approving a write
 
-Seven writes take `confirm: true` or `confirm_recipients`: `delete_draft`,
-`delete_label`, `delete_permanently`, `delete_filter`, `create_filter`
-when the filter trashes, `set_vacation` when it turns the reply on, and
-`send_draft`. The model sets those arguments. When your MCP client
-supports elicitation, the server also asks you, through the client,
-before each of these writes. The question names the tool, what it
-touches and what cannot be undone. Text from your mailbox in it stands
-in backticks or code style. Accepting the question is the confirmation; there is
-no box to tick. Nothing is written unless you accept. Declining, dismissing, a timeout, or an answer the client gives
-without showing you anything all leave the call `[blocked]`.
+Your MCP client approves each call; the server does not ask you itself.
+What the client prompts for depends on the tool's annotations and on
+your settings. claude.ai and Codex prompt for the tools annotated
+destructive: `delete_draft`, `send_draft`, `set_vacation`,
+`update_signature`, every filter write and every delete. VS Code prompts
+for every tool that is not read-only. Claude Code prompts on every call
+of `delete_permanently` and `delete_label`, whatever your rules say, and
+for the rest follows your `permissions.allow` and `permissions.ask`
+rules; the README gives `ask` rules for the writes that send, change a
+setting or delete.
 
-So a client that supports elicitation but runs with nobody watching,
-such as `claude -p`, cannot make these writes. That is the point of the
-question.
+What holds whatever the client does is in the server: a tool behind a
+setting does not exist until you turn the setting on; `confirm: true`
+on every delete and on `create_trash_filter` and `set_vacation`, which
+the model sets as a witness that it meant the call; every recipient of
+a send written out in `confirm_recipients`; the draft's `message_id` on
+`update_draft`, `send_draft` and `delete_draft`, refused `[stale]` when
+the draft changed since it was read; the draft's subject and first line
+on `send_draft`, and the filter's criteria on `delete_filter`, refused
+`[stale]` when they are not what Gmail holds, so the call your client
+shows you says what it sends or deletes; and `dry_run` on every write.
 
-A client that does not support elicitation gets no question, and
-`confirm` stays the only guard. `GMAIL_REQUIRE_PROMPT=true` refuses these
-writes instead. A dry run never asks.
+A client that runs with nobody watching, such as `claude -p` with this
+server's tools allowed, makes every write that is registered. Leave
+`GMAIL_ENABLE_SEND`, `GMAIL_ENABLE_DESTRUCTIVE` and
+`GMAIL_ENABLE_SETTINGS` off for one.
+
+## Removed settings
+
+`GMAIL_REQUIRE_PROMPT` went with the server's question, and its
+flag `--require-prompt` is gone, so a flag left in your client's
+arguments stops the server from starting. The variable is still read,
+only to refuse it: set to anything but `false`, its old default, the
+server refuses to start, because ignoring it would quietly allow what
+you set it to stop. Unset it, and leave the `ENABLE_` settings off for a
+client that runs with nobody watching.
 
 ## Reading the setup from a script
 

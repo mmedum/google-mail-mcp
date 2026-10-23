@@ -198,13 +198,16 @@ func keysOf(e ast.Expr, maps map[string][]string) []string {
 		return maps[v.Sel.Name]
 	case *ast.FuncLit:
 		// Every map literal the function builds, and every key assigned
-		// into a map inside it.
+		// into a map inside it. A map inside one of those maps' values
+		// is an option's value, such as delete_filter's criteria, and
+		// its keys are not options.
 		var keys []string
 		ast.Inspect(v.Body, func(n ast.Node) bool {
 			switch w := n.(type) {
 			case *ast.CompositeLit:
 				if isArgMap(w) {
 					keys = append(keys, literalKeys(w)...)
+					return false
 				}
 			case *ast.AssignStmt:
 				for _, lhs := range w.Lhs {

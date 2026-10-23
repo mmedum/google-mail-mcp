@@ -9,11 +9,10 @@ import (
 	"time"
 	"unicode/utf8"
 
-	"github.com/mmedum/google-mail-mcp/v2/internal/gapi"
-	"github.com/mmedum/google-mail-mcp/v2/internal/gmail"
-	"github.com/mmedum/google-mail-mcp/v2/internal/mime"
-	"github.com/mmedum/google-mail-mcp/v2/internal/model"
-	"github.com/mmedum/google-mail-mcp/v2/internal/render"
+	"github.com/mmedum/google-mail-mcp/v3/internal/gapi"
+	"github.com/mmedum/google-mail-mcp/v3/internal/gmail"
+	"github.com/mmedum/google-mail-mcp/v3/internal/mime"
+	"github.com/mmedum/google-mail-mcp/v3/internal/model"
 )
 
 // The settings writes, registered only with GMAIL_ENABLE_SETTINGS
@@ -99,19 +98,20 @@ func signatureHTML(text string) string {
 	return strings.Join(lines, "<br>")
 }
 
-// FilterSpec is what create_filter was asked for.
+// FilterSpec is what create_filter or create_trash_filter was asked for.
 type FilterSpec struct {
 	Criteria gmail.FilterCriteria
 	// AddLabels and RemoveLabels are label names or ids.
 	AddLabels, RemoveLabels []string
-	// The common actions, as flags.
+	// The common actions, as flags. Only create_trash_filter sets Trash.
 	Archive, MarkRead, Star, Trash bool
 	// Confirm is required when the filter trashes matching mail.
 	Confirm bool
 }
 
-// Labels a filter may not add, and may not remove. Trash is its own
-// flag, which takes confirm; Gmail refuses the rest.
+// Labels a filter may not add, and may not remove. Trash is
+// create_trash_filter's alone, which takes confirm; Gmail refuses the
+// rest.
 var (
 	filterNoAdd    = []string{"SENT", "DRAFT", "SPAM", "TRASH", "CHAT"}
 	filterNoRemove = []string{"SENT", "DRAFT", "TRASH", "CHAT"}
@@ -123,10 +123,7 @@ var (
 // type it writes has no such field (§17.5).
 func (s *Service) CreateFilter(ctx context.Context, sp FilterSpec) (model.FilterWrite, error) {
 	out := model.FilterWrite{Op: "create", DryRun: gapi.WritesForbidden(ctx)}
-	c := sp.Criteria
-	for _, f := range []*string{&c.From, &c.To, &c.Subject, &c.Query, &c.NegatedQuery, &c.SizeComparison} {
-		*f = strings.TrimSpace(*f)
-	}
+	c := trimmed(sp.Criteria)
 	// exclude_chats narrows a match; alone it matches nothing in particular.
 	match := c
 	match.ExcludeChats = false
@@ -172,7 +169,7 @@ func (s *Service) CreateFilter(ctx context.Context, sp FilterSpec) (model.Filter
 		}
 	}
 	if len(add) == 0 && len(remove) == 0 {
-		return out, gapi.Errf(gapi.ClassInvalid, "a filter needs an action: add_labels, remove_labels, archive, mark_read, star or trash")
+		return out, gapi.Errf(gapi.ClassInvalid, "a filter needs an action: add_labels, remove_labels, archive, mark_read or star")
 	}
 	if err := addedAndRemoved(add, remove); err != nil {
 		return out, err
@@ -185,9 +182,6 @@ func (s *Service) CreateFilter(ctx context.Context, sp FilterSpec) (model.Filter
 	}
 	made := gmail.Filter{Criteria: w.Criteria, Action: &gmail.FilterAction{AddLabelIDs: add, RemoveLabelIDs: remove}}
 	if !out.DryRun {
-		if err := askTrashing(ctx, sp, made, ls.index); err != nil {
-			return out, err
-		}
 		created, err := s.client.CreateFilter(ctx, w)
 		if classOf(err) == gapi.ClassAmbiguousOutcome {
 			return out, s.settleFilter(ctx, w, existing.Filter, err)
@@ -201,6 +195,14 @@ func (s *Service) CreateFilter(ctx context.Context, sp FilterSpec) (model.Filter
 	return out, nil
 }
 
+// trimmed is c without the spaces around each text criterion.
+func trimmed(c gmail.FilterCriteria) gmail.FilterCriteria {
+	for _, f := range []*string{&c.From, &c.To, &c.Subject, &c.Query, &c.NegatedQuery, &c.SizeComparison} {
+		*f = strings.TrimSpace(*f)
+	}
+	return c
+}
+
 // filterLabels resolves a filter's labels, refusing the ones it may not
 // name in that field.
 func filterLabels(all []gmail.Label, names, refused []string, field string) ([]string, error) {
@@ -211,7 +213,7 @@ func filterLabels(all []gmail.Label, names, refused []string, field string) ([]s
 	for _, id := range ids {
 		if slices.Contains(refused, id) {
 			if id == "TRASH" {
-				return nil, gapi.Errf(gapi.ClassInvalid, "%s cannot name TRASH; pass trash: true, which takes confirm", field)
+				return nil, gapi.Errf(gapi.ClassInvalid, "%s cannot name TRASH; create_trash_filter makes a filter that trashes", field)
 			}
 			return nil, gapi.Errf(gapi.ClassInvalid, "%s cannot name %s; a filter cannot change it", field, id)
 		}
@@ -295,19 +297,13 @@ func (s *Service) settleFilter(ctx context.Context, w gmail.FilterWrite, before 
 		"Google did not confirm that the filter was created, and the create was not repeated (verdict: %s). %s.", verdict, why)
 }
 
-// askTrashing asks the person before a filter that trashes is created;
-// one that does not trash needs no confirm, and asks nothing.
-func askTrashing(ctx context.Context, sp FilterSpec, made gmail.Filter, labels model.LabelIndex) error {
-	if !sp.Trash {
-		return nil
-	}
-	return ask(ctx, render.AskCreateFilter(model.NewFilters([]gmail.Filter{made}, labels)[0]))
-}
-
 // DeleteFilter deletes a filter. Mail it already acted on stays as it
 // is. The filter is read from the list first, so the result says what it
 // did; filters.get is written off, since the list returns the same.
-func (s *Service) DeleteFilter(ctx context.Context, id string, confirm bool) (model.FilterWrite, error) {
+// criteria are the filter's criteria as list_filters gives them. They put
+// what is deleted into the call, where a client's prompt shows it
+// (§4.13), and the delete is refused if the filter's are others.
+func (s *Service) DeleteFilter(ctx context.Context, id string, criteria gmail.FilterCriteria, confirm bool) (model.FilterWrite, error) {
 	out := model.FilterWrite{Op: "delete", DryRun: gapi.WritesForbidden(ctx)}
 	id = strings.TrimSpace(id)
 	if id == "" {
@@ -330,11 +326,12 @@ func (s *Service) DeleteFilter(ctx context.Context, id string, confirm bool) (mo
 		return out, gapi.Errf(gapi.ClassNotFound, "no filter has id %s; list_filters shows them", id)
 	}
 	out.Filter = model.NewFilters(res.Filter[i:i+1], ls.index)[0]
+	if trimmed(out.Filter.Criteria) != trimmed(criteria) {
+		return out, gapi.Errf(gapi.ClassStale, "criteria are not filter %s's; nothing was deleted. Pass the criteria "+
+			"list_filters gives for it, after checking it is still the filter to delete", id)
+	}
 	if out.DryRun {
 		return out, nil
-	}
-	if err := ask(ctx, render.AskDeleteFilter(out.Filter)); err != nil {
-		return out, err
 	}
 	if err := s.client.DeleteFilter(ctx, id); err != nil {
 		switch classOf(err) {
@@ -435,11 +432,6 @@ func (s *Service) SetVacation(ctx context.Context, sp VacationSpec) (model.Vacat
 	}
 	after := w.Settings()
 	if !out.DryRun {
-		if sp.Enable {
-			if err := ask(ctx, render.AskVacation(model.NewVacation(after))); err != nil {
-				return out, err
-			}
-		}
 		updated, err := s.client.UpdateVacation(ctx, w)
 		if err != nil {
 			return out, err

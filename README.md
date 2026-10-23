@@ -41,7 +41,7 @@ subjects, names and filenames decode in any charset.
 ## Install
 
 ```bash
-go install github.com/mmedum/google-mail-mcp/v2/cmd/google-mail-mcp@latest
+go install github.com/mmedum/google-mail-mcp/v3/cmd/google-mail-mcp@latest
 ```
 
 Or take an archive from the
@@ -147,18 +147,19 @@ be saved to; `GMAIL_PROFILE` lets one machine hold several accounts.
 | `download_attachments` | Save several attachments of one message, or all of them, the same way; only when `GMAIL_LOCAL_DIR` is set |
 | `create_draft` | Save a new draft, a reply threaded by the server and quoting its parent if asked, or a forward with the original attached; nothing is sent |
 | `update_draft` | Change only the fields given, refusing a draft that changed since it was read |
-| `delete_draft` | Delete a draft for good, with `confirm: true` |
+| `delete_draft` | Delete a draft for good, named with the message it holds, with `confirm: true` |
 | `modify_labels` | Add and remove labels on up to 100 messages or threads, reported per item |
 | `trash` | Move up to 100 messages or threads to the trash, kept 30 days |
 | `restore` | Take messages or threads out of the trash |
 | `create_label` | Create a user label |
 | `update_label` | Rename a user label or change how it shows |
-| `send_draft` | Send a draft, naming every recipient who has not written in the thread; only with `GMAIL_ENABLE_SEND=true` |
+| `send_draft` | Send a draft, naming every recipient, its subject and its first line; only with `GMAIL_ENABLE_SEND=true` |
 | `delete_permanently` | Delete up to 100 messages or threads for good, with `confirm: true`; only with `GMAIL_ENABLE_DESTRUCTIVE=true` |
 | `delete_label` | Delete a user label, with `confirm: true`; only with `GMAIL_ENABLE_DESTRUCTIVE=true` |
 | `update_signature` | Set the signature of one of the account's addresses; only with `GMAIL_ENABLE_SETTINGS=true` |
-| `create_filter` | Create a filter for mail that arrives from now on; it cannot forward; only with `GMAIL_ENABLE_SETTINGS=true` |
-| `delete_filter` | Delete a filter, with `confirm: true`; only with `GMAIL_ENABLE_SETTINGS=true` |
+| `create_filter` | Create a filter for mail that arrives from now on; it cannot forward or trash; only with `GMAIL_ENABLE_SETTINGS=true` |
+| `create_trash_filter` | Create a filter that moves matching mail to the trash as it arrives, with `confirm: true`; only with `GMAIL_ENABLE_SETTINGS=true` and `GMAIL_ENABLE_DESTRUCTIVE=true` |
+| `delete_filter` | Delete a filter, naming its criteria, with `confirm: true`; only with `GMAIL_ENABLE_SETTINGS=true` and `GMAIL_ENABLE_DESTRUCTIVE=true` |
 | `set_vacation` | Turn the vacation reply on for contacts or the domain, or off; only with `GMAIL_ENABLE_SETTINGS=true` and `GMAIL_ENABLE_SEND=true` |
 
 Searches take Gmail's own search language in `q`, plus `after` and
@@ -166,8 +167,8 @@ Searches take Gmail's own search language in `q`, plus `after` and
 midnight Pacific time. Every result states the quota it spent. Every
 write takes `dry_run`, names what it touches by id, and says what it
 changed, read from Gmail's answer. `GMAIL_READ_ONLY=true` leaves the
-writes out. The last seven tools are not registered at all unless their
-setting is on.
+writes out. The last eight tools are not registered at all unless their
+settings are on.
 
 For clients that attach rather than call, `gmail://threads/{id}`,
 `gmail://messages/{id}` and `gmail://labels` carry the same text as
@@ -181,30 +182,52 @@ For clients that attach rather than call, `gmail://threads/{id}`,
   to be sent, and by default no tool changes a setting. Forwarding
   settings are shown, never set.
 - **Settings are opt-in.** With `GMAIL_ENABLE_SETTINGS=true` the server
-  can set a signature and create or delete filters. A filter cannot
-  forward, and one that trashes mail needs `confirm: true`. The vacation
-  reply answers other people, so it also needs `GMAIL_ENABLE_SEND=true`,
-  it only ever answers contacts or the account's domain, and turning it
-  on needs `confirm: true`.
+  can set a signature and create filters. A filter cannot forward. A
+  filter that trashes mail is its own tool, `create_trash_filter`, and
+  it and `delete_filter` also need `GMAIL_ENABLE_DESTRUCTIVE=true` and
+  `confirm: true`. The vacation reply answers other people, so it also
+  needs `GMAIL_ENABLE_SEND=true`, it only ever answers contacts or the
+  account's domain, and turning it on needs `confirm: true`.
 - **Sending is opt-in and goes through a draft.** With
   `GMAIL_ENABLE_SEND=true`, `send_draft` sends a draft exactly as it is
-  stored. Every recipient not already in the thread must be written out
-  in `confirm_recipients`, and a send Gmail does not confirm is never
-  repeated.
+  stored. Every recipient, the thread's own participants included, must
+  be written out in `confirm_recipients`, the call carries the draft's
+  subject and first line, so your client's prompt shows what goes, and a
+  send Gmail does not confirm is never repeated.
 - **Removal is trash.** Gmail keeps trashed mail for 30 days, and
   `restore` brings it back. By default the only permanent removal is
-  `delete_draft`, which needs `confirm: true`. `delete_permanently` and
-  `delete_label` exist only with `GMAIL_ENABLE_DESTRUCTIVE=true`, which
-  also asks for the one scope that can delete; each call needs
-  `confirm: true`.
-- **You confirm what cannot be undone.** Every write above that takes
-  `confirm` or `confirm_recipients` is also put to you, when your MCP
-  client supports elicitation: the question names the label, the draft,
-  the filter, the reply or every recipient, and nothing is written
-  unless you accept. A client that runs with nobody to
-  answer, such as `claude -p`, cannot make these writes. A client that
-  cannot ask falls back to `confirm`; `GMAIL_REQUIRE_PROMPT=true` refuses
-  instead. See [docs/configuration.md](docs/configuration.md#confirming-a-write).
+  `delete_draft`, which needs the message the draft holds and
+  `confirm: true`. `delete_permanently` and `delete_label` exist only
+  with `GMAIL_ENABLE_DESTRUCTIVE=true`, which also asks for the one
+  scope that can delete; each call needs `confirm: true`.
+- **Your client approves each call.** The server does not ask you
+  itself. claude.ai and Codex prompt for the tools marked destructive:
+  every write that sends, changes a setting or cannot be undone. VS Code
+  prompts for every tool that writes. In Claude Code,
+  `delete_permanently` and `delete_label` ask on every call whatever
+  your rules say, since mail deleted for good skips the trash and a
+  label comes off every message. For the rest, list the calls you want
+  to approve one by one under `permissions.ask` in your settings, with
+  the name you gave the server in place of `google-mail`. For example,
+  the writes that send, change a setting or delete:
+
+  ```json
+  {
+    "permissions": {
+      "ask": [
+        "mcp__google-mail__send_draft", "mcp__google-mail__set_vacation",
+        "mcp__google-mail__update_signature", "mcp__google-mail__create_filter",
+        "mcp__google-mail__create_trash_filter", "mcp__google-mail__delete_filter",
+        "mcp__google-mail__delete_draft", "mcp__google-mail__delete_permanently",
+        "mcp__google-mail__delete_label"
+      ]
+    }
+  }
+  ```
+
+  A client that runs with nobody watching can make every write that is
+  registered, so leave `GMAIL_ENABLE_SEND`, `GMAIL_ENABLE_DESTRUCTIVE`
+  and `GMAIL_ENABLE_SETTINGS` off for one.
 - **Files go to one directory.** `download_attachment` and
   `download_attachments` write only into `GMAIL_LOCAL_DIR`, under a name
   made safe, and never over an existing file.
@@ -212,8 +235,8 @@ For clients that attach rather than call, `gmail://threads/{id}`,
   query; ids are cut to six characters. A test drives every tool with
   marker values and fails if one reaches a log, which is what makes a debug
   log safe to paste.
-- Everything above is enforced in the server. Tool annotations are set,
-  but they are hints a client may ignore.
+- Everything above but the client's prompt is enforced in the server.
+  Tool annotations are set, but they are hints a client may ignore.
 
 [`docs/security.md`](docs/security.md) has the whole of it.
 

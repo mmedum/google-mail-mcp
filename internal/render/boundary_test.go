@@ -13,9 +13,9 @@ import (
 	"testing"
 	"unicode/utf8"
 
-	"github.com/mmedum/google-mail-mcp/v2/internal/gmail"
-	"github.com/mmedum/google-mail-mcp/v2/internal/mime"
-	"github.com/mmedum/google-mail-mcp/v2/internal/model"
+	"github.com/mmedum/google-mail-mcp/v3/internal/gmail"
+	"github.com/mmedum/google-mail-mcp/v3/internal/mime"
+	"github.com/mmedum/google-mail-mcp/v3/internal/model"
 )
 
 // outsideBlocks is the text a reader is told is the server's own: every
