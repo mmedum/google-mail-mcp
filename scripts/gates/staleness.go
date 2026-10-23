@@ -613,8 +613,24 @@ func stalenessReadmeTools(readme string, tools []string) (int, []string) {
 			problems = append(problems, "README.md's tool table lists "+t+", which the binary does not register")
 		}
 	}
+	// A Claude Code permission rule for a tool that does not exist matches
+	// nothing, so the person it was meant to ask is never asked.
+	rules := stalenessPermissionRule.FindAllStringSubmatch(readme, -1)
+	if len(rules) == 0 {
+		problems = append(problems, "README.md gives no Claude Code permission rule for a tool, in the form "+
+			"\"mcp__google-mail__<tool>\"; the README's permissions.ask block is missing")
+	}
+	for _, m := range rules {
+		if !slices.Contains(tools, m[1]) {
+			problems = append(problems, "README.md gives a permission rule for "+m[1]+", which the binary does not register")
+		}
+	}
 	return len(listed), problems
 }
+
+// stalenessPermissionRule is a Claude Code permission rule for one of
+// this server's tools, under the server name the README uses.
+var stalenessPermissionRule = regexp.MustCompile(`"mcp__google-mail__([a-z0-9_]+)"`)
 
 func stalenessToolCounts(arch string, tools []string, toolsErr error) (int, []string) {
 	section := markdownSection(arch, "## 8. Tool surface")

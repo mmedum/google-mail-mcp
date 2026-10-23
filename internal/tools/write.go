@@ -55,8 +55,10 @@ type UpdateDraftIn struct {
 // DeleteDraftIn deletes a draft.
 type DeleteDraftIn struct {
 	DraftID string `json:"draft_id" jsonschema:"the draft to delete"`
-	Confirm bool   `json:"confirm,omitempty" jsonschema:"must be true: a deleted draft is gone for good and does not go to the trash"`
-	DryRun  bool   `json:"dry_run,omitempty" jsonschema:"read the draft and report what would be deleted"`
+	// MessageID is the witness of §4.4, held for a delete as for an update.
+	MessageID string `json:"message_id" jsonschema:"the message_id get_draft or the last create_draft or update_draft returned; the delete is refused as stale if the draft changed since"`
+	Confirm   bool   `json:"confirm,omitempty" jsonschema:"must be true: a deleted draft is gone for good and does not go to the trash"`
+	DryRun    bool   `json:"dry_run,omitempty" jsonschema:"read the draft and report what would be deleted"`
 }
 
 // DraftRecipient is one address of a draft and where it came from.
@@ -252,11 +254,12 @@ func registerWrite(s *mcp.Server, d Deps) {
 			return draftWriteOut(dw), nil
 		})
 
-	register(s, d, Spec{Name: "delete_draft", Kind: WriteForGood, AskUnits: "20 more units", Description: "Delete a draft. Gmail deletes a draft for " +
-		"good: it does not go to the trash, so confirm must be true. Only the draft goes; the thread it answers is " +
+	register(s, d, Spec{Name: "delete_draft", Kind: WriteForGood, Description: "Delete a draft. Gmail deletes a draft for " +
+		"good: it does not go to the trash, so confirm must be true. Pass the draft's message_id, as get_draft returned " +
+		"it; the delete is refused as stale if the draft changed since. Only the draft goes; the thread it answers is " +
 		"left alone. 30 units." + dryRunNote + untrustedNote},
 		func(ctx context.Context, in DeleteDraftIn) (DraftWriteOut, error) {
-			dw, err := svc.DeleteDraft(ctx, in.DraftID, in.Confirm)
+			dw, err := svc.DeleteDraft(ctx, in.DraftID, in.MessageID, in.Confirm)
 			if err != nil {
 				return DraftWriteOut{}, err
 			}

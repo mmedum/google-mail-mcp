@@ -27,8 +27,6 @@ type Deps struct {
 	namesOnly bool
 	// kinds collects each registered tool's kind, when set.
 	kinds map[string]string
-	// asking signs the questions put to the person; one per Register.
-	asking *asking
 }
 
 // registrations is every group of tools, in the order they appear in
@@ -44,10 +42,6 @@ func Register(s *mcp.Server, d Deps) []string {
 	}
 	names := []string{}
 	d.registered = &names
-	d.asking = newAsking(d.Logger)
-	if s != nil {
-		s.AddReceivingMiddleware(interactionHint(d.asking))
-	}
 	for _, add := range registrations {
 		add(s, d)
 	}

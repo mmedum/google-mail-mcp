@@ -20,7 +20,7 @@ type SendDraftIn struct {
 	// MessageID is the witness of §4.4, held for a send as for an update.
 	MessageID string `json:"message_id" jsonschema:"the message_id get_draft, create_draft or update_draft returned; the send is refused as stale if the draft changed since"`
 	// ConfirmRecipients is the guard of §4.2.
-	ConfirmRecipients []string `json:"confirm_recipients,omitempty" jsonschema:"every recipient who has not written in the thread the draft answers and was not sent to in it by this account, each address written out, as ada@example.com; for a new conversation, every recipient"`
+	ConfirmRecipients []string `json:"confirm_recipients,omitempty" jsonschema:"every recipient of the draft, To, Cc and Bcc, the thread's own participants included, each address written out, as ada@example.com"`
 	DryRun            bool     `json:"dry_run,omitempty" jsonschema:"read the draft and report who it would reach and whom to confirm, without sending"`
 }
 
@@ -29,7 +29,7 @@ type SendRecipient struct {
 	UntrustedAddress model.Untrusted `json:"untrusted_address"`
 	Field            string          `json:"field" jsonschema:"to, cc or bcc"`
 	Position         int             `json:"position" jsonschema:"its place in its field, from 0: the guard names it field[position]"`
-	Participant      bool            `json:"participant" jsonschema:"wrote a message of the thread the draft answers, or this account sent one to them, so it needs no confirming"`
+	Participant      bool            `json:"participant" jsonschema:"wrote a message of the thread the draft answers, or this account sent one to them; it still needs confirming"`
 	Confirmed        bool            `json:"confirmed" jsonschema:"named in confirm_recipients"`
 }
 
@@ -88,10 +88,10 @@ func (o LabelDeleteOut) Render() string { return o.text }
 func registerGated(s *mcp.Server, d Deps) {
 	svc := service.New(d.Client)
 
-	register(s, d, Spec{Name: "send_draft", Kind: Send, AskUnits: "60 more units", Description: "Send a draft to its recipients. This reaches " +
+	register(s, d, Spec{Name: "send_draft", Kind: Send, Description: "Send a draft to its recipients. This reaches " +
 		"other people and cannot be recalled. Pass the draft's message_id, as get_draft or create_draft returned it; " +
-		"the send is refused as stale if the draft changed since. Every recipient who has not written in the thread the " +
-		"draft answers, and whom this account has not sent to in it — for a new conversation, every recipient — must be written out in confirm_recipients, or the " +
+		"the send is refused as stale if the draft changed since. Every recipient — To, Cc and Bcc, the thread's own " +
+		"participants included — must be written out in confirm_recipients, or the " +
 		"send is [blocked]; more than 50 recipients is [blocked] outright. Run it first with dry_run: it lists the " +
 		"recipients, the subject, the attachments and the thread, and whom to confirm. The body goes exactly as the " +
 		"draft holds it. A send is never retried: if Gmail does not confirm it, the result is [ambiguous_outcome] with " +
@@ -106,7 +106,7 @@ func registerGated(s *mcp.Server, d Deps) {
 			return sendDraftOut(sw), nil
 		})
 
-	register(s, d, Spec{Name: "delete_permanently", Kind: Destructive, AskUnits: "1 more unit", Description: "Delete up to 100 messages or " +
+	register(s, d, Spec{Name: "delete_permanently", Kind: Destructive, Description: "Delete up to 100 messages or " +
 		"threads, named by id — never a search — for good. They skip the trash and cannot be restored; trash is the " +
 		"way to remove mail that may be wanted back. confirm must be true. Each item is read first and reported with " +
 		"the labels it had, and one that fails does not stop the rest. A draft goes with delete_draft. 1 unit, then " +
@@ -120,7 +120,7 @@ func registerGated(s *mcp.Server, d Deps) {
 			return itemsOut(iw), nil
 		})
 
-	register(s, d, Spec{Name: "delete_label", Kind: Destructive, AskUnits: "2 more units", Description: "Delete a user label. It comes off " +
+	register(s, d, Spec{Name: "delete_label", Kind: Destructive, Description: "Delete a user label. It comes off " +
 		"every message and thread that carries it, and cannot be restored; the mail itself stays. confirm must be " +
 		"true. The result says how many messages carried it. System labels cannot be deleted. 7 units." + dryRunNote},
 		func(ctx context.Context, in DeleteLabelIn) (LabelDeleteOut, error) {

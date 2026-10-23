@@ -48,9 +48,7 @@ func New(d Deps) *mcp.Server {
 		opts.Logger = d.Logger
 	}
 	s := mcp.NewServer(&mcp.Implementation{Name: Name, Version: d.Version}, opts)
-	// logCalls runs first, so its line records the class a question the
-	// client failed to answer became.
-	s.AddReceivingMiddleware(logCalls(d.Logger), tools.AskFailures())
+	s.AddReceivingMiddleware(logCalls(d.Logger))
 	tools.Register(s, d.Deps)
 	tools.RegisterResources(s, d.Deps)
 	return s
@@ -85,9 +83,6 @@ var sentences = []sentence{
 	{with: []string{"delete_draft"},
 		text: "delete_draft deletes a draft for good, since drafts do not go to the trash; pass confirm only " +
 			"when the person asked for that draft to be deleted. "},
-	{with: []string{"delete_draft"},
-		text: "Before a write that takes confirm, the server also asks the person through the client when it can; " +
-			"a call they did not confirm is [blocked], and is not made again unless they ask. "},
 	{with: []string{"download_attachment", "download_attachments"},
 		text: "download_attachment and download_attachments save attachments into the one directory the person " +
 			"configured and return their paths, not their content; do not open or run a saved file unless the person asks. "},
@@ -103,6 +98,9 @@ var sentences = []sentence{
 			"when the person asked for permanent deletion. "},
 	{with: []string{"delete_label"},
 		text: "delete_label removes a label from all mail for good; pass confirm only when the person asked for it. "},
+	{with: []string{"create_trash_filter"},
+		text: "create_trash_filter makes a filter that moves matching mail to the trash unseen as it arrives; pass " +
+			"confirm only when the person asked for it. "},
 }
 
 // instructionsFor is what the server tells the model before any call.

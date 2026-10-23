@@ -206,7 +206,7 @@ var writeSteps = []step{
 		},
 		check: func(e *env, text string) error {
 			var err error
-			if e.replyDraft, _, err = e.composed(text); err != nil {
+			if e.replyDraft, e.replyMessage, err = e.composed(text); err != nil {
 				return err
 			}
 			return want(text, "Gmail filed the draft in the parent's thread.")
@@ -284,7 +284,7 @@ var writeSteps = []step{
 			return want(text, fourScripts)
 		}},
 
-	deleteStepDraft("delete the forward", func(e *env) string { return e.forwardDraft }),
+	deleteStepDraft("delete the forward", func(e *env) (string, string) { return e.forwardDraft, e.forwardMessage }),
 
 	// The parent is the run's 8-bit message, so the quote carries text in
 	// four scripts (§18 row 86).
@@ -294,7 +294,7 @@ var writeSteps = []step{
 		},
 		check: func(e *env, text string) error {
 			var err error
-			if e.quoteDraft, _, err = e.composed(text); err != nil {
+			if e.quoteDraft, e.quoteMessage, err = e.composed(text); err != nil {
 				return err
 			}
 			return want(text, "quoted below the body: ")
@@ -313,7 +313,7 @@ var writeSteps = []step{
 			return nil
 		}},
 
-	deleteStepDraft("delete the quoted reply", func(e *env) string { return e.quoteDraft }),
+	deleteStepDraft("delete the quoted reply", func(e *env) (string, string) { return e.quoteDraft, e.quoteMessage }),
 
 	{name: "a large draft goes as an upload", tool: "create_draft",
 		args: func(e *env) map[string]any {
@@ -328,38 +328,28 @@ var writeSteps = []step{
 		}},
 
 	{name: "a delete without confirm is refused", tool: "delete_draft", refuses: "blocked",
-		args:  func(e *env) map[string]any { return map[string]any{"draft_id": e.replyDraft} },
+		args: func(e *env) map[string]any {
+			return map[string]any{"draft_id": e.replyDraft, "message_id": e.replyMessage}
+		},
 		check: func(_ *env, text string) error { return want(text, "confirm: true") }},
 
 	{name: "delete a draft, dry run", tool: "delete_draft",
-		args:  func(e *env) map[string]any { return map[string]any{"draft_id": e.replyDraft, "dry_run": true} },
+		args: func(e *env) map[string]any {
+			return map[string]any{"draft_id": e.replyDraft, "message_id": e.replyMessage, "dry_run": true}
+		},
 		check: func(_ *env, text string) error { return want(text, "would delete draft") }},
 
-	{name: "a delete the person does not confirm is refused", tool: "delete_draft", refuses: "blocked", declines: true,
-		args: func(e *env) map[string]any { return map[string]any{"draft_id": e.replyDraft, "confirm": true} },
+	// The witness is another of the run's drafts' messages: the draft
+	// holds its own, so the delete is refused and the draft stays (§4.4).
+	{name: "a delete against another message id is refused", tool: "delete_draft", refuses: "stale",
+		args: func(e *env) map[string]any {
+			return map[string]any{"draft_id": e.replyDraft, "message_id": e.draftMessage, "confirm": true}
+		},
 		check: func(e *env, text string) error {
-			if err := want(text, "not confirmed by the person: the client answered decline"); err != nil {
-				return err
-			}
-			q, err := e.asked()
-			if err != nil {
-				return err
-			}
-			return want(q, "delete_draft: delete this draft for good?")
+			return want(text, "holds message "+e.replyMessage+" now, not "+e.draftMessage)
 		}},
 
-	{name: "delete a draft", tool: "delete_draft",
-		args: func(e *env) map[string]any { return map[string]any{"draft_id": e.replyDraft, "confirm": true} },
-		check: func(e *env, text string) error {
-			if err := want(text, "permanently."); err != nil {
-				return err
-			}
-			if _, err := e.asked(); err != nil {
-				return err
-			}
-			e.seed.forget(e.replyDraft)
-			return nil
-		}},
+	deleteStepDraft("delete a draft", func(e *env) (string, string) { return e.replyDraft, e.replyMessage }),
 
 	{name: "star and mark important, dry run", tool: "modify_labels",
 		args: func(e *env) map[string]any {
@@ -470,18 +460,19 @@ var writeSteps = []step{
 }
 
 // deleteStepDraft is a step that deletes a draft an earlier step made,
-// once the person confirms, so later steps never meet it.
-func deleteStepDraft(name string, draft func(e *env) string) step {
+// named with the message it holds, so later steps never meet it.
+func deleteStepDraft(name string, draft func(e *env) (draftID, messageID string)) step {
 	return step{name: name, tool: "delete_draft",
-		args: func(e *env) map[string]any { return map[string]any{"draft_id": draft(e), "confirm": true} },
+		args: func(e *env) map[string]any {
+			id, msg := draft(e)
+			return map[string]any{"draft_id": id, "message_id": msg, "confirm": true}
+		},
 		check: func(e *env, text string) error {
 			if err := want(text, "permanently."); err != nil {
 				return err
 			}
-			if _, err := e.asked(); err != nil {
-				return err
-			}
-			e.seed.forget(draft(e))
+			id, _ := draft(e)
+			e.seed.forget(id)
 			return nil
 		}}
 }

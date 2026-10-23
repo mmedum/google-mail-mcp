@@ -59,11 +59,16 @@ var forbidden = map[string]string{
 
 // canaryGmail answers every path with canary-laden mail, and every
 // third request with a refusal quoting a canary, so both the success
-// and the error paths are exercised.
-func canaryGmail(t *testing.T) *httptest.Server {
+// and the error paths are exercised. writes counts the requests that
+// would change something.
+func canaryGmail(t *testing.T) (srv *httptest.Server, writes *atomic.Int64) {
 	t.Helper()
 	var n atomic.Int64
-	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	writes = &atomic.Int64{}
+	srv = httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodGet {
+			writes.Add(1)
+		}
 		w.Header().Set("Content-Type", "application/json")
 		if n.Add(1)%3 == 0 {
 			w.WriteHeader(http.StatusForbidden)
@@ -79,7 +84,7 @@ func canaryGmail(t *testing.T) *httptest.Server {
 			canaryID, canaryEmail, canaryText, canaryLabel, canaryFile, canarySubject, canaryURL)
 	}))
 	t.Cleanup(srv.Close)
-	return srv
+	return srv, writes
 }
 
 // argsFor fills every property of a tool's input schema with a canary
@@ -154,7 +159,7 @@ func canaryFor(name string) string {
 func TestLogsNeverCarryThePayload(t *testing.T) {
 	var logs bytes.Buffer
 	lg := slog.New(slog.NewJSONHandler(&logs, &slog.HandlerOptions{Level: slog.LevelDebug}))
-	gmail := canaryGmail(t)
+	gmail, writes := canaryGmail(t)
 	cfg := tools.FullSurface(config.Config{LocalDir: t.TempDir(), APIBase: gmail.URL})
 	client := gapi.New(gapi.Options{
 		BaseURL: gmail.URL, Logger: lg, MaxRetries: -1,
@@ -180,38 +185,29 @@ func TestLogsNeverCarryThePayload(t *testing.T) {
 	// not echo the name either.
 	_, _ = h.Client.CallTool(context.Background(), &mcp.CallToolParams{Name: canaryText, Arguments: map[string]any{}})
 
-	// The questions put to the person carry mail, and so do the calls
-	// that answer them: every tool again, from a client that can be
-	// asked and accepts, with its guards set so the call reaches the
-	// question, on both ways a question goes out (§4.13).
-	var asked atomic.Int64
-	for _, protocol := range []string{"2025-11-25", "2026-07-28"} {
-		ah, err := testutil.ConnectClient(context.Background(), srv, &mcp.ClientOptions{
-			ElicitationHandler: func(context.Context, *mcp.ElicitRequest) (*mcp.ElicitResult, error) {
-				asked.Add(1)
-				return &mcp.ElicitResult{Action: "accept", Content: map[string]any{"confirm": true}}, nil
-			},
-		}, protocol)
-		if err != nil {
-			t.Fatal(err)
+	// A write's guards stop it before Google is asked, and the paths past
+	// them are where a payload could reach a log: every tool again, with
+	// its guards set so the call reaches its write.
+	var guardedWrites int64
+	for _, tool := range surface {
+		args, guarded := argsFor(tool), false
+		for _, guard := range []string{"confirm", "enable"} {
+			if _, ok := args[guard]; ok {
+				args[guard], guarded = true, true
+			}
 		}
-		t.Cleanup(ah.Close)
-		for _, tool := range surface {
-			args := argsFor(tool)
-			for _, guard := range []string{"confirm", "trash", "enable"} {
-				if _, ok := args[guard]; ok {
-					args[guard] = true
-				}
-			}
-			// Every third request to the canary server fails, so a call is
-			// made three times to meet it at each point of that cycle.
-			for range 3 {
-				_, _ = ah.Client.CallTool(context.Background(), &mcp.CallToolParams{Name: tool.Name, Arguments: args})
-			}
+		before := writes.Load()
+		// Every third request to the canary server fails, so a call is
+		// made three times to meet it at each point of that cycle.
+		for range 3 {
+			_, _ = h.Client.CallTool(context.Background(), &mcp.CallToolParams{Name: tool.Name, Arguments: args})
+		}
+		if guarded {
+			guardedWrites += writes.Load() - before
 		}
 	}
-	if asked.Load() == 0 {
-		t.Fatal("no call reached a question; this test would pass on a server that asks nothing")
+	if guardedWrites == 0 {
+		t.Fatal("no call with its guards set reached a write; this test would pass on a server whose guards refuse everything")
 	}
 
 	out := logs.String()

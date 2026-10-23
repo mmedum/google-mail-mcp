@@ -821,23 +821,51 @@ func TestUpdateDraftWarnsWhenAReplyLosesItsSubject(t *testing.T) {
 func TestDeleteDraft(t *testing.T) {
 	h, fake := connectFake(t, config.Config{})
 	sc := fake.Scenario(gmailtest.ScenarioDraftReply)
+	args := map[string]any{"draft_id": sc.DraftID, "message_id": sc.MessageIDs[2]}
 
-	refused(t, h, "delete_draft", map[string]any{"draft_id": sc.DraftID}, gapi.ClassBlocked)
+	refused(t, h, "delete_draft", args, gapi.ClassBlocked)
 	var dry tools.DraftWriteOut
-	call(t, h, "delete_draft", map[string]any{"draft_id": sc.DraftID, "dry_run": true}, &dry)
+	call(t, h, "delete_draft", with(args, "dry_run", true), &dry)
 	if !dry.DryRun || dry.Deleted || !slices.Contains(fake.DraftIDs(), sc.DraftID) || dry.MessageID != sc.MessageIDs[2] ||
 		string(dry.UntrustedFrom) != gmailtest.Reader.Name+" <"+gmailtest.Account+">" {
 		t.Fatalf("dry run %+v", dry)
 	}
 	var out tools.DraftWriteOut
-	text := call(t, h, "delete_draft", map[string]any{"draft_id": sc.DraftID, "confirm": true}, &out)
+	text := call(t, h, "delete_draft", with(args, "confirm", true), &out)
 	if !out.Deleted || out.Gone || slices.Contains(fake.DraftIDs(), sc.DraftID) || out.Units != 30 {
 		t.Fatalf("delete %+v", out)
 	}
 	if !strings.Contains(text, "permanently") || string(out.UntrustedSubject) != "Re: Budget sign-off" {
 		t.Errorf("text:\n%s", text)
 	}
-	refused(t, h, "delete_draft", map[string]any{"draft_id": sc.DraftID, "confirm": true}, gapi.ClassNotFound)
+	refused(t, h, "delete_draft", with(args, "confirm", true), gapi.ClassNotFound)
+}
+
+// The draft's message_id is the witness, as for an update (§4.4): a
+// draft changed since it was read is not deleted, and a dry run says so
+// too, so what is deleted is what the caller read.
+func TestDeleteDraftNeedsItsWitness(t *testing.T) {
+	h, fake := connectFake(t, config.Config{})
+	sc := fake.Scenario(gmailtest.ScenarioDraftReply)
+	args := map[string]any{"draft_id": sc.DraftID, "confirm": true}
+
+	text := refused(t, h, "delete_draft", with(args, "message_id", " "), gapi.ClassInvalid)
+	if !strings.Contains(text, "message_id is required") {
+		t.Errorf("a blank witness: %s", text)
+	}
+	for _, dry := range []bool{true, false} {
+		text = refused(t, h, "delete_draft", with(with(args, "message_id", sc.MessageIDs[1]), "dry_run", dry), gapi.ClassStale)
+		if !strings.Contains(text, "holds message "+sc.MessageIDs[2]+" now, not "+sc.MessageIDs[1]) {
+			t.Errorf("dry run %t: %s", dry, text)
+		}
+	}
+	if !slices.Contains(fake.DraftIDs(), sc.DraftID) || len(fake.CallsOf("gmail.users.drafts.delete")) != 0 {
+		t.Fatal("a draft was deleted against a stale witness")
+	}
+	call(t, h, "delete_draft", with(args, "message_id", " "+sc.MessageIDs[2]+" "), &tools.DraftWriteOut{})
+	if slices.Contains(fake.DraftIDs(), sc.DraftID) {
+		t.Error("the witness, with spaces around it, did not delete the draft")
+	}
 }
 
 func TestDeleteDraftGoneBetweenReadAndDelete(t *testing.T) {
@@ -845,7 +873,7 @@ func TestDeleteDraftGoneBetweenReadAndDelete(t *testing.T) {
 	sc := fake.Scenario(gmailtest.ScenarioDraftReply)
 	fake.Fail(gmailtest.Failure{Method: "gmail.users.drafts.delete", Status: 404, Reason: "notFound"})
 	var out tools.DraftWriteOut
-	text := call(t, h, "delete_draft", map[string]any{"draft_id": sc.DraftID, "confirm": true}, &out)
+	text := call(t, h, "delete_draft", map[string]any{"draft_id": sc.DraftID, "message_id": sc.MessageIDs[2], "confirm": true}, &out)
 	if !out.Gone || !out.Deleted || !strings.Contains(text, "is gone") {
 		t.Fatalf("out %+v\n%s", out, text)
 	}

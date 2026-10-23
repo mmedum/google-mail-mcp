@@ -13,7 +13,6 @@ import (
 
 	"github.com/mmedum/google-mail-mcp/v3/internal/config"
 	"github.com/mmedum/google-mail-mcp/v3/internal/gapi"
-	"github.com/mmedum/google-mail-mcp/v3/internal/service"
 )
 
 // Kind is what a tool does to the world. One field decides a tool's
@@ -35,30 +34,35 @@ const (
 	Write
 	// WriteForGood is a Write that cannot be undone: delete_draft, since
 	// Gmail deletes a draft rather than trashing it. Registered as Write
-	// is (§17.1), and annotated destructive, because a client that runs
-	// non-destructive tools unasked must not run this one on that
-	// strength. Its call still takes confirm: true.
+	// is (§17.1, §17b), and annotated destructive, so a client that
+	// prompts by annotation prompts for it. Its call takes confirm: true.
 	WriteForGood
 	// Send delivers mail to other people. Registered only with
-	// GMAIL_ENABLE_SEND (§4.2).
+	// GMAIL_ENABLE_SEND (§4.2), and annotated destructive: a send cannot
+	// be recalled.
 	Send
-	// Destructive cannot be undone. Registered only with
-	// GMAIL_ENABLE_DESTRUCTIVE (§4.6), and each call still takes
-	// confirm: true.
+	// Destructive is a delete that cannot be undone and reaches past one
+	// item: delete_permanently, which skips the trash Gmail offers, and
+	// delete_label, whose label comes off every message. Registered only
+	// with GMAIL_ENABLE_DESTRUCTIVE (§4.6); each call takes confirm: true,
+	// and the tool carries Claude Code's requiresUserInteraction (§4.13).
 	Destructive
 	// Settings changes how the account behaves from now on — a
 	// signature, a filter — and reaches nobody else. Registered only
 	// with GMAIL_ENABLE_SETTINGS (§7.9), which also requests the one
 	// scope these methods accept. Annotated destructive: a signature
-	// overwritten or mail a filter trashed is not put back by this
-	// server.
+	// overwritten is not put back by this server.
 	Settings
-	// SettingsForGood is a Settings write that cannot be undone:
-	// delete_filter. Its call takes confirm: true.
+	// SettingsForGood is a Settings write that cannot be undone or that
+	// removes mail: delete_filter, and create_trash_filter, whose filter
+	// moves matching mail to the trash unseen. Registered only with both
+	// GMAIL_ENABLE_SETTINGS and GMAIL_ENABLE_DESTRUCTIVE (§7.9); each call
+	// takes confirm: true.
 	SettingsForGood
 	// AutoReply answers other people's mail automatically: the vacation
 	// reply. It is sending by another name, so it needs both
-	// GMAIL_ENABLE_SETTINGS and GMAIL_ENABLE_SEND (§17.4).
+	// GMAIL_ENABLE_SETTINGS and GMAIL_ENABLE_SEND (§17.4), and carries a
+	// send's annotations.
 	AutoReply
 )
 
@@ -101,17 +105,20 @@ func (k Kind) allowed(cfg config.Config) bool {
 		return cfg.EnableSend && !cfg.ReadOnly
 	case Destructive:
 		return cfg.EnableDestructive && !cfg.ReadOnly
-	case Settings, SettingsForGood:
+	case Settings:
 		return cfg.EnableSettings && !cfg.ReadOnly
+	case SettingsForGood:
+		return cfg.EnableSettings && cfg.EnableDestructive && !cfg.ReadOnly
 	case AutoReply:
 		return cfg.EnableSettings && cfg.EnableSend && !cfg.ReadOnly
 	}
 	return false
 }
 
-// annotations says what a client shows for this kind. openWorldHint is
-// true only for Send and AutoReply: the kinds whose effect reaches
-// another person.
+// annotations says what a client shows for this kind, and so whether it
+// prompts: claude.ai and Codex prompt by destructiveHint, and VS Code on
+// every tool without readOnlyHint (§4.13). openWorldHint is true only
+// for Send and AutoReply: the kinds whose effect reaches another person.
 func (k Kind) annotations() *mcp.ToolAnnotations {
 	no, yes := ptr(false), ptr(true)
 	switch k {
@@ -122,7 +129,8 @@ func (k Kind) annotations() *mcp.ToolAnnotations {
 		// overwrites one.
 		return &mcp.ToolAnnotations{DestructiveHint: no, OpenWorldHint: no}
 	case Send, AutoReply:
-		return &mcp.ToolAnnotations{DestructiveHint: no, OpenWorldHint: yes}
+		// Mail that has left cannot be recalled.
+		return &mcp.ToolAnnotations{DestructiveHint: yes, OpenWorldHint: yes}
 	case Destructive, WriteForGood, Settings, SettingsForGood:
 		// Deleting what is already gone changes nothing more.
 		return &mcp.ToolAnnotations{DestructiveHint: yes, IdempotentHint: true, OpenWorldHint: no}
@@ -131,30 +139,20 @@ func (k Kind) annotations() *mcp.ToolAnnotations {
 	}
 }
 
-// requiresUserInteraction asks a client to put a person in front of the
-// call. A signal, not a control: a host in an auto-approve mode runs the
-// tool anyway, which is why Send and Destructive are unregistered by
-// default rather than relying on this. For a client that can ask, the
-// asksEveryCall kinds go without it (interactionHint).
-func (k Kind) requiresUserInteraction() bool { return k == Send || k == Destructive || k == AutoReply }
+// requiresUserInteraction marks the kinds whose permission prompt is
+// itself the point (§4.13): Claude Code prompts on every call of such a
+// tool, whatever the operator's rules say, and refuses it where no
+// prompt can be drawn. A signal, not a control: no other client reads
+// it, which is why Destructive is unregistered by default rather than
+// relying on this.
+func (k Kind) requiresUserInteraction() bool { return k == Destructive }
 
-// asksPerson says a kind's writes that take confirm are also put to the
-// person, when the client can ask (§4.13). Every kind but Read and Write
-// has one; register refuses a tool that takes confirm under any other.
-func (k Kind) asksPerson() bool {
-	switch k {
-	case WriteForGood, Send, Destructive, Settings, SettingsForGood, AutoReply:
-		return true
-	}
-	return false
+// confirmsEveryCall says a kind's tools do what cannot be undone, so
+// every call takes confirm: true, a witness that the caller meant it.
+// register refuses such a tool without confirm.
+func (k Kind) confirmsEveryCall() bool {
+	return k == WriteForGood || k == Destructive || k == SettingsForGood
 }
-
-// asksEveryCall says a kind's tools put every write to the person, when
-// the client can ask, so the requiresUserInteraction mark is dropped for
-// such a client (interactionHint). AutoReply is left out: set_vacation
-// asks only when it turns the reply on. register refuses a tool of these
-// kinds that does not take confirm, since one would never ask.
-func (k Kind) asksEveryCall() bool { return k == Send || k == Destructive }
 
 // Renderer is the readable half of a reply. Every output type has one,
 // so a tool cannot be added without it: a client may show only content
@@ -172,10 +170,6 @@ type Spec struct {
 	// OmittedIDs, when set, is what omitted_ids means for this tool, in
 	// place of Rendered's general description.
 	OmittedIDs string
-	// AskUnits is what asking the person adds to a tool that takes
-	// confirm, starting with the number of units: the retry repeats the
-	// reads before the write (§4.13). Required for such a tool.
-	AskUnits string
 }
 
 // Handler is a tool's work: validated input in, a rendered result or a
@@ -188,13 +182,11 @@ func register[In any, Out Renderer](s *mcp.Server, d Deps, sp Spec, h Handler[In
 	if !sp.Kind.allowed(d.Config) {
 		return
 	}
-	if takesConfirm[In]() && (!sp.Kind.asksPerson() || sp.AskUnits == "") {
-		panic("tools: " + sp.Name + " takes confirm, and its kind " + sp.Kind.String() + " does not ask the person, " +
-			"or its Spec does not say what asking costs")
+	if sp.Kind.confirmsEveryCall() && !takesConfirm[In]() {
+		panic("tools: " + sp.Name + " is " + sp.Kind.String() + ", which cannot be undone, and takes no confirm")
 	}
-	if sp.Kind.asksEveryCall() && !takesConfirm[In]() {
-		panic("tools: " + sp.Name + " is " + sp.Kind.String() + ", which asks the person before every write, and " +
-			"takes no confirm, so it would never ask")
+	if d := sp.Kind.annotations().DestructiveHint; takesConfirm[In]() && (d == nil || !*d) {
+		panic("tools: " + sp.Name + " takes confirm, and its kind " + sp.Kind.String() + " is not annotated destructive")
 	}
 	if d.registered != nil {
 		*d.registered = append(*d.registered, sp.Name)
@@ -209,13 +201,9 @@ func register[In any, Out Renderer](s *mcp.Server, d Deps, sp Spec, h Handler[In
 	if sp.OmittedIDs != "" {
 		describeOmitted(out, sp.OmittedIDs)
 	}
-	description := sp.Description
-	if takesConfirm[In]() {
-		description += personNote + " Asking repeats the reads before the write: " + sp.AskUnits + "."
-	}
 	tool := &mcp.Tool{
 		Name:         sp.Name,
-		Description:  description,
+		Description:  sp.Description,
 		Annotations:  sp.Kind.annotations(),
 		InputSchema:  inputSchema[In](),
 		OutputSchema: out,
@@ -223,20 +211,11 @@ func register[In any, Out Renderer](s *mcp.Server, d Deps, sp Spec, h Handler[In
 	if sp.Kind.requiresUserInteraction() {
 		tool.Meta = mcp.Meta{interactionKey: true}
 	}
-	var a *asking
-	if sp.Kind.asksPerson() {
-		a = d.asking
-		if sp.Kind.asksEveryCall() {
-			a.always[sp.Name] = true
-		}
-	}
-	mcp.AddTool(s, tool, wrap(h, dryRunField[In](), sp.Name, a, d.Config.RequirePrompt))
+	mcp.AddTool(s, tool, wrap(h, dryRunField[In]()))
 }
 
-// personNote ends the description of every tool that takes confirm,
-// since each of them also asks the person (§4.13).
-const personNote = " When the client can ask, the server also asks the person before it writes; a call they do not " +
-	"confirm is [blocked], writes nothing, and is not to be made again unless they ask."
+// interactionKey is the _meta key Claude Code prompts on every call for.
+const interactionKey = "anthropic/requiresUserInteraction"
 
 // describeOmitted sets the description of s's omitted_ids, on a copy of
 // the property so no other schema shares the change.
@@ -257,42 +236,16 @@ type costed interface{ setUnits(units int) }
 func (c *Cost) setUnits(units int) { c.Units = units }
 
 // wrap is what every handler gets without asking: a dry run that cannot
-// write, the person asked before a write that takes confirm when a is
-// set (§4.13), an error rendered "[class] message" as a tool error, the
-// units spent filled into an output that embeds Cost, and Content set
-// from Render so the SDK does not fill it with the JSON of the output.
-func wrap[In any, Out Renderer](h Handler[In, Out], dryRun int, name string, a *asking, requirePrompt bool) mcp.ToolHandlerFor[In, Out] {
-	return func(ctx context.Context, req *mcp.CallToolRequest, in In) (*mcp.CallToolResult, Out, error) {
+// write, an error rendered "[class] message" as a tool error, the units
+// spent filled into an output that embeds Cost, and Content set from
+// Render so the SDK does not fill it with the JSON of the output.
+func wrap[In any, Out Renderer](h Handler[In, Out], dryRun int) mcp.ToolHandlerFor[In, Out] {
+	return func(ctx context.Context, _ *mcp.CallToolRequest, in In) (*mcp.CallToolResult, Out, error) {
 		var zero Out
 		if dryRun >= 0 && reflect.ValueOf(in).Field(dryRun).Bool() {
 			ctx = gapi.WithoutWrites(ctx)
 		}
-		var p *person
-		if a != nil {
-			var err error
-			if p, err = a.personFor(req, name, in, requirePrompt); err != nil {
-				return nil, zero, fail(err)
-			}
-			ctx = service.WithAsker(ctx, p)
-			if p.answer != nil {
-				// The person accepted: from here the write may happen whether
-				// or not this round reaches its question again, so a failure
-				// to reply is no longer "nothing was written".
-				setStage(ctx, stageWriting)
-			}
-		} else if req.Params != nil && (req.Params.RequestState != "" || len(req.Params.InputResponses) > 0) {
-			return nil, zero, fail(gapi.Errf(gapi.ClassBlocked,
-				"%s asks the person nothing, and the call came with an answer; nothing was done. Call it again without one", name))
-		}
 		out, err := h(ctx, in)
-		if p != nil && p.asked != nil {
-			// The service stopped before its write; the question goes out.
-			setStage(ctx, stageWaiting)
-			return p.inputRequest(), zero, nil
-		}
-		if err == nil && p != nil && p.answer != nil && p.answer.spent {
-			setStage(ctx, stageWritten)
-		}
 		if err != nil {
 			return nil, zero, fail(err)
 		}
@@ -316,8 +269,9 @@ func fail(err error) error {
 	return fmt.Errorf("[%s] %s", gapi.ClassUnavailable, err.Error())
 }
 
-// takesConfirm reports whether In has confirm or confirm_recipients: the
-// guards a model sets, which a tool that has one backs with the person.
+// takesConfirm reports whether In has confirm: the argument by which the
+// caller says it meant a write that cannot be undone. It is a witness,
+// never approval: the model sets it (§4.13).
 func takesConfirm[In any]() bool {
 	t := reflect.TypeFor[In]()
 	if t.Kind() != reflect.Struct {
@@ -325,7 +279,7 @@ func takesConfirm[In any]() bool {
 	}
 	for i := range t.NumField() {
 		name, _, _ := strings.Cut(t.Field(i).Tag.Get("json"), ",")
-		if name == "confirm" || name == "confirm_recipients" {
+		if name == "confirm" {
 			return true
 		}
 	}

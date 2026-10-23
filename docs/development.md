@@ -92,11 +92,9 @@ What it does to the account, so nothing is a surprise:
   command line.
 - Every line it prints goes through one redacting writer; `transcript`
   fails the build on any other print.
-- It is a client that can be asked, so every write that takes `confirm`
-  puts its question to the person (architecture §4.13). The driver
-  answers for you, since you started it: accept, except one step that
-  declines and checks the refusal. Each question is printed, to be read
-  with the rest.
+- It is a client that can be asked, and the server asks nobody
+  (architecture §4.13): a question is declined, unread, and fails the
+  step that drew it.
 
 `make evals` scores a model driving the tools against the in-memory
 mailbox. It runs the model through `claude -p`, signed in as you, and
@@ -119,9 +117,10 @@ scorers without a model.
   call. A task passes only when every trial does. `-model` and `-effort`
   default to `claude-opus-5-5` at `high`, `-budget` caps each trial in
   dollars, and `-task` picks a subset.
-- `send_draft` cannot be confirmed with nobody there: the CLI cancels
-  the server's question, so the send is `[blocked]`. `send-draft` scores
-  reaching the send with the right witness.
+- The server's tools are allowed for the CLI, and `send_draft` carries
+  no mark, so a send with every recipient confirmed goes to the
+  in-memory mailbox. `send-draft` scores reaching the send with the
+  right witness and the recipient named in `confirm_recipients`.
 - A trial the CLI stopped, on turns or budget, is `UNFINISHED`; one that
   never produced an answer is `ERROR`. Neither is a verdict on the
   tools.

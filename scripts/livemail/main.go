@@ -209,13 +209,10 @@ func drive(ctx context.Context, o options, tr *transcript.Transcript, box mailbo
 		return err
 	}
 	defer session.Close()
-	// The driver is a client that can ask the person, so every write
-	// that takes confirm goes through the question (§4.13). It is the
-	// maintainer's own scripted run, so it answers for them: accept, but
-	// for the step that checks a refusal. Every question goes in the
-	// transcript.
-	asker := &scriptedPerson{tr: tr}
-	session.OnElicit(asker.answer)
+	// The driver can be asked, and the server asks nobody (§4.13): a
+	// question is declined, and fails the step that drew it.
+	questions := &noQuestions{}
+	session.OnElicit(questions.answer)
 	protocol, tools, err := session.Initialize("livemail")
 	if err != nil {
 		return err
@@ -225,7 +222,7 @@ func drive(ctx context.Context, o options, tr *transcript.Transcript, box mailbo
 	rec := livecover.NewRecorder()
 	session.OnCall(rec.Sent)
 	e := &env{ctx: ctx, session: session, tr: tr, seed: seed, localDir: localDir, sendTo: o.sendTo, full: box.FullScope(),
-		settings: box.SettingsScope(), signatureAddress: saved.address, person: asker}
+		settings: box.SettingsScope(), signatureAddress: saved.address, questions: questions}
 
 	failed := 0
 	for _, s := range slices.Concat(steps, writeSteps, gatedSteps, settingsSteps) {

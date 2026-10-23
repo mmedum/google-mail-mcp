@@ -18,8 +18,7 @@ var (
 	writeTool = map[string]any{"name": "create_draft", "inputSchema": map[string]any{"type": "object"},
 		"annotations": map[string]any{"destructiveHint": false, "openWorldHint": false}}
 	sendTool = map[string]any{"name": "send_draft", "inputSchema": map[string]any{"type": "object"},
-		"annotations": map[string]any{"destructiveHint": false, "openWorldHint": true},
-		"_meta":       map[string]any{"anthropic/requiresUserInteraction": true}}
+		"annotations": map[string]any{"destructiveHint": true, "openWorldHint": true}}
 	destructiveTool = map[string]any{"name": "delete_message", "inputSchema": map[string]any{"type": "object"},
 		"annotations": map[string]any{"destructiveHint": true, "idempotentHint": true, "openWorldHint": false},
 		"_meta":       map[string]any{"anthropic/requiresUserInteraction": true}}
@@ -28,8 +27,7 @@ var (
 	settingsForGoodTool = map[string]any{"name": "delete_filter", "inputSchema": map[string]any{"type": "object"},
 		"annotations": map[string]any{"destructiveHint": true, "idempotentHint": true, "openWorldHint": false}}
 	autoReplyTool = map[string]any{"name": "set_vacation", "inputSchema": map[string]any{"type": "object"},
-		"annotations": map[string]any{"destructiveHint": false, "openWorldHint": true},
-		"_meta":       map[string]any{"anthropic/requiresUserInteraction": true}}
+		"annotations": map[string]any{"destructiveHint": true, "openWorldHint": true}}
 )
 
 // kinds is the dump's kind of each tool, as internal/tools names them.
@@ -49,18 +47,21 @@ func registered(mode string) []any {
 		tools = append(tools, writeTool)
 	}
 	if (send && !readOnly) || mode == "leaky-send" {
-		if mode == "no-meta" {
-			tools = append(tools, map[string]any{"name": "send_draft", "inputSchema": sendTool["inputSchema"],
-				"annotations": sendTool["annotations"]})
-		} else {
-			tools = append(tools, sendTool)
-		}
+		tools = append(tools, sendTool)
 	}
 	if destructive && !readOnly && mode != "missing-destructive" {
-		tools = append(tools, destructiveTool)
+		if mode == "no-meta" {
+			tools = append(tools, map[string]any{"name": "delete_message", "inputSchema": destructiveTool["inputSchema"],
+				"annotations": destructiveTool["annotations"]})
+		} else {
+			tools = append(tools, destructiveTool)
+		}
 	}
 	if (settings && !readOnly) || mode == "leaky-settings" {
-		tools = append(tools, settingsTool, settingsForGoodTool)
+		tools = append(tools, settingsTool)
+	}
+	if settings && destructive && !readOnly {
+		tools = append(tools, settingsForGoodTool)
 	}
 	if settings && send && !readOnly {
 		tools = append(tools, autoReplyTool)

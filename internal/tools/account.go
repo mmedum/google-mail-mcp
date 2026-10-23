@@ -183,7 +183,10 @@ func registerAccount(s *mcp.Server, d Deps) {
 			settingsChange = " update_signature and set_vacation change a signature and the vacation reply; forwarding " +
 				"and the rest cannot be changed here."
 		}
-		filtersChange = " create_filter and delete_filter make and remove filters."
+		filtersChange = " create_filter makes filters; this server cannot remove one."
+		if SettingsForGood.allowed(d.Config) {
+			filtersChange = " create_filter and create_trash_filter make filters, and delete_filter removes one."
+		}
 	}
 
 	register(s, d, Spec{Name: "get_settings", Kind: Read, Description: "The account's mail settings, read-only: " +

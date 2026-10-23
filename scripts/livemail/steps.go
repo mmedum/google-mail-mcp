@@ -43,38 +43,16 @@ type step struct {
 	// needs says why the step cannot run in this run, or "": a send
 	// needs -send-to, a permanent delete a profile that can delete.
 	needs func(e *env) string
-	// declines answers the step's question to the person with decline
-	// rather than accept.
-	declines bool
 }
 
-// scriptedPerson answers the questions the server puts to the person,
-// for the maintainer running the driver (§4.13): accept, unless a step
-// declines. It prints each question.
-type scriptedPerson struct {
-	tr       *transcript.Transcript
-	declines bool
-	// asked is the questions put during the current step.
-	asked []string
-}
+// noQuestions answers the server's questions to the person, which it
+// must never put (§4.13): each is declined and counted, unread, since
+// it could quote the mailbox.
+type noQuestions struct{ asked int }
 
-func (p *scriptedPerson) answer(message string) string {
-	p.asked = append(p.asked, message)
-	p.tr.Say("--- question put to the person ---\n" + strings.TrimRight(message, "\n"))
-	if p.declines {
-		p.tr.Say("--- answered: decline ---")
-		return "decline"
-	}
-	p.tr.Say("--- answered: accept ---")
-	return "accept"
-}
-
-// asked is the one question put during the step, or an error.
-func (e *env) asked() (string, error) {
-	if e.person == nil || len(e.person.asked) != 1 {
-		return "", errors.New("the server did not put exactly one question to the person")
-	}
-	return e.person.asked[0], nil
+func (q *noQuestions) answer(string) string {
+	q.asked++
+	return "decline"
 }
 
 // A thread or message id in a rendering, 16 hex digits after its noun.
@@ -386,17 +364,17 @@ type env struct {
 	// plainDraft and plainMessage are the draft the plain_only steps
 	// make plain, give the HTML version and make plain again.
 	plainDraft, plainMessage string
-	// replyDraft is the reply the delete steps delete.
-	replyDraft string
+	// replyDraft and replyMessage are the reply the delete steps delete.
+	replyDraft, replyMessage string
 	// replyAll and replyAllMessage are the reply-all draft the recipient
 	// guard's dry run reads.
 	replyAll, replyAllMessage string
 	// forwardDraft and forwardMessage are the forward the forward steps
 	// make, read back and delete.
 	forwardDraft, forwardMessage string
-	// quoteDraft is the quoting reply the quote steps make, read back
-	// and delete.
-	quoteDraft string
+	// quoteDraft and quoteMessage are the quoting reply the quote steps
+	// make, read back and delete.
+	quoteDraft, quoteMessage string
 	// spikeE is the draft side of spike E, from reading a draft back.
 	spikeE string
 	// sendTo is -send-to, the one address a step may send to; full is
@@ -421,11 +399,11 @@ type env struct {
 	signatureAddress string
 	// sent is what the send step read, for spikes B and C.
 	sent sentDraft
-	// person answers the server's questions to the person.
-	person *scriptedPerson
 	// predicted is each item's labels after, as the last dry run said,
 	// for the write that follows to match (§18 row 70).
 	predicted map[string][]string
+	// questions counts what the server asked the person: nothing.
+	questions *noQuestions
 }
 
 // unsubscribeIs holds a row of the last listing to one web address,
@@ -523,6 +501,9 @@ func (e *env) asPredicted() error {
 // message it held and its Message-ID, and the message Gmail filed in SENT.
 type sentDraft struct {
 	draftID, draftMessage, rfc822, sentMessage string
+	// replyDraft and replyMessage are the reply to the sent message,
+	// which the guard refuses and the run deletes.
+	replyDraft, replyMessage string
 }
 
 func want(text, s string) error {
@@ -604,12 +585,16 @@ func (e *env) runStep(s step) error {
 		return err
 	}
 	e.tr.Sayf("=== %s %s ===", s.tool, mcpstdio.Encode(args))
-	if e.person != nil {
-		e.person.asked, e.person.declines = nil, s.declines
+	asked := 0
+	if e.questions != nil {
+		asked = e.questions.asked
 	}
 	text, structured, isError, err := e.session.CallToolStructured(s.tool, args)
 	if err != nil {
 		return err
+	}
+	if e.questions != nil && e.questions.asked != asked {
+		return errors.New("the server asked the person, and it asks nobody")
 	}
 	e.structured = structured
 	switch {

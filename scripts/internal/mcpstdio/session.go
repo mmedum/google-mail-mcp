@@ -163,8 +163,8 @@ func (s *Session) answer(id any, method string, params any) error {
 		message, _ := p["message"].(string)
 		result := map[string]any{"action": s.onElicit(message)}
 		if result["action"] == "accept" {
-			// The question's form has no fields (docs/architecture.md
-			// §4.13): the accept is the answer.
+			// An accept carries the form's content, empty for a form with
+			// no fields.
 			result["content"] = map[string]any{}
 		}
 		frame["result"] = result

@@ -108,43 +108,37 @@ pasted — a debug log, `doctor` and `status` — are the ones that mask.
 ## What the server refuses to do
 
 - **Send** unless `GMAIL_ENABLE_SEND=true`, and then only a draft, never
-  retried on an ambiguous failure. Every recipient who has not written in
-  the thread being answered, and whom the account has not sent to in it,
-  must be written out in `confirm_recipients`, so
-  an address a message talked into a draft is one the model has to type
-  itself; over 50 recipients is refused outright. The draft is sent as it
-  is stored, and refused as `[stale]` if it changed since it was read.
+  retried on an ambiguous failure. Every recipient, the thread's own
+  participants included, must be written out in `confirm_recipients`,
+  so an address a message talked into a draft is one the model has to
+  type itself, and the call your client shows names everyone the send
+  reaches; over 50 recipients is refused outright. The draft is sent as
+  it is stored, and refused as `[stale]` if it changed since it was read.
 - **Delete permanently** unless `GMAIL_ENABLE_DESTRUCTIVE=true`, and then
   only with `confirm: true` on the call. Removal is otherwise trash, which
   Gmail keeps for 30 days. The one exception registered by default is
   `delete_draft`: Gmail deletes a draft for good, so it too takes
-  `confirm: true`, and it can only ever remove an unsent draft.
+  `confirm: true` and the message the draft holds, is refused as
+  `[stale]` if the draft changed since it was read, and can only ever
+  remove an unsent draft.
 - **Change a setting** unless `GMAIL_ENABLE_SETTINGS=true`, and then only
   a signature, a filter or the vacation reply. A filter cannot forward:
   the type it is written as has no field for it. A filter that trashes
-  matching mail needs `confirm: true`, since it hides mail as it arrives.
-  The vacation reply answers other people, so it also needs
-  `GMAIL_ENABLE_SEND=true`; it answers only contacts or the account's
-  domain, never every sender, and turning it on needs `confirm: true`.
-  Forwarding, delegation and send-as identities are never written.
-- **Make a write that takes `confirm` without asking you, when it can.**
-  `confirm` and `confirm_recipients` are arguments the model writes, and
-  a model persuaded by a message writes them too. So when the client
-  supports MCP elicitation, the server asks you itself before each of
-  those writes, naming what it touches; text from the mailbox in the
-  question stands in backticks or code style, on one line, with no link drawn,
-  so a client that shows the question as Markdown shows it as written.
-  Only an accept writes. The answer is bound to the call it was
-  asked for, spent once, and void after 5 minutes, and a client cannot
-  answer before it is asked. A client that cannot ask gets no question,
-  and `GMAIL_REQUIRE_PROMPT=true` refuses those writes there instead.
-  An `accept` is still not proof that a person read the question: a
-  client hook you configured can answer for you.
-- **Overwrite a draft it did not read.** `update_draft` takes the message
-  id `get_draft` returned, reads the draft again, and refuses with
-  `[stale]` if it changed. Gmail offers no lock, so a change landing
-  between that read and the save can still be lost; the window is one
-  round trip.
+  matching mail hides it as it arrives, so it is its own tool,
+  `create_trash_filter`, which like `delete_filter` also needs
+  `GMAIL_ENABLE_DESTRUCTIVE=true` and `confirm: true`. The vacation
+  reply answers other people, so it also needs `GMAIL_ENABLE_SEND=true`;
+  it answers only contacts or the account's domain, never every sender,
+  and turning it on needs `confirm: true`. Forwarding, delegation and
+  send-as identities are never written.
+- **Change its own settings.** No tool turns a setting on, names another
+  directory or profile, or writes the server's stored configuration; a
+  test drives every tool and holds this.
+- **Overwrite or delete a draft it did not read.** `update_draft`,
+  `send_draft` and `delete_draft` take the message id `get_draft`
+  returned, read the draft again, and refuse with `[stale]` if it
+  changed. Gmail offers no lock, so a change landing between that read
+  and the write can still be lost; the window is one round trip.
 - **Act on a query.** Writes take explicit ids, at most 100 per call.
 - **Read or write files outside `GMAIL_LOCAL_DIR`.** Unset means no file
   transfer at all.
@@ -153,12 +147,18 @@ pasted — a debug log, `doctor` and `status` — are the ones that mask.
   `create_draft` can attach one message to a draft, which reaches nobody
   until it is sent, and leaves the original's `Bcc` out of the copy.
 
-Tool annotations and `requiresUserInteraction` are set, and are hints: a
-host in an auto-approve mode runs an annotated tool without asking. For a
-client that can ask, the tools that ask before every write go without
-the mark, so the person answers once. Every
-control above is server-side, and client-side approval is not counted as
-one of them.
+The server asks you nothing; your client approves each call. `confirm`
+and `confirm_recipients` are arguments the model writes, and a model
+persuaded by a message writes them too, so they are witnesses that the
+caller meant the call, never your approval. Tool annotations are set
+for the client's prompt: every write that sends, changes a setting or
+cannot be undone is marked destructive, which claude.ai and Codex
+prompt for, and VS Code prompts for every tool that writes.
+`delete_permanently` and `delete_label` carry `requiresUserInteraction`,
+so Claude Code prompts on every call of either whatever your rules say.
+These are hints: a host in an auto-approve mode runs a tool without
+asking. Every control above is server-side, and client-side approval is
+not counted as one of them.
 
 ## What is in this repository
 

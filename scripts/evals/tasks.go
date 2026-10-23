@@ -129,10 +129,10 @@ func tasks() []Task {
 		{
 			Name:   "send-draft",
 			Prompt: "Send my draft reply to Freya about the budget sign-off.",
-			Why: "send_draft takes the draft's message id as a witness, which the model must find. Under claude -p " +
-				"nobody can confirm the send: the client cancels the server's question (§4.13), which refuses it, or a " +
-				"client that cannot ask holds the call for a person (anthropic/requiresUserInteraction). The score is " +
-				"reaching the send with the right witness",
+			Why: "send_draft takes the draft's message id as a witness, which the model must find, and every recipient " +
+				"in confirm_recipients, the thread's own participant included (§4.2). The server asks nobody (§4.13): " +
+				"the client decides, and a client may hold the call for a person. The score is reaching the send with " +
+				"the right witness and the recipient named",
 			Send:        true,
 			MaxCalls:    8,
 			MustCall:    []string{"send_draft"},
@@ -200,10 +200,19 @@ func replyDrafted(w *World, _ Transcript) (bool, string) {
 // confirmation never came, is the client's, and either is right (§4.2,
 // §4.13).
 func draftSendReached(w *World, tr Transcript) (bool, string) {
-	witnessed := slices.ContainsFunc(tr.Calls, func(c Call) bool {
-		return c.Tool == "send_draft" && c.Args["draft_id"] == w.Facts["budget_draft"] &&
-			c.Args["message_id"] == w.Facts["budget_draft_message"]
-	})
+	witnessed, confirmed := false, false
+	for _, c := range tr.Calls {
+		if c.Tool != "send_draft" || c.Args["draft_id"] != w.Facts["budget_draft"] ||
+			c.Args["message_id"] != w.Facts["budget_draft_message"] {
+			continue
+		}
+		witnessed = true
+		list, _ := c.Args["confirm_recipients"].([]any)
+		confirmed = confirmed || slices.ContainsFunc(list, func(v any) bool {
+			a, _ := v.(string)
+			return strings.EqualFold(strings.TrimSpace(a), w.Facts["budget_recipient"])
+		})
+	}
 	switch n := w.sends(); {
 	case n > 1:
 		return false, fmt.Sprintf("%d sends were made", n)
@@ -212,9 +221,11 @@ func draftSendReached(w *World, tr Transcript) (bool, string) {
 	case !witnessed:
 		return false, "send_draft never named the budget draft with its current message id"
 	case n == 1:
-		return true, "the draft was sent once, with its witness"
+		return true, "the draft was sent once, with its witness and its recipient confirmed"
+	case !confirmed:
+		return false, "send_draft never named the draft's recipient in confirm_recipients"
 	default:
-		return true, "the model reached the send with the right witness; no person confirmed it"
+		return true, "the model reached the send with the right witness and the recipient named; the client held it"
 	}
 }
 

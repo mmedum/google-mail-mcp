@@ -57,8 +57,8 @@ var gatedSteps = []step{
 		}},
 
 	// The parent was received: its sender is in the thread, and the To
-	// its sender wrote is not (§17.8).
-	{name: "a reply-all clears the sender only, dry run", tool: "send_draft",
+	// its sender wrote is not (§17.8). Both still need confirming (§4.2).
+	{name: "a reply-all names the sender a participant, dry run", tool: "send_draft",
 		args: func(e *env) map[string]any {
 			return map[string]any{"draft_id": e.replyAll, "message_id": e.replyAllMessage, "dry_run": true}
 		},
@@ -66,7 +66,7 @@ var gatedSteps = []step{
 			if err := want(text, "recipients: 2 · 1 in the thread · 0 confirmed"); err != nil {
 				return err
 			}
-			return want(text, "not confirmed: to[1]")
+			return want(text, "not confirmed: to[0], to[1]")
 		}},
 
 	{name: "a send with unconfirmed recipients is refused", tool: "send_draft", refuses: "blocked",
@@ -130,6 +130,37 @@ var gatedSteps = []step{
 			}
 			return want(text, "recipients: 1 · 0 in the thread · 1 confirmed")
 		}},
+
+	// A reply to the sent message goes to -send-to, whom the account sent
+	// to in the thread: a participant, which the guard still stops until
+	// confirm_recipients names it (§4.2). The reply is deleted, never sent.
+	{name: "reply to the sent message", tool: "create_draft", needs: needSendTo,
+		args: func(e *env) map[string]any {
+			return map[string]any{"reply_to": e.sent.sentMessage, "body": "A synthetic reply, never sent."}
+		},
+		check: func(e *env, text string) error {
+			var err error
+			e.sent.replyDraft, e.sent.replyMessage, err = e.composed(text)
+			return err
+		}},
+
+	{name: "a reply to a participant is refused until confirmed", tool: "send_draft", refuses: "blocked", needs: needSendTo,
+		args: func(e *env) map[string]any {
+			return map[string]any{"draft_id": e.sent.replyDraft, "message_id": e.sent.replyMessage}
+		},
+		check: func(e *env, text string) error {
+			return want(text, "1 of draft "+e.sent.replyDraft+"'s recipients are not in confirm_recipients: to[0]")
+		}},
+
+	{name: "the reply's participant, dry run", tool: "send_draft", needs: needSendTo,
+		args: func(e *env) map[string]any {
+			return map[string]any{"draft_id": e.sent.replyDraft, "message_id": e.sent.replyMessage, "dry_run": true}
+		},
+		check: func(_ *env, text string) error { return want(text, "recipients: 1 · 1 in the thread · 0 confirmed") }},
+
+	deleteStepDraft("delete the reply to the sent message", func(e *env) (string, string) {
+		return e.sent.replyDraft, e.sent.replyMessage
+	}),
 
 	{name: "a label delete without confirm is refused", tool: "delete_label", refuses: "blocked",
 		args:  func(e *env) map[string]any { return map[string]any{"label": e.seed.label.name + "-renamed"} },

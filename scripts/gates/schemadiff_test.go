@@ -169,6 +169,50 @@ func TestSchemaDiffFailsEachBreakingChange(t *testing.T) {
 	}
 }
 
+// A break passes once the unreleased CHANGELOG declares it under
+// **Breaking:**, naming its tool.
+func TestSchemaDiffAcceptsADeclaredBreak(t *testing.T) {
+	declared := strings.Replace(schemaDiffChangelog, "- A thing.\n", "- A thing.\n- **Breaking:** `tool_0` takes no `id`.\n", 1)
+	drop := func(d map[string]any) { delete(schemaDiffProps(d, "inputSchema"), "id") }
+	var out sink
+	if err := schemaDiffCheck(&out, declared, schemaDiffFixture(t, nil), schemaDiffFixture(t, drop)); err != nil {
+		t.Fatalf("a declared break failed: %v\n%s", err, out.String())
+	}
+	out.mustSay(t, "1 breaking change(s), each declared under **Breaking:** for a major release")
+}
+
+func TestSchemaDiffUndeclared(t *testing.T) {
+	breaking := []string{"tool send_draft removed", "delete_draft input: field message_id newly required",
+		"create_filter: output schema removed", "resource template gmail://threads/{id} removed", "resource gmail://labels removed"}
+	all := "`send_draft`, `delete_draft`, `create_filter`, `gmail://threads/{id}` and `gmail://labels`"
+	released := "\n## [2.3.0] - 2026-10-13\n\n- **Breaking:** " + all + ".\n"
+	for _, tc := range []struct {
+		name, changelog string
+		want            []string
+	}{
+		{"every one declared", "## [Unreleased]\n\n- **Breaking:** " + all + ".\n" + released, nil},
+		{"one not named", "## [Unreleased]\n\n- **Breaking:** `send_draft`, `create_filter`, `gmail://threads/{id}` and " +
+			"`gmail://labels`.\n" + released, []string{"delete_draft input: field message_id newly required"}},
+		{"named outside a Breaking entry", "## [Unreleased]\n\n- " + all + " changed.\n" + released, breaking},
+		{"declared only in a release made", "## [Unreleased]\n" + released, breaking},
+		{"a release that raises the major", "## [3.0.0] - 2026-10-24\n\n- **Breaking:** " + all + ".\n" + released, nil},
+		{"a release that does not", "## [2.4.0] - 2026-10-24\n\n- **Breaking:** " + all + ".\n" + released,
+			[]string{"release 2.4.0 breaks the surface without raising the major version from 2.3.0"}},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			got, err := schemaDiffUndeclared(breaking, "# Changelog\n\n"+tc.changelog, "v2.3.0")
+			if err != nil || fmt.Sprint(got) != fmt.Sprint(tc.want) {
+				t.Errorf("undeclared = %v, %v, want %v", got, err, tc.want)
+			}
+		})
+	}
+	// Without the baseline's own heading nothing is known to be unreleased.
+	if _, err := schemaDiffUndeclared(breaking, "# Changelog\n\n## [Unreleased]\n\n- **Breaking:** "+all+".\n", "v2.3.0"); err == nil ||
+		!strings.Contains(err.Error(), "no ## [2.3.0] heading") {
+		t.Errorf("no heading for the baseline: err = %v", err)
+	}
+}
+
 // A change breaks a caller only in one direction: an input that takes
 // more, or an output that returns fewer types or is always there, breaks
 // nobody.

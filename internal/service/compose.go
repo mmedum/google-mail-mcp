@@ -16,7 +16,6 @@ import (
 	"github.com/mmedum/google-mail-mcp/v3/internal/gmail"
 	"github.com/mmedum/google-mail-mcp/v3/internal/mime"
 	"github.com/mmedum/google-mail-mcp/v3/internal/model"
-	"github.com/mmedum/google-mail-mcp/v3/internal/render"
 )
 
 // Compose is what create_draft was asked for (§7.4).
@@ -890,10 +889,17 @@ func dedupe(ids []string) []string {
 }
 
 // DeleteDraft deletes a draft, which Gmail does permanently: a draft
-// never goes to the trash. confirm must be set (§17.1); a dry run reads
-// the draft and deletes nothing.
-func (s *Service) DeleteDraft(ctx context.Context, id string, confirm bool) (model.DraftWrite, error) {
+// never goes to the trash. confirm must be set (§17.1), and witness is
+// the message the caller read the draft holding, as for an update
+// (§4.4): a draft changed since is refused [stale], so what is deleted
+// is what was read. A dry run reads the draft and deletes nothing.
+func (s *Service) DeleteDraft(ctx context.Context, id, witness string, confirm bool) (model.DraftWrite, error) {
 	out := model.DraftWrite{Op: "delete", DryRun: gapi.WritesForbidden(ctx), DraftID: id}
+	witness = strings.TrimSpace(witness)
+	if witness == "" {
+		return out, gapi.Errf(gapi.ClassInvalid,
+			"message_id is required: pass the message_id get_draft returned, so a draft changed since is not deleted")
+	}
 	if !confirm && !out.DryRun {
 		return out, gapi.Errf(gapi.ClassBlocked,
 			"delete_draft deletes the draft permanently; drafts do not go to the trash. Pass confirm: true to delete it")
@@ -907,6 +913,11 @@ func (s *Service) DeleteDraft(ctx context.Context, id string, confirm bool) (mod
 		return out, gapi.Wrap(gapi.ClassUnavailable, err, "Gmail returned draft %s without its message", id)
 	}
 	m := d.Message
+	if m.ID != witness {
+		return out, gapi.Errf(gapi.ClassStale,
+			"draft %s changed since it was read: it holds message %s now, not %s. Read it again with get_draft before deleting it",
+			id, m.ID, witness)
+	}
 	out.MessageID, out.ThreadID, out.Subject, out.RFC822MessageID = m.ID, m.ThreadID, m.Subject, m.RFC822MessageID
 	if len(m.From) > 0 {
 		out.From = &m.From[0]
@@ -914,9 +925,6 @@ func (s *Service) DeleteDraft(ctx context.Context, id string, confirm bool) (mod
 	out.Recipients = keptRecipients(m.To, m.Cc, m.Bcc, nil)
 	if out.DryRun {
 		return out, nil
-	}
-	if err := ask(ctx, render.AskDeleteDraft(out)); err != nil {
-		return out, err
 	}
 	if err := s.client.DeleteDraft(ctx, id); err != nil {
 		if c, _ := gapi.ClassOf(err); c != gapi.ClassNotFound {

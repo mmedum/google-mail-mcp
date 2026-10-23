@@ -220,6 +220,32 @@ func TestEnvVars(t *testing.T) {
 	}
 }
 
+// GMAIL_REQUIRE_PROMPT went with the server's question (§4.13). Off, its
+// old default, still starts; anything else is refused, saying what to
+// do instead, since ignoring it would quietly allow what its owner set
+// it to stop. Its flag is gone.
+func TestARemovedSettingIsRefusedUnlessOff(t *testing.T) {
+	isolate(t)
+	for _, v := range []string{"", "false", " FALSE ", "0", "off"} {
+		if _, err := build(t, map[string]string{"GMAIL_REQUIRE_PROMPT": v}); err != nil {
+			t.Errorf("GMAIL_REQUIRE_PROMPT=%q: %v", v, err)
+		}
+	}
+	for _, v := range []string{"true", "1", "maybe"} {
+		_, err := build(t, map[string]string{"GMAIL_REQUIRE_PROMPT": v})
+		if err == nil || !errors.Is(err, ErrInvalid) || !strings.Contains(err.Error(), "GMAIL_REQUIRE_PROMPT was removed") ||
+			!strings.Contains(err.Error(), "leave GMAIL_ENABLE_SEND, GMAIL_ENABLE_DESTRUCTIVE and GMAIL_ENABLE_SETTINGS off") {
+			t.Errorf("GMAIL_REQUIRE_PROMPT=%q: %v", v, err)
+		}
+		if err != nil && strings.Contains(err.Error(), v) {
+			t.Errorf("GMAIL_REQUIRE_PROMPT=%q: the refusal echoes the value: %v", v, err)
+		}
+	}
+	if _, err := Load([]string{"--require-prompt"}, envOf(nil)); err == nil {
+		t.Error("--require-prompt is still a flag")
+	}
+}
+
 func TestLogLevelSlog(t *testing.T) {
 	for _, l := range []LogLevel{LogDebug, LogInfo, LogWarn, LogError} {
 		if l.Slog().String() != strings.ToUpper(string(l)) {

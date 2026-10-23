@@ -38,10 +38,18 @@ func Connect(t *testing.T, register func(*mcp.Server)) *Harness {
 
 // ConnectServer connects a client to a server the caller built — the
 // real one from internal/server, say — and closes both when the test
-// ends.
+// ends. The client can ask the person, and the server asks nobody
+// (docs/architecture.md §4.13): every tool is called through such a
+// client, so a question from any of them fails the test that made the
+// call.
 func ConnectServer(t *testing.T, server *mcp.Server) *Harness {
 	t.Helper()
-	h, err := ConnectTo(context.Background(), server)
+	h, err := connect(context.Background(), server, &mcp.ClientOptions{
+		ElicitationHandler: func(_ context.Context, req *mcp.ElicitRequest) (*mcp.ElicitResult, error) {
+			t.Errorf("the server asked the person: %q", req.Params.Message)
+			return &mcp.ElicitResult{Action: "decline"}, nil
+		},
+	})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -49,22 +57,16 @@ func ConnectServer(t *testing.T, server *mcp.Server) *Harness {
 	return h
 }
 
-// ConnectTo is ConnectServer for a caller with no *testing.T.
-func ConnectTo(ctx context.Context, server *mcp.Server) (*Harness, error) {
-	return ConnectClient(ctx, server, nil, "")
-}
-
-// ConnectClient is ConnectTo with the client's options — an elicitation
-// handler, say — and the protocol version it asks for, the SDK's newest
-// when empty.
-func ConnectClient(ctx context.Context, server *mcp.Server, opts *mcp.ClientOptions, protocol string) (*Harness, error) {
+// connect connects a client with opts to server over an in-memory
+// transport, at the SDK's newest protocol version.
+func connect(ctx context.Context, server *mcp.Server, opts *mcp.ClientOptions) (*Harness, error) {
 	ct, st := mcp.NewInMemoryTransports()
 	ss, err := server.Connect(ctx, st, nil)
 	if err != nil {
 		return nil, fmt.Errorf("server connect: %w", err)
 	}
 	client := mcp.NewClient(&mcp.Implementation{Name: "test-client", Version: "test"}, opts)
-	cs, err := client.Connect(ctx, ct, &mcp.ClientSessionOptions{ProtocolVersion: protocol})
+	cs, err := client.Connect(ctx, ct, nil)
 	if err != nil {
 		_ = ss.Close()
 		return nil, fmt.Errorf("client connect: %w", err)

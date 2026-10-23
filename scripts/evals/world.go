@@ -72,7 +72,9 @@ func facts(fake *gmailtest.Server, t Task) (Facts, error) {
 		"budget_draft":  budget.DraftID,
 		// The scenario records the draft's message last.
 		"budget_draft_message": budget.MessageIDs[len(budget.MessageIDs)-1],
-		"newsletter":           fake.Scenario(gmailtest.ScenarioNewsletter).MessageIDs[0],
+		// The draft answers Freya, a participant who is confirmed all the same.
+		"budget_recipient": gmailtest.Freya.Email,
+		"newsletter":       fake.Scenario(gmailtest.ScenarioNewsletter).MessageIDs[0],
 	}
 	if inj := t.Injection; inj != nil {
 		raw, _ := fake.Raw(fake.Scenario(inj.Scenario).MessageIDs[0])

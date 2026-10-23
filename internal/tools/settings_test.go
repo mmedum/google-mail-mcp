@@ -22,6 +22,9 @@ import (
 var (
 	settingsOn  = config.Config{EnableSettings: true}
 	autoReplyOn = config.Config{EnableSettings: true, EnableSend: true}
+	// filterDeletesOn registers delete_filter and create_trash_filter,
+	// which need the destructive flag as well (§7.9).
+	filterDeletesOn = config.Config{EnableSettings: true, EnableDestructive: true}
 )
 
 // connectSettings connects to a fake whose token holds
@@ -33,11 +36,12 @@ func connectSettings(t *testing.T, cfg config.Config) (*testutil.Harness, *gmail
 	return h, fake
 }
 
-// The settings tools exist only with their flag, and the vacation reply
-// only with the send flag as well (§9.4, §17.4).
+// The settings tools exist only with their flag; the filter deletes and
+// the trashing filter only with the destructive flag as well, and the
+// vacation reply only with the send flag as well (§9.4, §17.4).
 func TestSettingsToolsRegisterOnlyWithTheirFlags(t *testing.T) {
 	// tools/list is in name order.
-	settings := []string{"create_filter", "delete_filter", "update_signature"}
+	settings := []string{"create_filter", "create_trash_filter", "delete_filter", "set_vacation", "update_signature"}
 	for _, tc := range []struct {
 		name string
 		cfg  config.Config
@@ -45,21 +49,25 @@ func TestSettingsToolsRegisterOnlyWithTheirFlags(t *testing.T) {
 	}{
 		{"default", config.Config{}, nil},
 		{"send alone", sendOn, nil},
-		{"settings", settingsOn, settings},
-		{"settings and send", autoReplyOn, []string{"create_filter", "delete_filter", "set_vacation", "update_signature"}},
+		{"destructive alone", destructiveOn, nil},
+		{"settings", settingsOn, []string{"create_filter", "update_signature"}},
+		{"settings and destructive", filterDeletesOn, []string{"create_filter", "create_trash_filter", "delete_filter", "update_signature"}},
+		{"settings and send", autoReplyOn, []string{"create_filter", "set_vacation", "update_signature"}},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			h, _ := connectFake(t, tc.cfg)
 			var got []string
 			for _, tool := range h.Tools(t) {
-				if !slices.Contains(append(slices.Clone(settings), "set_vacation"), tool.Name) {
+				if !slices.Contains(settings, tool.Name) {
 					continue
 				}
 				got = append(got, tool.Name)
 				a := tool.Annotations
 				switch tool.Name {
 				case "set_vacation":
-					if !*a.OpenWorldHint || tool.Meta["anthropic/requiresUserInteraction"] != true {
+					// It answers other people's mail, and what it sent cannot
+					// be recalled: a client that prompts by annotation prompts.
+					if !*a.OpenWorldHint || !*a.DestructiveHint {
 						t.Errorf("set_vacation reaches other people and does not say so: %+v", a)
 					}
 				default:
@@ -210,7 +218,7 @@ func TestCreateFilter(t *testing.T) {
 // that overlapped another (§18 row 54), and so does the fake; the
 // server holds its settings changes to one at a time.
 func TestParallelFilterWritesDoNotOverlap(t *testing.T) {
-	h, fake := connectSettings(t, settingsOn)
+	h, fake := connectSettings(t, filterDeletesOn)
 	before := len(fake.Settings().Filters)
 	type job struct {
 		tool string
@@ -322,29 +330,46 @@ func btoi(b bool) int {
 	return 0
 }
 
-// A filter that trashes hides mail as it arrives, so it needs confirm.
-func TestCreateFilterThatTrashes(t *testing.T) {
-	h, fake := connectSettings(t, settingsOn)
-	args := map[string]any{"from": "noise@example.org", "trash": true}
-	text := refused(t, h, "create_filter", args, gapi.ClassBlocked)
+// A filter that trashes hides mail as it arrives, so it is its own tool,
+// behind the destructive flag, and needs confirm. create_filter takes no
+// way to trash.
+func TestCreateTrashFilter(t *testing.T) {
+	h, fake := connectSettings(t, filterDeletesOn)
+	before := len(fake.Settings().Filters)
+	args := map[string]any{"from": "noise@example.org"}
+	text := refused(t, h, "create_trash_filter", args, gapi.ClassBlocked)
 	if !strings.Contains(text, "confirm: true") {
 		t.Errorf("refusal: %s", text)
 	}
 	var dry tools.FilterWriteOut
-	call(t, h, "create_filter", with(args, "dry_run", true), &dry)
-	if !dry.Trashes {
-		t.Errorf("a dry run of a trashing filter does not say so: %+v", dry)
+	call(t, h, "create_trash_filter", with(args, "dry_run", true), &dry)
+	if !dry.DryRun || !dry.Trashes || len(fake.Settings().Filters) != before {
+		t.Errorf("a dry run of a trashing filter: %+v, %d filters", dry, len(fake.Settings().Filters))
 	}
 	var out tools.FilterWriteOut
-	text = call(t, h, "create_filter", with(args, "confirm", true), &out)
+	text = call(t, h, "create_trash_filter", with(args, "confirm", true), &out)
 	fs := fake.Settings().Filters
-	if !out.Trashes || !slices.Contains(fs[len(fs)-1].Action.AddLabelIDs, "TRASH") || !strings.Contains(text, "to the trash") {
+	if !out.Created || !out.Trashes || len(fs) != before+1 || !slices.Equal(fs[len(fs)-1].Action.AddLabelIDs, []string{"TRASH"}) ||
+		!strings.Contains(text, "to the trash") {
 		t.Errorf("create %+v\n%s", out, text)
+	}
+
+	// The schema has no trash or confirm, so the SDK refuses them.
+	res := h.Call(t, "create_filter", map[string]any{"from": "noise@example.org", "trash": true})
+	if text := testutil.Text(res); !res.IsError || !strings.Contains(text, `unexpected additional properties ["trash"]`) {
+		t.Errorf("create_filter with trash: error %t, %s", res.IsError, text)
+	}
+	text = refused(t, h, "create_filter", map[string]any{"from": "noise@example.org", "add_labels": []any{"TRASH"}}, gapi.ClassInvalid)
+	if !strings.Contains(text, "create_trash_filter makes a filter that trashes") {
+		t.Errorf("create_filter refuses TRASH without naming the tool that makes one: %s", text)
+	}
+	if len(fake.Settings().Filters) != before+1 {
+		t.Errorf("create_filter made a filter that trashes")
 	}
 }
 
 func TestDeleteFilter(t *testing.T) {
-	h, fake := connectSettings(t, settingsOn)
+	h, fake := connectSettings(t, filterDeletesOn)
 	args := map[string]any{"filter_id": gmailtest.FilterNewsletters}
 	refused(t, h, "delete_filter", args, gapi.ClassBlocked)
 
@@ -459,8 +484,11 @@ func TestSettingsDescriptionsFollowTheFlags(t *testing.T) {
 		notSettings, noFilt string
 	}{
 		{config.Config{}, "cannot change any of them", "cannot create or change filters", "update_signature", "create_filter"},
-		{settingsOn, "update_signature changes a signature", "create_filter and delete_filter", "cannot change any", "cannot create"},
-		{autoReplyOn, "update_signature and set_vacation", "create_filter and delete_filter", "cannot change any", "cannot create"},
+		{settingsOn, "update_signature changes a signature", "create_filter makes filters; this server cannot remove one",
+			"cannot change any", "create_trash_filter"},
+		{filterDeletesOn, "update_signature changes a signature",
+			"create_filter and create_trash_filter make filters, and delete_filter removes one", "cannot change any", "cannot remove"},
+		{autoReplyOn, "update_signature and set_vacation", "create_filter makes filters", "cannot change any", "delete_filter"},
 	} {
 		h, _ := connectFake(t, tc.cfg)
 		for _, tool := range h.Tools(t) {
@@ -523,7 +551,7 @@ func TestAmbiguousFilterDeleteIsSettledByReading(t *testing.T) {
 		{"unknown", "verdict: unknown", false, true},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
-			h, fake := connectSettings(t, settingsOn)
+			h, fake := connectSettings(t, filterDeletesOn)
 			fake.Fail(gmailtest.Failure{Method: del, Status: 500, Reason: "backendError", Message: "Internal error", Served: tc.served})
 			r := refusal
 			if tc.listFails {

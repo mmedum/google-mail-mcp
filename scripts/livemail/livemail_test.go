@@ -480,8 +480,9 @@ func TestTheGuardHoldsTheSettingsSteps(t *testing.T) {
 		{"update_signature", map[string]any{"send_as": "boss@example.com", "signature": ""}, false},
 		// The account's own address is not the one saved when it is not the default.
 		{"update_signature", map[string]any{"send_as": "reader@example.com", "signature": ""}, false},
-		{"create_filter", map[string]any{"from": r.name + "@filters.invalid", "trash": true, "confirm": true}, true},
-		{"create_filter", map[string]any{"from": "bank@example.com", "trash": true, "confirm": true}, false},
+		{"create_trash_filter", map[string]any{"from": r.name + "@filters.invalid", "confirm": true}, true},
+		{"create_trash_filter", map[string]any{"from": "bank@example.com", "confirm": true}, false},
+		{"create_filter", map[string]any{"from": r.name + "@filters.invalid", "trash": true}, false},
 		{"create_filter", map[string]any{"from": r.name + "@filters.invalid", "add_labels": []any{"Receipts"}}, false},
 		{"create_filter", map[string]any{"from": r.name + "@filters.invalid", "forward": "x@example.com"}, false},
 		{"delete_filter", map[string]any{"filter_id": "ANe1Bmg1", "confirm": true}, true},

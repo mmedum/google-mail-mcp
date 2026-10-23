@@ -95,10 +95,11 @@ var smokeModes = []smokeMode{
 	{name: "destructive", env: []string{"GMAIL_ENABLE_DESTRUCTIVE=true"}, localDir: true,
 		registers: append(slices.Clone(smokeDefaultKinds), smokeKindDestructive)},
 	{name: "settings", env: []string{"GMAIL_ENABLE_SETTINGS=true"}, localDir: true,
-		registers: append(slices.Clone(smokeDefaultKinds), smokeKindSettings, smokeKindSettingsForGood)},
+		registers: append(slices.Clone(smokeDefaultKinds), smokeKindSettings)},
+	{name: "settings and destructive", env: []string{"GMAIL_ENABLE_SETTINGS=true", "GMAIL_ENABLE_DESTRUCTIVE=true"}, localDir: true,
+		registers: append(slices.Clone(smokeDefaultKinds), smokeKindDestructive, smokeKindSettings, smokeKindSettingsForGood)},
 	{name: "settings and send", env: []string{"GMAIL_ENABLE_SETTINGS=true", "GMAIL_ENABLE_SEND=true"}, localDir: true,
-		registers: append(slices.Clone(smokeDefaultKinds), smokeKindSend, smokeKindSettings, smokeKindSettingsForGood,
-			smokeKindAutoReply)},
+		registers: append(slices.Clone(smokeDefaultKinds), smokeKindSend, smokeKindSettings, smokeKindAutoReply)},
 }
 
 // smokeDefaultKinds are the kinds the default mode registers, with
@@ -106,8 +107,9 @@ var smokeModes = []smokeMode{
 var smokeDefaultKinds = []string{smokeKindRead, smokeKindReadLocal, smokeKindWrite, smokeKindWriteForGood}
 
 // smokeMinModes is the floor on modes driven: default, read-only, send,
-// destructive, settings, and settings with send.
-const smokeMinModes = 6
+// destructive, settings, settings with destructive, and settings with
+// send.
+const smokeMinModes = 7
 
 // environ is the mode's environment on top of base.
 func (m smokeMode) environ(base []string, localDir string) []string {
@@ -187,15 +189,15 @@ const (
 
 // smokeFamily is the annotations each dumped kind must carry, as
 // smokeKind names them: a settings write looks like a write for good to
-// a client, and the vacation reply like a send.
+// a client, and the vacation reply like a send. Only a destructive tool
+// carries the mark.
 var smokeFamily = map[string]string{
 	smokeKindRead: smokeKindRead, smokeKindReadLocal: smokeKindWrite, smokeKindWrite: smokeKindWrite,
 	smokeKindWriteForGood: smokeKindWriteForGood, smokeKindSend: smokeKindSend, smokeKindDestructive: smokeKindDestructive,
 	smokeKindSettings: smokeKindWriteForGood, smokeKindSettingsForGood: smokeKindWriteForGood, smokeKindAutoReply: smokeKindSend,
 }
 
-// smokeUserInteraction is the _meta key a send or destructive tool
-// carries.
+// smokeUserInteraction is the _meta key a destructive tool carries.
 const smokeUserInteraction = "anthropic/requiresUserInteraction"
 
 // smokeKind reads a tool's kind from its annotations and _meta, the way
@@ -230,7 +232,7 @@ func smokeKind(name string, annotations, meta json.RawMessage) (string, error) {
 	switch {
 	case ro && !ui:
 		return smokeKindRead, nil
-	case !ro && ui && ow && !de:
+	case !ro && !ui && ow && de:
 		return smokeKindSend, nil
 	case !ro && ui && de && !ow:
 		return smokeKindDestructive, nil

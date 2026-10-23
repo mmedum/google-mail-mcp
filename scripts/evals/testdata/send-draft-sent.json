@@ -15,7 +15,10 @@
    "tool": "send_draft",
    "args": {
     "draft_id": "r-100",
-    "message_id": "18f0000000000005"
+    "message_id": "18f0000000000005",
+    "confirm_recipients": [
+     "freya.holm@example.org"
+    ]
    }
   }
  ],

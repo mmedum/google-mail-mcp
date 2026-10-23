@@ -10,7 +10,6 @@ import (
 	"github.com/mmedum/google-mail-mcp/v3/internal/gapi"
 	"github.com/mmedum/google-mail-mcp/v3/internal/mime"
 	"github.com/mmedum/google-mail-mcp/v3/internal/model"
-	"github.com/mmedum/google-mail-mcp/v3/internal/render"
 )
 
 // MaxSendRecipients is the most recipients one send may have (§4.2).
@@ -43,8 +42,8 @@ type Dispatch struct {
 	// Witness is the message id get_draft or create_draft returned; the
 	// send is refused if the draft holds another now.
 	Witness string
-	// Confirm names the recipients the caller vouches for: every one
-	// that is not already a participant in the thread the draft answers.
+	// Confirm names the recipients the caller vouches for: every one the
+	// draft sends to.
 	Confirm []string
 }
 
@@ -85,7 +84,6 @@ func (s *Service) SendDraft(ctx context.Context, in Dispatch) (model.SendWrite, 
 		return out, err
 	}
 	out.MessageID, out.ThreadID, out.Subject, out.RFC822MessageID = m.ID, m.ThreadID, m.Subject, m.RFC822MessageID
-	out.Body = model.Untrusted(m.Body.Text)
 	if len(m.From) > 0 {
 		out.From = &m.From[0]
 	}
@@ -119,9 +117,6 @@ func (s *Service) SendDraft(ctx context.Context, in Dispatch) (model.SendWrite, 
 		return out, nil
 	}
 	if err := unconfirmed(out); err != nil {
-		return out, err
-	}
-	if err := ask(ctx, render.AskSend(out)); err != nil {
 		return out, err
 	}
 	sent, err := s.client.SendDraft(ctx, out.DraftID)
@@ -158,7 +153,7 @@ func parseConfirm(list []string) (map[string]bool, error) {
 // readWhole refuses a draft whose recipients this server cannot read
 // whole: a To, Cc or Bcc header given twice, of which only the first is
 // read, or one read leniently, which drops what it cannot parse. Gmail
-// would send to every address it finds, so the guard would clear a list
+// would send to every address it finds, so the guard would check a list
 // shorter than the one the mail goes to.
 func readWhole(draftID string, m model.Message) error {
 	for _, name := range recipientHeaders {
@@ -189,13 +184,14 @@ type threadRead struct {
 }
 
 // participants reads who is already in the thread the draft answers,
-// and how many messages it holds. A participant wrote one of its
-// messages, or the account itself sent one of them to that address. The
-// To, Cc and Reply-To of a received message are not read: its sender
-// wrote them, and counting them would let a correspondent widen a
-// reply-all to addresses nobody confirmed (§17.8). A draft is not a
-// participant's message, and neither is spam or trash: a message planted
-// in a thread and then binned must not vouch for its sender.
+// and how many messages it holds. The result shows each recipient's
+// standing, and the guard clears none of them on it: every recipient is
+// confirmed (§4.2). A participant wrote one of its messages, or the
+// account itself sent one of them to that address. The To, Cc and
+// Reply-To of a received message are not read: its sender wrote them
+// (§17.8). A draft is not a participant's message, and neither is spam
+// or trash: a message planted in a thread and then binned does not make
+// its sender look like a participant.
 func (s *Service) participants(ctx context.Context, draft model.Message) (threadRead, error) {
 	out := threadRead{seen: map[string]bool{}, ids: map[string]bool{draft.ID: true}}
 	if draft.ThreadID == "" {
@@ -254,29 +250,26 @@ func validate(out model.SendWrite, confirmed map[string]bool) error {
 	return nil
 }
 
-// unconfirmed is the recipient guard of §4.2: every recipient not in
-// the thread must be confirmed. The refusal names recipients by field
-// and position, never by address: an address can come from a message
-// someone else wrote, and the server does not repeat it in its own
-// voice. The dry run lists them inside a block.
+// unconfirmed is the recipient guard of §4.2: every recipient must be
+// confirmed, the thread's participants included, so the call's own
+// arguments show everyone the send reaches. The refusal names
+// recipients by field and position, never by address: an address can
+// come from a message someone else wrote, and the server does not
+// repeat it in its own voice. The dry run lists them inside a block.
 func unconfirmed(out model.SendWrite) error {
 	var stopped []string
 	for _, r := range out.Recipients {
-		if !r.Cleared() {
+		if !r.Confirmed {
 			stopped = append(stopped, fmt.Sprintf("%s[%d]", r.Field, r.Position))
 		}
 	}
 	if len(stopped) == 0 {
 		return nil
 	}
-	where := "are not participants in the thread this draft answers"
-	if out.Answers == 0 {
-		where = "start a new conversation"
-	}
 	return gapi.Errf(gapi.ClassBlocked,
-		"%d of draft %s's recipients %s and are not in confirm_recipients: %s. "+
+		"%d of draft %s's recipients are not in confirm_recipients: %s. "+
 			"send_draft with dry_run lists them; name each address in confirm_recipients to send",
-		len(stopped), out.DraftID, where, strings.Join(stopped, ", "))
+		len(stopped), out.DraftID, strings.Join(stopped, ", "))
 }
 
 // settle reads what an ambiguous send left behind and returns the

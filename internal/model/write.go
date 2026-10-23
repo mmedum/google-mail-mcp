@@ -251,15 +251,13 @@ type SendRecipient struct {
 	Field    string
 	Position int
 	// Participant is set when the address sent a message of the thread
-	// the draft answers, or the account sent one to it, so it needs no
-	// confirmation (§4.2).
+	// the draft answers, or the account sent one to it. It is shown, and
+	// clears nothing: every recipient is confirmed (§4.2).
 	Participant bool
-	// Confirmed is set when confirm_recipients names it.
+	// Confirmed is set when confirm_recipients names it, which the guard
+	// requires of every recipient.
 	Confirmed bool
 }
-
-// Cleared reports whether the guard lets this recipient through.
-func (r SendRecipient) Cleared() bool { return r.Participant || r.Confirmed }
 
 // SendWrite is a sent draft, or what a dry run would send (§4.2).
 type SendWrite struct {
@@ -270,8 +268,7 @@ type SendWrite struct {
 	MessageID string
 	ThreadID  string
 	// Answers counts the thread's messages the draft answers: those that
-	// are not drafts, spam or trash. Zero is a new conversation, where
-	// every recipient needs confirming.
+	// are not drafts, spam or trash. Zero is a new conversation.
 	Answers int
 
 	From            *mime.Address
@@ -279,9 +276,6 @@ type SendWrite struct {
 	Subject         Untrusted
 	RFC822MessageID Untrusted
 	Files           []File
-	// Body is the draft's text, which the question before the send
-	// shows the start of (§4.13).
-	Body Untrusted
 
 	// SentID, SentThreadID and SentLabels are Gmail's answer to the send.
 	SentID       string
@@ -293,7 +287,7 @@ type SendWrite struct {
 func (s SendWrite) Unconfirmed() int {
 	n := 0
 	for _, r := range s.Recipients {
-		if !r.Cleared() {
+		if !r.Confirmed {
 			n++
 		}
 	}

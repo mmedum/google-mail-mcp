@@ -56,7 +56,8 @@ func TestSmokePassesAWellBehavedServer(t *testing.T) {
 	if err := smokeRun(&out, bin); err != nil {
 		t.Fatal(err)
 	}
-	out.mustSay(t, "tools registered: default 2, read-only 1, send 3, destructive 3, settings 4, settings and send 6, of 7 in the full surface")
+	out.mustSay(t, "tools registered: default 2, read-only 1, send 3, destructive 3, settings 3, settings and destructive 5, "+
+		"settings and send 5, of 7 in the full surface")
 	out.mustSay(t, "frames read")
 }
 
@@ -71,7 +72,7 @@ func TestSmokeFailsEachWay(t *testing.T) {
 		"downgrade":           "the server negotiated",
 		"leaky-readonly":      "read-only mode registers create_draft, a write tool it must not",
 		"leaky-send":          "default mode registers send_draft, a send tool it must not",
-		"no-meta":             "send_draft is annotated",
+		"no-meta":             "tools/list shows delete_message as a write-for-good tool, --dump-schemas as a destructive tool",
 		"missing-destructive": "destructive mode lacks delete_message",
 		"undumped":            "which --dump-schemas does not",
 		"leaky-settings":      "default mode registers create_filter, a settings tool it must not",
@@ -174,12 +175,15 @@ func TestSmokeKindFollowsRegister(t *testing.T) {
 	for _, tc := range []struct{ annotations, meta, want string }{
 		{`{"readOnlyHint":true,"idempotentHint":true,"openWorldHint":false}`, ``, smokeKindRead},
 		{`{"destructiveHint":false,"openWorldHint":false}`, ``, smokeKindWrite},
-		{`{"destructiveHint":false,"openWorldHint":true}`, `{"anthropic/requiresUserInteraction":true}`, smokeKindSend},
+		{`{"destructiveHint":true,"openWorldHint":true}`, ``, smokeKindSend},
 		{`{"destructiveHint":true,"idempotentHint":true,"openWorldHint":false}`,
 			`{"anthropic/requiresUserInteraction":true}`, smokeKindDestructive},
 		{`{"destructiveHint":true,"idempotentHint":true,"openWorldHint":false}`, ``, smokeKindWriteForGood},
+		// A send no client prompts for by annotation, and a marked send.
 		{`{"destructiveHint":false,"openWorldHint":true}`, ``, ""},
-		{`{}`, ``, ""},
+		{`{"destructiveHint":true,"openWorldHint":true}`, `{"anthropic/requiresUserInteraction":true}`, ""},
+		// The MCP defaults are a send's hints.
+		{`{}`, ``, smokeKindSend},
 		{`{"readOnlyHint":true}`, `{"anthropic/requiresUserInteraction":true}`, ""},
 	} {
 		got, err := smokeKind("t", json.RawMessage(tc.annotations), json.RawMessage(tc.meta))

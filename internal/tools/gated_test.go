@@ -22,7 +22,8 @@ var (
 )
 
 // The gated tools exist only under their flag, and read-only mode wins
-// over both (§9.4).
+// over both (§9.4). Each is annotated destructive, so a client that
+// prompts by annotation prompts for it (§4.13).
 func TestGatedToolsRegisterOnlyWithTheirFlag(t *testing.T) {
 	for _, tc := range []struct {
 		name string
@@ -41,7 +42,7 @@ func TestGatedToolsRegisterOnlyWithTheirFlag(t *testing.T) {
 			for _, tool := range h.Tools(t) {
 				switch tool.Name {
 				case "send_draft":
-					if !*tool.Annotations.OpenWorldHint || *tool.Annotations.DestructiveHint {
+					if !*tool.Annotations.OpenWorldHint || !*tool.Annotations.DestructiveHint {
 						t.Errorf("send_draft annotations %+v", tool.Annotations)
 					}
 				case "delete_permanently", "delete_label":
@@ -50,9 +51,6 @@ func TestGatedToolsRegisterOnlyWithTheirFlag(t *testing.T) {
 					}
 				default:
 					continue
-				}
-				if tool.Meta["anthropic/requiresUserInteraction"] != true {
-					t.Errorf("%s does not ask for a person", tool.Name)
 				}
 				got = append(got, tool.Name)
 			}
@@ -65,9 +63,36 @@ func TestGatedToolsRegisterOnlyWithTheirFlag(t *testing.T) {
 	}
 }
 
+// The mark goes only where §3 of the shared standard puts it: a delete
+// that bypasses a trash Gmail offers, and one of something every item
+// depends on (§4.13). Every other tool, sending included, is left to
+// the client's own rules.
+func TestOnlyTheWidestDeletesCarryTheMark(t *testing.T) {
+	h, _ := connectFake(t, tools.FullSurface(config.Config{LocalDir: t.TempDir()}))
+	surface := h.Tools(t)
+	if len(surface) < 30 {
+		t.Fatalf("listed %d tools, below the full surface's 30", len(surface))
+	}
+	var marked []string
+	for _, tool := range surface {
+		if v, ok := tool.Meta["anthropic/requiresUserInteraction"]; ok {
+			if v != true {
+				t.Errorf("%s carries the mark as %v", tool.Name, v)
+			}
+			marked = append(marked, tool.Name)
+		}
+	}
+	slices.Sort(marked)
+	if want := []string{"delete_label", "delete_permanently"}; !slices.Equal(marked, want) {
+		t.Errorf("marked %v, want %v", marked, want)
+	}
+}
+
 func sends(fake *gmailtest.Server) int { return len(fake.CallsOf("gmail.users.drafts.send")) }
 
-// A reply to a thread goes to its participants without confirming them.
+// A reply to a thread reaches its participants only once each is
+// written out in confirm_recipients, so the call shows everyone the
+// send reaches (§4.2).
 func TestSendDraftReply(t *testing.T) {
 	h, fake := connectFake(t, sendOn)
 	sc := fake.Scenario(gmailtest.ScenarioDraftReply)
@@ -75,8 +100,8 @@ func TestSendDraftReply(t *testing.T) {
 
 	var dry tools.SendDraftOut
 	text := call(t, h, "send_draft", with(args, "dry_run", true), &dry)
-	if !dry.DryRun || dry.Sent || dry.Answers != 2 || dry.Unconfirmed != 0 || len(dry.Recipients) != 1 ||
-		!dry.Recipients[0].Participant || sends(fake) != 0 ||
+	if !dry.DryRun || dry.Sent || dry.Answers != 2 || dry.Unconfirmed != 1 || len(dry.Recipients) != 1 ||
+		!dry.Recipients[0].Participant || dry.Recipients[0].Confirmed || sends(fake) != 0 ||
 		string(dry.UntrustedFrom) != gmailtest.Reader.Name+" <"+gmailtest.Account+">" {
 		t.Fatalf("dry run %+v", dry)
 	}
@@ -85,7 +110,12 @@ func TestSendDraftReply(t *testing.T) {
 	}
 
 	refused(t, h, "send_draft", with(args, "message_id", sc.MessageIDs[1]), gapi.ClassStale)
+	text = refused(t, h, "send_draft", args, gapi.ClassBlocked)
+	if !strings.Contains(text, "1 of draft "+sc.DraftID+"'s recipients are not in confirm_recipients: to[0]") || sends(fake) != 0 {
+		t.Fatalf("a participant left out of confirm_recipients: %d sends, %s", sends(fake), text)
+	}
 
+	args["confirm_recipients"] = []any{gmailtest.Freya.Email}
 	fake.ResetAccounting()
 	var out tools.SendDraftOut
 	text = call(t, h, "send_draft", args, &out)
@@ -101,10 +131,11 @@ func TestSendDraftReply(t *testing.T) {
 	refused(t, h, "send_draft", args, gapi.ClassNotFound)
 }
 
-// A correspondent cannot widen a reply-all: the Cc and Reply-To a
-// received message carries were written by its sender, so they need
-// confirming. The From of a received message and the To and Cc of the
-// account's own sent one do not (§17.8).
+// A correspondent cannot make an address look like a participant: the
+// Cc and Reply-To a received message carries were written by its
+// sender. The From of a received message and the To and Cc of the
+// account's own sent one make one (§17.8). Every recipient is confirmed
+// either way.
 func TestSendDraftCountsOnlyWhatTheAccountChose(t *testing.T) {
 	h, fake := connectFake(t, sendOn)
 	_, parent := fake.AddWidenedThread()
@@ -121,13 +152,13 @@ func TestSendDraftCountsOnlyWhatTheAccountChose(t *testing.T) {
 	}
 	// to[0] is Chiara from the Reply-To, cc[0] Bruno, cc[1] Ada, cc[2] Freya.
 	want := map[string]bool{"to[0]": false, "cc[0]": true, "cc[1]": false, "cc[2]": true}
-	if !maps.Equal(participant, want) || dry.Unconfirmed != 2 || dry.Answers != 2 {
+	if !maps.Equal(participant, want) || dry.Unconfirmed != 4 || dry.Answers != 2 {
 		t.Fatalf("participants %v, %d unconfirmed, %d answers; want %v\n%s", participant, dry.Unconfirmed, dry.Answers, want, text)
 	}
 	delete(args, "dry_run")
 	refused(t, h, "send_draft", args, gapi.ClassBlocked)
 	call(t, h, "send_draft", with(args, "confirm_recipients",
-		[]any{gmailtest.Chiara.Email, gmailtest.Ada.Email}), &tools.SendDraftOut{})
+		[]any{gmailtest.Chiara.Email, gmailtest.Bruno.Email, gmailtest.Ada.Email, gmailtest.Freya.Email}), &tools.SendDraftOut{})
 	if sends(fake) != 1 {
 		t.Fatalf("%d sends", sends(fake))
 	}
@@ -142,7 +173,7 @@ func TestSendDraftRecipientGuard(t *testing.T) {
 	args := map[string]any{"draft_id": d.DraftID, "message_id": d.MessageID}
 
 	text := refused(t, h, "send_draft", args, gapi.ClassBlocked)
-	if !strings.Contains(text, "2 of draft "+d.DraftID+"'s recipients start a new conversation") ||
+	if !strings.Contains(text, "2 of draft "+d.DraftID+"'s recipients are not in confirm_recipients") ||
 		!strings.Contains(text, "to[0], cc[0]") || strings.Contains(text, "example") {
 		t.Errorf("refusal: %s", text)
 	}
@@ -231,7 +262,8 @@ func TestSendDraftAmbiguousOutcome(t *testing.T) {
 		t.Run(tc.name, func(t *testing.T) {
 			h, fake := connectFake(t, sendOn)
 			sc := fake.Scenario(gmailtest.ScenarioDraftReply)
-			args := map[string]any{"draft_id": sc.DraftID, "message_id": sc.MessageIDs[2]}
+			args := map[string]any{"draft_id": sc.DraftID, "message_id": sc.MessageIDs[2],
+				"confirm_recipients": []any{gmailtest.Freya.Email}}
 			// The failures meet the send and the reads after it, not the
 			// reads before.
 			call(t, h, "send_draft", with(args, "dry_run", true), &tools.SendDraftOut{})
@@ -256,7 +288,8 @@ func TestSendDraftSendingLimit(t *testing.T) {
 	h, fake := connectFake(t, sendOn)
 	sc := fake.Scenario(gmailtest.ScenarioDraftReply)
 	fake.Fail(gmailtest.Failure{Method: "gmail.users.drafts.send", Status: 429, Times: 5})
-	text := refused(t, h, "send_draft", map[string]any{"draft_id": sc.DraftID, "message_id": sc.MessageIDs[2]}, gapi.ClassRateLimited)
+	text := refused(t, h, "send_draft", map[string]any{"draft_id": sc.DraftID, "message_id": sc.MessageIDs[2],
+		"confirm_recipients": []any{gmailtest.Freya.Email}}, gapi.ClassRateLimited)
 	if !strings.Contains(text, "sending limit") || sends(fake) != 1 {
 		t.Errorf("%d sends: %s", sends(fake), text)
 	}
@@ -418,8 +451,8 @@ func TestSendDraftUnavailableIsSettled(t *testing.T) {
 	h, fake := connectFake(t, sendOn)
 	sc := fake.Scenario(gmailtest.ScenarioDraftReply)
 	fake.Fail(gmailtest.Failure{Method: "gmail.users.drafts.send", Status: 503, Reason: "backendError", Served: true, Times: 5})
-	text := refused(t, h, "send_draft", map[string]any{"draft_id": sc.DraftID, "message_id": " " + sc.MessageIDs[2] + " "},
-		gapi.ClassAmbiguousOutcome)
+	text := refused(t, h, "send_draft", map[string]any{"draft_id": sc.DraftID, "message_id": " " + sc.MessageIDs[2] + " ",
+		"confirm_recipients": []any{gmailtest.Freya.Email}}, gapi.ClassAmbiguousOutcome)
 	if !strings.Contains(text, "verdict: sent") || sends(fake) != 1 {
 		t.Errorf("%d sends: %s", sends(fake), text)
 	}

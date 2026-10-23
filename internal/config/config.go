@@ -99,9 +99,6 @@ type Config struct {
 	// filters, and the vacation reply with EnableSend too — and requests
 	// gmail.settings.basic, which no other scope covers (§9.4).
 	EnableSettings bool
-	// RequirePrompt refuses the writes that take confirm when the client
-	// cannot put the question to the person (§4.13).
-	RequirePrompt bool
 	// LocalDir is the one directory attachments are written to. Empty
 	// means no file transfer, and the download tools are not registered.
 	LocalDir    string
@@ -127,14 +124,24 @@ type Settings struct {
 	EnableSend        string
 	EnableDestructive string
 	EnableSettings    string
-	RequirePrompt     string
 	LocalDir          string
 	LogLevel          string
 	LogFormat         string
 	HTTPTimeout       string
 	APIBase           string
 	ConfigDir         string
+	// RequirePrompt is the removed GMAIL_REQUIRE_PROMPT, as the
+	// environment gives it, read only to refuse it set.
+	RequirePrompt string
 }
+
+// removedRequirePrompt is the setting that refused, from 2.0.0 to 2.3.0,
+// the writes that asked the person when the client could not ask them.
+// The server asks nobody now (§4.13). Off, its old default, is still
+// accepted. On, or a value that is not a boolean, is refused at start:
+// ignored, it would quietly allow what its owner set it to stop. Its
+// flag is gone, so --require-prompt fails to parse.
+const removedRequirePrompt = "REQUIRE_PROMPT"
 
 // Define registers one flag per setting on fs, each defaulting to its
 // GMAIL_* variable read through env.
@@ -169,14 +176,13 @@ func Define(fs *flag.FlagSet, env func(string) string) *Settings {
 		"register the permanent deletes and request https://mail.google.com/")
 	defBool(&s.EnableSettings, "enable-settings", "ENABLE_SETTINGS",
 		"register the signature, filter and vacation writes and request gmail.settings.basic")
-	defBool(&s.RequirePrompt, "require-prompt", "REQUIRE_PROMPT",
-		"refuse the writes that take confirm when the client cannot ask the person")
 	def(&s.LocalDir, "local-dir", "LOCAL_DIR", "", "the one directory attachments are written to (unset turns file transfer off)")
 	def(&s.LogLevel, "log-level", "LOG_LEVEL", string(LogInfo), "log level: debug, info, warn, error")
 	def(&s.LogFormat, "log-format", "LOG_FORMAT", string(LogText), "log format: text, json")
 	def(&s.HTTPTimeout, "http-timeout", "HTTP_TIMEOUT", DefaultHTTPTimeout.String(), "deadline for one attempt at a Google API call")
 	def(&s.APIBase, "api-base", "API_BASE", DefaultAPIBase, "Gmail API origin; for tests")
 	s.ConfigDir = env(EnvConfigDir)
+	s.RequirePrompt = env(EnvPrefix + removedRequirePrompt)
 	return s
 }
 
@@ -245,8 +251,11 @@ func (s *Settings) Build() (Config, error) {
 	add(err)
 	c.EnableSettings, err = parseBool("ENABLE_SETTINGS", s.EnableSettings)
 	add(err)
-	c.RequirePrompt, err = parseBool("REQUIRE_PROMPT", s.RequirePrompt)
-	add(err)
+	if on, err := parseBool(removedRequirePrompt, s.RequirePrompt); err != nil || on {
+		add(fmt.Errorf("%w: %s%s was removed: the server no longer asks the person, and the client's own approval "+
+			"decides each call. Unset it, and leave %sENABLE_SEND, %sENABLE_DESTRUCTIVE and %sENABLE_SETTINGS off for a "+
+			"client that runs with nobody watching", ErrInvalid, EnvPrefix, removedRequirePrompt, EnvPrefix, EnvPrefix, EnvPrefix))
+	}
 	// Read-only with a write flag has no coherent meaning, and guessing
 	// which one was meant would either drop a guard or a tool.
 	for _, on := range []struct {

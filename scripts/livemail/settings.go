@@ -108,6 +108,7 @@ var settingsSteps = []step{
 				"negated_query": "unrelated", "has_attachment": true, "exclude_chats": true,
 				"size": 1 << 20, "size_comparison": "smaller",
 				"add_labels": []any{e.seed.label.name}, "remove_labels": []any{"IMPORTANT"}, "archive": true, "star": true,
+				"mark_read": true,
 			}
 			e.filterArgs = maps.Clone(args)
 			args["dry_run"] = true
@@ -126,15 +127,27 @@ var settingsSteps = []step{
 			return want(text, "mail already in the mailbox is untouched")
 		}},
 
-	{name: "a trashing filter without confirm is refused", tool: "create_filter", refuses: "blocked", needs: needSettings,
+	// A filter that trashes is its own tool, behind the destructive flag
+	// too, which the run turns on (§7.9).
+	{name: "a trashing filter without confirm is refused", tool: "create_trash_filter", refuses: "blocked", needs: needSettings,
 		args: func(e *env) map[string]any {
-			return map[string]any{"from": filterSender(e.seed.label), "query": "trash", "trash": true}
+			return map[string]any{"from": filterSender(e.seed.label), "query": "trash"}
 		},
 		check: func(_ *env, text string) error { return want(text, "confirm: true") }},
 
-	{name: "create a trashing filter", tool: "create_filter", needs: needSettings,
+	// The dry run carries every criterion, as create_filter's does; the
+	// filter it would make is never made.
+	{name: "create a trashing filter, dry run", tool: "create_trash_filter", needs: needSettings,
 		args: func(e *env) map[string]any {
-			return map[string]any{"from": filterSender(e.seed.label), "query": "trash", "trash": true, "mark_read": true, "confirm": true}
+			return map[string]any{"from": filterSender(e.seed.label), "to": e.account, "subject": e.seed.label.name,
+				"query": "trash", "negated_query": "unrelated", "has_attachment": true, "exclude_chats": true,
+				"size": 1 << 20, "size_comparison": "smaller", "dry_run": true}
+		},
+		check: func(_ *env, text string) error { return want(text, "moves matching mail to the trash") }},
+
+	{name: "create a trashing filter", tool: "create_trash_filter", needs: needSettings,
+		args: func(e *env) map[string]any {
+			return map[string]any{"from": filterSender(e.seed.label), "query": "trash", "confirm": true}
 		},
 		check: func(e *env, text string) error {
 			if err := recordFilter(e, text); err != nil {
@@ -145,9 +158,9 @@ var settingsSteps = []step{
 
 	// Gmail keeps a second identical filter, so the server's check is the
 	// only one. This filter has no size, which Gmail rounds (§18 row 52).
-	{name: "an identical filter is refused", tool: "create_filter", refuses: "conflict", needs: needSettings,
+	{name: "an identical filter is refused", tool: "create_trash_filter", refuses: "conflict", needs: needSettings,
 		args: func(e *env) map[string]any {
-			return map[string]any{"from": filterSender(e.seed.label), "query": "trash", "trash": true, "mark_read": true, "confirm": true}
+			return map[string]any{"from": filterSender(e.seed.label), "query": "trash", "confirm": true}
 		},
 		check: func(_ *env, text string) error { return want(text, "already does this") }},
 
@@ -261,15 +274,16 @@ var settingsSteps = []step{
 // settingsTools are the tools guardSettings holds, and settingsKeys every
 // argument it knows, as writeKeys are for the other writes.
 var (
-	settingsTools = map[string]bool{"update_signature": true, "create_filter": true, "delete_filter": true, "set_vacation": true}
-	settingsKeys  = map[string]bool{
+	settingsTools = map[string]bool{"update_signature": true, "create_filter": true, "create_trash_filter": true,
+		"delete_filter": true, "set_vacation": true}
+	settingsKeys = map[string]bool{
 		// Checked below.
 		"send_as": true, "signature": true, "from": true, "to": true, "add_labels": true, "filter_id": true,
 		"start": true, "body": true, "subject": true,
 		// Flags, and criteria that name nothing of the account's.
 		"dry_run": true, "confirm": true, "enable": true, "audience": true, "end": true, "query": true,
 		"negated_query": true, "has_attachment": true, "exclude_chats": true, "size": true, "size_comparison": true,
-		"remove_labels": true, "archive": true, "mark_read": true, "star": true, "trash": true,
+		"remove_labels": true, "archive": true, "mark_read": true, "star": true,
 	}
 )
 
@@ -300,7 +314,7 @@ func (e *env) guardSettings(tool string, args map[string]any) error {
 		if sig := str("signature"); sig != "" && !strings.Contains(sig, e.seed.label.name) {
 			return fmt.Errorf("%w: the signature is not the run's", errUnscoped)
 		}
-	case "create_filter":
+	case "create_filter", "create_trash_filter":
 		if str("from") != filterSender(e.seed.label) {
 			return fmt.Errorf("%w: a filter must match only the run's own sender", errUnscoped)
 		}

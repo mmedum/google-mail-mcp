@@ -260,7 +260,8 @@ func TestStalenessScopeSourceIsWired(t *testing.T) {
 }
 
 func TestStalenessReadmeToolsBothWays(t *testing.T) {
-	readme := "# x\n\n## Tools\n\n| Tool | What |\n|---|---|\n| `get_profile` | a |\n| `list_labels` | b |\n\n## Safety\n"
+	readme := "# x\n\n## Tools\n\n| Tool | What |\n|---|---|\n| `get_profile` | a |\n| `list_labels` | b |\n\n## Safety\n" +
+		"\n```json\n{\"permissions\": {\"ask\": [\"mcp__google-mail__get_profile\"]}}\n```\n"
 	if n, p := stalenessReadmeTools(readme, []string{"get_profile", "list_labels"}); n != 2 || len(p) != 0 {
 		t.Errorf("an agreeing table: %d rows, %v", n, p)
 	}
@@ -271,4 +272,17 @@ func TestStalenessReadmeToolsBothWays(t *testing.T) {
 	if _, p := stalenessReadmeTools("# x\n", []string{"get_profile"}); len(p) != 1 {
 		t.Errorf("no table at all: %v", p)
 	}
+}
+
+// A Claude Code permission rule in the README names a tool the binary
+// registers, or it asks nobody; and the README gives at least one.
+func TestStalenessReadmePermissionRules(t *testing.T) {
+	table := "# x\n\n## Tools\n\n| Tool | What |\n|---|---|\n| `get_profile` | a |\n"
+	_, p := stalenessReadmeTools(table+"\n\"mcp__google-mail__get_profile\", \"mcp__google-mail__send_drafts\"\n",
+		[]string{"get_profile"})
+	if len(p) != 1 || p[0] != "README.md gives a permission rule for send_drafts, which the binary does not register" {
+		t.Errorf("a rule for no tool: %q", p)
+	}
+	_, p = stalenessReadmeTools(table, []string{"get_profile"})
+	stalenessHas(t, p, "README.md gives no Claude Code permission rule")
 }

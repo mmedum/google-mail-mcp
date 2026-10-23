@@ -381,7 +381,7 @@ func (w *writer) labelDeleted(lw model.LabelWrite) {
 }
 
 // SendDraft renders a sent draft, or what a dry run would send (§4.2):
-// every recipient, whether the guard clears it, the subject, the files
+// every recipient, whether it is confirmed, the subject, the files
 // and the thread. Addresses, the subject and file names are in a block,
 // one recipient per line under its field and position, which is how the
 // guard's refusal names them.
@@ -402,7 +402,7 @@ func SendDraft(sw model.SendWrite, o Options) Result {
 			}
 		}
 		if sw.Answers > 0 {
-			w.say("it answers a thread of %s; their senders, and whoever this account sent them to, need no confirming.",
+			w.say("it answers a thread of %s: every recipient needs confirming, its participants included.",
 				plural(sw.Answers, "message", "messages"))
 		} else {
 			w.say("it starts a new conversation: every recipient needs confirming.")
@@ -410,12 +410,12 @@ func SendDraft(sw model.SendWrite, o Options) Result {
 		participants, confirmed := 0, 0
 		var stopped []part
 		for _, r := range sw.Recipients {
-			switch {
-			case r.Participant:
+			if r.Participant {
 				participants++
-			case r.Confirmed:
+			}
+			if r.Confirmed {
 				confirmed++
-			default:
+			} else {
 				stopped = append(stopped, recipientRef(r.Field, r.Position))
 			}
 		}

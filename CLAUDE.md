@@ -94,7 +94,8 @@ or missed. Siblings are never named in this repository (rule 1).
    seen; a write names the messages it touches. No tool trashes,
    relabels or deletes "everything matching". A filter acts only on mail
    that arrives after it, never on mail already there, and one that
-   trashes needs `confirm: true`. §4.7.
+   trashes is its own tool, `create_trash_filter`, behind the settings
+   and destructive flags, with `confirm: true`. §4.7.
 9. **Threading is constructed, never hoped for.** A reply carries the
    parent's `threadId`, `In-Reply-To` and `References`, built from the
    parent's own `Message-ID`, and a subject Gmail will thread. §4.5.
@@ -115,7 +116,8 @@ or missed. Siblings are never named in this repository (rule 1).
     commit as the code. `scripts/gates classes` holds it both ways.
 14. **The released tool surface is a contract.** Tools keep their names
     and output fields; `scripts/gates schema-diff` fails on a rename, a
-    lost field or a new required input. Adding is fine.
+    lost field or a new required input, unless a major release declares
+    it: a `**Breaking:**` CHANGELOG entry names the tool. Adding is fine.
 15. **Every published API method has a written verdict.** All 79 are in
     §8a — used, gated, deferred or written off with a reason — and the
     gate fails on a method with no verdict, a client call with no row,
