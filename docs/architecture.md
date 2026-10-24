@@ -1,6 +1,13 @@
 # Architecture — google-mail-mcp
 
-**Status: 3.1.0 is cut, 2026-10-24: the Claude Desktop bundle has the
+**Status: 3.1.1 is cut, 2026-10-24: 3.1.0's bundle work, reviewed after
+its release by `/simplify`, five `/code-review high` rounds and
+`/security-review` (§16a). The bundle gate now derives what it asks
+for from the server's settings and starts the server from the
+bundle's defaults; the Profile field states the name rule, which a
+refusal states too; and a profile name is lowered A to Z alone. No
+send path, MIME building or response shape changed, so no live run
+was owed. 3.1.0 was cut, 2026-10-24: the Claude Desktop bundle has the
 family's shape (`~/.claude/mcp-server-standard.md` §10b). Its OAuth
 client file and attachment folder default to empty, so a field left
 blank no longer reaches the server as `${user_config.x}`, and its fields
@@ -692,7 +699,7 @@ comment, re-resolved at scaffold time.
 | `classes` | the closed vocabulary of §6.5 derived from the code and asserted both ways; duplicates found by count, not by adjacent comparison; a floor |
 | `coverage` | per package, scored on its own files and not its subpackages', `cmd/` included; each exemption with a reason; floors on packages and profile lines |
 | `outcomes` | every write's result states its outcome on every branch |
-| `mcpb` | the committed manifest validated against the **vendored** schema chosen by its own `manifest_version`, with a property-count floor on the vendored file; `$schema` matched as a whole URL at a full tag or SHA; `manifest_version` equal to the URL's; a floor at 0.3; unknown keys preserved by decoding twice; entry point, every command and every override naming a staged file; every override a claimed platform; each claimed platform spawning the file staged **for it**; every `${user_config.x}` in a composed value declared, and one spent in `env` either required or given a default and never `multiple` (§18 row 91); every variable the server reads asked for under its name without `GMAIL_`, lowercased, or left out with a reason; every switch defaulting to the server's own default, compared as JSON, and the environment the defaults give configuring the server as none does (§18 row 92); `privacy_policies` not empty (§18 row 93); the no-login sentence; a `support` URL; the files copied from the repository present |
+| `mcpb` | the committed manifest validated against the **vendored** schema chosen by its own `manifest_version`, with a property-count floor on the vendored file; `$schema` matched as a whole URL at a full tag or SHA; `manifest_version` equal to the URL's; a floor at 0.3; unknown keys preserved by decoding twice; entry point, every command and every override naming a staged program, never a file copied from the repository, and every command starting `${__dirname}/`, the one path the specification fixes to the bundle, so a relative or absolute one is refused (§18 row 95); every override a claimed platform; each claimed platform spawning the file staged **for it**; every `${user_config.x}` in a composed value declared, and one spent in `env` either required or given a default and never `multiple` (§18 row 91); every variable the server reads, from `config.Vars`, asked for under its name without `GMAIL_`, lowercased, unless left out with a reason, and a reason for a variable the server does not read refused; every switch asked as a boolean; the profile field stating `config.ProfileRule`, which Build's refusal states too, and a bundle that asks for no profile setting refused, so the check cannot go quiet; the committed version the placeholder, in the checks the packer runs too; settings passed by `mcp_config.env` alone: the base `args` present and `[]`, missing, null and non-empty each refused, and no `args` or `env` on a platform override, an empty one included, since the host takes an override's in place of the base's (§18 row 94); the environment the host builds from the defaults, a required key's default included, started through `config.Load` and configuring the server as none does (§18 rows 92 and 94), with every list or object default refused by key; every set of the switches started over the defaults, a switch in a set on whatever its default, the refused ones held both ways to a declared list, and each field in a refused set titled and naming the others' titles, matched trimmed, each untitled one reported once whether or not the defaults start; `privacy_policies` not empty (§18 row 93); the no-login sentence; a `support` URL; the files copied from the repository present, and the license `LICENSE` names, which the packer checks too. The defaults and refusal checks read `mcp_config.env` alone, which the `args` and override refusals keep sound |
 | `mcpb-pack` (release) | decode–encode stamping, never text substitution; the gate's checks run again; `0755` on every staged binary and `0644` on the files copied from the repository; a fixed mtime asserted against a literal; globs matching exactly one file; the staged binary's `--version` read back, as the fifth version check; the packed archive read back |
 | `release` | goreleaser's config held against the release workflow: universal binaries via `ids`, the bundle in both `extra_files`, `subject-path` with a valid separator, signing and SBOM pins |
 | `server-json` | the hash taken from `checksums.txt` with exactly one `.mcpb` row, **after** the signature check; validated against the vendored registry schema; the registry's unwritten rules — HTTPS, release URL, identifier shape — held by a test; `schema-refetch` (manual) compares the vendored bytes' hashes upstream with a timeout and writes nothing |
@@ -1514,7 +1521,9 @@ switch defaults to the server's own default, which is off, and the
 `mcpb` gate holds that. Claude Desktop approves each tool, and a person
 can set a tool to always allow, so a switch left off is the one guard a
 bundle install keeps (§18 row 92). Read-only with any switch is refused
-at startup, and each field involved says so.
+at startup, and each field involved names the other by its title. The
+gate starts every set of the switches and holds the refused ones to its
+declared list.
 
 ## 13. Testing
 
@@ -2925,6 +2934,36 @@ what fixed them.
   acted on: the CHANGELOG now says, under **Breaking:**, that a Claude
   Code allow rule for `send_draft` or `set_vacation` takes effect once
   the mark is gone, where the mark used to override it (§18 row 49).
+- **3.1.0, reviewed after release.** 3.1.0 shipped without
+  `/simplify`, `/code-review high` or `/security-review`, which this
+  repository's definition of done asks for. They were run over
+  `v3.0.0..HEAD` on 2026-10-24, and what they found ships in the next
+  release. Simplify, fixed in `5cedeca`: the keys the bundle asks for are
+  derived from `config.Vars`, each one left out with a reason; the
+  defaults check starts the server through `config.Load` from the
+  environment a host builds and from none, a required key's default
+  included; an override's `env` or `args` and a non-empty base `args`
+  are refused; every set of the switches is started and the refused
+  ones held to a declared list; a fixture that copied the manifest
+  went. Code review, five rounds, fixed in `1e28f48`, `7b9d25d`,
+  `235c4dc`, `1ed60c2` and the commit after it, each with a test that
+  failed first: a switch in a refused set dropped when it was required
+  or had a list default; `entry_point: "LICENSE"` passing; an empty or
+  blank title matching every description, then reported once per set,
+  and not at all when the defaults failed to start; a padded title not
+  found where it was named; the packer skipping the repository and
+  license checks, and holding the version with a check of its own; the
+  Profile field silent on what a name may be, then claiming more than
+  Build refuses, which reads capitals as lowercase, and "lowercase
+  letters" admitting `café`, and Build's Unicode lowering renaming the
+  Kelvin sign to `k`; the profile check able to go quiet; a command
+  not under `${__dirname}/` passing. Security review: no finding at
+  confidence 8 or above. Its note on commands not under `${__dirname}/`
+  is adopted on narrower grounds than it gave: `${__dirname}` is the
+  one path the specification fixes to the bundle, and nothing says
+  what a relative command is resolved against (§18 row 95). Kept: a profile name with spaces around it starts,
+  since every setting is trimmed; `ProfileRule` is typed beside the
+  pattern, which `TestProfileRule` holds at 64 and 65 characters.
 
 ### Closing a phase
 
@@ -3177,3 +3216,5 @@ live** — §15 exists to settle these, and they are marked.
 | 91 | A bundle's optional setting the person leaves empty reaches the server empty | Read 2026-10-23. anthropics/mcpb at v2.1.2: its manifest specification on `user_config` (defaults "support variable substitution", and arrays are expanded only as separate arguments), `src/shared/config.ts` (variables come from the defaults and the person's values, and `replaceVariables` leaves a variable it does not have as written, and an array in a string unsubstituted) | **Refuted (tier 1, the reference host; Claude Desktop not probed).** An optional key with no default is never a variable, so under the reference host `${user_config.local_dir}` reaches the 3.0.0 server as written when the field is left blank, and the server refuses it as a directory that is not absolute. `client_secret` and `local_dir` now default to `""`, which the server reads as unset, and the `mcpb` gate refuses an env-spent key that is optional with no default, or `multiple` (§5a) |
 | 92 | A bundle install has a second approval behind the server, as Claude Code's ask rules are | Read 2026-10-23. anthropics/mcpb v2.1.2: the manifest specification declares `tools` for display, and its `src/` reads it only in `init`; `src/shared/config.ts` passes a boolean to `env` as "true" or "false". claude.com/docs/connectors/getting-started: "Select Allow once to continue, or Always allow to skip the prompt for that tool from now on". claude.com/docs/connectors/building/review-criteria: readOnlyHint and destructiveHint "determine auto-permissions in Claude". claude.com/docs/third-party/claude-desktop/configuration: admins may turn off persistent approval (`mcpPersistentAlwaysAllowEnabled`) | **Refuted (tier 1, the docs and the reference host; Claude Desktop not probed; no page names desktop extensions).** Claude Desktop approves per tool, driven by the annotations, and a person can always allow a tool; there is no per-call rule like Claude Code's `permissions.ask`. So every switch the bundle asks for defaults to the server's own default, off, and the `mcpb` gate refuses one that does not. The bundle declares no `tools` list, which would be display only and wrong for most installs, since five settings change what registers (§12) |
 | 93 | `privacy_policies` is optional for a bundle | Read 2026-10-23. anthropics/mcpb v2.1.2, the manifest specification: "Required when the extension connects to external services (first- or third-party) that process user data"; added in manifest_version 0.2, and enforced by neither the schema nor `mcpb validate` | **Refuted (tier 1, the specification).** The manifest names Google's privacy policy, https://policies.google.com/privacy, which answered 200 on 2026-10-24, and the `mcpb` gate refuses an empty list |
+| 94 | A platform override adds to `mcp_config`, and a bundle's settings reach the server only through `env` | Read 2026-10-24. anthropics/mcpb at v2.1.2, `src/shared/config.ts`: L114-120 take `platformConfig.args \|\| result.args` and `platformConfig.env \|\| result.env`; L173-177 run `replaceVariables` over the whole result, `args` included; L139-154 set each default first and the person's values over it; L197-222 check a required key against the person's values alone | **Refuted (tier 1, the reference host; Claude Desktop not probed).** An override's `args` or `env` replaces the base's rather than adding to it, and an empty `[]` or `{}` is truthy, so it replaces the base too. An argument such as `--enable-send=true` reaches the server substituted, past every check on `env`. The `mcpb` gate refuses `args` and `env` on an override whenever present, and holds the base `args` to `[]`; the key stays, since no Claude Desktop launch has shown it optional. A required key's default reaches the server whenever the person's form keeps it, so the defaults check substitutes it |
+| 95 | Any `command` the specification shows runs from the bundle | Read 2026-10-24. anthropics/mcpb v2.1.2: MANIFEST.md L497 and L510-515 give a binary the command `server/my-server`, and L532 says `${__dirname}` "is replaced with the absolute path to the extension's directory"; `src/shared/config.ts` L118, L133 and L173-176 substitute variables in `command` and resolve no path | **Refined (tier 1, the specification and the reference host; Claude Desktop not probed).** The specification shows a relative command once and never says what it is resolved against, and the reference host passes it to the spawn as written. `${__dirname}` is the one form whose meaning the specification fixes. The `mcpb` gate requires every command to start with `${__dirname}/`, as the committed manifest's do, and refuses a relative or absolute one; a probe of Claude Desktop's working directory would settle the relative form |

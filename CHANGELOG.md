@@ -15,6 +15,17 @@ lifted verbatim.
 
 ## [Unreleased]
 
+## [3.1.1] - 2026-10-24
+
+### Changed
+
+- The bundle's Read-only field names the fields it cannot be combined with by their titles: Allow sending, Allow permanent deletion and Allow settings changes.
+- The bundle's Profile field says what a profile name may be, up to 64 characters from a to z, 0 to 9, - and _, starting with a letter or digit, with capitals read as lowercase; the server's refusal of another name states the same rule.
+
+### Fixed
+
+- A profile name with a character that Unicode lowercases into a to z, such as the Kelvin sign, is refused rather than renamed.
+
 ## [3.1.0] - 2026-10-24
 
 ### Added
@@ -228,7 +239,8 @@ lifted verbatim.
 - Repository gates run by `make check` and CI: leaks, pins, error classes, API coverage, schema diff, smoke, staleness and more.
 - Signed release archives for six platforms with SBOMs, build provenance, a Claude Desktop bundle and an MCP registry entry.
 
-[Unreleased]: https://github.com/mmedum/google-mail-mcp/compare/v3.1.0...HEAD
+[Unreleased]: https://github.com/mmedum/google-mail-mcp/compare/v3.1.1...HEAD
+[3.1.1]: https://github.com/mmedum/google-mail-mcp/compare/v3.1.0...v3.1.1
 [3.1.0]: https://github.com/mmedum/google-mail-mcp/compare/v3.0.0...v3.1.0
 [3.0.0]: https://github.com/mmedum/google-mail-mcp/compare/v2.3.0...v3.0.0
 [2.3.0]: https://github.com/mmedum/google-mail-mcp/compare/v2.2.0...v2.3.0

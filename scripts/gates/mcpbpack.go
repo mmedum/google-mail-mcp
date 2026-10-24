@@ -13,8 +13,6 @@ import (
 	"slices"
 	"strings"
 	"time"
-
-	"github.com/mmedum/google-mail-mcp/v3/internal/config"
 )
 
 // The packer. goreleaser runs it from the universal binary's post hook,
@@ -69,14 +67,7 @@ func mcpbPackTo(out io.Writer, root, dist, version, bundle string, runVersion bo
 	if err != nil {
 		return "", err
 	}
-	if m.Version != placeholderVersion {
-		return "", fmt.Errorf("%s says version %q; the committed manifest must carry %q",
-			mcpbManifestPath, m.Version, placeholderVersion)
-	}
-	problems := mcpbValidate(m, mcpbFiles, launcherNamesIn(launcherScript(mcpbFiles)))
-	problems = append(problems, mcpbDocumentProblems(m, raw)...)
-	problems = append(problems, mcpbSettingProblems(m, config.EnvVars())...)
-	if err := problemsError(out, mcpbManifestPath, problems); err != nil {
+	if err := problemsError(out, mcpbManifestPath, mcpbManifestProblems(root, m, raw)); err != nil {
 		return "", fmt.Errorf("the manifest does not describe the bundle this would pack: %w", err)
 	}
 

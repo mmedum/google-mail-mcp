@@ -7,13 +7,11 @@ import (
 	"io"
 	"os"
 	"path/filepath"
-	"reflect"
 	"slices"
 	"strings"
 	"testing"
 	"time"
 
-	"github.com/mmedum/google-mail-mcp/v3/internal/credentials"
 	"github.com/mmedum/google-mail-mcp/v3/internal/scopes"
 )
 
@@ -214,10 +212,27 @@ func TestEnvVars(t *testing.T) {
 	if !slices.Equal(got, want) {
 		t.Errorf("EnvVars =\n%v\nwant\n%v", got, want)
 	}
-	// The credential store reads its variable itself; the two names must
-	// be one.
-	if !slices.Contains(got, credentials.EnvVar) {
-		t.Errorf("EnvVars misses %s", credentials.EnvVar)
+}
+
+// A profile name is what ProfileRule says, at each of its edges, capitals
+// read as lowercase, and a refusal says the rule.
+func TestProfileRule(t *testing.T) {
+	isolate(t)
+	for _, tc := range []struct{ name, want string }{{"Work", "work"}, {" work ", "work"}, {"A-B", "a-b"}} {
+		if c, err := build(t, map[string]string{"GMAIL_PROFILE": tc.name}); err != nil || c.Profile != tc.want {
+			t.Errorf("GMAIL_PROFILE=%q: profile %q, %v; want %q", tc.name, c.Profile, err, tc.want)
+		}
+	}
+	for _, name := range []string{"a", "0", "a-b_c", "9-", strings.Repeat("a", 64)} {
+		if c, err := build(t, map[string]string{"GMAIL_PROFILE": name}); err != nil || c.Profile != name {
+			t.Errorf("GMAIL_PROFILE=%q: profile %q, %v; want it accepted", name, c.Profile, err)
+		}
+	}
+	for _, name := range []string{strings.Repeat("a", 65), "-a", "_a", "a.b", "a b", "\u00e9", "caf\u00e9", "\u212aey"} {
+		_, err := build(t, map[string]string{"GMAIL_PROFILE": name})
+		if !errors.Is(err, ErrInvalid) || !strings.Contains(err.Error(), ProfileRule) {
+			t.Errorf("GMAIL_PROFILE=%q: %v; want it refused, naming the rule", name, err)
+		}
 	}
 }
 
@@ -291,25 +306,17 @@ func TestEmptyValuesMeanUnset(t *testing.T) {
 	}
 }
 
-// Vars is what the bundle gate reads a switch's default from, so each
+// Vars is what the bundle gate reads a setting's kind from, so each
 // claim it makes is held to what Build does. A switch takes true and
-// false and refuses anything else, and nothing else does that. A
-// default, and an empty value, each configure what setting nothing does.
+// false and refuses anything else, and nothing else does that.
 func TestVarsDescribeWhatBuildDoes(t *testing.T) {
 	isolate(t)
 	vars := Vars()
-	if len(vars) < 11 {
-		t.Fatalf("Vars has %d settings; Define binds 11 flags", len(vars))
-	}
-	unset, err := build(t, nil)
-	if err != nil {
-		t.Fatal(err)
+	if len(vars) < 14 {
+		t.Fatalf("Vars has %d variables; the server reads 14", len(vars))
 	}
 	var switches []string
 	for _, v := range vars {
-		if !slices.Contains(EnvVars(), v.Name) {
-			t.Errorf("%s is not a variable EnvVars lists", v.Name)
-		}
 		accepts := func(value string) bool {
 			_, err := build(t, map[string]string{v.Name: value})
 			return err == nil
@@ -320,19 +327,56 @@ func TestVarsDescribeWhatBuildDoes(t *testing.T) {
 		if v.Switch {
 			switches = append(switches, v.Name)
 		}
-		for _, value := range []string{v.Default, ""} {
-			c, err := build(t, map[string]string{v.Name: value})
-			if err != nil {
-				t.Errorf("%s=%q is refused: %v", v.Name, value, err)
-				continue
-			}
-			if !reflect.DeepEqual(c, unset) {
-				t.Errorf("%s=%q configures something:\n got %+v\nwant %+v", v.Name, value, c, unset)
-			}
-		}
 	}
 	want := []string{"GMAIL_READ_ONLY", "GMAIL_ENABLE_SEND", "GMAIL_ENABLE_DESTRUCTIVE", "GMAIL_ENABLE_SETTINGS"}
 	if !slices.Equal(switches, want) {
 		t.Errorf("switches %v, want %v", switches, want)
 	}
+}
+
+// Vars records what Define reads, so Define reads nothing past it: a
+// variable read around the recording would be one the bundle gate and
+// the staleness gate never see. Each is read once.
+func TestDefineReadsOnlyWhatVarsNames(t *testing.T) {
+	var read []string
+	fs := flag.NewFlagSet("test", flag.ContinueOnError)
+	fs.SetOutput(io.Discard)
+	Define(fs, func(name string) string {
+		read = append(read, name)
+		return ""
+	})
+	var want []string
+	for _, v := range Vars() {
+		if !slices.Contains(envOnly, v.Name) {
+			want = append(want, v.Name)
+		}
+	}
+	if len(read) < 13 {
+		t.Fatalf("Define read %d variables, below the floor of 13", len(read))
+	}
+	if !slices.Equal(read, want) {
+		t.Errorf("Define reads\n%v\nand Vars names\n%v", read, want)
+	}
+	if twice := readTwice(read); len(twice) != 0 {
+		t.Errorf("Define reads %v more than once", twice)
+	}
+	if got := readTwice([]string{"GMAIL_A", "GMAIL_B", "GMAIL_A"}); !slices.Equal(got, []string{"GMAIL_A"}) {
+		t.Errorf("readTwice of a duplicate read = %v, want [GMAIL_A]", got)
+	}
+}
+
+// readTwice is every name that appears more than once in names, sorted.
+func readTwice(names []string) []string {
+	seen := map[string]int{}
+	for _, n := range names {
+		seen[n]++
+	}
+	var twice []string
+	for n, count := range seen {
+		if count > 1 {
+			twice = append(twice, n)
+		}
+	}
+	slices.Sort(twice)
+	return twice
 }

@@ -23,6 +23,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/mmedum/google-mail-mcp/v3/internal/credentials"
 	"github.com/mmedum/google-mail-mcp/v3/internal/scopes"
 	"github.com/mmedum/google-mail-mcp/v3/internal/userconfig"
 )
@@ -33,14 +34,16 @@ const EnvPrefix = "GMAIL_"
 // Variables read from the environment only. CONFIG_DIR has no flag
 // because it is read the same way by every subcommand before anything
 // else; REFRESH_TOKEN because a secret on a command line is visible to
-// every process on the machine. internal/credentials reads the second.
+// every process on the machine. internal/credentials reads the second,
+// and names it.
 const (
 	EnvConfigDir    = EnvPrefix + "CONFIG_DIR"
-	EnvRefreshToken = EnvPrefix + "REFRESH_TOKEN"
+	EnvRefreshToken = credentials.EnvVar
 )
 
-// envOnly is every variable read outside Define, for EnvVars.
-var envOnly = []string{EnvConfigDir, EnvRefreshToken}
+// envOnly is every variable read outside Define, for Vars: the refresh
+// token, which internal/credentials reads.
+var envOnly = []string{EnvRefreshToken}
 
 // DefaultAPIBase is the Gmail API origin. Paths go under
 // /gmail/v1/users/me/.
@@ -133,17 +136,14 @@ type Settings struct {
 	// RequirePrompt is the removed GMAIL_REQUIRE_PROMPT, as the
 	// environment gives it, read only to refuse it set.
 	RequirePrompt string
-	// vars is every setting Define binds to a flag, in order.
+	// vars is every variable Define reads, in order.
 	vars []Var
 }
 
-// Var is one setting Define binds to a flag.
+// Var is one variable the server reads.
 type Var struct {
 	// Name is the environment variable.
 	Name string
-	// Default is what the server uses when neither the variable nor its
-	// flag is set, written as a person would set it.
-	Default string
 	// Switch marks a setting that is on or off.
 	Switch bool
 }
@@ -159,29 +159,31 @@ const removedRequirePrompt = "REQUIRE_PROMPT"
 // Define registers one flag per setting on fs, each defaulting to its
 // GMAIL_* variable read through env.
 //
-// EnvVars runs this against a recording lookup, so a setting added here
-// is documented or the staleness gate fails.
+// Every variable is read through read, which records it for Vars, so a
+// setting added here is documented or the staleness gate fails.
 func Define(fs *flag.FlagSet, env func(string) string) *Settings {
 	s := &Settings{}
+	read := func(name string, isSwitch bool) string {
+		s.vars = append(s.vars, Var{Name: name, Switch: isSwitch})
+		return env(name)
+	}
 	def := func(p *string, name, key, fallback, usage string) {
-		v := env(EnvPrefix + key)
+		v := read(EnvPrefix+key, false)
 		if v == "" {
 			v = fallback
 		}
 		fs.StringVar(p, name, v, usage+" [env "+EnvPrefix+key+"]")
-		s.vars = append(s.vars, Var{Name: EnvPrefix + key, Default: fallback})
 	}
 	// A switch takes a bare --read-only as well as --read-only=true.
 	// Build parses the text either way, so a bad value from the
 	// environment is reported with the others rather than by the flag
 	// package.
 	defBool := func(p *string, name, key, usage string) {
-		*p = env(EnvPrefix + key)
+		*p = read(EnvPrefix+key, true)
 		if *p == "" {
 			*p = "false"
 		}
 		fs.Var((*switchText)(p), name, usage+" [env "+EnvPrefix+key+"]")
-		s.vars = append(s.vars, Var{Name: EnvPrefix + key, Default: "false", Switch: true})
 	}
 	def(&s.Profile, "profile", "PROFILE", userconfig.DefaultProfile, "named configuration profile")
 	def(&s.ClientSecretPath, "client-secret", "CLIENT_SECRET", "", "path to the OAuth Desktop client JSON (overrides the stored profile setting)")
@@ -196,8 +198,8 @@ func Define(fs *flag.FlagSet, env func(string) string) *Settings {
 	def(&s.LogFormat, "log-format", "LOG_FORMAT", string(LogText), "log format: text, json")
 	def(&s.HTTPTimeout, "http-timeout", "HTTP_TIMEOUT", DefaultHTTPTimeout.String(), "deadline for one attempt at a Google API call")
 	def(&s.APIBase, "api-base", "API_BASE", DefaultAPIBase, "Gmail API origin; for tests")
-	s.ConfigDir = env(EnvConfigDir)
-	s.RequirePrompt = env(EnvPrefix + removedRequirePrompt)
+	s.ConfigDir = read(EnvConfigDir, false)
+	s.RequirePrompt = read(EnvPrefix+removedRequirePrompt, false)
 	return s
 }
 
@@ -217,28 +219,45 @@ func (s *switchText) Set(v string) error { *s = switchText(v); return nil }
 // IsBoolFlag lets the flag be given without a value.
 func (s *switchText) IsBoolFlag() bool { return true }
 
-// Vars is every setting Define binds to a flag, in the order it binds
-// them. The bundle gate reads each switch's default here.
+// Vars is every variable the server reads: Define's, in the order it
+// reads them, then the ones read outside it. Define's are recorded
+// rather than listed, so they cannot fall behind. The bundle gate
+// derives what it asks for from these.
 func Vars() []Var {
 	fs := flag.NewFlagSet("vars", flag.ContinueOnError)
 	fs.SetOutput(io.Discard)
-	return Define(fs, func(string) string { return "" }).vars
+	vars := Define(fs, func(string) string { return "" }).vars
+	for _, name := range envOnly {
+		vars = append(vars, Var{Name: name})
+	}
+	return vars
 }
 
-// EnvVars is every GMAIL_ variable this server reads, sorted. The
-// Define part is recorded rather than listed, so it cannot fall behind.
+// EnvVars is the names of Vars, sorted.
 func EnvVars() []string {
-	var seen []string
-	fs := flag.NewFlagSet("envvars", flag.ContinueOnError)
-	fs.SetOutput(io.Discard)
-	Define(fs, func(name string) string {
-		seen = append(seen, name)
-		return ""
-	})
-	seen = append(seen, envOnly...)
-	slices.Sort(seen)
-	return slices.Compact(seen)
+	vars := Vars()
+	names := make([]string, 0, len(vars))
+	for _, v := range vars {
+		names = append(names, v.Name)
+	}
+	slices.Sort(names)
+	return slices.Compact(names)
 }
+
+// asciiLower lowers A to Z alone, so a character Unicode folds into a
+// to z, such as the Kelvin sign, is refused rather than renamed.
+func asciiLower(s string) string {
+	return strings.Map(func(r rune) rune {
+		if 'A' <= r && r <= 'Z' {
+			return r + 'a' - 'A'
+		}
+		return r
+	}, s)
+}
+
+// ProfileRule is profilePattern in words, which Build's refusal and the
+// bundle's profile field both give.
+const ProfileRule = "up to 64 characters from a to z, 0 to 9, - and _, starting with a letter or digit"
 
 var (
 	profilePattern = regexp.MustCompile(`^[a-z0-9][a-z0-9_-]{0,63}$`)
@@ -259,9 +278,9 @@ func (s *Settings) Build() (Config, error) {
 		}
 	}
 
-	c.Profile = strings.ToLower(strings.TrimSpace(s.Profile))
+	c.Profile = asciiLower(strings.TrimSpace(s.Profile))
 	if !profilePattern.MatchString(c.Profile) {
-		add(fmt.Errorf("%w: profile %q must match %s", ErrInvalid, s.Profile, profilePattern))
+		add(fmt.Errorf("%w: profile %q must be %s", ErrInvalid, s.Profile, ProfileRule))
 	}
 	c.ClientSecretPath = strings.TrimSpace(s.ClientSecretPath)
 

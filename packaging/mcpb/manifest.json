@@ -62,14 +62,14 @@
     "profile": {
       "type": "string",
       "title": "Profile",
-      "description": "Which stored login to use. Each profile keeps its own client, token and account, such as a work account and a personal one, and each is logged in to with `google-mail-mcp login --profile <name>`. Leave it empty for the default profile.",
+      "description": "Which stored login to use. Each profile keeps its own client, token and account, such as a work account and a personal one, and each is logged in to with `google-mail-mcp login --profile <name>`. A name is up to 64 characters from a to z, 0 to 9, - and _, starting with a letter or digit; capitals are read as lowercase, and any other name stops the server at start. Leave it empty for the default profile.",
       "default": "",
       "required": false
     },
     "read_only": {
       "type": "boolean",
       "title": "Read-only",
-      "description": "Register only the read tools and ask Google for gmail.readonly, so the API itself refuses a write. It cannot be combined with sending, permanent deletion or settings changes: the server then refuses to start.",
+      "description": "Register only the read tools and ask Google for gmail.readonly, so the API itself refuses a write. It cannot be combined with Allow sending, Allow permanent deletion or Allow settings changes: the server then refuses to start.",
       "default": false,
       "required": false
     },
