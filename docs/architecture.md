@@ -1,6 +1,11 @@
 # Architecture — google-mail-mcp
 
-**Status: 3.0.0 is cut, 2026-10-23, after a live run of 99 steps with
+**Status: 3.1.0 is cut, 2026-10-24: the Claude Desktop bundle has the
+family's shape (`~/.claude/mcp-server-standard.md` §10b). Its OAuth
+client file and attachment folder default to empty, so a field left
+blank no longer reaches the server as `${user_config.x}`, and its fields
+say which settings read-only excludes. The server is unchanged, so no
+live run was owed. 3.0.0 was cut, 2026-10-23, after a live run of 99 steps with
 none failed, its transcript read, and the code and security reviews
 (§16a). The run had no `-send-to`, so its seven steps that send were
 skipped: `send_draft`'s refusals and dry runs ran, a send did not.
