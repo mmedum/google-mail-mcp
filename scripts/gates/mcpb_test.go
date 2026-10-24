@@ -2,10 +2,10 @@ package main
 
 import (
 	"encoding/json"
+	"maps"
 	"os"
 	"os/exec"
 	"path/filepath"
-	"reflect"
 	"runtime"
 	"slices"
 	"strings"
@@ -14,10 +14,11 @@ import (
 	"github.com/mmedum/google-mail-mcp/v3/internal/config"
 )
 
-// mcpbFixture decodes the good manifest fixture as a document.
+// mcpbFixture decodes the committed manifest as a document, so the
+// breaks below are of the bundle that ships.
 func mcpbFixture(t *testing.T) map[string]any {
 	t.Helper()
-	raw, err := os.ReadFile(filepath.Join("testdata", "mcpb", "manifest.json"))
+	raw, err := os.ReadFile(filepath.Join("..", "..", mcpbManifestPath))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -43,6 +44,16 @@ func mcpbRoot(t *testing.T, doc map[string]any) string {
 	})
 }
 
+// mcpbCommitted decodes the committed manifest as the checks read it.
+func mcpbCommitted(t *testing.T) mcpbManifest {
+	t.Helper()
+	m, _, err := mcpbRead(filepath.Join("..", "..", mcpbManifestPath))
+	if err != nil {
+		t.Fatal(err)
+	}
+	return m
+}
+
 // mcpbDig returns the object at a dotted path in a decoded document.
 func mcpbDig(doc map[string]any, keys ...string) map[string]any {
 	cur := doc
@@ -60,26 +71,12 @@ func TestMcpbCommittedManifestPasses(t *testing.T) {
 	out.mustSay(t, "7 staged files, 3 platforms, 7 user_config keys")
 }
 
+// The breaks below start from the committed manifest in a fresh root,
+// which passes.
 func TestMcpbFixturePasses(t *testing.T) {
 	var out sink
 	if err := mcpbCheck(&out, mcpbRoot(t, mcpbFixture(t))); err != nil {
 		t.Fatalf("the fixture fails: %v\n%s", err, out.String())
-	}
-}
-
-// The fixture is the committed manifest, so the breaks below are of the
-// bundle that ships.
-func TestMcpbFixtureIsTheCommittedManifest(t *testing.T) {
-	committed, err := os.ReadFile(filepath.Join("..", "..", mcpbManifestPath))
-	if err != nil {
-		t.Fatal(err)
-	}
-	var want map[string]any
-	if err := json.Unmarshal(committed, &want); err != nil {
-		t.Fatal(err)
-	}
-	if got := mcpbFixture(t); !reflect.DeepEqual(got, want) {
-		t.Errorf("testdata/mcpb/manifest.json differs from %s; copy it over", mcpbManifestPath)
 	}
 }
 
@@ -138,16 +135,19 @@ func TestMcpbRefusesEachBreak(t *testing.T) {
 			"does not satisfy mcpb-manifest-v0.3.schema.json"},
 		{"wrong name", func(d map[string]any) { d["name"] = "gmail" }, `name is "gmail"`},
 		{"no privacy policy", func(d map[string]any) { delete(d, "privacy_policies") }, "privacy_policies is empty"},
+		{"a license LICENSE is not", func(d map[string]any) { d["license"] = "MIT" },
+			`license is "MIT" and LICENSE is Apache-2.0`},
 		{"a switch the bundle turns on", func(d map[string]any) {
 			mcpbDig(d, "user_config", "enable_send")["default"] = true
-		}, "user_config.enable_send is a boolean defaulting to true; GMAIL_ENABLE_SEND is a switch the server defaults to false"},
+		}, "the bundle's defaults configure the server otherwise than no environment does"},
+		{"a required switch the bundle turns on", func(d map[string]any) {
+			mcpbDig(d, "user_config", "enable_send")["required"] = true
+			mcpbDig(d, "user_config", "enable_send")["default"] = true
+		}, "the bundle's defaults configure the server otherwise than no environment does"},
 		{"a switch asked as text", func(d map[string]any) {
 			mcpbDig(d, "user_config", "enable_destructive")["type"] = "string"
 			mcpbDig(d, "user_config", "enable_destructive")["default"] = "false"
-		}, `user_config.enable_destructive is a string defaulting to "false"; GMAIL_ENABLE_DESTRUCTIVE is a switch`},
-		{"a switch with no default", func(d map[string]any) {
-			delete(mcpbDig(d, "user_config", "enable_settings"), "default")
-		}, "user_config.enable_settings is a boolean defaulting to nothing"},
+		}, "user_config.enable_destructive is a string; GMAIL_ENABLE_DESTRUCTIVE is a switch, so ask for a boolean"},
 		{"an optional key with no default", func(d map[string]any) {
 			delete(mcpbDig(d, "user_config", "local_dir"), "default")
 		}, "spends ${user_config.local_dir}, which is optional with no default"},
@@ -165,15 +165,41 @@ func TestMcpbRefusesEachBreak(t *testing.T) {
 			mcpbDig(d, "user_config")["log_level"] = map[string]any{
 				"type": "string", "title": "Log level", "description": "x", "default": "", "required": false}
 		}, "user_config asks for log_level, which is no setting's key"},
-		{"a variable the bundle does not ask for", func(d map[string]any) {
+		{"a variable the bundle leaves out", func(d map[string]any) {
 			mcpbDig(d, "server", "mcp_config", "env")["GMAIL_LOG_LEVEL"] = "debug"
-		}, "mcp_config.env sets GMAIL_LOG_LEVEL, which the bundle does not ask for"},
+		}, "mcp_config.env sets GMAIL_LOG_LEVEL, which the bundle leaves out: diagnostics"},
+		{"a variable the server does not read", func(d map[string]any) {
+			mcpbDig(d, "server", "mcp_config", "env")["GMAIL_NOTHING"] = "x"
+		}, "mcp_config.env sets GMAIL_NOTHING, which the server does not read"},
+		{"base args missing", func(d map[string]any) { delete(mcpbDig(d, "server", "mcp_config"), "args") },
+			"mcp_config.args is missing"},
+		{"base args null", func(d map[string]any) { mcpbDig(d, "server", "mcp_config")["args"] = nil },
+			"mcp_config.args is null"},
+		{"base args with a flag", func(d map[string]any) {
+			mcpbDig(d, "server", "mcp_config")["args"] = []any{"--enable-send=true"}
+		}, "mcp_config.args is not []"},
+		{"an empty override args", func(d map[string]any) {
+			mcpbDig(d, "server", "mcp_config", "platform_overrides", "linux")["args"] = []any{}
+		}, "platform_overrides.linux.args is set"},
+		{"an empty override env", func(d map[string]any) {
+			mcpbDig(d, "server", "mcp_config", "platform_overrides", "win32")["env"] = map[string]any{}
+		}, "platform_overrides.win32.env is set"},
+		{"a refused field that does not name its pair", func(d map[string]any) {
+			mcpbDig(d, "user_config", "enable_send")["description"] = "Register the tool that sends a draft."
+		}, `user_config.enable_send does not name "Read-only", which the server refuses it with`},
 		{"defaults that configure the server", func(d map[string]any) {
 			mcpbDig(d, "user_config", "profile")["default"] = "work"
 		}, "the bundle's defaults configure the server otherwise than no environment does"},
 		{"defaults the server refuses", func(d map[string]any) {
 			mcpbDig(d, "user_config", "local_dir")["default"] = "attachments"
 		}, `the environment the bundle's defaults give the server is refused: config: invalid: GMAIL_LOCAL_DIR "attachments"`},
+		{"a required folder's default the server refuses", func(d map[string]any) {
+			mcpbDig(d, "user_config", "local_dir")["required"] = true
+			mcpbDig(d, "user_config", "local_dir")["default"] = "attachments"
+		}, `the environment the bundle's defaults give the server is refused: config: invalid: GMAIL_LOCAL_DIR "attachments"`},
+		{"a list default", func(d map[string]any) {
+			mcpbDig(d, "user_config", "profile")["default"] = []any{"work"}
+		}, "user_config.profile defaults to a list, which the defaults check cannot build an environment from"},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
@@ -189,53 +215,126 @@ func TestMcpbRefusesEachBreak(t *testing.T) {
 	}
 }
 
-// Every variable the server reads has a verdict: asked for, or left out
-// with a reason. A new one with neither fails, and so does a verdict on
-// one the server no longer reads.
-func TestMcpbEverySettingHasAVerdict(t *testing.T) {
-	var m mcpbManifest
-	raw, _ := json.Marshal(mcpbFixture(t))
-	if err := json.Unmarshal(raw, &m); err != nil {
-		t.Fatal(err)
+// The bundle asks for every variable the server reads, less those left
+// out with a reason. A new one fails until the manifest asks for it,
+// and a reason for one the server does not read fails too.
+func TestMcpbAsksForEverySettingNotLeftOut(t *testing.T) {
+	asked, problems := mcpbAskedFrom(config.Vars(), mcpbLeftOut)
+	var names []string
+	for _, v := range asked {
+		names = append(names, v.Name)
 	}
-	known := config.EnvVars()
-	if p := mcpbSettingProblems(m, known); len(p) != 0 {
-		t.Fatalf("the fixture fails: %v", p)
+	want := []string{"GMAIL_PROFILE", "GMAIL_CLIENT_SECRET", "GMAIL_READ_ONLY", "GMAIL_ENABLE_SEND",
+		"GMAIL_ENABLE_DESTRUCTIVE", "GMAIL_ENABLE_SETTINGS", "GMAIL_LOCAL_DIR"}
+	if !slices.Equal(names, want) || len(problems) != 0 {
+		t.Fatalf("asked %v with problems %v, want %v and none", names, problems, want)
 	}
-	got := strings.Join(mcpbSettingProblems(m, append(slices.Clone(known), "GMAIL_NEW")), "\n")
-	if !strings.Contains(got, "the server reads GMAIL_NEW, and the bundle neither asks for it nor says why not") {
-		t.Errorf("a setting with no verdict passed: %s", got)
+
+	m := mcpbCommitted(t)
+	if p := mcpbSettingProblems(m, config.Vars(), mcpbLeftOut); len(p) != 0 {
+		t.Fatalf("the committed manifest fails: %v", p)
 	}
-	without := slices.DeleteFunc(slices.Clone(known), func(s string) bool { return s == "GMAIL_HTTP_TIMEOUT" })
-	got = strings.Join(mcpbSettingProblems(m, without), "\n")
-	if !strings.Contains(got, "the bundle has a verdict on GMAIL_HTTP_TIMEOUT, which the server does not read") {
-		t.Errorf("a verdict on a setting the server does not read passed: %s", got)
+	newVar := append(config.Vars(), config.Var{Name: "GMAIL_NEW"})
+	got := strings.Join(mcpbSettingProblems(m, newVar, mcpbLeftOut), "\n")
+	if !strings.Contains(got, "user_config does not ask for new, which sets GMAIL_NEW") {
+		t.Errorf("a setting neither asked for nor left out passed: %s", got)
+	}
+	leftOut := maps.Clone(mcpbLeftOut)
+	leftOut["GMAIL_GONE"] = "removed"
+	got = strings.Join(mcpbSettingProblems(m, config.Vars(), leftOut), "\n")
+	if !strings.Contains(got, "mcpbLeftOut names GMAIL_GONE, which the server does not read") {
+		t.Errorf("a reason for a setting the server does not read passed: %s", got)
+	}
+}
+
+// Every set of the switches is started, and the refused ones are held to
+// the declared list both ways. A declared key that is not a switch is
+// refused. When the defaults alone do not start, the check says nothing.
+func TestMcpbRefusalsAreDeclared(t *testing.T) {
+	m := mcpbCommitted(t)
+	asked, _ := mcpbAskedFrom(config.Vars(), mcpbLeftOut)
+	if p := mcpbRefusalProblems(m, asked, mcpbRefused); len(p) != 0 {
+		t.Fatalf("the committed manifest fails: %v", p)
+	}
+	cases := []struct {
+		name     string
+		declared [][]string
+		want     string
+	}{
+		{"a refusal not declared", mcpbRefused[:2],
+			"the server refuses enable_settings, read_only together, and mcpbRefused does not declare it"},
+		{"a declared refusal the server starts with", append(slices.Clone(mcpbRefused), []string{"enable_send", "enable_settings"}),
+			"mcpbRefused declares a refusal among enable_send, enable_settings, and the server starts with them"},
+		{"a declared key that is not a switch", append(slices.Clone(mcpbRefused), []string{"profile", "read_only"}),
+			"mcpbRefused names profile, which is not a switch the bundle asks for"},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			got := mcpbRefusalProblems(m, asked, tc.declared)
+			if !slices.ContainsFunc(got, func(p string) bool { return strings.HasPrefix(p, tc.want) }) {
+				t.Errorf("got %q, want one starting %q", got, tc.want)
+			}
+		})
+	}
+
+	m.UserConfig["local_dir"] = mcpbOption{Type: "directory", Default: json.RawMessage(`"attachments"`)}
+	if got := mcpbRefusalProblems(m, asked, nil); len(got) != 0 {
+		t.Errorf("defaults that do not start: got %q, want nothing, since the defaults check reports it", got)
+	}
+}
+
+// Every list or object default is reported, in key order, and the
+// comparison still runs over the rest.
+func TestMcpbDefaultsReportsEveryUnreadableDefault(t *testing.T) {
+	m := mcpbCommitted(t)
+	m.UserConfig["profile"] = mcpbOption{Type: "string", Default: json.RawMessage(`["work"]`)}
+	m.UserConfig["local_dir"] = mcpbOption{Type: "directory", Default: json.RawMessage(`{"path": "x"}`)}
+	send := m.UserConfig["enable_send"]
+	send.Default = json.RawMessage(`true`)
+	m.UserConfig["enable_send"] = send
+	got := mcpbDefaultsProblems(m)
+	want := []string{
+		"user_config.local_dir defaults to an object, which",
+		"user_config.profile defaults to a list, which",
+		"the bundle's defaults configure the server otherwise than no environment does",
+	}
+	if len(got) != len(want) {
+		t.Fatalf("got %q, want %d problems starting %q", got, len(want), want)
+	}
+	for i := range want {
+		if !strings.HasPrefix(got[i], want[i]) {
+			t.Errorf("problem %d is %q, want one starting %q", i, got[i], want[i])
+		}
 	}
 }
 
 // Each file the packer copies from the repository must be there.
 func TestMcpbRefusesAMissingRepositoryFile(t *testing.T) {
-	for _, name := range []string{"LICENSE", "README.md"} {
+	copied := 0
+	for _, f := range mcpbFiles {
+		if f.repo == "" {
+			continue
+		}
+		copied++
 		root := mcpbRoot(t, mcpbFixture(t))
-		if err := os.Remove(filepath.Join(root, name)); err != nil {
+		if err := os.Remove(filepath.Join(root, f.repo)); err != nil {
 			t.Fatal(err)
 		}
 		var out sink
 		if err := mcpbCheck(&out, root); err == nil {
-			t.Fatalf("a missing %s passed: %s", name, out.String())
+			t.Fatalf("a missing %s passed: %s", f.repo, out.String())
 		}
-		out.mustSay(t, "copies "+name+" from the repository")
+		out.mustSay(t, "copies "+f.repo+" from the repository")
+	}
+	if copied < 2 {
+		t.Fatalf("the packer copies %d files from the repository, below the floor of 2", copied)
 	}
 }
 
 // The launcher's names are the packer's; renaming a staged binary in
 // one place and not the other fails.
 func TestMcpbLauncherNamesMustMatch(t *testing.T) {
-	var m mcpbManifest
-	raw, _ := json.Marshal(mcpbFixture(t))
-	if err := json.Unmarshal(raw, &m); err != nil {
-		t.Fatal(err)
-	}
+	m := mcpbCommitted(t)
 	if p := mcpbValidate(m, mcpbFiles, launcherNamesIn(launcherScript(mcpbFiles))); len(p) != 0 {
 		t.Fatalf("the generated launcher disagrees: %v", p)
 	}

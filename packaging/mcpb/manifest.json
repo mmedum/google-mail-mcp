@@ -69,7 +69,7 @@
     "read_only": {
       "type": "boolean",
       "title": "Read-only",
-      "description": "Register only the read tools and ask Google for gmail.readonly, so the API itself refuses a write. It cannot be combined with sending, permanent deletion or settings changes: the server then refuses to start.",
+      "description": "Register only the read tools and ask Google for gmail.readonly, so the API itself refuses a write. It cannot be combined with Allow sending, Allow permanent deletion or Allow settings changes: the server then refuses to start.",
       "default": false,
       "required": false
     },

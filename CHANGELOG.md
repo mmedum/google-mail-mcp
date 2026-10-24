@@ -15,6 +15,10 @@ lifted verbatim.
 
 ## [Unreleased]
 
+### Changed
+
+- The bundle's Read-only field names the fields it cannot be combined with by their titles: Allow sending, Allow permanent deletion and Allow settings changes.
+
 ## [3.1.0] - 2026-10-24
 
 ### Added

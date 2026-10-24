@@ -7,7 +7,6 @@ import (
 	"io"
 	"os"
 	"path/filepath"
-	"reflect"
 	"slices"
 	"strings"
 	"testing"
@@ -291,25 +290,17 @@ func TestEmptyValuesMeanUnset(t *testing.T) {
 	}
 }
 
-// Vars is what the bundle gate reads a switch's default from, so each
+// Vars is what the bundle gate reads a setting's kind from, so each
 // claim it makes is held to what Build does. A switch takes true and
-// false and refuses anything else, and nothing else does that. A
-// default, and an empty value, each configure what setting nothing does.
+// false and refuses anything else, and nothing else does that.
 func TestVarsDescribeWhatBuildDoes(t *testing.T) {
 	isolate(t)
 	vars := Vars()
-	if len(vars) < 11 {
-		t.Fatalf("Vars has %d settings; Define binds 11 flags", len(vars))
-	}
-	unset, err := build(t, nil)
-	if err != nil {
-		t.Fatal(err)
+	if len(vars) < 14 {
+		t.Fatalf("Vars has %d variables; the server reads 14", len(vars))
 	}
 	var switches []string
 	for _, v := range vars {
-		if !slices.Contains(EnvVars(), v.Name) {
-			t.Errorf("%s is not a variable EnvVars lists", v.Name)
-		}
 		accepts := func(value string) bool {
 			_, err := build(t, map[string]string{v.Name: value})
 			return err == nil
@@ -320,19 +311,34 @@ func TestVarsDescribeWhatBuildDoes(t *testing.T) {
 		if v.Switch {
 			switches = append(switches, v.Name)
 		}
-		for _, value := range []string{v.Default, ""} {
-			c, err := build(t, map[string]string{v.Name: value})
-			if err != nil {
-				t.Errorf("%s=%q is refused: %v", v.Name, value, err)
-				continue
-			}
-			if !reflect.DeepEqual(c, unset) {
-				t.Errorf("%s=%q configures something:\n got %+v\nwant %+v", v.Name, value, c, unset)
-			}
-		}
 	}
 	want := []string{"GMAIL_READ_ONLY", "GMAIL_ENABLE_SEND", "GMAIL_ENABLE_DESTRUCTIVE", "GMAIL_ENABLE_SETTINGS"}
 	if !slices.Equal(switches, want) {
 		t.Errorf("switches %v, want %v", switches, want)
+	}
+}
+
+// Vars records what Define reads, so Define reads nothing past it: a
+// variable read around the recording would be one the bundle gate and
+// the staleness gate never see. Each is read once.
+func TestDefineReadsOnlyWhatVarsNames(t *testing.T) {
+	var read []string
+	fs := flag.NewFlagSet("test", flag.ContinueOnError)
+	fs.SetOutput(io.Discard)
+	Define(fs, func(name string) string {
+		read = append(read, name)
+		return ""
+	})
+	var want []string
+	for _, v := range Vars() {
+		if !slices.Contains(envOnly, v.Name) {
+			want = append(want, v.Name)
+		}
+	}
+	if len(read) < 13 {
+		t.Fatalf("Define read %d variables, below the floor of 13", len(read))
+	}
+	if !slices.Equal(read, want) {
+		t.Errorf("Define reads\n%v\nand Vars names\n%v", read, want)
 	}
 }
