@@ -1,6 +1,13 @@
 # Architecture — google-mail-mcp
 
-**Status: 3.1.1 is cut, 2026-10-24: 3.1.0's bundle work, reviewed after
+**Status: 3.1.2 is cut, 2026-10-24: the family sweep (§16a). A variable of
+spaces alone is unset and the spaces around a value dropped, the
+refresh token included, every reader through `config.Lookup`; the
+bundle gate holds the identity, refuses a repeated key and validates
+the stamped manifest, and names the fields the defaults change. Reviewed
+by `/simplify`, `/code-review medium` and `/security-review`; a live run
+of 99 steps passed, its transcript read, the seven sending steps left
+unarmed. 3.1.1 was cut, 2026-10-24: 3.1.0's bundle work, reviewed after
 its release by `/simplify`, five `/code-review high` rounds and
 `/security-review` (§16a). The bundle gate now derives what it asks
 for from the server's settings and starts the server from the
