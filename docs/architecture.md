@@ -1,6 +1,13 @@
 # Architecture — google-mail-mcp
 
-**Status: 3.1.0 is cut, 2026-10-24: the Claude Desktop bundle has the
+**Status: 3.1.1 is cut, 2026-10-24: 3.1.0's bundle work, reviewed after
+its release by `/simplify`, five `/code-review high` rounds and
+`/security-review` (§16a). The bundle gate now derives what it asks
+for from the server's settings and starts the server from the
+bundle's defaults; the Profile field states the name rule, which a
+refusal states too; and a profile name is lowered A to Z alone. No
+send path, MIME building or response shape changed, so no live run
+was owed. 3.1.0 was cut, 2026-10-24: the Claude Desktop bundle has the
 family's shape (`~/.claude/mcp-server-standard.md` §10b). Its OAuth
 client file and attachment folder default to empty, so a field left
 blank no longer reaches the server as `${user_config.x}`, and its fields

@@ -15,6 +15,8 @@ lifted verbatim.
 
 ## [Unreleased]
 
+## [3.1.1] - 2026-10-24
+
 ### Changed
 
 - The bundle's Read-only field names the fields it cannot be combined with by their titles: Allow sending, Allow permanent deletion and Allow settings changes.
@@ -237,7 +239,8 @@ lifted verbatim.
 - Repository gates run by `make check` and CI: leaks, pins, error classes, API coverage, schema diff, smoke, staleness and more.
 - Signed release archives for six platforms with SBOMs, build provenance, a Claude Desktop bundle and an MCP registry entry.
 
-[Unreleased]: https://github.com/mmedum/google-mail-mcp/compare/v3.1.0...HEAD
+[Unreleased]: https://github.com/mmedum/google-mail-mcp/compare/v3.1.1...HEAD
+[3.1.1]: https://github.com/mmedum/google-mail-mcp/compare/v3.1.0...v3.1.1
 [3.1.0]: https://github.com/mmedum/google-mail-mcp/compare/v3.0.0...v3.1.0
 [3.0.0]: https://github.com/mmedum/google-mail-mcp/compare/v2.3.0...v3.0.0
 [2.3.0]: https://github.com/mmedum/google-mail-mcp/compare/v2.2.0...v2.3.0
