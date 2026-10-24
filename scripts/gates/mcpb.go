@@ -689,13 +689,13 @@ func mcpbRefusalProblems(m mcpbManifest, asked []config.Var, declared [][]string
 				problems = append(problems, fmt.Sprintf("mcpbRefused names %s, which is not a switch the bundle asks for", key))
 				continue
 			}
-			if m.UserConfig[key].Title == "" {
+			if strings.TrimSpace(m.UserConfig[key].Title) == "" {
 				problems = append(problems, fmt.Sprintf("user_config.%s has no title, which the fields the server "+
 					"refuses it with must name", key))
 			}
 			for _, other := range set {
 				title := m.UserConfig[other].Title
-				if other != key && title != "" && slices.Contains(switches, other) &&
+				if other != key && strings.TrimSpace(title) != "" && slices.Contains(switches, other) &&
 					!strings.Contains(m.UserConfig[key].Description, title) {
 					problems = append(problems, fmt.Sprintf("user_config.%s does not name %q, which the server "+
 						"refuses it with", key, title))

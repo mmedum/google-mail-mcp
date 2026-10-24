@@ -197,6 +197,9 @@ func TestMcpbRefusesEachBreak(t *testing.T) {
 		{"a refused field with no title", func(d map[string]any) {
 			mcpbDig(d, "user_config", "read_only")["title"] = ""
 		}, "user_config.read_only has no title"},
+		{"a refused field with a blank title", func(d map[string]any) {
+			mcpbDig(d, "user_config", "read_only")["title"] = " "
+		}, "user_config.read_only has no title"},
 		{"a profile field that does not say what a name is", func(d map[string]any) {
 			mcpbDig(d, "user_config", "profile")["description"] = "Which stored login to use."
 		}, `user_config.profile does not say a name is "up to 64 lowercase letters`},
