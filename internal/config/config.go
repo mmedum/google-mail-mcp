@@ -23,6 +23,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/mmedum/google-mail-mcp/v3/internal/credentials"
 	"github.com/mmedum/google-mail-mcp/v3/internal/scopes"
 	"github.com/mmedum/google-mail-mcp/v3/internal/userconfig"
 )
@@ -33,10 +34,11 @@ const EnvPrefix = "GMAIL_"
 // Variables read from the environment only. CONFIG_DIR has no flag
 // because it is read the same way by every subcommand before anything
 // else; REFRESH_TOKEN because a secret on a command line is visible to
-// every process on the machine. internal/credentials reads the second.
+// every process on the machine. internal/credentials reads the second,
+// and names it.
 const (
 	EnvConfigDir    = EnvPrefix + "CONFIG_DIR"
-	EnvRefreshToken = EnvPrefix + "REFRESH_TOKEN"
+	EnvRefreshToken = credentials.EnvVar
 )
 
 // envOnly is every variable read outside Define, for Vars: the refresh
@@ -242,6 +244,10 @@ func EnvVars() []string {
 	return slices.Compact(names)
 }
 
+// ProfileRule is profilePattern in words, which Build's refusal and the
+// bundle's profile field both give.
+const ProfileRule = "up to 64 lowercase letters, digits, - and _, starting with a letter or digit"
+
 var (
 	profilePattern = regexp.MustCompile(`^[a-z0-9][a-z0-9_-]{0,63}$`)
 	logLevels      = map[LogLevel]bool{LogDebug: true, LogInfo: true, LogWarn: true, LogError: true}
@@ -263,7 +269,7 @@ func (s *Settings) Build() (Config, error) {
 
 	c.Profile = strings.ToLower(strings.TrimSpace(s.Profile))
 	if !profilePattern.MatchString(c.Profile) {
-		add(fmt.Errorf("%w: profile %q must match %s", ErrInvalid, s.Profile, profilePattern))
+		add(fmt.Errorf("%w: profile %q must be %s", ErrInvalid, s.Profile, ProfileRule))
 	}
 	c.ClientSecretPath = strings.TrimSpace(s.ClientSecretPath)
 

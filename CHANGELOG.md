@@ -18,6 +18,7 @@ lifted verbatim.
 ### Changed
 
 - The bundle's Read-only field names the fields it cannot be combined with by their titles: Allow sending, Allow permanent deletion and Allow settings changes.
+- The bundle's Profile field says what a profile name may be, up to 64 lowercase letters, digits, - and _, starting with a letter or digit, and the server's refusal of any other says the same.
 
 ## [3.1.0] - 2026-10-24
 

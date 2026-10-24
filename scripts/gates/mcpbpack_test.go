@@ -132,6 +132,43 @@ func readBackBundle(t *testing.T, zr *zip.ReadCloser) {
 	}
 }
 
+// The packer runs the gate's checks on the files it copies from the
+// repository, as well as the manifest's own.
+func TestMcpbPackRunsTheRepositoryChecks(t *testing.T) {
+	cases := []struct {
+		name  string
+		setup func(t *testing.T, root string)
+		say   string
+	}{
+		{"a missing README", func(t *testing.T, root string) {
+			if err := os.Remove(filepath.Join(root, "README.md")); err != nil {
+				t.Fatal(err)
+			}
+		}, "the packer copies README.md from the repository and it is not there"},
+		{"a license LICENSE is not", func(t *testing.T, root string) {
+			doc := mcpbFixture(t)
+			doc["license"] = "MIT"
+			raw, _ := json.Marshal(doc)
+			if err := os.WriteFile(filepath.Join(root, mcpbManifestPath), raw, 0o600); err != nil {
+				t.Fatal(err)
+			}
+		}, `license is "MIT" and LICENSE is Apache-2.0`},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			root := mcpbPackFixtureRoot(t)
+			dist := mcpbPackDist(t, root, "1.2.3")
+			tc.setup(t, root)
+			var out sink
+			_, err := mcpbPackTo(&out, root, dist, "1.2.3", filepath.Join(dist, mcpbPackName("1.2.3")), false)
+			if err == nil || !strings.Contains(err.Error(), "the manifest does not describe the bundle") {
+				t.Fatalf("err %v, want the manifest refused", err)
+			}
+			out.mustSay(t, tc.say)
+		})
+	}
+}
+
 func TestMcpbPackRefuses(t *testing.T) {
 	cases := []struct {
 		name    string
