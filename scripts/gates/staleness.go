@@ -51,6 +51,9 @@ type stalenessInputs struct {
 	hasGo    func(rel string) bool
 	// codeEnv are the GMAIL_ variables the code reads.
 	codeEnv []string
+	// profileRule is config.ProfileRule, "" when internal/config is not
+	// wired.
+	profileRule string
 	// newestTag is the newest semver tag, "" for none.
 	newestTag string
 	// built is whether any non-test Go file exists under internal/.
@@ -80,8 +83,9 @@ type stalenessMode struct {
 // Set by staleness_code.go, which is the one file importing the server's
 // packages.
 var (
-	stalenessScopeModes func() []stalenessMode
-	stalenessConfigEnv  func() []string
+	stalenessScopeModes  func() []stalenessMode
+	stalenessConfigEnv   func() []string
+	stalenessProfileRule string
 )
 
 type stalenessReport struct {
@@ -106,6 +110,7 @@ func stalenessCheck(in stalenessInputs) stalenessReport {
 
 	n, p = stalenessEnv(in.docs["docs/configuration.md"], in.codeEnv)
 	r.add(fmt.Sprintf("settings: %d variables", n), p)
+	r.add("profile rule", stalenessProfile(in.docs["docs/configuration.md"], in.profileRule))
 
 	n, p = stalenessGates(in.docs["docs/development.md"], in.commands)
 	r.add(fmt.Sprintf("gates: %d commands", n), p)
@@ -183,6 +188,7 @@ func stalenessGather(root string, args []string) (stalenessInputs, error) {
 		slices.Sort(in.codeEnv)
 		in.codeEnv = slices.Compact(in.codeEnv)
 	}
+	in.profileRule = stalenessProfileRule
 	in.newestTag = stalenessNewestTag(root)
 	if stalenessScopeModes != nil {
 		in.modes = stalenessScopeModes()
@@ -468,6 +474,19 @@ func stalenessEnv(config string, codeEnv []string) (int, []string) {
 		}
 	}
 	return len(codeEnv), problems
+}
+
+// stalenessProfile requires docs/configuration.md to say what a profile
+// name is in the words the server refuses one with. An empty rule is the
+// wiring missing, and is refused rather than found in any text.
+func stalenessProfile(config, rule string) []string {
+	switch {
+	case rule == "":
+		return []string{"config.ProfileRule did not reach the staleness check"}
+	case !strings.Contains(config, rule):
+		return []string{fmt.Sprintf("docs/configuration.md does not say a profile name is %q", rule)}
+	}
+	return nil
 }
 
 // stalenessGates requires docs/development.md to name every command the

@@ -3,8 +3,10 @@
 Every setting is an environment variable named `GMAIL_*`, and most also
 have a command-line flag of the same name in lower case with dashes. A
 flag passed explicitly wins over the environment; the environment wins
-over the default. Configuration is environment-first because MCP clients
-pass only `command`, `args` and `env` to a stdio server.
+over the default. A variable set to spaces alone is unset, as an empty
+one is, and the spaces around a value are dropped. Configuration is
+environment-first because MCP clients pass only `command`, `args` and
+`env` to a stdio server.
 
 Everything is validated once at start, and every problem is reported at
 once rather than one per run.
@@ -13,7 +15,7 @@ once rather than one per run.
 
 | Variable | Flag | Default | Meaning |
 |---|---|---|---|
-| `GMAIL_PROFILE` | `--profile` | `default` | Named profile. Each keeps its own client secret, refresh token and account, so one machine can hold several Google accounts. Lower case, digits, `-` and `_`. |
+| `GMAIL_PROFILE` | `--profile` | `default` | Named profile. Each keeps its own client secret, refresh token and account, so one machine can hold several Google accounts. A name is up to 64 characters from a to z, 0 to 9, - and _, starting with a letter or digit; capitals are read as lowercase. |
 | `GMAIL_CLIENT_SECRET` | `--client-secret` | the profile's `client_secret.json` | Path to the Desktop-app OAuth client JSON from the Cloud console. |
 | `GMAIL_READ_ONLY` | `--read-only` | `false` | Register only the read tools, and ask for `gmail.readonly` at login. Refused together with any `ENABLE_` setting. |
 | `GMAIL_ENABLE_SEND` | `--enable-send` | `false` | Register `send_draft`. Scopes do not change: the default scope can already send, which is why the tool, not the scope, is the control. |

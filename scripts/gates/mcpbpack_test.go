@@ -162,6 +162,20 @@ func TestMcpbPackRunsTheRepositoryChecks(t *testing.T) {
 			}
 		}, `version is "1.0.0"; the committed manifest carries "0.0.0-dev" and the packer writes the real one`},
 	}
+	cases = append(cases, struct {
+		name  string
+		setup func(t *testing.T, root string)
+		say   string
+	}{"a key repeated", func(t *testing.T, root string) {
+		raw, err := os.ReadFile(filepath.Join(root, mcpbManifestPath))
+		if err != nil {
+			t.Fatal(err)
+		}
+		raw = bytes.Replace(raw, []byte(`"name": "google-mail-mcp",`), []byte(`"name": "google-mail-mcp", "name": "gmail",`), 1)
+		if err := os.WriteFile(filepath.Join(root, mcpbManifestPath), raw, 0o600); err != nil {
+			t.Fatal(err)
+		}
+	}, "the manifest has name more than once"})
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
 			root := mcpbPackFixtureRoot(t)
@@ -174,6 +188,29 @@ func TestMcpbPackRunsTheRepositoryChecks(t *testing.T) {
 			}
 			out.mustSay(t, tc.say)
 		})
+	}
+}
+
+// What ships is held to the vendored schema, not only what is
+// committed, since the stamp encodes the document again.
+func TestMcpbStampIsHeldToTheSchema(t *testing.T) {
+	raw, err := os.ReadFile(filepath.Join("..", "..", mcpbManifestPath))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := mcpbStamp(raw, "1.2.3"); err != nil {
+		t.Fatalf("the committed manifest does not stamp: %v", err)
+	}
+	doc := mcpbFixture(t)
+	doc["keywords"] = "gmail"
+	refused, err := json.Marshal(doc)
+	if err != nil {
+		t.Fatal(err)
+	}
+	_, err = mcpbStamp(refused, "1.2.3")
+	if want := "the stamped manifest does not satisfy mcpb-manifest-v0.3.schema.json"; err == nil ||
+		!strings.Contains(err.Error(), want) {
+		t.Errorf("stamping a document the schema refuses gave %v, want an error containing %q", err, want)
 	}
 }
 

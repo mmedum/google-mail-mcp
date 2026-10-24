@@ -10,6 +10,7 @@ import (
 
 	"github.com/zalando/go-keyring"
 
+	"github.com/mmedum/google-mail-mcp/v3/internal/config"
 	"github.com/mmedum/google-mail-mcp/v3/internal/credentials"
 )
 
@@ -96,7 +97,7 @@ func TestEnvironmentWins(t *testing.T) {
 		t.Fatal(err)
 	}
 	s.Env = func(k string) string {
-		if k == credentials.EnvVar {
+		if k == config.EnvRefreshToken {
 			return "from-env"
 		}
 		return ""

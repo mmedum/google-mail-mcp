@@ -48,7 +48,7 @@ func mcpbRoot(t *testing.T, doc map[string]any) string {
 // mcpbCommitted decodes the committed manifest as the checks read it.
 func mcpbCommitted(t *testing.T) mcpbManifest {
 	t.Helper()
-	m, _, err := mcpbRead(filepath.Join("..", "..", mcpbManifestPath))
+	_, m, err := mcpbReadManifest(filepath.Join("..", ".."))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -151,16 +151,30 @@ func TestMcpbRefusesEachBreak(t *testing.T) {
 		{"unknown key the schema refuses", func(d map[string]any) { d["entrypoint"] = "x" },
 			"does not satisfy mcpb-manifest-v0.3.schema.json"},
 		{"wrong name", func(d map[string]any) { d["name"] = "gmail" }, `name is "gmail"`},
+		{"a node server", func(d map[string]any) { mcpbDig(d, "server")["type"] = "node" },
+			`server.type is "node"; the bundle carries a binary`},
+		{"entry point another program than the command runs", func(d map[string]any) {
+			mcpbDig(d, "server")["entry_point"] = "server/google-mail-mcp.exe"
+		}, `entry_point is "server/google-mail-mcp.exe", and mcp_config.command runs "server/google-mail-mcp-darwin"`},
+		// Every referential check passes this: no platform is left to
+		// spawn the wrong file.
+		{"a platform dropped with its override", func(d map[string]any) {
+			mcpbDig(d, "compatibility")["platforms"] = []any{"darwin", "win32"}
+			delete(mcpbDig(d, "server", "mcp_config", "platform_overrides"), "linux")
+		}, "compatibility.platforms is [darwin win32]; the packer stages entry points for [darwin linux win32]"},
+		{"a platform claimed twice", func(d map[string]any) {
+			mcpbDig(d, "compatibility")["platforms"] = []any{"darwin", "win32", "linux", "linux"}
+		}, "compatibility.platforms is [darwin linux linux win32]; the packer stages entry points for [darwin linux win32]"},
 		{"no privacy policy", func(d map[string]any) { delete(d, "privacy_policies") }, "privacy_policies is empty"},
 		{"a license LICENSE is not", func(d map[string]any) { d["license"] = "MIT" },
 			`license is "MIT" and LICENSE is Apache-2.0`},
 		{"a switch the bundle turns on", func(d map[string]any) {
 			mcpbDig(d, "user_config", "enable_send")["default"] = true
-		}, "the bundle's defaults configure the server otherwise than no environment does"},
+		}, "the bundle's defaults configure the server otherwise than no environment does, in EnableSend;"},
 		{"a required switch the bundle turns on", func(d map[string]any) {
 			mcpbDig(d, "user_config", "enable_send")["required"] = true
 			mcpbDig(d, "user_config", "enable_send")["default"] = true
-		}, "the bundle's defaults configure the server otherwise than no environment does"},
+		}, "the bundle's defaults configure the server otherwise than no environment does, in EnableSend;"},
 		{"a switch asked as text", func(d map[string]any) {
 			mcpbDig(d, "user_config", "enable_destructive")["type"] = "string"
 			mcpbDig(d, "user_config", "enable_destructive")["default"] = "false"
@@ -215,7 +229,7 @@ func TestMcpbRefusesEachBreak(t *testing.T) {
 		}, `user_config.enable_send does not name "Read-only", which the server refuses it with`},
 		{"defaults that configure the server", func(d map[string]any) {
 			mcpbDig(d, "user_config", "profile")["default"] = "work"
-		}, "the bundle's defaults configure the server otherwise than no environment does"},
+		}, "the bundle's defaults configure the server otherwise than no environment does, in Profile;"},
 		{"defaults the server refuses", func(d map[string]any) {
 			mcpbDig(d, "user_config", "local_dir")["default"] = "attachments"
 		}, `the environment the bundle's defaults give the server is refused: config: invalid: GMAIL_LOCAL_DIR "attachments"`},
@@ -435,6 +449,122 @@ func TestMcpbLauncherNamesMustMatch(t *testing.T) {
 	got := mcpbValidate(m, mcpbFiles, []string{binaryName + "-linux-x64", binaryName + "-linux-arm64"})
 	if !slices.ContainsFunc(got, func(s string) bool { return strings.Contains(s, "the launcher runs") }) {
 		t.Errorf("a launcher naming another binary passed: %v", got)
+	}
+}
+
+// mcpbRawRoot is a fresh repository root whose manifest is the committed
+// one's text with old replaced by new, for a break no decoded document
+// can carry, such as a key repeated.
+func mcpbRawRoot(t *testing.T, old, new string) string {
+	t.Helper()
+	raw, err := os.ReadFile(filepath.Join("..", "..", mcpbManifestPath))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(string(raw), old) {
+		t.Fatalf("the committed manifest does not say %q", old)
+	}
+	return writeTree(t, map[string]string{
+		mcpbManifestPath: strings.Replace(string(raw), old, new, 1),
+		"LICENSE":        "                                 Apache License\n",
+		"README.md":      "# google-mail-mcp\n",
+	})
+}
+
+// A key repeated in one object is refused, alone: the decode the checks
+// read merges it, and the schema, the stamp and the host keep the last.
+func TestMcpbRefusesARepeatedKey(t *testing.T) {
+	cases := []struct{ name, old, new, want string }{
+		// The decode merges the two, so every check sees the env and the
+		// overrides; the stamp and the host keep the second, which has
+		// neither.
+		{"a second server object", `  "user_config": {`,
+			`  "server": {"type": "binary", "entry_point": "server/google-mail-mcp-darwin", ` +
+				`"mcp_config": {"command": "${__dirname}/server/google-mail-mcp-darwin", "args": []}},` +
+				"\n" + `  "user_config": {`,
+			"the manifest has server more than once"},
+		{"a variable mapped twice", `"GMAIL_PROFILE": "${user_config.profile}",`,
+			`"GMAIL_PROFILE": "${user_config.profile}", "GMAIL_PROFILE": "${user_config.profile}",`,
+			"the manifest has server.mcp_config.env.GMAIL_PROFILE more than once"},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			_, _, problems, err := mcpbCommittedManifest(mcpbRawRoot(t, tc.old, tc.new))
+			if err != nil {
+				t.Fatal(err)
+			}
+			if len(problems) != 1 || !strings.HasPrefix(problems[0], tc.want) {
+				t.Errorf("problems:\n%s\nwant the one starting %q", strings.Join(problems, "\n"), tc.want)
+			}
+		})
+	}
+}
+
+// A key is repeated only within one object, and each repeated key is
+// named once, by its path, a list's elements and a repeated object's
+// own keys included.
+func TestMcpbRepeatedKeysNameEachPathOnce(t *testing.T) {
+	for _, tc := range []struct {
+		doc  string
+		want []string
+	}{
+		{`{"a": [{"b": 1, "b": 2, "b": 3}], "c": {"d": 1}, "d": 1}`, []string{"a[0].b"}},
+		{`{"x": {"y": 1}, "x": {"y": 1, "y": 2}}`, []string{"x", "x.y"}},
+		{`{"server": {"type": "binary"}, "user_config": {"type": {"type": "boolean"}}}`, nil},
+		{`{"a": 1,`, nil},
+	} {
+		if got := mcpbRepeatedKeys([]byte(tc.doc)); !slices.Equal(got, tc.want) {
+			t.Errorf("mcpbRepeatedKeys(%s) = %q, want %q", tc.doc, got, tc.want)
+		}
+	}
+}
+
+// The platforms come from what the table stages an entry point for, not
+// from a list of their own.
+func TestMcpbPlatformsComeFromTheStagedTable(t *testing.T) {
+	m := mcpbCommitted(t)
+	if got := mcpbIdentityProblems(m, mcpbFiles); len(got) != 0 {
+		t.Fatalf("the committed manifest: %q", got)
+	}
+	files := slices.DeleteFunc(slices.Clone(mcpbFiles), func(f mcpbStaged) bool { return f.platform == "linux" })
+	want := []string{"compatibility.platforms is [darwin linux win32]; the packer stages entry points for [darwin win32]"}
+	if got := mcpbIdentityProblems(m, files); !slices.Equal(got, want) {
+		t.Errorf("nothing staged for Linux gives %q, want %q", got, want)
+	}
+}
+
+// A field the defaults change is named, an unexported one included
+// where its type compares; an unexported one that does not is reported
+// unnamed, rather than panicking.
+func TestMcpbFieldDiffNamesTheFieldsThatDiffer(t *testing.T) {
+	type cfg struct {
+		Shown  int
+		hidden int
+		rest   []string
+		held   any
+	}
+	for _, tc := range []struct {
+		b    cfg
+		want []string
+	}{
+		{cfg{2, 1, nil, nil}, []string{"Shown"}},
+		{cfg{1, 2, nil, nil}, []string{"hidden"}},
+		{cfg{1, 1, []string{"x"}, nil}, []string{"an unexported field"}},
+		{cfg{1, 1, nil, nil}, nil},
+	} {
+		if got := mcpbFieldDiff(cfg{1, 1, nil, nil}, tc.b); !slices.Equal(got, tc.want) {
+			t.Errorf("mcpbFieldDiff against %+v = %q, want %q", tc.b, got, tc.want)
+		}
+	}
+	// An interface holding a slice on both sides compares as a type and
+	// panics in Value.Equal; it is reported unnamed instead.
+	if got := mcpbFieldDiff(cfg{held: []string{"y"}}, cfg{held: []string{"x"}}); !slices.Equal(got,
+		[]string{"an unexported field"}) {
+		t.Errorf("an interface field differing gives %q, want [an unexported field]", got)
+	}
+	if got := mcpbFieldDiff(config.Config{Profile: "a", EnableSend: true}, config.Config{Profile: "a"}); !slices.Equal(got,
+		[]string{"EnableSend"}) {
+		t.Errorf("a configuration differing in EnableSend gives %q, want [EnableSend]", got)
 	}
 }
 

@@ -15,6 +15,10 @@ lifted verbatim.
 
 ## [Unreleased]
 
+### Fixed
+
+- A variable set to spaces alone is unset, as an empty one is, and the spaces around a value are dropped, `GMAIL_REFRESH_TOKEN` included; a bundle field cleared to a space, such as the profile, no longer stops the server.
+
 ## [3.1.1] - 2026-10-24
 
 ### Changed

@@ -97,7 +97,7 @@ func serverJSONBuild(root, version, bundle, sum string) (serverJSONEntry, error)
 	if err != nil {
 		return serverJSONEntry{}, err
 	}
-	m, _, err := mcpbRead(filepath.Join(root, mcpbManifestPath))
+	_, m, err := mcpbReadManifest(root)
 	if err != nil {
 		return serverJSONEntry{}, err
 	}

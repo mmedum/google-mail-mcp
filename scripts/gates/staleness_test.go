@@ -107,6 +107,16 @@ func TestStalenessEnv(t *testing.T) {
 	stalenessHas(t, p, "missing")
 }
 
+// The configuration page says what a profile name is in the server's own
+// words, and an unwired rule is refused rather than found everywhere.
+func TestStalenessProfile(t *testing.T) {
+	const rule = "up to 64 characters from a to z"
+	stalenessNone(t, stalenessProfile("A name is "+rule+".", rule))
+	stalenessHas(t, stalenessProfile("A name is up to 64 characters.", rule),
+		`docs/configuration.md does not say a profile name is "up to 64 characters from a to z"`)
+	stalenessHas(t, stalenessProfile("anything", ""), "did not reach the staleness check")
+}
+
 func TestStalenessGates(t *testing.T) {
 	_, p := stalenessGates("`leaks` and `pins`", []string{"leaks", "pins"})
 	stalenessNone(t, p)
@@ -243,8 +253,8 @@ func TestStalenessSectionStopsAtSameLevel(t *testing.T) {
 
 // The wiring to internal/scopes is live, and the modes carry scopes.
 func TestStalenessScopeSourceIsWired(t *testing.T) {
-	if stalenessScopeModes == nil || stalenessConfigEnv == nil {
-		t.Fatal("staleness_code.go did not wire the scope and settings sources")
+	if stalenessScopeModes == nil || stalenessConfigEnv == nil || stalenessProfileRule == "" {
+		t.Fatal("staleness_code.go did not wire the scope, settings and profile rule sources")
 	}
 	modes := stalenessScopeModes()
 	if len(modes) < 3 {
