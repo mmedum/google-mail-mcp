@@ -244,6 +244,17 @@ func EnvVars() []string {
 	return slices.Compact(names)
 }
 
+// asciiLower lowers A to Z alone, so a character Unicode folds into a
+// to z, such as the Kelvin sign, is refused rather than renamed.
+func asciiLower(s string) string {
+	return strings.Map(func(r rune) rune {
+		if 'A' <= r && r <= 'Z' {
+			return r + 'a' - 'A'
+		}
+		return r
+	}, s)
+}
+
 // ProfileRule is profilePattern in words, which Build's refusal and the
 // bundle's profile field both give.
 const ProfileRule = "up to 64 characters from a to z, 0 to 9, - and _, starting with a letter or digit"
@@ -267,7 +278,7 @@ func (s *Settings) Build() (Config, error) {
 		}
 	}
 
-	c.Profile = strings.ToLower(strings.TrimSpace(s.Profile))
+	c.Profile = asciiLower(strings.TrimSpace(s.Profile))
 	if !profilePattern.MatchString(c.Profile) {
 		add(fmt.Errorf("%w: profile %q must be %s", ErrInvalid, s.Profile, ProfileRule))
 	}

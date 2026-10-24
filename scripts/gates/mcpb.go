@@ -248,9 +248,6 @@ func mcpbValidate(m mcpbManifest, files []mcpbStaged, launcher []string) []strin
 			staged[f.path] = f
 		}
 	}
-	// A command is ${__dirname}/ and a path in the bundle, or a path
-	// relative to it, as the specification's binary example is; an
-	// absolute path names nothing staged (§18 row 95).
 	resolve := func(cmd string) string {
 		return strings.TrimPrefix(cmd, "${__dirname}/")
 	}
@@ -271,6 +268,14 @@ func mcpbValidate(m mcpbManifest, files []mcpbStaged, launcher []string) []strin
 		where := "mcp_config.command"
 		if platform != "" {
 			where = "platform_overrides." + platform + ".command"
+		}
+		// ${__dirname} is the one path the specification fixes to the
+		// bundle; what a relative command is resolved against, no source
+		// says (§18 row 95).
+		if !strings.HasPrefix(commands[platform], "${__dirname}/") {
+			problems = append(problems, fmt.Sprintf("%s is %q; a command starts with ${__dirname}/, the one "+
+				"path the specification fixes to the bundle", where, commands[platform]))
+			continue
 		}
 		if _, ok := staged[resolve(commands[platform])]; !ok {
 			problems = append(problems, fmt.Sprintf("%s is %q, which is not a program the packer stages", where, commands[platform]))

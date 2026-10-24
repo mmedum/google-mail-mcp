@@ -20,6 +20,10 @@ lifted verbatim.
 - The bundle's Read-only field names the fields it cannot be combined with by their titles: Allow sending, Allow permanent deletion and Allow settings changes.
 - The bundle's Profile field says what a profile name may be, up to 64 characters from a to z, 0 to 9, - and _, starting with a letter or digit, with capitals read as lowercase; the server's refusal of another name states the same rule.
 
+### Fixed
+
+- A profile name with a character that Unicode lowercases into a to z, such as the Kelvin sign, is refused rather than renamed.
+
 ## [3.1.0] - 2026-10-24
 
 ### Added

@@ -92,9 +92,12 @@ func TestMcpbRefusesEachBreak(t *testing.T) {
 		{"entry point not staged", func(d map[string]any) {
 			mcpbDig(d, "server")["entry_point"] = "server/nothing"
 		}, `entry_point "server/nothing"`},
+		{"a command relative to the bundle", func(d map[string]any) {
+			mcpbDig(d, "server", "mcp_config")["command"] = "server/google-mail-mcp-darwin"
+		}, `mcp_config.command is "server/google-mail-mcp-darwin"; a command starts with ${__dirname}/`},
 		{"a command from the root", func(d map[string]any) {
 			mcpbDig(d, "server", "mcp_config", "platform_overrides", "win32")["command"] = "/server/google-mail-mcp.exe"
-		}, `platform_overrides.win32.command is "/server/google-mail-mcp.exe", which is not a program the packer stages`},
+		}, `platform_overrides.win32.command is "/server/google-mail-mcp.exe"; a command starts with ${__dirname}/`},
 		{"command not staged", func(d map[string]any) {
 			mcpbDig(d, "server", "mcp_config")["command"] = "${__dirname}/server/typo"
 		}, "mcp_config.command is"},
@@ -270,6 +273,15 @@ func TestMcpbAsksForEverySettingNotLeftOut(t *testing.T) {
 	}
 	// With the profile left out, nothing holds a field to ProfileRule,
 	// and that is refused rather than passed in silence.
+	// A bundle that drops the profile field is told so once.
+	dropped := mcpbCommitted(t)
+	delete(dropped.UserConfig, "profile")
+	delete(dropped.Server.MCPConfig.Env, "GMAIL_PROFILE")
+	if p := slices.DeleteFunc(mcpbSettingProblems(dropped, config.Vars(), mcpbLeftOut), func(p string) bool {
+		return !strings.Contains(p, "GMAIL_PROFILE")
+	}); !slices.Equal(p, []string{"user_config does not ask for profile, which sets GMAIL_PROFILE"}) {
+		t.Errorf("a dropped profile field gives %q, want the one problem", p)
+	}
 	noProfile := maps.Clone(mcpbLeftOut)
 	noProfile["GMAIL_PROFILE"] = "left out"
 	got = strings.Join(mcpbSettingProblems(m, config.Vars(), noProfile), "\n")
