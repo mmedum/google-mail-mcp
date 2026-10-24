@@ -246,7 +246,7 @@ func EnvVars() []string {
 
 // ProfileRule is profilePattern in words, which Build's refusal and the
 // bundle's profile field both give.
-const ProfileRule = "up to 64 lowercase letters, digits, - and _, starting with a letter or digit"
+const ProfileRule = "up to 64 characters from a to z, 0 to 9, - and _, starting with a letter or digit"
 
 var (
 	profilePattern = regexp.MustCompile(`^[a-z0-9][a-z0-9_-]{0,63}$`)

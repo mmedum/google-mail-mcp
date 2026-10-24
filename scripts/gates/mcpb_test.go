@@ -2,6 +2,7 @@ package main
 
 import (
 	"encoding/json"
+	"errors"
 	"maps"
 	"os"
 	"os/exec"
@@ -91,12 +92,9 @@ func TestMcpbRefusesEachBreak(t *testing.T) {
 		{"entry point not staged", func(d map[string]any) {
 			mcpbDig(d, "server")["entry_point"] = "server/nothing"
 		}, `entry_point "server/nothing"`},
-		{"a command relative to the host", func(d map[string]any) {
-			mcpbDig(d, "server", "mcp_config")["command"] = "server/google-mail-mcp-darwin"
-		}, `mcp_config.command is "server/google-mail-mcp-darwin"; a command starts with ${__dirname}/`},
 		{"a command from the root", func(d map[string]any) {
 			mcpbDig(d, "server", "mcp_config", "platform_overrides", "win32")["command"] = "/server/google-mail-mcp.exe"
-		}, `platform_overrides.win32.command is "/server/google-mail-mcp.exe"; a command starts with ${__dirname}/`},
+		}, `platform_overrides.win32.command is "/server/google-mail-mcp.exe", which is not a program the packer stages`},
 		{"command not staged", func(d map[string]any) {
 			mcpbDig(d, "server", "mcp_config")["command"] = "${__dirname}/server/typo"
 		}, "mcp_config.command is"},
@@ -206,13 +204,9 @@ func TestMcpbRefusesEachBreak(t *testing.T) {
 		{"a refused field with a blank title", func(d map[string]any) {
 			mcpbDig(d, "user_config", "read_only")["title"] = " "
 		}, "user_config.read_only has no title"},
-		{"no profile field", func(d map[string]any) {
-			delete(mcpbDig(d, "user_config"), "profile")
-			delete(mcpbDig(d, "server", "mcp_config", "env"), "GMAIL_PROFILE")
-		}, "no user_config field sets GMAIL_PROFILE, so nothing was held to config.ProfileRule"},
 		{"a profile field that does not say what a name is", func(d map[string]any) {
 			mcpbDig(d, "user_config", "profile")["description"] = "Which stored login to use."
-		}, `user_config.profile does not say a name is "up to 64 lowercase letters`},
+		}, `user_config.profile does not say a name is "up to 64 characters from a to z`},
 		{"a refused field that does not name its pair", func(d map[string]any) {
 			mcpbDig(d, "user_config", "enable_send")["description"] = "Register the tool that sends a draft."
 		}, `user_config.enable_send does not name "Read-only", which the server refuses it with`},
@@ -274,6 +268,14 @@ func TestMcpbAsksForEverySettingNotLeftOut(t *testing.T) {
 	if !strings.Contains(got, "mcpbLeftOut names GMAIL_GONE, which the server does not read") {
 		t.Errorf("a reason for a setting the server does not read passed: %s", got)
 	}
+	// With the profile left out, nothing holds a field to ProfileRule,
+	// and that is refused rather than passed in silence.
+	noProfile := maps.Clone(mcpbLeftOut)
+	noProfile["GMAIL_PROFILE"] = "left out"
+	got = strings.Join(mcpbSettingProblems(m, config.Vars(), noProfile), "\n")
+	if !strings.Contains(got, "the bundle asks for no GMAIL_PROFILE, so nothing was held to config.ProfileRule") {
+		t.Errorf("a bundle with no profile setting passed the ProfileRule check: %s", got)
+	}
 }
 
 // Every set of the switches is started, and the refused ones are held to
@@ -296,6 +298,20 @@ func TestMcpbRefusalsAreDeclared(t *testing.T) {
 		return !strings.HasPrefix(p, "user_config.read_only has no title")
 	})); n != 1 {
 		t.Errorf("an untitled read_only is reported %d times, want 1", n)
+	}
+	// It is reported when the defaults do not start, too: the title check
+	// starts nothing.
+	if got := mcpbRefusalProblems(untitled, asked, mcpbRefused, errors.New("the defaults do not start")); !slices.ContainsFunc(got,
+		func(p string) bool { return strings.HasPrefix(p, "user_config.read_only has no title") }) {
+		t.Errorf("an untitled read_only passed beside defaults that do not start: %q", got)
+	}
+	// A title with a space around it is named without the space.
+	padded := mcpbCommitted(t)
+	opt = padded.UserConfig["read_only"]
+	opt.Title += " "
+	padded.UserConfig["read_only"] = opt
+	if got := mcpbRefusalProblems(padded, asked, mcpbRefused, nil); len(got) != 0 {
+		t.Errorf("a padded title is not found in descriptions that name it: %q", got)
 	}
 	cases := []struct {
 		name     string

@@ -248,6 +248,9 @@ func mcpbValidate(m mcpbManifest, files []mcpbStaged, launcher []string) []strin
 			staged[f.path] = f
 		}
 	}
+	// A command is ${__dirname}/ and a path in the bundle, or a path
+	// relative to it, as the specification's binary example is; an
+	// absolute path names nothing staged (§18 row 95).
 	resolve := func(cmd string) string {
 		return strings.TrimPrefix(cmd, "${__dirname}/")
 	}
@@ -268,13 +271,6 @@ func mcpbValidate(m mcpbManifest, files []mcpbStaged, launcher []string) []strin
 		where := "mcp_config.command"
 		if platform != "" {
 			where = "platform_overrides." + platform + ".command"
-		}
-		// The host resolves any path but ${__dirname}'s against its own
-		// working directory, outside the bundle.
-		if !strings.HasPrefix(commands[platform], "${__dirname}/") {
-			problems = append(problems, fmt.Sprintf("%s is %q; a command starts with ${__dirname}/, or the host "+
-				"looks for it outside the bundle", where, commands[platform]))
-			continue
 		}
 		if _, ok := staged[resolve(commands[platform])]; !ok {
 			problems = append(problems, fmt.Sprintf("%s is %q, which is not a program the packer stages", where, commands[platform]))
@@ -523,6 +519,7 @@ func mcpbSettingProblems(m mcpbManifest, vars []config.Var, leftOut map[string]s
 	for _, v := range asked {
 		key := mcpbKey(v.Name)
 		keys[key] = true
+		profileHeld = profileHeld || v.Name == mcpbProfileVar
 		opt, ok := m.UserConfig[key]
 		if !ok {
 			problems = append(problems, fmt.Sprintf("user_config does not ask for %s, which sets %s", key, v.Name))
@@ -536,15 +533,12 @@ func mcpbSettingProblems(m mcpbManifest, vars []config.Var, leftOut map[string]s
 				key, cmp.Or(opt.Type, "field with no type"), v.Name))
 		}
 		// The server refuses any other name at start.
-		if v.Name == mcpbProfileVar {
-			profileHeld = true
-			if !strings.Contains(opt.Description, config.ProfileRule) {
-				problems = append(problems, fmt.Sprintf("user_config.%s does not say a name is %q", key, config.ProfileRule))
-			}
+		if v.Name == mcpbProfileVar && !strings.Contains(opt.Description, config.ProfileRule) {
+			problems = append(problems, fmt.Sprintf("user_config.%s does not say a name is %q", key, config.ProfileRule))
 		}
 	}
 	if !profileHeld {
-		problems = append(problems, fmt.Sprintf("no user_config field sets %s, so nothing was held to "+
+		problems = append(problems, fmt.Sprintf("the bundle asks for no %s, so nothing was held to "+
 			"config.ProfileRule", mcpbProfileVar))
 	}
 	for _, key := range slices.Sorted(maps.Keys(m.UserConfig)) {
@@ -684,12 +678,9 @@ var mcpbRefused = [][]string{
 // that is not a switch the bundle asks for is refused too, and so is a
 // field in a declared set with no title, which every description would
 // name, each once. When the defaults alone do not start, which
-// defaultsErr says, it says nothing: the defaults check reports that,
+// defaultsErr says, it starts no set: the defaults check reports that,
 // and every set would fail with it.
 func mcpbRefusalProblems(m mcpbManifest, asked []config.Var, declared [][]string, defaultsErr error) []string {
-	if defaultsErr != nil {
-		return nil
-	}
 	var switches []string
 	for _, v := range asked {
 		if _, ok := m.UserConfig[mcpbKey(v.Name)]; ok && v.Switch {
@@ -722,13 +713,16 @@ func mcpbRefusalProblems(m mcpbManifest, asked []config.Var, declared [][]string
 				continue
 			}
 			for _, other := range set {
-				title := m.UserConfig[other].Title
+				title := strings.TrimSpace(m.UserConfig[other].Title)
 				if other != key && titled[other] && !strings.Contains(m.UserConfig[key].Description, title) {
 					problems = append(problems, fmt.Sprintf("user_config.%s does not name %q, which the server "+
 						"refuses it with", key, title))
 				}
 			}
 		}
+	}
+	if defaultsErr != nil {
+		return problems
 	}
 	for bits := 1; bits < 1<<len(switches); bits++ {
 		var on []string

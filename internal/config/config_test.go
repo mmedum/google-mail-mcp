@@ -228,7 +228,7 @@ func TestProfileRule(t *testing.T) {
 			t.Errorf("GMAIL_PROFILE=%q: profile %q, %v; want it accepted", name, c.Profile, err)
 		}
 	}
-	for _, name := range []string{strings.Repeat("a", 65), "-a", "_a", "a.b", "a b", "\u00e9"} {
+	for _, name := range []string{strings.Repeat("a", 65), "-a", "_a", "a.b", "a b", "\u00e9", "caf\u00e9"} {
 		_, err := build(t, map[string]string{"GMAIL_PROFILE": name})
 		if !errors.Is(err, ErrInvalid) || !strings.Contains(err.Error(), ProfileRule) {
 			t.Errorf("GMAIL_PROFILE=%q: %v; want it refused, naming the rule", name, err)

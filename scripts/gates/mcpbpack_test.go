@@ -153,6 +153,14 @@ func TestMcpbPackRunsTheRepositoryChecks(t *testing.T) {
 				t.Fatal(err)
 			}
 		}, `license is "MIT" and LICENSE is Apache-2.0`},
+		{"a committed manifest stamped", func(t *testing.T, root string) {
+			doc := mcpbFixture(t)
+			doc["version"] = "1.0.0"
+			raw, _ := json.Marshal(doc)
+			if err := os.WriteFile(filepath.Join(root, mcpbManifestPath), raw, 0o600); err != nil {
+				t.Fatal(err)
+			}
+		}, `version is "1.0.0"; the committed manifest carries "0.0.0-dev" and the packer writes the real one`},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
@@ -179,14 +187,6 @@ func TestMcpbPackRefuses(t *testing.T) {
 	}{
 		{name: "placeholder version", version: placeholderVersion, want: "committed placeholder"},
 		{name: "bundle misnamed", version: "1.2.3", out: "bundle.mcpb", want: "the release publishes"},
-		{name: "committed manifest stamped", version: "1.2.3", setup: func(t *testing.T, root, _ string) {
-			doc := mcpbFixture(t)
-			doc["version"] = "1.0.0"
-			raw, _ := json.Marshal(doc)
-			if err := os.WriteFile(filepath.Join(root, mcpbManifestPath), raw, 0o600); err != nil {
-				t.Fatal(err)
-			}
-		}, want: "the manifest does not describe the bundle this would pack"},
 		{name: "glob matches nothing", version: "1.2.3", setup: func(t *testing.T, _, dist string) {
 			if err := os.RemoveAll(filepath.Join(dist, "google-mail-mcp_linux_arm64_v8.0")); err != nil {
 				t.Fatal(err)
