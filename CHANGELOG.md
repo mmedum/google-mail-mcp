@@ -15,6 +15,15 @@ lifted verbatim.
 
 ## [Unreleased]
 
+### Added
+
+- The Claude Desktop bundle asks for the profile, names Google's privacy policy, and carries the `LICENSE` and the README beside the binaries.
+
+### Fixed
+
+- The bundle's OAuth client file and attachment folder default to empty. Without a default, the reference host passes `${user_config.local_dir}` through as written when you leave the field blank, and the server refuses that as a path that is not absolute.
+- The bundle says that read-only cannot be combined with sending, permanent deletion or settings changes. The server refuses each of those at startup, and only the read-only field said so.
+
 ## [3.0.0] - 2026-10-23
 
 ### Added

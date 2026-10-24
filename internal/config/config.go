@@ -133,6 +133,19 @@ type Settings struct {
 	// RequirePrompt is the removed GMAIL_REQUIRE_PROMPT, as the
 	// environment gives it, read only to refuse it set.
 	RequirePrompt string
+	// vars is every setting Define binds to a flag, in order.
+	vars []Var
+}
+
+// Var is one setting Define binds to a flag.
+type Var struct {
+	// Name is the environment variable.
+	Name string
+	// Default is what the server uses when neither the variable nor its
+	// flag is set, written as a person would set it.
+	Default string
+	// Switch marks a setting that is on or off.
+	Switch bool
 }
 
 // removedRequirePrompt is the setting that refused, while the server
@@ -156,6 +169,7 @@ func Define(fs *flag.FlagSet, env func(string) string) *Settings {
 			v = fallback
 		}
 		fs.StringVar(p, name, v, usage+" [env "+EnvPrefix+key+"]")
+		s.vars = append(s.vars, Var{Name: EnvPrefix + key, Default: fallback})
 	}
 	// A switch takes a bare --read-only as well as --read-only=true.
 	// Build parses the text either way, so a bad value from the
@@ -167,6 +181,7 @@ func Define(fs *flag.FlagSet, env func(string) string) *Settings {
 			*p = "false"
 		}
 		fs.Var((*switchText)(p), name, usage+" [env "+EnvPrefix+key+"]")
+		s.vars = append(s.vars, Var{Name: EnvPrefix + key, Default: "false", Switch: true})
 	}
 	def(&s.Profile, "profile", "PROFILE", userconfig.DefaultProfile, "named configuration profile")
 	def(&s.ClientSecretPath, "client-secret", "CLIENT_SECRET", "", "path to the OAuth Desktop client JSON (overrides the stored profile setting)")
@@ -201,6 +216,14 @@ func (s *switchText) Set(v string) error { *s = switchText(v); return nil }
 
 // IsBoolFlag lets the flag be given without a value.
 func (s *switchText) IsBoolFlag() bool { return true }
+
+// Vars is every setting Define binds to a flag, in the order it binds
+// them. The bundle gate reads each switch's default here.
+func Vars() []Var {
+	fs := flag.NewFlagSet("vars", flag.ContinueOnError)
+	fs.SetOutput(io.Discard)
+	return Define(fs, func(string) string { return "" }).vars
+}
 
 // EnvVars is every GMAIL_ variable this server reads, sorted. The
 // Define part is recorded rather than listed, so it cannot fall behind.

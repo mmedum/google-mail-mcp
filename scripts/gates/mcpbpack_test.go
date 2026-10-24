@@ -54,7 +54,7 @@ func TestMcpbPackWritesAndReadsBack(t *testing.T) {
 	if err != nil {
 		t.Fatalf("pack: %v\n%s", err, out.String())
 	}
-	out.mustSay(t, "6 entries, version 1.2.3, read back")
+	out.mustSay(t, "8 entries, version 1.2.3, read back")
 
 	// The reader is closed before the second pack below: Windows refuses
 	// to rename over a file that is open.
@@ -87,8 +87,12 @@ func readBackBundle(t *testing.T, zr *zip.ReadCloser) {
 		if !f.Modified.Equal(fixed) {
 			t.Errorf("%s stamped %v, want %v", f.Name, f.Modified, fixed)
 		}
-		if f.Name != "manifest.json" && f.Mode().Perm() != 0o755 {
-			t.Errorf("%s has mode %v, want 0755", f.Name, f.Mode().Perm())
+		wantMode := os.FileMode(0o755)
+		if f.Name == "manifest.json" || f.Name == "LICENSE" || f.Name == "README.md" {
+			wantMode = 0o644
+		}
+		if f.Mode().Perm() != wantMode {
+			t.Errorf("%s has mode %v, want %v", f.Name, f.Mode().Perm(), wantMode)
 		}
 		if f.Name == "manifest.json" {
 			rc, _ := f.Open()
@@ -107,6 +111,14 @@ func readBackBundle(t *testing.T, zr *zip.ReadCloser) {
 			}
 			if !bytes.Contains(raw, []byte(`">=0.10.0"`)) {
 				t.Errorf("claude_desktop is not written as >=0.10.0; the encoder escaped it: %s", raw)
+			}
+		}
+		if f.Name == "README.md" {
+			rc, _ := f.Open()
+			raw, _ := io.ReadAll(rc)
+			_ = rc.Close()
+			if string(raw) != "# google-mail-mcp\n" {
+				t.Errorf("the packed README is %q, not the repository's", raw)
 			}
 		}
 		if f.Name == "server/launch-linux.sh" {
