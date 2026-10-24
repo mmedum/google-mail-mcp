@@ -476,17 +476,24 @@ func stalenessEnv(config string, codeEnv []string) (int, []string) {
 	return len(codeEnv), problems
 }
 
-// stalenessProfile requires docs/configuration.md to say what a profile
-// name is in the words the server refuses one with. An empty rule is the
-// wiring missing, and is refused rather than found in any text.
+// stalenessProfile requires the profile setting's row of
+// docs/configuration.md to say what a profile name is in the words the
+// server refuses one with. An empty rule is the wiring missing, and is
+// refused rather than found in any text.
 func stalenessProfile(config, rule string) []string {
-	switch {
-	case rule == "":
+	if rule == "" {
 		return []string{"config.ProfileRule did not reach the staleness check"}
-	case !strings.Contains(config, rule):
-		return []string{fmt.Sprintf("docs/configuration.md does not say a profile name is %q", rule)}
 	}
-	return nil
+	for line := range strings.Lines(config) {
+		if strings.HasPrefix(line, "| `"+mcpbProfileVar+"` |") {
+			if strings.Contains(line, rule) {
+				return nil
+			}
+			return []string{fmt.Sprintf("docs/configuration.md's %s row does not say a profile name is %q",
+				mcpbProfileVar, rule)}
+		}
+	}
+	return []string{fmt.Sprintf("docs/configuration.md has no %s row to say a profile name is %q", mcpbProfileVar, rule)}
 }
 
 // stalenessGates requires docs/development.md to name every command the

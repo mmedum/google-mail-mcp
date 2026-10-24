@@ -91,15 +91,21 @@ func serverJSONOwnerRepo() (string, string, error) {
 	return parts[1], parts[2], nil
 }
 
-// serverJSONBuild makes the entry for a version and a bundle row.
+// serverJSONBuild makes the entry for a version and a bundle row, from
+// the manifest the bundle gate and the packer read, and only once it
+// passes their checks.
 func serverJSONBuild(root, version, bundle, sum string) (serverJSONEntry, error) {
 	owner, repo, err := serverJSONOwnerRepo()
 	if err != nil {
 		return serverJSONEntry{}, err
 	}
-	_, m, err := mcpbReadManifest(root)
+	_, m, problems, err := mcpbCommittedManifest(root)
 	if err != nil {
 		return serverJSONEntry{}, err
+	}
+	if len(problems) > 0 {
+		return serverJSONEntry{}, fmt.Errorf("the entry is not built from a manifest the bundle gate refuses:\n  %s",
+			strings.Join(problems, "\n  "))
 	}
 	return serverJSONEntry{
 		Schema:      vendorRegistrySchemaURL,

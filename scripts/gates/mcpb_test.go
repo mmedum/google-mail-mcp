@@ -486,6 +486,11 @@ func TestMcpbRefusesARepeatedKey(t *testing.T) {
 		{"a variable mapped twice", `"GMAIL_PROFILE": "${user_config.profile}",`,
 			`"GMAIL_PROFILE": "${user_config.profile}", "GMAIL_PROFILE": "${user_config.profile}",`,
 			"the manifest has server.mcp_config.env.GMAIL_PROFILE more than once"},
+		// The decode matches Command to the field and keeps it, so every
+		// check reads the staged program; the host runs command.
+		{"a command spelled with a capital", `"command": "${__dirname}/server/google-mail-mcp-darwin",`,
+			`"command": "/bin/sh", "Command": "${__dirname}/server/google-mail-mcp-darwin",`,
+			"the manifest has server.mcp_config.Command more than once"},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
@@ -500,8 +505,27 @@ func TestMcpbRefusesARepeatedKey(t *testing.T) {
 	}
 }
 
-// A key is repeated only within one object, and each repeated key is
-// named once, by its path, a list's elements and a repeated object's
+// The repeated-key problems are sorted, as every other list of
+// problems is.
+func TestMcpbRepeatedKeysAreReportedSorted(t *testing.T) {
+	_, _, problems, err := mcpbCommittedManifest(mcpbRawRoot(t, `"GMAIL_PROFILE": "${user_config.profile}",`,
+		`"GMAIL_PROFILE": "${user_config.profile}", "Z": "", "Z": "", "A": "", "A": "",`))
+	if err != nil {
+		t.Fatal(err)
+	}
+	var got []string
+	for _, p := range problems {
+		at, _, _ := strings.Cut(strings.TrimPrefix(p, "the manifest has "), " ")
+		got = append(got, at)
+	}
+	if want := []string{"server.mcp_config.env.A", "server.mcp_config.env.Z"}; !slices.Equal(got, want) {
+		t.Errorf("the repeated keys are reported as %q, want %q", got, want)
+	}
+}
+
+// A key is repeated only within one object, a key equal to another but
+// for case counting as the same, and each repeated key is named once,
+// by a path no other key has, a list's elements and a repeated object's
 // own keys included.
 func TestMcpbRepeatedKeysNameEachPathOnce(t *testing.T) {
 	for _, tc := range []struct {
@@ -511,11 +535,20 @@ func TestMcpbRepeatedKeysNameEachPathOnce(t *testing.T) {
 		{`{"a": [{"b": 1, "b": 2, "b": 3}], "c": {"d": 1}, "d": 1}`, []string{"a[0].b"}},
 		{`{"x": {"y": 1}, "x": {"y": 1, "y": 2}}`, []string{"x", "x.y"}},
 		{`{"server": {"type": "binary"}, "user_config": {"type": {"type": "boolean"}}}`, nil},
-		{`{"a": 1,`, nil},
+		{`{"command": 1, "Command": 2, "COMMAND": 3}`, []string{"Command"}},
+		{`{"kind": 1, "\u212aind": 2}`, []string{"[\"\u212aind\"]"}},
+		{`{"env": {"a.b": 1, "a.b": 2}, "a": {"b": 1, "b": 2}}`, []string{`env["a.b"]`, "a.b"}},
+		{`{"env": {"a[0]": 1, "a[0]": 2}}`, []string{`env["a[0]"]`}},
 	} {
-		if got := mcpbRepeatedKeys([]byte(tc.doc)); !slices.Equal(got, tc.want) {
-			t.Errorf("mcpbRepeatedKeys(%s) = %q, want %q", tc.doc, got, tc.want)
+		got, err := mcpbRepeatedKeys([]byte(tc.doc))
+		if err != nil || !slices.Equal(got, tc.want) {
+			t.Errorf("mcpbRepeatedKeys(%s) = %q, %v; want %q", tc.doc, got, err, tc.want)
 		}
+	}
+	// A document the walk cannot read is refused, not passed as one with
+	// no repeats.
+	if got, err := mcpbRepeatedKeys([]byte(`{"a": 1,`)); err == nil {
+		t.Errorf("an unfinished document gives %q and no error", got)
 	}
 }
 
@@ -533,34 +566,36 @@ func TestMcpbPlatformsComeFromTheStagedTable(t *testing.T) {
 	}
 }
 
-// A field the defaults change is named, an unexported one included
-// where its type compares; an unexported one that does not is reported
-// unnamed, rather than panicking.
+// Every field that differs is named, an unexported one too, whatever
+// else differs: a slice or an interface by its contents, without a
+// panic, and a pointer by what it points to, never by its address.
 func TestMcpbFieldDiffNamesTheFieldsThatDiffer(t *testing.T) {
 	type cfg struct {
 		Shown  int
 		hidden int
 		rest   []string
 		held   any
+		at     *int
+		Shared *int
 	}
+	one, two, otherOne := 1, 2, 1
+	base := cfg{1, 1, nil, []string{"x"}, &one, &one}
 	for _, tc := range []struct {
 		b    cfg
 		want []string
 	}{
-		{cfg{2, 1, nil, nil}, []string{"Shown"}},
-		{cfg{1, 2, nil, nil}, []string{"hidden"}},
-		{cfg{1, 1, []string{"x"}, nil}, []string{"an unexported field"}},
-		{cfg{1, 1, nil, nil}, nil},
+		{cfg{2, 1, nil, []string{"x"}, &one, &one}, []string{"Shown"}},
+		{cfg{1, 2, nil, []string{"x"}, &one, &one}, []string{"hidden"}},
+		{cfg{1, 1, []string{"x"}, []string{"x"}, &one, &one}, []string{"rest"}},
+		{cfg{2, 1, []string{"x"}, []string{"x"}, &one, &one}, []string{"Shown", "rest"}},
+		{cfg{1, 1, nil, []string{"y"}, &one, &one}, []string{"held"}},
+		{cfg{1, 1, nil, []string{"x"}, &otherOne, &otherOne}, nil},
+		{cfg{1, 1, nil, []string{"x"}, &two, &two}, []string{"at", "Shared"}},
+		{cfg{1, 1, nil, []string{"x"}, &one, &one}, nil},
 	} {
-		if got := mcpbFieldDiff(cfg{1, 1, nil, nil}, tc.b); !slices.Equal(got, tc.want) {
+		if got := mcpbFieldDiff(base, tc.b); !slices.Equal(got, tc.want) {
 			t.Errorf("mcpbFieldDiff against %+v = %q, want %q", tc.b, got, tc.want)
 		}
-	}
-	// An interface holding a slice on both sides compares as a type and
-	// panics in Value.Equal; it is reported unnamed instead.
-	if got := mcpbFieldDiff(cfg{held: []string{"y"}}, cfg{held: []string{"x"}}); !slices.Equal(got,
-		[]string{"an unexported field"}) {
-		t.Errorf("an interface field differing gives %q, want [an unexported field]", got)
 	}
 	if got := mcpbFieldDiff(config.Config{Profile: "a", EnableSend: true}, config.Config{Profile: "a"}); !slices.Equal(got,
 		[]string{"EnableSend"}) {

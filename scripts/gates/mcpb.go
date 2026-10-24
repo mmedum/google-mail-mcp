@@ -14,6 +14,7 @@ import (
 	"slices"
 	"strconv"
 	"strings"
+	"unsafe"
 
 	"github.com/mmedum/google-mail-mcp/v3/internal/config"
 )
@@ -84,8 +85,10 @@ var mcpbFiles = []mcpbStaged{
 	{path: "README.md", repo: "README.md"},
 }
 
-// mcpbManifest is the part of the manifest the checks read. The whole
-// document is decoded a second time as a map, so unknown keys survive.
+// mcpbManifest is the part of the manifest the checks read. A key it
+// does not name is still checked and still shipped: the vendored schema
+// validates the document's bytes, and the packer stamps the version into
+// them, not into this.
 type mcpbManifest struct {
 	Schema          string   `json:"$schema"`
 	ManifestVersion string   `json:"manifest_version"`
@@ -154,21 +157,28 @@ func mcpbCheck(out io.Writer, root string) error {
 // document with the real version stamped in, not these bytes.
 //
 // A key repeated in one object is refused before anything else is
-// checked. The decode into mcpbManifest merges a repeated object into
-// the first, while the schema validator, the packer's stamp and the host
-// each keep the last, so every other check would read a document that is
-// not the one shipped.
+// checked, and so is a key that differs from another only in case. The
+// decode into mcpbManifest merges a repeated object into the first, and
+// matches a key to a field whatever its case, while the schema
+// validator, the packer's stamp and the host each keep the last and
+// read a key only as spelled, so every other check would read a
+// document that is not the one shipped (§18 row 96).
 func mcpbCommittedManifest(root string) (raw []byte, m mcpbManifest, problems []string, err error) {
 	raw, m, err = mcpbReadManifest(root)
 	if err != nil {
 		return nil, mcpbManifest{}, nil, err
 	}
-	if repeated := mcpbRepeatedKeys(raw); len(repeated) > 0 {
+	repeated, err := mcpbRepeatedKeys(raw)
+	if err != nil {
+		return nil, mcpbManifest{}, nil, fmt.Errorf("%s: reading its keys: %w", mcpbManifestPath, err)
+	}
+	if len(repeated) > 0 {
 		for _, at := range repeated {
-			problems = append(problems, fmt.Sprintf("the manifest has %s more than once; the gate's decode merges "+
-				"a repeated key, and the schema, the packer and the host keep the last, so they would read "+
-				"different documents", at))
+			problems = append(problems, fmt.Sprintf("the manifest has %s more than once, counting a spelling "+
+				"that differs only in case; the gate's decode merges such keys, and the schema, the packer and "+
+				"the host do not, so they would read different documents", at))
 		}
+		slices.Sort(problems)
 		return raw, m, problems, nil
 	}
 	problems = mcpbManifestProblems(root, m, raw)
@@ -192,11 +202,13 @@ func mcpbReadManifest(root string) ([]byte, mcpbManifest, error) {
 }
 
 // mcpbRepeatedKeys is the path of every key an object in raw has more
-// than once, each once, in document order: "server" at the top level,
-// "server.mcp_config.env.GMAIL_PROFILE" inside, and [i] for an element
-// of a list. A document that is not JSON has none here, since the decode
-// reports it.
-func mcpbRepeatedKeys(raw []byte) []string {
+// than once, a key equal to another under Unicode case folding counting
+// as the same key, each once, in document order: "server" at the top
+// level, "server.mcp_config.env.GMAIL_PROFILE" inside, [i] for an
+// element of a list, and ["a.b"] for a key that is not plainly a name.
+// A document whose tokens cannot be read is an error, never a document
+// with no repeats.
+func mcpbRepeatedKeys(raw []byte) ([]string, error) {
 	dec := json.NewDecoder(bytes.NewReader(raw))
 	var repeated []string
 	var walk func(path string) error
@@ -207,18 +219,22 @@ func mcpbRepeatedKeys(raw []byte) []string {
 		}
 		switch tok {
 		case json.Delim('{'):
-			seen := map[string]int{}
+			// The first spelling of each key, and whether it has been
+			// reported.
+			var seen []string
+			reported := map[int]bool{}
 			for dec.More() {
 				keyTok, err := dec.Token()
 				if err != nil {
 					return err
 				}
 				key, _ := keyTok.(string)
-				at := key
-				if path != "" {
-					at = path + "." + key
-				}
-				if seen[key]++; seen[key] == 2 {
+				at := mcpbKeyPath(path, key)
+				switch i := slices.IndexFunc(seen, func(k string) bool { return strings.EqualFold(k, key) }); {
+				case i < 0:
+					seen = append(seen, key)
+				case !reported[i]:
+					reported[i] = true
 					repeated = append(repeated, at)
 				}
 				if err := walk(at); err != nil {
@@ -237,10 +253,26 @@ func mcpbRepeatedKeys(raw []byte) []string {
 		_, err = dec.Token() // the closing brace or bracket
 		return err
 	}
-	if walk("") != nil {
-		return nil
+	if err := walk(""); err != nil {
+		return nil, err
 	}
-	return repeated
+	return repeated, nil
+}
+
+// mcpbPlainKey is a key a path names bare.
+var mcpbPlainKey = regexp.MustCompile(`^[A-Za-z0-9_$-]+$`)
+
+// mcpbKeyPath is the path of key in the object at path. A key that is
+// not plainly a name, such as one holding a dot or a bracket, is quoted,
+// so no two paths read the same.
+func mcpbKeyPath(path, key string) string {
+	switch {
+	case !mcpbPlainKey.MatchString(key):
+		return path + "[" + strconv.Quote(key) + "]"
+	case path == "":
+		return key
+	}
+	return path + "." + key
 }
 
 // mcpbManifestProblems is every check the gate and the packer both run:
@@ -780,52 +812,35 @@ func mcpbDefaultsProblems(d mcpbDefaults) []string {
 }
 
 // mcpbFieldDiff names the fields of two values of one struct type that
-// differ. An unexported field cannot be read out through Interface, so
-// it is compared with Value.Equal where its type compares; one that does
-// not, and differs, is reported unnamed.
+// differ, each compared as reflect.DeepEqual compares it: a pointer by
+// what it points to, never by its address, and a slice, a map or an
+// interface by its contents, without a panic. An unexported field is
+// compared and named too.
 func mcpbFieldDiff(a, b any) []string {
-	va, vb := reflect.ValueOf(a), reflect.ValueOf(b)
+	va, vb := mcpbAddressable(a), mcpbAddressable(b)
 	var fields []string
-	unnamed := false
 	for i := range va.NumField() {
-		f := va.Type().Field(i)
-		switch {
-		case f.IsExported():
-			if !reflect.DeepEqual(va.Field(i).Interface(), vb.Field(i).Interface()) {
-				fields = append(fields, f.Name)
-			}
-		case mcpbStrictlyComparable(f.Type):
-			if !va.Field(i).Equal(vb.Field(i)) {
-				fields = append(fields, f.Name)
-			}
-		default:
-			unnamed = true
+		if !reflect.DeepEqual(mcpbFieldValue(va, i), mcpbFieldValue(vb, i)) {
+			fields = append(fields, va.Type().Field(i).Name)
 		}
-	}
-	if unnamed && len(fields) == 0 && !reflect.DeepEqual(a, b) {
-		fields = append(fields, "an unexported field")
 	}
 	return fields
 }
 
-// mcpbStrictlyComparable reports whether every value of t compares with
-// Value.Equal. An interface type compares as a type, but Equal panics on
-// a dynamic value that does not, so one anywhere inside t rules it out.
-func mcpbStrictlyComparable(t reflect.Type) bool {
-	switch t.Kind() {
-	case reflect.Interface:
-		return false
-	case reflect.Struct:
-		for i := range t.NumField() {
-			if !mcpbStrictlyComparable(t.Field(i).Type) {
-				return false
-			}
-		}
-		return true
-	case reflect.Array:
-		return mcpbStrictlyComparable(t.Elem())
-	}
-	return t.Comparable()
+// mcpbAddressable is a copy of v with an address, so that its fields
+// have one too.
+func mcpbAddressable(v any) reflect.Value {
+	c := reflect.New(reflect.TypeOf(v)).Elem()
+	c.Set(reflect.ValueOf(v))
+	return c
+}
+
+// mcpbFieldValue is field i of the addressable struct v. Interface
+// refuses an unexported field, so the field is read through its address
+// in v, which is a copy no one else holds.
+func mcpbFieldValue(v reflect.Value, i int) any {
+	f := v.Field(i)
+	return reflect.NewAt(f.Type(), unsafe.Pointer(f.UnsafeAddr())).Elem().Interface()
 }
 
 // mcpbRefused are the sets of the bundle's switches the server refuses

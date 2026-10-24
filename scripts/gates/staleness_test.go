@@ -107,13 +107,18 @@ func TestStalenessEnv(t *testing.T) {
 	stalenessHas(t, p, "missing")
 }
 
-// The configuration page says what a profile name is in the server's own
-// words, and an unwired rule is refused rather than found everywhere.
+// The configuration page's profile row says what a profile name is in
+// the server's own words, and an unwired rule is refused rather than
+// found everywhere.
 func TestStalenessProfile(t *testing.T) {
 	const rule = "up to 64 characters from a to z"
-	stalenessNone(t, stalenessProfile("A name is "+rule+".", rule))
-	stalenessHas(t, stalenessProfile("A name is up to 64 characters.", rule),
-		`docs/configuration.md does not say a profile name is "up to 64 characters from a to z"`)
+	row := "| `" + mcpbProfileVar + "` | `--profile` | `default` | Named profile. A name is "
+	stalenessNone(t, stalenessProfile("# Configuration\n\n"+row+rule+". |\n", rule))
+	stalenessNone(t, stalenessProfile("# Configuration\r\n\r\n"+row+rule+". |\r\n", rule))
+	stalenessHas(t, stalenessProfile(row+"up to 64 characters. |\n\nA name is "+rule+".\n", rule),
+		"docs/configuration.md's GMAIL_PROFILE row does not say a profile name is \"up to 64 characters from a to z\"")
+	stalenessHas(t, stalenessProfile("A name is "+rule+".\n", rule),
+		"docs/configuration.md has no GMAIL_PROFILE row")
 	stalenessHas(t, stalenessProfile("anything", ""), "did not reach the staleness check")
 }
 

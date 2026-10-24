@@ -121,10 +121,15 @@ func (s *Store) env(k string) string {
 	return os.Getenv(k)
 }
 
-// Resolve returns the refresh token and where it came from. The
-// environment's is read through config.Lookup, as every setting is.
+// FromEnv is the refresh token the environment supplies, read through
+// config.Lookup as every setting is, or "" when it supplies none.
+func (s *Store) FromEnv() string {
+	return config.Lookup(s.env, config.EnvRefreshToken)
+}
+
+// Resolve returns the refresh token and where it came from.
 func (s *Store) Resolve() (string, Source, error) {
-	if v := config.Lookup(s.env, config.EnvRefreshToken); v != "" {
+	if v := s.FromEnv(); v != "" {
 		return v, SourceEnv, nil
 	}
 	return s.ResolveStored()

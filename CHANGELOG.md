@@ -18,6 +18,7 @@ lifted verbatim.
 ### Fixed
 
 - A variable set to spaces alone is unset, as an empty one is, and the spaces around a value are dropped, `GMAIL_REFRESH_TOKEN` included; a bundle field cleared to a space, such as the profile, no longer stops the server.
+- The bundle's Profile field says A to Z are read as a to z, where it said capitals are; another capital, such as the Kelvin sign, was already refused.
 
 ## [3.1.1] - 2026-10-24
 
