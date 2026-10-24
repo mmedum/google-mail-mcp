@@ -56,7 +56,7 @@ func cmdLogin(args []string, stdout, stderr io.Writer, env func(string) string) 
 	oc, err := p.OAuthConfig()
 	if err != nil {
 		return fail(stderr, "%v\n\nCreate an OAuth Desktop app client in the Google Cloud console, download its JSON, "+
-			"and pass it with --client-secret (%sCLIENT_SECRET) or put it at %s", err, config.EnvPrefix, cfg.ConfigDir.DefaultClientSecretPath(cfg.Profile))
+			"and pass it with --client-secret (%s) or put it at %s", err, config.EnvPrefix+"CLIENT_SECRET", cfg.ConfigDir.DefaultClientSecretPath(cfg.Profile))
 	}
 	requested := cfg.Scopes()
 	outf(stdout, "Signing in to profile %q, asking for:\n", cfg.Profile)
@@ -177,8 +177,8 @@ func cmdLogout(args []string, stdout, stderr io.Writer, env func(string) string)
 	default:
 		outf(stdout, "Could not read the stored token (%v); removing what is there.\n", err)
 	}
-	if env(credentials.EnvVar) != "" {
-		outf(stderr, "warning: %s is set; logout neither revokes nor removes it\n", credentials.EnvVar)
+	if p.Store.FromEnv() != "" {
+		outf(stderr, "warning: %s is set; logout neither revokes nor removes it\n", config.EnvRefreshToken)
 	}
 
 	if err := p.Store.Delete(); err != nil {

@@ -23,6 +23,7 @@ import (
 	"github.com/modelcontextprotocol/go-sdk/jsonrpc"
 
 	"github.com/mmedum/google-mail-mcp/v3/internal/auth"
+	"github.com/mmedum/google-mail-mcp/v3/internal/config"
 	"github.com/mmedum/google-mail-mcp/v3/internal/credentials"
 	"github.com/mmedum/google-mail-mcp/v3/internal/scopes"
 	"github.com/mmedum/google-mail-mcp/v3/internal/userconfig"
@@ -486,13 +487,24 @@ func TestNoBrowserPrintsTheForwardingLine(t *testing.T) {
 func TestLogoutLeavesAnEnvironmentTokenAlone(t *testing.T) {
 	g := newGoogle(t)
 	env := home(t, g)
-	env[credentials.EnvVar] = "1//env-supplied-token"
+	env[config.EnvRefreshToken] = "1//env-supplied-token"
 	r := runWith(env, nil, "logout")
-	if r.code != 0 || !strings.Contains(r.stderr, credentials.EnvVar) {
+	if r.code != 0 || !strings.Contains(r.stderr, config.EnvRefreshToken) {
 		t.Errorf("logout: %+v", r)
 	}
 	if len(g.revoked) != 0 {
 		t.Errorf("revoked %v", g.revoked)
+	}
+}
+
+// A refresh token of spaces alone is unset, so logout does not warn
+// that one is set.
+func TestLogoutReadsATokenOfSpacesAsUnset(t *testing.T) {
+	env := home(t, newGoogle(t))
+	env[config.EnvRefreshToken] = "  "
+	r := runWith(env, nil, "logout")
+	if r.code != 0 || strings.Contains(r.stderr, config.EnvRefreshToken) {
+		t.Errorf("logout: %+v", r)
 	}
 }
 
@@ -526,7 +538,7 @@ func TestServeSignedIn(t *testing.T) {
 	g := newGoogle(t)
 	env := home(t, g)
 	clientSecret(t, env, g)
-	env[credentials.EnvVar] = refreshToken
+	env[config.EnvRefreshToken] = refreshToken
 	r := runWith(env, strings.NewReader(""), "serve")
 	if r.code != 0 || strings.Contains(r.stderr, "no usable credentials") {
 		t.Errorf("serve: %+v", r)

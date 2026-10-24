@@ -4,8 +4,9 @@
 // MCP client passes only command, args and env to a stdio server. Most
 // settings also have a flag bound to the same name; a flag given on the
 // command line wins over the environment, and the environment over the
-// default. Build validates once and reports every problem together, so
-// a misconfigured server fails before it announces itself.
+// default. A variable of spaces alone is unset, as an empty one is.
+// Build validates once and reports every problem together, so a
+// misconfigured server fails before it announces itself.
 package config
 
 import (
@@ -23,7 +24,6 @@ import (
 	"strings"
 	"time"
 
-	"github.com/mmedum/google-mail-mcp/v3/internal/credentials"
 	"github.com/mmedum/google-mail-mcp/v3/internal/scopes"
 	"github.com/mmedum/google-mail-mcp/v3/internal/userconfig"
 )
@@ -34,16 +34,25 @@ const EnvPrefix = "GMAIL_"
 // Variables read from the environment only. CONFIG_DIR has no flag
 // because it is read the same way by every subcommand before anything
 // else; REFRESH_TOKEN because a secret on a command line is visible to
-// every process on the machine. internal/credentials reads the second,
-// and names it.
+// every process on the machine. internal/credentials reads the second
+// by this name, so config imports no keyring.
 const (
 	EnvConfigDir    = EnvPrefix + "CONFIG_DIR"
-	EnvRefreshToken = credentials.EnvVar
+	EnvRefreshToken = EnvPrefix + "REFRESH_TOKEN"
 )
 
 // envOnly is every variable read outside Define, for Vars: the refresh
 // token, which internal/credentials reads.
 var envOnly = []string{EnvRefreshToken}
+
+// Lookup is the variable name as env gives it, without the spaces around
+// it. Spaces alone are "", unset as an empty variable is, so a form field
+// cleared to a space means the default rather than a value the server
+// refuses. Define reads every setting through it, and so does each
+// reader of a variable outside Define.
+func Lookup(env func(string) string, name string) string {
+	return strings.TrimSpace(env(name))
+}
 
 // DefaultAPIBase is the Gmail API origin. Paths go under
 // /gmail/v1/users/me/.
@@ -160,12 +169,13 @@ const removedRequirePrompt = "REQUIRE_PROMPT"
 // GMAIL_* variable read through env.
 //
 // Every variable is read through read, which records it for Vars, so a
-// setting added here is documented or the staleness gate fails.
+// setting added here is documented or the staleness gate fails. read
+// goes through Lookup.
 func Define(fs *flag.FlagSet, env func(string) string) *Settings {
 	s := &Settings{}
 	read := func(name string, isSwitch bool) string {
 		s.vars = append(s.vars, Var{Name: name, Switch: isSwitch})
-		return env(name)
+		return Lookup(env, name)
 	}
 	def := func(p *string, name, key, fallback, usage string) {
 		v := read(EnvPrefix+key, false)

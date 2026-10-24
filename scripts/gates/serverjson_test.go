@@ -111,6 +111,16 @@ func TestServerJSONRules(t *testing.T) {
 	}
 }
 
+// The entry is built from the manifest the bundle gate passes, so one
+// it refuses, such as one with a key repeated, builds no entry.
+func TestServerJSONBuildRefusesARefusedManifest(t *testing.T) {
+	root := mcpbRawRoot(t, `"description": "Gmail over MCP`, `"description": "Another server", "description": "Gmail over MCP`)
+	if e, err := serverJSONBuild(root, "1.2.3", mcpbPackName("1.2.3"), strings.Repeat("a", 64)); err == nil ||
+		!strings.Contains(err.Error(), "the manifest has description more than once") {
+		t.Errorf("a manifest with description twice gives %+v, %v; want it refused", e, err)
+	}
+}
+
 func TestServerJSONPublish(t *testing.T) {
 	root := mcpbRoot(t, mcpbFixture(t))
 	sum := strings.Repeat("b", 64)

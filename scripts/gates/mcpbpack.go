@@ -63,11 +63,12 @@ func mcpbPackTo(out io.Writer, root, dist, version, bundle string, runVersion bo
 	if want := mcpbPackName(version); filepath.Base(bundle) != want {
 		return "", fmt.Errorf("the bundle is named %q; the release publishes %q", filepath.Base(bundle), want)
 	}
-	m, raw, err := mcpbRead(filepath.Join(root, mcpbManifestPath))
+	// The gate's own start, read once from root.
+	raw, _, problems, err := mcpbCommittedManifest(root)
 	if err != nil {
 		return "", err
 	}
-	if err := problemsError(out, mcpbManifestPath, mcpbManifestProblems(root, m, raw)); err != nil {
+	if err := problemsError(out, mcpbManifestPath, problems); err != nil {
 		return "", fmt.Errorf("the manifest does not describe the bundle this would pack: %w", err)
 	}
 
@@ -112,7 +113,10 @@ func mcpbPackTo(out io.Writer, root, dist, version, bundle string, runVersion bo
 }
 
 // mcpbStamp writes the version through a JSON decode and encode, never
-// a substitution over text, keeping every key the manifest carries.
+// a substitution over text, keeping every key the manifest carries. The
+// encode sorts the keys, so what it returns is the committed document
+// but not its bytes, and it is held to the vendored schema of its
+// manifest_version before anything ships it.
 func mcpbStamp(raw []byte, version string) ([]byte, error) {
 	var doc map[string]any
 	if err := json.Unmarshal(raw, &doc); err != nil {
@@ -124,6 +128,14 @@ func mcpbStamp(raw []byte, version string) ([]byte, error) {
 	enc.SetEscapeHTML(false)
 	enc.SetIndent("", "  ")
 	if err := enc.Encode(doc); err != nil {
+		return nil, err
+	}
+	manifestVersion, _ := doc["manifest_version"].(string)
+	schema, err := vendorManifestSchemaFile(manifestVersion)
+	if err != nil {
+		return nil, err
+	}
+	if err := vendorValidate(schema, "the stamped manifest", b.Bytes()); err != nil {
 		return nil, err
 	}
 	return b.Bytes(), nil

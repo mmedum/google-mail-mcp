@@ -69,7 +69,7 @@ func TestAssembleWithoutCredentialsStillServes(t *testing.T) {
 }
 
 func TestAssembleWithAnEnvironmentToken(t *testing.T) {
-	cfg, env := setup(t, map[string]string{credentials.EnvVar: "1//refresh-token-from-env"})
+	cfg, env := setup(t, map[string]string{config.EnvRefreshToken: "1//refresh-token-from-env"})
 	writeClient(t, cfg)
 	r, err := Assemble(context.Background(), cfg, Options{Env: env, Keyring: memKeyring{}})
 	if err != nil {

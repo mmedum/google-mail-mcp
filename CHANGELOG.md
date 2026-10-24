@@ -15,6 +15,13 @@ lifted verbatim.
 
 ## [Unreleased]
 
+## [3.1.2] - 2026-10-24
+
+### Fixed
+
+- A variable set to spaces alone is unset, as an empty one is, and the spaces around a value are dropped, `GMAIL_REFRESH_TOKEN` included; a bundle field cleared to a space, such as the profile, no longer stops the server.
+- The bundle's Profile field says A to Z are read as a to z, where it said capitals are; another capital, such as the Kelvin sign, was already refused.
+
 ## [3.1.1] - 2026-10-24
 
 ### Changed
@@ -239,7 +246,8 @@ lifted verbatim.
 - Repository gates run by `make check` and CI: leaks, pins, error classes, API coverage, schema diff, smoke, staleness and more.
 - Signed release archives for six platforms with SBOMs, build provenance, a Claude Desktop bundle and an MCP registry entry.
 
-[Unreleased]: https://github.com/mmedum/google-mail-mcp/compare/v3.1.1...HEAD
+[Unreleased]: https://github.com/mmedum/google-mail-mcp/compare/v3.1.2...HEAD
+[3.1.2]: https://github.com/mmedum/google-mail-mcp/compare/v3.1.1...v3.1.2
 [3.1.1]: https://github.com/mmedum/google-mail-mcp/compare/v3.1.0...v3.1.1
 [3.1.0]: https://github.com/mmedum/google-mail-mcp/compare/v3.0.0...v3.1.0
 [3.0.0]: https://github.com/mmedum/google-mail-mcp/compare/v2.3.0...v3.0.0

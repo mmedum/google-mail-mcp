@@ -7,7 +7,7 @@ import (
 
 // The one file that imports the server's packages for staleness: the
 // scope set per mode, which docs/gcp-setup.md's block is generated
-// from, and the settings the configuration reads.
+// from, the settings the configuration reads, and the profile rule.
 func init() {
 	stalenessScopeModes = func() []stalenessMode {
 		modes := scopes.Modes()
@@ -18,4 +18,5 @@ func init() {
 		return out
 	}
 	stalenessConfigEnv = config.EnvVars
+	stalenessProfileRule = config.ProfileRule
 }

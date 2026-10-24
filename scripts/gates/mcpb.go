@@ -1,6 +1,7 @@
 package main
 
 import (
+	"bytes"
 	"cmp"
 	"encoding/json"
 	"fmt"
@@ -13,6 +14,7 @@ import (
 	"slices"
 	"strconv"
 	"strings"
+	"unsafe"
 
 	"github.com/mmedum/google-mail-mcp/v3/internal/config"
 )
@@ -83,8 +85,10 @@ var mcpbFiles = []mcpbStaged{
 	{path: "README.md", repo: "README.md"},
 }
 
-// mcpbManifest is the part of the manifest the checks read. The whole
-// document is decoded a second time as a map, so unknown keys survive.
+// mcpbManifest is the part of the manifest the checks read. A key it
+// does not name is still checked and still shipped: the vendored schema
+// validates the document's bytes, and the packer stamps the version into
+// them, not into this.
 type mcpbManifest struct {
 	Schema          string   `json:"$schema"`
 	ManifestVersion string   `json:"manifest_version"`
@@ -135,19 +139,140 @@ func mcpb(out io.Writer, _ []string) error {
 }
 
 func mcpbCheck(out io.Writer, root string) error {
-	path := filepath.Join(root, mcpbManifestPath)
-	m, raw, err := mcpbRead(path)
+	_, m, problems, err := mcpbCommittedManifest(root)
 	if err != nil {
 		return err
 	}
-	problems := mcpbManifestProblems(root, m, raw)
-	slices.Sort(problems)
 	if err := problemsError(out, mcpbManifestPath, problems); err != nil {
 		return err
 	}
 	_, _ = fmt.Fprintf(out, "mcpb: %s: %d staged files, %d platforms, %d user_config keys; every name resolves\n",
 		mcpbManifestPath, len(mcpbFiles), len(m.Compatibility.Platforms), len(m.UserConfig))
 	return nil
+}
+
+// mcpbCommittedManifest is where the gate and the packer both start: the
+// committed manifest under root, read once and decoded once, and every
+// problem mcpbManifestProblems finds in it, sorted. The packer ships this
+// document with the real version stamped in, not these bytes.
+//
+// A key repeated in one object is refused before anything else is
+// checked, and so is a key that differs from another only in case. The
+// decode into mcpbManifest merges a repeated object into the first, and
+// matches a key to a field whatever its case, while the schema
+// validator, the packer's stamp and the host each keep the last and
+// read a key only as spelled, so every other check would read a
+// document that is not the one shipped (§18 row 96).
+func mcpbCommittedManifest(root string) (raw []byte, m mcpbManifest, problems []string, err error) {
+	raw, m, err = mcpbReadManifest(root)
+	if err != nil {
+		return nil, mcpbManifest{}, nil, err
+	}
+	repeated, err := mcpbRepeatedKeys(raw)
+	if err != nil {
+		return nil, mcpbManifest{}, nil, fmt.Errorf("%s: reading its keys: %w", mcpbManifestPath, err)
+	}
+	if len(repeated) > 0 {
+		for _, at := range repeated {
+			problems = append(problems, fmt.Sprintf("the manifest has %s more than once, counting a spelling "+
+				"that differs only in case; the gate's decode merges such keys, and the schema, the packer and "+
+				"the host do not, so they would read different documents", at))
+		}
+		slices.Sort(problems)
+		return raw, m, problems, nil
+	}
+	problems = mcpbManifestProblems(root, m, raw)
+	slices.Sort(problems)
+	return raw, m, problems, nil
+}
+
+// mcpbReadManifest reads the committed manifest under root and decodes
+// it, once each.
+func mcpbReadManifest(root string) ([]byte, mcpbManifest, error) {
+	path := filepath.Join(root, mcpbManifestPath)
+	raw, err := os.ReadFile(path) //nolint:gosec // a repository path
+	if err != nil {
+		return nil, mcpbManifest{}, err
+	}
+	var m mcpbManifest
+	if err := json.Unmarshal(raw, &m); err != nil {
+		return nil, mcpbManifest{}, fmt.Errorf("%s is not valid JSON: %w", path, err)
+	}
+	return raw, m, nil
+}
+
+// mcpbRepeatedKeys is the path of every key an object in raw has more
+// than once, a key equal to another under Unicode case folding counting
+// as the same key, each once, in document order: "server" at the top
+// level, "server.mcp_config.env.GMAIL_PROFILE" inside, [i] for an
+// element of a list, and ["a.b"] for a key that is not plainly a name.
+// A document whose tokens cannot be read is an error, never a document
+// with no repeats.
+func mcpbRepeatedKeys(raw []byte) ([]string, error) {
+	dec := json.NewDecoder(bytes.NewReader(raw))
+	var repeated []string
+	var walk func(path string) error
+	walk = func(path string) error {
+		tok, err := dec.Token()
+		if err != nil {
+			return err
+		}
+		switch tok {
+		case json.Delim('{'):
+			// The first spelling of each key, and whether it has been
+			// reported.
+			var seen []string
+			reported := map[int]bool{}
+			for dec.More() {
+				keyTok, err := dec.Token()
+				if err != nil {
+					return err
+				}
+				key, _ := keyTok.(string)
+				at := mcpbKeyPath(path, key)
+				switch i := slices.IndexFunc(seen, func(k string) bool { return strings.EqualFold(k, key) }); {
+				case i < 0:
+					seen = append(seen, key)
+				case !reported[i]:
+					reported[i] = true
+					repeated = append(repeated, at)
+				}
+				if err := walk(at); err != nil {
+					return err
+				}
+			}
+		case json.Delim('['):
+			for i := 0; dec.More(); i++ {
+				if err := walk(fmt.Sprintf("%s[%d]", path, i)); err != nil {
+					return err
+				}
+			}
+		default:
+			return nil
+		}
+		_, err = dec.Token() // the closing brace or bracket
+		return err
+	}
+	if err := walk(""); err != nil {
+		return nil, err
+	}
+	return repeated, nil
+}
+
+// mcpbPlainKey is a key a path names bare.
+var mcpbPlainKey = regexp.MustCompile(`^[A-Za-z0-9_$-]+$`)
+
+// mcpbKeyPath is the path of key in the object at path. A key that is
+// not plainly a name, such as one holding a dot or a bracket, is quoted,
+// so no two paths read the same.
+func mcpbKeyPath(path, key string) string {
+	switch {
+	case !mcpbPlainKey.MatchString(key):
+		return path + "[" + strconv.Quote(key) + "]"
+	case path == "":
+		return key
+	}
+	return path + "." + key
 }
 
 // mcpbManifestProblems is every check the gate and the packer both run:
@@ -160,6 +285,7 @@ func mcpbManifestProblems(root string, m mcpbManifest, raw []byte) []string {
 			"packer writes the real one", m.Version, placeholderVersion))
 	}
 	problems = append(problems, mcpbDocumentProblems(m, raw)...)
+	problems = append(problems, mcpbIdentityProblems(m, mcpbFiles)...)
 	problems = append(problems, mcpbSettingProblems(m, config.Vars(), mcpbLeftOut)...)
 	return append(problems, mcpbRepoProblems(root, m)...)
 }
@@ -187,26 +313,9 @@ func mcpbRepoProblems(root string, m mcpbManifest) []string {
 	return problems
 }
 
-// mcpbRead decodes the manifest twice: typed for the checks, and as a
-// document for the schema and the packer, which must keep every key.
-func mcpbRead(path string) (mcpbManifest, []byte, error) {
-	raw, err := os.ReadFile(path) //nolint:gosec // a repository path
-	if err != nil {
-		return mcpbManifest{}, nil, err
-	}
-	var m mcpbManifest
-	var doc map[string]any
-	for _, into := range []any{&m, &doc} {
-		if err := json.Unmarshal(raw, into); err != nil {
-			return mcpbManifest{}, nil, fmt.Errorf("%s is not valid JSON: %w", path, err)
-		}
-	}
-	return m, raw, nil
-}
-
 // mcpbDocumentProblems holds what the manifest says about itself: its
 // schema reference, its version floor, the vendored schema, the no-login
-// sentence, support and the desktop requirement.
+// sentence and support.
 func mcpbDocumentProblems(m mcpbManifest, raw []byte) []string {
 	problems := mcpbShapeProblems(m.Schema, m.ManifestVersion, m.Support)
 	if name, err := vendorManifestSchemaFile(m.ManifestVersion); err != nil {
@@ -218,12 +327,39 @@ func mcpbDocumentProblems(m mcpbManifest, raw []byte) []string {
 		problems = append(problems, fmt.Sprintf("long_description does not say %q: the bundle cannot sign "+
 			"anybody in, and that is the first thing a person who installs it meets", mcpbNoLoginPhrase))
 	}
+	return problems
+}
+
+// mcpbIdentityProblems holds what the manifest says it is: the server's
+// own name, a binary, the family's Claude Desktop floor, a privacy
+// policy, and exactly the platforms the staged table has an entry point
+// for, so dropping one platform and its override together is refused.
+// The manifest specification requires privacy_policies of a server that
+// connects to a service processing user data, and neither the schema
+// nor `mcpb validate` enforces it. mcpbValidate holds each platform to
+// the file staged for it.
+func mcpbIdentityProblems(m mcpbManifest, files []mcpbStaged) []string {
+	var problems []string
+	if m.Name != binaryName {
+		problems = append(problems, fmt.Sprintf("name is %q, want %q", m.Name, binaryName))
+	}
+	if m.Server.Type != "binary" {
+		problems = append(problems, fmt.Sprintf("server.type is %q; the bundle carries a binary", m.Server.Type))
+	}
 	if m.Compatibility.ClaudeDesktop != mcpbMinDesktop {
 		problems = append(problems, fmt.Sprintf("compatibility.claude_desktop is %q, want %q",
 			m.Compatibility.ClaudeDesktop, mcpbMinDesktop))
 	}
-	if m.Name != binaryName {
-		problems = append(problems, fmt.Sprintf("name is %q, want %q", m.Name, binaryName))
+	var entryPoints []string
+	for _, f := range files {
+		if f.platform != "" {
+			entryPoints = append(entryPoints, f.platform)
+		}
+	}
+	slices.Sort(entryPoints)
+	if claimed := slices.Sorted(slices.Values(m.Compatibility.Platforms)); !slices.Equal(claimed, entryPoints) {
+		problems = append(problems, fmt.Sprintf("compatibility.platforms is %v; the packer stages entry points for %v",
+			claimed, entryPoints))
 	}
 	if len(m.PrivacyPolicies) == 0 {
 		problems = append(problems, "privacy_policies is empty; the manifest specification requires one for a "+
@@ -252,8 +388,10 @@ func mcpbValidate(m mcpbManifest, files []mcpbStaged, launcher []string) []strin
 		return strings.TrimPrefix(cmd, "${__dirname}/")
 	}
 
-	// entry_point names a staged program.
-	if _, ok := staged[m.Server.EntryPoint]; !ok {
+	// entry_point names a staged program, and the one the default
+	// command runs, which follows the commands.
+	_, entryStaged := staged[m.Server.EntryPoint]
+	if !entryStaged {
 		problems = append(problems, fmt.Sprintf("entry_point %q is not a program the packer stages", m.Server.EntryPoint))
 	}
 
@@ -281,6 +419,15 @@ func mcpbValidate(m mcpbManifest, files []mcpbStaged, launcher []string) []strin
 			problems = append(problems, fmt.Sprintf("%s is %q, which is not a program the packer stages", where, commands[platform]))
 		}
 	}
+	// So the bundle does not name one file as the server and spawn
+	// another. An entry point or a command that names no program is
+	// reported above.
+	if rel, ok := strings.CutPrefix(commands[""], "${__dirname}/"); ok && entryStaged && rel != m.Server.EntryPoint {
+		if _, ok := staged[rel]; ok {
+			problems = append(problems, fmt.Sprintf("entry_point is %q, and mcp_config.command runs %q",
+				m.Server.EntryPoint, rel))
+		}
+	}
 
 	problems = append(problems, mcpbReferenceProblems(m)...)
 
@@ -294,9 +441,6 @@ func mcpbValidate(m mcpbManifest, files []mcpbStaged, launcher []string) []strin
 			problems = append(problems, fmt.Sprintf("platform_overrides has %q, which compatibility.platforms "+
 				"does not claim", platform))
 		}
-	}
-	if len(m.Compatibility.Platforms) == 0 {
-		problems = append(problems, "compatibility.platforms claims no platform")
 	}
 
 	// Each claimed platform spawns the file staged for it, not merely a
@@ -640,12 +784,12 @@ func mcpbStartDefaults(m mcpbManifest) mcpbDefaults {
 }
 
 // mcpbDefaultsProblems reports a bundle whose defaults configure the
-// server otherwise than no environment does: a bundle install may turn
-// on nothing an unconfigured server leaves off, because in Claude
-// Desktop the only other guard is its approval of each tool, which a
-// person can set to always allow (§18 row 92). A list or object default
-// is reported, every one in key order, and the comparison still runs
-// over the rest.
+// server otherwise than no environment does, naming the fields that
+// differ: a bundle install may turn on nothing an unconfigured server
+// leaves off, because in Claude Desktop the only other guard is its
+// approval of each tool, which a person can set to always allow (§18
+// row 92). A list or object default is reported, every one in key
+// order, and the comparison still runs over the rest.
 func mcpbDefaultsProblems(d mcpbDefaults) []string {
 	var problems []string
 	for _, key := range slices.Sorted(maps.Keys(d.unreadable)) {
@@ -659,11 +803,44 @@ func mcpbDefaultsProblems(d mcpbDefaults) []string {
 	if err != nil {
 		return append(problems, fmt.Sprintf("an unconfigured server is refused: %v", err))
 	}
-	if !reflect.DeepEqual(d.config, want) {
+	if diff := mcpbFieldDiff(d.config, want); len(diff) > 0 {
 		problems = append(problems, fmt.Sprintf("the bundle's defaults configure the server otherwise than no "+
-			"environment does: %v", d.env))
+			"environment does, in %s; a bundle install may turn on nothing an unconfigured server leaves off",
+			strings.Join(diff, ", ")))
 	}
 	return problems
+}
+
+// mcpbFieldDiff names the fields of two values of one struct type that
+// differ, each compared as reflect.DeepEqual compares it: a pointer by
+// what it points to, never by its address, and a slice, a map or an
+// interface by its contents, without a panic. An unexported field is
+// compared and named too.
+func mcpbFieldDiff(a, b any) []string {
+	va, vb := mcpbAddressable(a), mcpbAddressable(b)
+	var fields []string
+	for i := range va.NumField() {
+		if !reflect.DeepEqual(mcpbFieldValue(va, i), mcpbFieldValue(vb, i)) {
+			fields = append(fields, va.Type().Field(i).Name)
+		}
+	}
+	return fields
+}
+
+// mcpbAddressable is a copy of v with an address, so that its fields
+// have one too.
+func mcpbAddressable(v any) reflect.Value {
+	c := reflect.New(reflect.TypeOf(v)).Elem()
+	c.Set(reflect.ValueOf(v))
+	return c
+}
+
+// mcpbFieldValue is field i of the addressable struct v. Interface
+// refuses an unexported field, so the field is read through its address
+// in v, which is a copy no one else holds.
+func mcpbFieldValue(v reflect.Value, i int) any {
+	f := v.Field(i)
+	return reflect.NewAt(f.Type(), unsafe.Pointer(f.UnsafeAddr())).Elem().Interface()
 }
 
 // mcpbRefused are the sets of the bundle's switches the server refuses
