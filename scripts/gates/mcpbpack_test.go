@@ -186,7 +186,7 @@ func TestMcpbPackRefuses(t *testing.T) {
 			if err := os.WriteFile(filepath.Join(root, mcpbManifestPath), raw, 0o600); err != nil {
 				t.Fatal(err)
 			}
-		}, want: "must carry"},
+		}, want: "the manifest does not describe the bundle this would pack"},
 		{name: "glob matches nothing", version: "1.2.3", setup: func(t *testing.T, _, dist string) {
 			if err := os.RemoveAll(filepath.Join(dist, "google-mail-mcp_linux_arm64_v8.0")); err != nil {
 				t.Fatal(err)

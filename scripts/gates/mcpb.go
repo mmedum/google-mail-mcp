@@ -141,10 +141,6 @@ func mcpbCheck(out io.Writer, root string) error {
 		return err
 	}
 	problems := mcpbManifestProblems(root, m, raw)
-	if m.Version != placeholderVersion {
-		problems = append(problems, fmt.Sprintf("version is %q; the committed manifest carries %q and the "+
-			"packer writes the real one", m.Version, placeholderVersion))
-	}
 	slices.Sort(problems)
 	if err := problemsError(out, mcpbManifestPath, problems); err != nil {
 		return err
@@ -159,6 +155,10 @@ func mcpbCheck(out io.Writer, root string) error {
 // root.
 func mcpbManifestProblems(root string, m mcpbManifest, raw []byte) []string {
 	problems := mcpbValidate(m, mcpbFiles, launcherNamesIn(launcherScript(mcpbFiles)))
+	if m.Version != placeholderVersion {
+		problems = append(problems, fmt.Sprintf("version is %q; the committed manifest carries %q and the "+
+			"packer writes the real one", m.Version, placeholderVersion))
+	}
 	problems = append(problems, mcpbDocumentProblems(m, raw)...)
 	problems = append(problems, mcpbSettingProblems(m, config.Vars(), mcpbLeftOut)...)
 	return append(problems, mcpbRepoProblems(root, m)...)
@@ -249,7 +249,7 @@ func mcpbValidate(m mcpbManifest, files []mcpbStaged, launcher []string) []strin
 		}
 	}
 	resolve := func(cmd string) string {
-		return strings.TrimPrefix(strings.TrimPrefix(cmd, "${__dirname}"), "/")
+		return strings.TrimPrefix(cmd, "${__dirname}/")
 	}
 
 	// entry_point names a staged program.
@@ -268,6 +268,13 @@ func mcpbValidate(m mcpbManifest, files []mcpbStaged, launcher []string) []strin
 		where := "mcp_config.command"
 		if platform != "" {
 			where = "platform_overrides." + platform + ".command"
+		}
+		// The host resolves any path but ${__dirname}'s against its own
+		// working directory, outside the bundle.
+		if !strings.HasPrefix(commands[platform], "${__dirname}/") {
+			problems = append(problems, fmt.Sprintf("%s is %q; a command starts with ${__dirname}/, or the host "+
+				"looks for it outside the bundle", where, commands[platform]))
+			continue
 		}
 		if _, ok := staged[resolve(commands[platform])]; !ok {
 			problems = append(problems, fmt.Sprintf("%s is %q, which is not a program the packer stages", where, commands[platform]))
@@ -512,7 +519,7 @@ func mcpbSettingProblems(m mcpbManifest, vars []config.Var, leftOut map[string]s
 		}
 	}
 
-	keys := map[string]bool{}
+	keys, profileHeld := map[string]bool{}, false
 	for _, v := range asked {
 		key := mcpbKey(v.Name)
 		keys[key] = true
@@ -529,9 +536,16 @@ func mcpbSettingProblems(m mcpbManifest, vars []config.Var, leftOut map[string]s
 				key, cmp.Or(opt.Type, "field with no type"), v.Name))
 		}
 		// The server refuses any other name at start.
-		if v.Name == mcpbProfileVar && !strings.Contains(opt.Description, config.ProfileRule) {
-			problems = append(problems, fmt.Sprintf("user_config.%s does not say a name is %q", key, config.ProfileRule))
+		if v.Name == mcpbProfileVar {
+			profileHeld = true
+			if !strings.Contains(opt.Description, config.ProfileRule) {
+				problems = append(problems, fmt.Sprintf("user_config.%s does not say a name is %q", key, config.ProfileRule))
+			}
 		}
+	}
+	if !profileHeld {
+		problems = append(problems, fmt.Sprintf("no user_config field sets %s, so nothing was held to "+
+			"config.ProfileRule", mcpbProfileVar))
 	}
 	for _, key := range slices.Sorted(maps.Keys(m.UserConfig)) {
 		if !keys[key] {
@@ -550,7 +564,7 @@ func mcpbSettingProblems(m mcpbManifest, vars []config.Var, leftOut map[string]s
 	}
 	defaults := mcpbStartDefaults(m)
 	problems = append(problems, mcpbDefaultsProblems(defaults)...)
-	return append(problems, mcpbRefusalProblems(m, asked, mcpbRefused, defaults)...)
+	return append(problems, mcpbRefusalProblems(m, asked, mcpbRefused, defaults.err)...)
 }
 
 // mcpbHostEnv is the environment the reference host builds from the
@@ -669,10 +683,11 @@ var mcpbRefused = [][]string{
 // warns of, and a declared one the server starts with. A declared key
 // that is not a switch the bundle asks for is refused too, and so is a
 // field in a declared set with no title, which every description would
-// name. When the defaults alone do not start, it says nothing: the
-// defaults check reports that, and every set would fail with it.
-func mcpbRefusalProblems(m mcpbManifest, asked []config.Var, declared [][]string, defaults mcpbDefaults) []string {
-	if defaults.err != nil {
+// name, each once. When the defaults alone do not start, which
+// defaultsErr says, it says nothing: the defaults check reports that,
+// and every set would fail with it.
+func mcpbRefusalProblems(m mcpbManifest, asked []config.Var, declared [][]string, defaultsErr error) []string {
+	if defaultsErr != nil {
 		return nil
 	}
 	var switches []string
@@ -683,20 +698,32 @@ func mcpbRefusalProblems(m mcpbManifest, asked []config.Var, declared [][]string
 	}
 	slices.Sort(switches)
 	var problems []string
+	inSets := map[string]bool{}
+	for _, set := range declared {
+		for _, key := range set {
+			inSets[key] = true
+		}
+	}
+	titled := map[string]bool{}
+	for _, key := range slices.Sorted(maps.Keys(inSets)) {
+		switch {
+		case !slices.Contains(switches, key):
+			problems = append(problems, fmt.Sprintf("mcpbRefused names %s, which is not a switch the bundle asks for", key))
+		case strings.TrimSpace(m.UserConfig[key].Title) == "":
+			problems = append(problems, fmt.Sprintf("user_config.%s has no title, which the fields the server "+
+				"refuses it with must name", key))
+		default:
+			titled[key] = true
+		}
+	}
 	for _, set := range declared {
 		for _, key := range set {
 			if !slices.Contains(switches, key) {
-				problems = append(problems, fmt.Sprintf("mcpbRefused names %s, which is not a switch the bundle asks for", key))
 				continue
-			}
-			if strings.TrimSpace(m.UserConfig[key].Title) == "" {
-				problems = append(problems, fmt.Sprintf("user_config.%s has no title, which the fields the server "+
-					"refuses it with must name", key))
 			}
 			for _, other := range set {
 				title := m.UserConfig[other].Title
-				if other != key && strings.TrimSpace(title) != "" && slices.Contains(switches, other) &&
-					!strings.Contains(m.UserConfig[key].Description, title) {
+				if other != key && titled[other] && !strings.Contains(m.UserConfig[key].Description, title) {
 					problems = append(problems, fmt.Sprintf("user_config.%s does not name %q, which the server "+
 						"refuses it with", key, title))
 				}

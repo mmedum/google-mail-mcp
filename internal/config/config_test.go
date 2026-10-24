@@ -214,10 +214,15 @@ func TestEnvVars(t *testing.T) {
 	}
 }
 
-// A profile name is what ProfileRule says, at each of its edges, and a
-// refusal says the rule.
+// A profile name is what ProfileRule says, at each of its edges, capitals
+// read as lowercase, and a refusal says the rule.
 func TestProfileRule(t *testing.T) {
 	isolate(t)
+	for _, tc := range []struct{ name, want string }{{"Work", "work"}, {" work ", "work"}, {"A-B", "a-b"}} {
+		if c, err := build(t, map[string]string{"GMAIL_PROFILE": tc.name}); err != nil || c.Profile != tc.want {
+			t.Errorf("GMAIL_PROFILE=%q: profile %q, %v; want %q", tc.name, c.Profile, err, tc.want)
+		}
+	}
 	for _, name := range []string{"a", "0", "a-b_c", "9-", strings.Repeat("a", 64)} {
 		if c, err := build(t, map[string]string{"GMAIL_PROFILE": name}); err != nil || c.Profile != name {
 			t.Errorf("GMAIL_PROFILE=%q: profile %q, %v; want it accepted", name, c.Profile, err)

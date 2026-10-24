@@ -67,10 +67,6 @@ func mcpbPackTo(out io.Writer, root, dist, version, bundle string, runVersion bo
 	if err != nil {
 		return "", err
 	}
-	if m.Version != placeholderVersion {
-		return "", fmt.Errorf("%s says version %q; the committed manifest must carry %q",
-			mcpbManifestPath, m.Version, placeholderVersion)
-	}
 	if err := problemsError(out, mcpbManifestPath, mcpbManifestProblems(root, m, raw)); err != nil {
 		return "", fmt.Errorf("the manifest does not describe the bundle this would pack: %w", err)
 	}

@@ -91,6 +91,12 @@ func TestMcpbRefusesEachBreak(t *testing.T) {
 		{"entry point not staged", func(d map[string]any) {
 			mcpbDig(d, "server")["entry_point"] = "server/nothing"
 		}, `entry_point "server/nothing"`},
+		{"a command relative to the host", func(d map[string]any) {
+			mcpbDig(d, "server", "mcp_config")["command"] = "server/google-mail-mcp-darwin"
+		}, `mcp_config.command is "server/google-mail-mcp-darwin"; a command starts with ${__dirname}/`},
+		{"a command from the root", func(d map[string]any) {
+			mcpbDig(d, "server", "mcp_config", "platform_overrides", "win32")["command"] = "/server/google-mail-mcp.exe"
+		}, `platform_overrides.win32.command is "/server/google-mail-mcp.exe"; a command starts with ${__dirname}/`},
 		{"command not staged", func(d map[string]any) {
 			mcpbDig(d, "server", "mcp_config")["command"] = "${__dirname}/server/typo"
 		}, "mcp_config.command is"},
@@ -200,6 +206,10 @@ func TestMcpbRefusesEachBreak(t *testing.T) {
 		{"a refused field with a blank title", func(d map[string]any) {
 			mcpbDig(d, "user_config", "read_only")["title"] = " "
 		}, "user_config.read_only has no title"},
+		{"no profile field", func(d map[string]any) {
+			delete(mcpbDig(d, "user_config"), "profile")
+			delete(mcpbDig(d, "server", "mcp_config", "env"), "GMAIL_PROFILE")
+		}, "no user_config field sets GMAIL_PROFILE, so nothing was held to config.ProfileRule"},
 		{"a profile field that does not say what a name is", func(d map[string]any) {
 			mcpbDig(d, "user_config", "profile")["description"] = "Which stored login to use."
 		}, `user_config.profile does not say a name is "up to 64 lowercase letters`},
@@ -272,8 +282,20 @@ func TestMcpbAsksForEverySettingNotLeftOut(t *testing.T) {
 func TestMcpbRefusalsAreDeclared(t *testing.T) {
 	m := mcpbCommitted(t)
 	asked, _ := mcpbAskedFrom(config.Vars(), mcpbLeftOut)
-	if p := mcpbRefusalProblems(m, asked, mcpbRefused, mcpbStartDefaults(m)); len(p) != 0 {
+	if p := mcpbRefusalProblems(m, asked, mcpbRefused, mcpbStartDefaults(m).err); len(p) != 0 {
 		t.Fatalf("the committed manifest fails: %v", p)
+	}
+	// read_only is in every declared set, and a missing title is one
+	// problem, not one per set.
+	untitled := mcpbCommitted(t)
+	opt := untitled.UserConfig["read_only"]
+	opt.Title = ""
+	untitled.UserConfig["read_only"] = opt
+	got := mcpbRefusalProblems(untitled, asked, mcpbRefused, nil)
+	if n := len(slices.DeleteFunc(got, func(p string) bool {
+		return !strings.HasPrefix(p, "user_config.read_only has no title")
+	})); n != 1 {
+		t.Errorf("an untitled read_only is reported %d times, want 1", n)
 	}
 	cases := []struct {
 		name     string
@@ -289,7 +311,7 @@ func TestMcpbRefusalsAreDeclared(t *testing.T) {
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
-			got := mcpbRefusalProblems(m, asked, tc.declared, mcpbStartDefaults(m))
+			got := mcpbRefusalProblems(m, asked, tc.declared, mcpbStartDefaults(m).err)
 			if !slices.ContainsFunc(got, func(p string) bool { return strings.HasPrefix(p, tc.want) }) {
 				t.Errorf("got %q, want one starting %q", got, tc.want)
 			}
@@ -297,7 +319,7 @@ func TestMcpbRefusalsAreDeclared(t *testing.T) {
 	}
 
 	m.UserConfig["local_dir"] = mcpbOption{Type: "directory", Default: json.RawMessage(`"attachments"`)}
-	if got := mcpbRefusalProblems(m, asked, nil, mcpbStartDefaults(m)); len(got) != 0 {
+	if got := mcpbRefusalProblems(m, asked, nil, mcpbStartDefaults(m).err); len(got) != 0 {
 		t.Errorf("defaults that do not start: got %q, want nothing, since the defaults check reports it", got)
 	}
 }
@@ -312,7 +334,7 @@ func TestMcpbRefusalsTurnASwitchOnWhateverItsDefault(t *testing.T) {
 	readOnly := m.UserConfig["read_only"]
 	readOnly.Required, readOnly.Default = true, nil
 	m.UserConfig["read_only"] = readOnly
-	if got := mcpbRefusalProblems(m, asked, mcpbRefused, mcpbStartDefaults(m)); len(got) != 0 {
+	if got := mcpbRefusalProblems(m, asked, mcpbRefused, mcpbStartDefaults(m).err); len(got) != 0 {
 		t.Errorf("a required switch with no default, refused as declared: got %q, want nothing", got)
 	}
 
@@ -320,7 +342,7 @@ func TestMcpbRefusalsTurnASwitchOnWhateverItsDefault(t *testing.T) {
 	readOnly = m.UserConfig["read_only"]
 	readOnly.Default = json.RawMessage(`["true"]`)
 	m.UserConfig["read_only"] = readOnly
-	got := mcpbRefusalProblems(m, asked, mcpbRefused[:2], mcpbStartDefaults(m))
+	got := mcpbRefusalProblems(m, asked, mcpbRefused[:2], mcpbStartDefaults(m).err)
 	const want = "the server refuses enable_settings, read_only together, and mcpbRefused does not declare it"
 	if !slices.ContainsFunc(got, func(p string) bool { return strings.HasPrefix(p, want) }) {
 		t.Errorf("a switch with a list default, refused and not declared: got %q, want one starting %q", got, want)

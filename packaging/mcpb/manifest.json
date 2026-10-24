@@ -62,7 +62,7 @@
     "profile": {
       "type": "string",
       "title": "Profile",
-      "description": "Which stored login to use. Each profile keeps its own client, token and account, such as a work account and a personal one, and each is logged in to with `google-mail-mcp login --profile <name>`. A name is up to 64 lowercase letters, digits, - and _, starting with a letter or digit; any other stops the server at start. Leave it empty for the default profile.",
+      "description": "Which stored login to use. Each profile keeps its own client, token and account, such as a work account and a personal one, and each is logged in to with `google-mail-mcp login --profile <name>`. A name is up to 64 lowercase letters, digits, - and _, starting with a letter or digit; capitals are read as lowercase, and any other name stops the server at start. Leave it empty for the default profile.",
       "default": "",
       "required": false
     },
