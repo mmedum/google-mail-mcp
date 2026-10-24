@@ -7,6 +7,7 @@ import (
 	"io"
 	"os"
 	"path/filepath"
+	"reflect"
 	"slices"
 	"strings"
 	"testing"
@@ -119,7 +120,7 @@ func TestEnvironmentSettings(t *testing.T) {
 // §9.4: read-only with an enable flag is refused, naming both.
 func TestReadOnlyWithAnEnableFlagIsRefused(t *testing.T) {
 	isolate(t)
-	for _, flagName := range []string{"GMAIL_ENABLE_SEND", "GMAIL_ENABLE_DESTRUCTIVE"} {
+	for _, flagName := range []string{"GMAIL_ENABLE_SEND", "GMAIL_ENABLE_DESTRUCTIVE", "GMAIL_ENABLE_SETTINGS"} {
 		_, err := build(t, map[string]string{"GMAIL_READ_ONLY": "true", flagName: "true"})
 		if err == nil {
 			t.Fatalf("READ_ONLY with %s was accepted", flagName)
@@ -274,16 +275,64 @@ func TestEmptyValuesMeanUnset(t *testing.T) {
 	c, err := build(t, map[string]string{
 		"GMAIL_LOCAL_DIR": "", "GMAIL_CLIENT_SECRET": "", "GMAIL_CONFIG_DIR": "",
 		"GMAIL_READ_ONLY": "false", "GMAIL_ENABLE_SEND": "", "GMAIL_ENABLE_DESTRUCTIVE": "false",
-		"GMAIL_PROFILE": "", "GMAIL_LOG_LEVEL": "", "GMAIL_HTTP_TIMEOUT": "", "GMAIL_API_BASE": "",
+		"GMAIL_ENABLE_SETTINGS": "false", "GMAIL_PROFILE": "", "GMAIL_LOG_LEVEL": "", "GMAIL_HTTP_TIMEOUT": "",
+		"GMAIL_API_BASE": "",
 	})
 	if err != nil {
 		t.Fatalf("empty values refused: %v", err)
 	}
-	if c.LocalDir != "" || c.ClientSecretPath != "" || c.ReadOnly || c.EnableSend || c.Profile != "default" {
+	if c.LocalDir != "" || c.ClientSecretPath != "" || c.ReadOnly || c.EnableSend || c.EnableDestructive ||
+		c.EnableSettings || c.Profile != "default" {
 		t.Errorf("empty values = %+v", c)
 	}
 	// Whitespace alone is also unset.
 	if c, err := build(t, map[string]string{"GMAIL_LOCAL_DIR": "  "}); err != nil || c.LocalDir != "" {
 		t.Errorf("blank local dir: %+v, %v", c, err)
+	}
+}
+
+// Vars is what the bundle gate reads a switch's default from, so each
+// claim it makes is held to what Build does. A switch takes true and
+// false and refuses anything else, and nothing else does that. A
+// default, and an empty value, each configure what setting nothing does.
+func TestVarsDescribeWhatBuildDoes(t *testing.T) {
+	isolate(t)
+	vars := Vars()
+	if len(vars) < 11 {
+		t.Fatalf("Vars has %d settings; Define binds 11 flags", len(vars))
+	}
+	unset, err := build(t, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var switches []string
+	for _, v := range vars {
+		if !slices.Contains(EnvVars(), v.Name) {
+			t.Errorf("%s is not a variable EnvVars lists", v.Name)
+		}
+		accepts := func(value string) bool {
+			_, err := build(t, map[string]string{v.Name: value})
+			return err == nil
+		}
+		if boolean := accepts("true") && accepts("false") && !accepts("maybe"); boolean != v.Switch {
+			t.Errorf("%s: Switch is %t, and Build reads it as a boolean: %t", v.Name, v.Switch, boolean)
+		}
+		if v.Switch {
+			switches = append(switches, v.Name)
+		}
+		for _, value := range []string{v.Default, ""} {
+			c, err := build(t, map[string]string{v.Name: value})
+			if err != nil {
+				t.Errorf("%s=%q is refused: %v", v.Name, value, err)
+				continue
+			}
+			if !reflect.DeepEqual(c, unset) {
+				t.Errorf("%s=%q configures something:\n got %+v\nwant %+v", v.Name, value, c, unset)
+			}
+		}
+	}
+	want := []string{"GMAIL_READ_ONLY", "GMAIL_ENABLE_SEND", "GMAIL_ENABLE_DESTRUCTIVE", "GMAIL_ENABLE_SETTINGS"}
+	if !slices.Equal(switches, want) {
+		t.Errorf("switches %v, want %v", switches, want)
 	}
 }

@@ -23,6 +23,9 @@
     "mail",
     "google"
   ],
+  "privacy_policies": [
+    "https://policies.google.com/privacy"
+  ],
   "server": {
     "type": "binary",
     "entry_point": "server/google-mail-mcp-darwin",
@@ -31,6 +34,7 @@
       "args": [],
       "env": {
         "GMAIL_CLIENT_SECRET": "${user_config.client_secret}",
+        "GMAIL_PROFILE": "${user_config.profile}",
         "GMAIL_READ_ONLY": "${user_config.read_only}",
         "GMAIL_ENABLE_SEND": "${user_config.enable_send}",
         "GMAIL_ENABLE_DESTRUCTIVE": "${user_config.enable_destructive}",
@@ -51,41 +55,50 @@
     "client_secret": {
       "type": "file",
       "title": "OAuth client JSON",
-      "description": "The OAuth Desktop client you created in your own Google Cloud project. You still need to run `google-mail-mcp login` once from a terminal.",
+      "description": "The OAuth Desktop client you created in your own Google Cloud project, the file you passed to `google-mail-mcp login`. Leave it empty to use the one that login stored for the profile. You still need to run `google-mail-mcp login` once from a terminal.",
+      "default": "",
+      "required": false
+    },
+    "profile": {
+      "type": "string",
+      "title": "Profile",
+      "description": "Which stored login to use. Each profile keeps its own client, token and account, such as a work account and a personal one, and each is logged in to with `google-mail-mcp login --profile <name>`. Leave it empty for the default profile.",
+      "default": "",
       "required": false
     },
     "read_only": {
       "type": "boolean",
       "title": "Read-only",
-      "description": "Register only the read tools and ask Google for gmail.readonly, so the API itself refuses a write. Cannot be combined with sending, permanent deletion or settings changes.",
+      "description": "Register only the read tools and ask Google for gmail.readonly, so the API itself refuses a write. It cannot be combined with sending, permanent deletion or settings changes: the server then refuses to start.",
       "default": false,
       "required": false
     },
     "enable_send": {
       "type": "boolean",
       "title": "Allow sending",
-      "description": "Register the tool that sends a draft. Off by default: without it this server cannot send mail. The token can send either way, so keep it in the keyring.",
+      "description": "Register the tool that sends a draft. Without it this server cannot send mail. Off by default, and not with Read-only. The token can send either way, so keep it in the keyring. This server asks nobody before a call, so Claude Desktop's approval of each tool is then the only check.",
       "default": false,
       "required": false
     },
     "enable_destructive": {
       "type": "boolean",
       "title": "Allow permanent deletion",
-      "description": "Register permanent deletion, and, with settings changes allowed too, deleting filters and filters that trash mail. It asks Google for full mail access, needs a new login, and every call still has to confirm. Off by default: removal is trash.",
+      "description": "Register permanent deletion, and, with settings changes allowed too, deleting filters and filters that trash mail. It asks Google for full mail access, needs a new login, and every call still has to confirm. Off by default, and not with Read-only. Removal is trash.",
       "default": false,
       "required": false
     },
     "enable_settings": {
       "type": "boolean",
       "title": "Allow settings changes",
-      "description": "Register setting a signature and creating filters, which cannot forward or trash. With permanent deletion allowed too, also deleting filters and filters that trash mail; with sending allowed too, the vacation reply, for contacts or your domain only. It asks Google for gmail.settings.basic and needs a new login. Off by default.",
+      "description": "Register setting a signature and creating filters, which cannot forward or trash. With permanent deletion allowed too, also deleting filters and filters that trash mail; with sending allowed too, the vacation reply, for contacts or your domain only. It asks Google for gmail.settings.basic and needs a new login. Off by default, and not with Read-only.",
       "default": false,
       "required": false
     },
     "local_dir": {
       "type": "directory",
       "title": "Attachment folder",
-      "description": "The one folder attachments are saved to and read from. Leave empty to turn file transfer off.",
+      "description": "The one folder attachments are saved to and read from. Leave it empty and this server touches no files.",
+      "default": "",
       "required": false
     }
   },

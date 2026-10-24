@@ -69,9 +69,18 @@ gives the same bytes.
 ### Claude Desktop
 
 Every release also carries a `.mcpb` bundle. Open it and Claude Desktop
-installs the server and asks for your OAuth client JSON. It covers macOS,
-Windows and Linux on both architectures. Its SHA-256 is in the same signed
-`checksums.txt`.
+installs the server and asks for the settings a client's configuration
+would carry: your OAuth client JSON, the profile, read-only, the three
+switches and the attachment folder. Sending (`enable_send`), permanent
+deletion (`enable_destructive`) and settings changes (`enable_settings`)
+stay off unless you turn them on, and read-only cannot be combined with
+any of them. This server asks nobody before a call. Claude Desktop
+approves each tool, with Allow once or Always allow, and a tool you
+always allow then runs unasked, so leave a switch off unless you need
+its tools.
+
+The bundle covers macOS, Windows and Linux on both architectures. Its
+SHA-256 is in the same signed `checksums.txt`.
 
 The bundle does **not** log you in. Install the binary as well, run
 `google-mail-mcp login --client-secret <your client JSON>` once, and the

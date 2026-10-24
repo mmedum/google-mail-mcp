@@ -13,6 +13,8 @@ import (
 	"slices"
 	"strings"
 	"time"
+
+	"github.com/mmedum/google-mail-mcp/v3/internal/config"
 )
 
 // The packer. goreleaser runs it from the universal binary's post hook,
@@ -26,10 +28,19 @@ import (
 // same bytes. Unset writes zeroes that display as 1980-00-00.
 var mcpbPackTime = time.Date(2026, time.January, 1, 0, 0, 0, 0, time.UTC)
 
-// mcpbPackMode is the mode of every staged file. The desktop forces the
-// execute bit on the entry point alone, so anything else arrives
-// unrunnable unless staged executable.
+// mcpbPackMode is the mode of every staged file that runs. The desktop
+// forces the execute bit on the entry point alone, so anything else
+// arrives unrunnable unless staged executable.
 const mcpbPackMode os.FileMode = 0o755
+
+// mode is the mode a staged file is packed with: a file copied
+// from the repository is read, and everything else runs.
+func (f mcpbStaged) mode() os.FileMode {
+	if f.repo != "" {
+		return 0o644
+	}
+	return mcpbPackMode
+}
 
 // mcpbPackName is the bundle's file name for a version.
 func mcpbPackName(version string) string {
@@ -64,6 +75,7 @@ func mcpbPackTo(out io.Writer, root, dist, version, bundle string, runVersion bo
 	}
 	problems := mcpbValidate(m, mcpbFiles, launcherNamesIn(launcherScript(mcpbFiles)))
 	problems = append(problems, mcpbDocumentProblems(m, raw)...)
+	problems = append(problems, mcpbSettingProblems(m, config.EnvVars())...)
 	if err := problemsError(out, mcpbManifestPath, problems); err != nil {
 		return "", fmt.Errorf("the manifest does not describe the bundle this would pack: %w", err)
 	}
@@ -76,6 +88,10 @@ func mcpbPackTo(out io.Writer, root, dist, version, bundle string, runVersion bo
 	sources := map[string]string{}
 	for _, f := range mcpbFiles {
 		if f.launcher {
+			continue
+		}
+		if f.repo != "" {
+			sources[f.path] = filepath.Join(root, f.repo)
 			continue
 		}
 		path, err := mcpbPackSource(dist, f)
@@ -189,7 +205,7 @@ func mcpbPackWrite(bundle string, manifest []byte, sources map[string]string) er
 		return err
 	}
 	for _, f := range mcpbFiles {
-		w, err := entry(f.path, mcpbPackMode)
+		w, err := entry(f.path, f.mode())
 		if err != nil {
 			return err
 		}
@@ -220,8 +236,8 @@ func mcpbPackCopy(w io.Writer, path string) error {
 }
 
 // mcpbPackReadBack opens the written archive and holds it to the table:
-// exactly the staged entries plus the manifest, each with the fixed mode
-// and time, and the manifest carrying the version.
+// exactly the staged entries plus the manifest, each with its mode and
+// the fixed time, and the manifest carrying the version.
 func mcpbPackReadBack(bundle, version string) (int, error) {
 	zr, err := zip.OpenReader(bundle)
 	if err != nil {
@@ -230,8 +246,10 @@ func mcpbPackReadBack(bundle, version string) (int, error) {
 	defer func() { _ = zr.Close() }()
 
 	want := []string{"manifest.json"}
+	modes := map[string]os.FileMode{"manifest.json": 0o644}
 	for _, f := range mcpbFiles {
 		want = append(want, f.path)
+		modes[f.path] = f.mode()
 	}
 	var got []string
 	var problems []string
@@ -240,8 +258,8 @@ func mcpbPackReadBack(bundle, version string) (int, error) {
 		if !f.Modified.Equal(mcpbPackTime) {
 			problems = append(problems, fmt.Sprintf("%s is stamped %s", f.Name, f.Modified))
 		}
-		if f.Name != "manifest.json" && f.Mode().Perm() != mcpbPackMode {
-			problems = append(problems, fmt.Sprintf("%s has mode %v", f.Name, f.Mode().Perm()))
+		if mode, ok := modes[f.Name]; ok && f.Mode().Perm() != mode {
+			problems = append(problems, fmt.Sprintf("%s has mode %v, want %v", f.Name, f.Mode().Perm(), mode))
 		}
 		if f.Name == "manifest.json" {
 			rc, err := f.Open()
