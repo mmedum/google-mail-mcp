@@ -15,6 +15,10 @@ lifted verbatim.
 
 ## [Unreleased]
 
+### Changed
+
+- `golang.org/x/net` v0.61.0, `golang.org/x/sys` v0.49.0, `golang.org/x/text` v0.43.0 and `golang.org/x/sync` v0.24.0.
+
 ## [3.1.2] - 2026-10-24
 
 ### Fixed
