@@ -1,6 +1,10 @@
 # Architecture — google-mail-mcp
 
-**Status: 3.2.0 is cut, 2026-10-30: `create_draft` and `update_draft`
+**Status: 3.2.0 is released, 2026-10-30, from `main`, and verified from
+outside: checksums, the cosign signature and the provenance
+attestation, each also against a tampered copy, the version in all
+five places, the registry entry, and the Go proxy resolving v3.2.0.
+`create_draft` and `update_draft`
 take `signature` (issue #39), which puts the signature Gmail holds for
 the From address below the body as Gmail's composer writes one, its
 images as inline parts, and a new body keeps it. Reviewed by
@@ -2338,7 +2342,7 @@ Done: `/code-review high` and `/security-review` (§16a), and a live
 run, its transcript read (§15). Owed: the steps of §15 that need
 `-send-to`.
 
-**3.2.0 — the send-as signature on request (unreleased).** Issue #39:
+**3.2.0 — the send-as signature on request (released 2026-10-30).** Issue #39:
 a draft the server wrote carried no signature, and the person pasted
 theirs in before sending. Gmail's composer adds one only to a message it
 starts (§18 row 97). Approved by the maintainer 2026-10-30 (§14).
