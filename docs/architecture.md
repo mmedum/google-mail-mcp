@@ -1,6 +1,10 @@
 # Architecture — google-mail-mcp
 
-**Status: 3.3.0 is cut, 2026-10-30: `GMAIL_DRAFT_SIGNATURE=true`, off
+**Status: 3.3.0 is released, 2026-10-30, from `main`, and verified from
+outside: checksums, the cosign signature and the provenance
+attestation, each also against a tampered copy, the version in all
+five places, the registry entry, and the Go proxy resolving v3.3.0.
+`GMAIL_DRAFT_SIGNATURE=true`, off
 by default, signs a new draft when `create_draft` leaves `signature`
 out, and `update_draft` refuses new `body_html` that would drop a
 signature the draft holds, unless `signature` says what to do (§7.4).
@@ -2427,7 +2431,7 @@ and a signed draft sent with `send_draft` (§18 row 99). Owed: the
 signature steps on an account whose signature Gmail takes back
 unchanged.
 
-**3.3.0 — new drafts signed by the operator's choice (unreleased).**
+**3.3.0 — new drafts signed by the operator's choice (released 2026-10-30).**
 A draft went out unsigned unless every call that made one asked for the
 signature. Approved by the maintainer 2026-10-30, option A of two (§14).
 
