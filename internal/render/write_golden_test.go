@@ -82,6 +82,15 @@ func TestGoldenDraftWrites(t *testing.T) {
 	golden(t, "draft_signature_added", render.DraftWrite(signed, opts()).Text)
 	signed.Signature = &model.DraftSignature{Outcome: model.SignatureNoneSet}
 	golden(t, "draft_signature_none_set", render.DraftWrite(signed, opts()).Text)
+	// The default signs a new draft only, never a forward or a reply.
+	fresh := signed
+	fresh.Subject = "Offsite venue"
+	fresh.Signature = &model.DraftSignature{Outcome: model.SignatureAdded, ByDefault: true, Lines: 6, Images: 1}
+	golden(t, "draft_signature_by_default", render.DraftWrite(fresh, opts()).Text)
+	for _, why := range []string{model.SkippedPlainOnly, model.SkippedInBody, model.SkippedInHTML} {
+		fresh.Signature = &model.DraftSignature{Outcome: model.SignatureSkipped, ByDefault: true, Reason: why}
+		golden(t, "draft_signature_skipped_"+why, render.DraftWrite(fresh, opts()).Text)
+	}
 	resigned := update
 	resigned.Added, resigned.Removed, resigned.ThreadingAtRisk = nil, nil, false
 	for _, c := range []struct {

@@ -111,6 +111,10 @@ type Config struct {
 	// filters, and the vacation reply with EnableSend too — and requests
 	// gmail.settings.basic, which no other scope covers (§9.4).
 	EnableSettings bool
+	// DraftSignature puts the From address's send-as signature below a
+	// new draft's body when create_draft leaves signature out (§7.4). It
+	// is the operator's choice, never the caller's, and changes no scope.
+	DraftSignature bool
 	// LocalDir is the one directory attachments are written to. Empty
 	// means no file transfer, and the download tools are not registered.
 	LocalDir    string
@@ -136,6 +140,7 @@ type Settings struct {
 	EnableSend        string
 	EnableDestructive string
 	EnableSettings    string
+	DraftSignature    string
 	LocalDir          string
 	LogLevel          string
 	LogFormat         string
@@ -203,6 +208,8 @@ func Define(fs *flag.FlagSet, env func(string) string) *Settings {
 		"register the permanent deletes and request https://mail.google.com/")
 	defBool(&s.EnableSettings, "enable-settings", "ENABLE_SETTINGS",
 		"register the signature, filter and vacation writes and request gmail.settings.basic")
+	defBool(&s.DraftSignature, "draft-signature", "DRAFT_SIGNATURE",
+		"sign a new draft with the From address's Gmail signature when create_draft leaves signature out")
 	def(&s.LocalDir, "local-dir", "LOCAL_DIR", "", "the one directory attachments are written to (unset turns file transfer off)")
 	def(&s.LogLevel, "log-level", "LOG_LEVEL", string(LogInfo), "log level: debug, info, warn, error")
 	def(&s.LogFormat, "log-format", "LOG_FORMAT", string(LogText), "log format: text, json")
@@ -302,6 +309,8 @@ func (s *Settings) Build() (Config, error) {
 	c.EnableDestructive, err = parseBool("ENABLE_DESTRUCTIVE", s.EnableDestructive)
 	add(err)
 	c.EnableSettings, err = parseBool("ENABLE_SETTINGS", s.EnableSettings)
+	add(err)
+	c.DraftSignature, err = parseBool("DRAFT_SIGNATURE", s.DraftSignature)
 	add(err)
 	if on, err := parseBool(removedRequirePrompt, s.RequirePrompt); err != nil || on {
 		add(fmt.Errorf("%w: %s%s was removed: the server no longer asks the person, and the client's own approval "+

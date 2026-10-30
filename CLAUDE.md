@@ -79,10 +79,12 @@ or missed. Siblings are never named in this repository (rule 1).
    control, and it is not to be replaced by an annotation or a prompt.
    A sent body is exactly what the caller gave: no prefix, no suffix,
    nothing appended server-side unasked. The server adds only what the
-   caller names: with `quote`, the parent's text below the body; with
-   `forward`, the original as an attachment; with `signature`, the
-   signature Gmail holds for the From address below the body, which a
-   new body keeps unless `signature: false` drops it. Without
+   caller names, or what the person running the server set: with
+   `quote`, the parent's text below the body; with `forward`, the
+   original as an attachment; with `signature`, or on a new draft with
+   `GMAIL_DRAFT_SIGNATURE` unless `signature` is false, the signature
+   Gmail holds for the From address below the body, which a new body
+   keeps unless `signature: false` drops it. Without
    `body_html`, the same words also go as an HTML version made from
    them. §4.2, §7.4.
 6. **A send is never retried.** `messages.send` and `drafts.send` are

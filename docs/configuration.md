@@ -21,6 +21,7 @@ once rather than one per run.
 | `GMAIL_ENABLE_SEND` | `--enable-send` | `false` | Register `send_draft`. Scopes do not change: the default scope can already send, which is why the tool, not the scope, is the control. |
 | `GMAIL_ENABLE_DESTRUCTIVE` | `--enable-destructive` | `false` | Register `delete_permanently` and `delete_label`, and ask for `https://mail.google.com/` at login — the only scope Google accepts for permanent deletion. With `GMAIL_ENABLE_SETTINGS` as well, also `create_trash_filter` and `delete_filter`. Each call still needs `confirm: true`. |
 | `GMAIL_ENABLE_SETTINGS` | `--enable-settings` | `false` | Register `update_signature` and `create_filter`, and ask for `gmail.settings.basic` at login — the only scope Google accepts for those writes. With `GMAIL_ENABLE_DESTRUCTIVE` as well, also `create_trash_filter` and `delete_filter`; with `GMAIL_ENABLE_SEND` as well, also `set_vacation`. |
+| `GMAIL_DRAFT_SIGNATURE` | `--draft-signature` | `false` | Sign new drafts: when `create_draft` leaves `signature` out, the signature Gmail holds for the From address goes below a new draft's body, as Gmail's composer adds one to a new email. A reply or a forward is signed only with `signature: true`, and `signature: false` always leaves it out. A body that already holds the signature, or a plain-text-only draft, goes without it, and the result says why. Scopes do not change, and it has no effect with `GMAIL_READ_ONLY`, which registers no `create_draft`. |
 | `GMAIL_LOCAL_DIR` | `--local-dir` | unset | The one directory attachments are written to, and read from to attach to a draft. An absolute path to a directory that exists. **Unset means no file transfer**: `download_attachment` and `download_attachments` are not registered, and `create_draft` and `update_draft` refuse attachments. |
 | `GMAIL_LOG_LEVEL` | `--log-level` | `info` | `debug`, `info`, `warn` or `error`. Logs go to stderr. |
 | `GMAIL_LOG_FORMAT` | `--log-format` | `text` | `text` or `json`. |
@@ -60,6 +61,7 @@ ACL on Windows — and the server warns on stderr every time it uses it.
 | `GMAIL_ENABLE_SEND=true` | unchanged |
 | `GMAIL_ENABLE_DESTRUCTIVE=true` | `https://mail.google.com/` |
 | `GMAIL_ENABLE_SETTINGS=true` | adds `https://www.googleapis.com/auth/gmail.settings.basic` to the above |
+| `GMAIL_DRAFT_SIGNATURE=true` | unchanged |
 
 All are restricted scopes; `docs/gcp-setup.md` says what that means for
 your consent screen.

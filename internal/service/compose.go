@@ -41,9 +41,13 @@ type Compose struct {
 	// is but for its Bcc (§7.4). Not with a reply.
 	Forward string
 	// Signature puts the From address's send-as signature below the
-	// body, above a quote (§7.4).
-	Signature bool
-	LocalDir  string
+	// body, above a quote (true), or leaves it out (false); nil leaves it
+	// to SignByDefault (§7.4).
+	Signature *bool
+	// SignByDefault is the operator's GMAIL_DRAFT_SIGNATURE: a new draft,
+	// not a reply or a forward, is signed when Signature is nil.
+	SignByDefault bool
+	LocalDir      string
 }
 
 // maxReferences bounds the References a reply carries: the thread's
@@ -73,21 +77,18 @@ func (s *Service) CreateDraft(ctx context.Context, in Compose) (model.DraftWrite
 		return out, err
 	}
 	from := mime.Address{Name: sender.DisplayName, Email: sender.SendAsEmail}
-	sig := ""
-	if in.Signature {
-		sig = signatureOf(sender)
-		out.Signature, _ = signatureOutcome(&in.Signature, "", sig)
+	var given *string
+	if in.HTML != "" {
+		given = &in.HTML
 	}
+	sig, sigOut := in.signatureFor(sender, given)
+	out.Signature = sigOut
 	quote, quoted := "", 0
 	if in.Quote {
 		quote, quoted = quoteText(parent)
 	}
 	// Without an HTML part, Gmail's web composer wraps the text when the
 	// person sends the draft (§7.4), so one is made, a quote in it too.
-	var given *string
-	if in.HTML != "" {
-		given = &in.HTML
-	}
 	body, err := mime.Bodies(in.Body, given, sig, quote)
 	if err != nil {
 		return out, editError(err)
@@ -223,7 +224,7 @@ func (in Compose) check() ([]model.Recipient, error) {
 		return nil, gapi.Errf(gapi.ClassInvalid, "body_html needs body as well: the plain text is what a reader without HTML sees")
 	case in.HTML != "" && in.PlainOnly:
 		return nil, gapi.Errf(gapi.ClassInvalid, "give plain_only or body_html, not both")
-	case in.Signature && in.PlainOnly:
+	case in.Signature != nil && *in.Signature && in.PlainOnly:
 		return nil, gapi.Errf(gapi.ClassInvalid, "give plain_only or signature, not both: the signature is the HTML "+
 			"Gmail holds, and plain text alone has nowhere for its links and images; write a text signature into body")
 	}
@@ -319,6 +320,47 @@ func pickFrom(senders []gmail.SendAs, want string) (gmail.SendAs, error) {
 		return gmail.SendAs{}, err
 	}
 	return senders[pick], nil
+}
+
+// signatureFor is the signature a new draft carries, and the result
+// that says so: the one the call asks for, or the server's default for a
+// new message when the call leaves signature out (§7.4).
+func (in Compose) signatureFor(sender gmail.SendAs, given *string) (string, *model.DraftSignature) {
+	switch {
+	case in.Signature != nil && *in.Signature:
+		sig := signatureOf(sender)
+		d, _ := signatureOutcome(in.Signature, "", sig)
+		return sig, d
+	case in.Signature == nil && in.SignByDefault && !in.reply() && in.Forward == "":
+		return defaultSignature(sender, in.Body, given, in.PlainOnly)
+	}
+	return "", nil
+}
+
+// defaultSignature is the signature the server's setting puts on a new
+// draft, and the result that says so. The default never refuses: a body
+// that already carries the signature, or plain text alone, goes without
+// it and says why. An address with no signature gets none, unremarked.
+func defaultSignature(sender gmail.SendAs, text string, h *string, plainOnly bool) (string, *model.DraftSignature) {
+	sig := signatureOf(sender)
+	skipped := func(why string) *model.DraftSignature {
+		return &model.DraftSignature{Outcome: model.SignatureSkipped, ByDefault: true, Reason: why}
+	}
+	if sig == "" {
+		return "", nil
+	}
+	if plainOnly {
+		return "", skipped(model.SkippedPlainOnly)
+	}
+	switch err := mime.SignedAlready(text, h, sig); {
+	case errors.Is(err, mime.ErrSignedHTML):
+		return "", skipped(model.SkippedInHTML)
+	case errors.Is(err, mime.ErrSignedText):
+		return "", skipped(model.SkippedInBody)
+	}
+	d := model.NewDraftSignature(model.SignatureAdded, sig)
+	d.ByDefault = true
+	return sig, d
 }
 
 // signatureOf is the signature Gmail holds for a send-as address as a
@@ -863,26 +905,27 @@ func (in Revise) noteSignature(out *model.DraftWrite, ed mime.Edited) {
 		return
 	}
 	var moved bool
-	if out.Signature, moved = signatureOutcome(in.Signature, ed.Carried, ed.Signature); moved {
+	if out.Signature, moved = signatureOutcome(in.Signature, ed.Found, ed.Signature); moved {
 		out.Changed = append(out.Changed, "signature")
 	}
 }
 
 // signatureOutcome says what a write did with the signature below the
 // body, and whether that changed the draft: asked is the call's
-// signature, carried the one the draft had, and now the one it has, each
-// "" for none. It is nil when there was none and none was asked for.
-func signatureOutcome(asked *bool, carried, now string) (*model.DraftSignature, bool) {
+// signature, found the block the draft's HTML held, and now the one it
+// has, each "" for none. It is nil when there was none and none was asked
+// for.
+func signatureOutcome(asked *bool, found, now string) (*model.DraftSignature, bool) {
 	switch {
 	case asked != nil && *asked && now == "":
-		return &model.DraftSignature{Outcome: model.SignatureNoneSet, Dropped: carried != ""}, carried != ""
-	case carried != "" && mime.SameSignature(carried, now):
+		return &model.DraftSignature{Outcome: model.SignatureNoneSet, Dropped: found != ""}, found != ""
+	case found != "" && mime.SameSignature(found, now):
 		return model.NewDraftSignature(model.SignatureKept, now), false
-	case asked != nil && *asked && carried != "":
+	case asked != nil && *asked && found != "":
 		return model.NewDraftSignature(model.SignatureReplaced, now), true
 	case asked != nil && *asked:
 		return model.NewDraftSignature(model.SignatureAdded, now), true
-	case carried != "":
+	case found != "":
 		return &model.DraftSignature{Outcome: model.SignatureRemoved}, true
 	}
 	return nil, false
@@ -1009,8 +1052,11 @@ func editError(err error) error {
 		return gapi.Errf(gapi.ClassInvalid, "body_html already holds a signature block as Gmail's composer marks one, "+
 			"and the signature would go below it as well; pass signature: false, or take the block out of body_html")
 	case errors.Is(err, mime.ErrSignedText):
-		return gapi.Errf(gapi.ClassInvalid, "body already ends with the signature's text, and the signature would go "+
+		return gapi.Errf(gapi.ClassInvalid, "body already holds the signature's text, and the signature would go "+
 			"below it as well; leave it out of body, or pass signature: false")
+	case errors.Is(err, mime.ErrSignatureDropped):
+		return gapi.Errf(gapi.ClassConflict, "the draft's HTML holds a signature that the new body_html would drop; "+
+			"pass signature: false to write it without one, or signature: true to put the one Gmail holds below it")
 	case errors.Is(err, mime.ErrPlainSignature):
 		return gapi.Errf(gapi.ClassInvalid, "the draft is plain text alone, with nowhere for the signature's links and "+
 			"images; pass plain_only: false with signature: true to give it an HTML version")

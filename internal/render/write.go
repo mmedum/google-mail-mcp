@@ -111,7 +111,20 @@ func (w *writer) signatureLines(s *model.DraftSignature) {
 	}
 	switch s.Outcome {
 	case model.SignatureAdded:
-		w.say("signature: added below the body, the one Gmail holds for the From address: %s.", shows)
+		if s.ByDefault {
+			w.say("signature: added below the body by default, since this server signs new drafts: the one Gmail holds for the From address, %s. signature: false leaves it out.", shows)
+		} else {
+			w.say("signature: added below the body, the one Gmail holds for the From address: %s.", shows)
+		}
+	case model.SignatureSkipped:
+		switch s.Reason {
+		case model.SkippedPlainOnly:
+			w.say("signature: not added by default, since the draft is plain text alone.")
+		case model.SkippedInBody:
+			w.say("signature: not added by default, since the body already holds its text.")
+		default:
+			w.say("signature: not added by default, since body_html already holds a signature block.")
+		}
 	case model.SignatureReplaced:
 		w.say("signature: replaced below the new body by the one Gmail holds for the From address: %s.", shows)
 	case model.SignatureKept:

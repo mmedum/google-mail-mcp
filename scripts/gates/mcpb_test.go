@@ -69,7 +69,7 @@ func TestMcpbCommittedManifestPasses(t *testing.T) {
 	if err := mcpbCheck(&out, filepath.Join("..", "..")); err != nil {
 		t.Fatalf("the committed manifest fails: %v\n%s", err, out.String())
 	}
-	out.mustSay(t, "7 staged files, 3 platforms, 7 user_config keys")
+	out.mustSay(t, "7 staged files, 3 platforms, 8 user_config keys")
 }
 
 // The breaks below start from the committed manifest in a fresh root,
@@ -265,7 +265,7 @@ func TestMcpbAsksForEverySettingNotLeftOut(t *testing.T) {
 		names = append(names, v.Name)
 	}
 	want := []string{"GMAIL_PROFILE", "GMAIL_CLIENT_SECRET", "GMAIL_READ_ONLY", "GMAIL_ENABLE_SEND",
-		"GMAIL_ENABLE_DESTRUCTIVE", "GMAIL_ENABLE_SETTINGS", "GMAIL_LOCAL_DIR"}
+		"GMAIL_ENABLE_DESTRUCTIVE", "GMAIL_ENABLE_SETTINGS", "GMAIL_DRAFT_SIGNATURE", "GMAIL_LOCAL_DIR"}
 	if !slices.Equal(names, want) || len(problems) != 0 {
 		t.Fatalf("asked %v with problems %v, want %v and none", names, problems, want)
 	}

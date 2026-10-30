@@ -1366,3 +1366,86 @@ func TestTheSignaturesImageIsAPartOfItsOwn(t *testing.T) {
 		"signature": false}, &d)
 	check("signature false", d.MessageID, 0, "<p>Hello, unsigned.</p>\n")
 }
+
+// With GMAIL_DRAFT_SIGNATURE on, a new draft is signed when the call
+// leaves signature out, and the description says so; a reply or a
+// forward is not, and the default never refuses: a body that already
+// carries the signature, or plain text alone, goes without it and the
+// result says why. true and false still decide.
+func TestTheServerSignsNewDraftsWhenSetTo(t *testing.T) {
+	h, fake := connectFake(t, config.Config{DraftSignature: true})
+	parentID := fake.Scenario(gmailtest.ScenarioPlainThread).MessageIDs[2]
+	const signed = "Hello.\n\n-- \nRae Reader\nExample Org\n"
+	byDefault := &tools.DraftSignatureOut{Outcome: "added", ByDefault: true, Lines: 2}
+	skipped := func(why string) *tools.DraftSignatureOut {
+		return &tools.DraftSignatureOut{Outcome: "skipped", ByDefault: true, Reason: why}
+	}
+	cases := []struct {
+		name  string
+		args  map[string]any
+		plain string
+		sig   *tools.DraftSignatureOut
+	}{
+		{"left out", map[string]any{"body": "Hello."}, signed, byDefault},
+		{"false", map[string]any{"body": "Hello.", "signature": false}, "Hello.", nil},
+		{"true", map[string]any{"body": "Hello.", "signature": true}, signed, &tools.DraftSignatureOut{Outcome: "added", Lines: 2}},
+		{"a reply", map[string]any{"body": "Hello.", "reply_to": parentID}, "Hello.", nil},
+		{"a forward", map[string]any{"body": "Hello.", "forward": parentID}, "Hello.", nil},
+		{"plain only", map[string]any{"body": "Hello.", "plain_only": true}, "Hello.", skipped("plain_only")},
+		{"the body holds it", map[string]any{"body": "Hello.\n\nRae Reader\nExample Org"}, "Hello.\n\nRae Reader\nExample Org",
+			skipped("in_body")},
+		{"body_html holds one", map[string]any{"body": "Hello.",
+			"body_html": `<p>Hello.</p><div data-smartmail="gmail_signature">Rae</div>`}, "Hello.", skipped("in_body_html")},
+	}
+	for _, c := range cases {
+		var out tools.DraftWriteOut
+		call(t, h, "create_draft", c.args, &out)
+		if text, _ := stored(t, fake, out.MessageID); text != c.plain || !reflect.DeepEqual(out.Signature, c.sig) {
+			t.Errorf("%s: stored %q, signature %+v; want %q, %+v", c.name, text, out.Signature, c.plain, c.sig)
+		}
+	}
+
+	describe := func(h *testutil.Harness) string {
+		t.Helper()
+		for _, tool := range h.Tools(t) {
+			if tool.Name == "create_draft" {
+				return tool.Description
+			}
+		}
+		t.Fatal("create_draft is not registered")
+		return ""
+	}
+	off, _ := connectFake(t, config.Config{})
+	if on := describe(h); !strings.Contains(on, "signs a new draft") || strings.Contains(describe(off), "signs a new draft") {
+		t.Errorf("the description does not follow the setting:\non: %s\noff: %s", on, describe(off))
+	}
+}
+
+// New body_html would drop a signature the draft's HTML holds and cannot
+// carry, which the caller cannot see: refused unless signature says what
+// to do (standard §3, never destroy what the caller cannot see).
+func TestUpdateDraftWillNotDropASignatureUnsaid(t *testing.T) {
+	h, fake := connectFake(t, config.Config{})
+	var d tools.DraftWriteOut
+	call(t, h, "create_draft", map[string]any{"body": "Hello.", "body_html": "<p><b>Hello.</b></p>", "signature": true}, &d)
+	args := func(extra map[string]any) map[string]any {
+		a := map[string]any{"draft_id": d.DraftID, "message_id": d.MessageID, "body": "Again.", "body_html": "<p><b>Again.</b></p>"}
+		maps.Copy(a, extra)
+		return a
+	}
+	fake.ResetAccounting()
+	refused(t, h, "update_draft", args(nil), gapi.ClassConflict)
+	if n := writeCalls(fake); n != 0 {
+		t.Errorf("%d writes reached Gmail", n)
+	}
+	call(t, h, "update_draft", args(map[string]any{"signature": true}), &d)
+	if _, html := stored(t, fake, d.MessageID); html != "<p><b>Again.</b></p>"+raeEnding || d.Signature == nil ||
+		d.Signature.Outcome != "kept" {
+		t.Errorf("signature true: html %q, signature %+v; want Gmail's below it, the same one kept", html, d.Signature)
+	}
+	call(t, h, "update_draft", args(map[string]any{"signature": false}), &d)
+	if _, html := stored(t, fake, d.MessageID); html != "<p><b>Again.</b></p>" || d.Signature == nil ||
+		d.Signature.Outcome != "removed" || !slices.Contains(d.Changed, "signature") {
+		t.Errorf("signature false: html %q, signature %+v, changed %v; want it removed", html, d.Signature, d.Changed)
+	}
+}

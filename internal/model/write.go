@@ -99,6 +99,15 @@ const (
 	// SignatureNoneSet is a signature asked for where Gmail holds none
 	// for the draft's From address, so the draft has none.
 	SignatureNoneSet SignatureOutcome = "none_set"
+	// SignatureSkipped is the server's default left out, for Reason.
+	SignatureSkipped SignatureOutcome = "skipped"
+)
+
+// Why the server's default signature was left out of a draft.
+const (
+	SkippedPlainOnly = "plain_only"
+	SkippedInBody    = "in_body"
+	SkippedInHTML    = "in_body_html"
 )
 
 // DraftSignature is the send-as signature below a draft's body (§7.4):
@@ -106,6 +115,11 @@ const (
 // is never part of a result.
 type DraftSignature struct {
 	Outcome SignatureOutcome
+	// ByDefault is set when the server's setting, not the call, asked
+	// for the signature (§7.4).
+	ByDefault bool
+	// Reason is why a default signature was skipped.
+	Reason string
 	// Dropped is set on SignatureNoneSet when the draft carried one,
 	// which it no longer does.
 	Dropped bool

@@ -15,6 +15,18 @@ lifted verbatim.
 
 ## [Unreleased]
 
+### Added
+
+- `GMAIL_DRAFT_SIGNATURE=true`, off by default, signs a new draft with the From address's Gmail signature when `create_draft` leaves `signature` out; a reply or forward only when asked, and a body that already carries the signature goes without it.
+
+### Changed
+
+- `signature` on `create_draft` is `true`, `false` or left out, and the result's `signature` adds `by_default` and `reason`.
+
+### Fixed
+
+- `update_draft` refuses new `body_html` that would drop a signature the draft's HTML holds, unless `signature` says what to do; it was dropped silently.
+
 ## [3.2.0] - 2026-10-30
 
 ### Added

@@ -329,7 +329,9 @@ an annotation is not a control and a registered tool can run unattended.
    parent's text below the body; with `forward`, the original as an
    attachment; with `signature`, the signature Gmail holds for the From
    address below the body, as Gmail's composer puts it there, which a
-   new body keeps unless `signature: false` drops it (§7.4). When the
+   new body keeps unless `signature: false` drops it (§7.4). The person
+   running the server may ask for that signature on every new draft,
+   with `GMAIL_DRAFT_SIGNATURE`; the call can still say `false`. When the
    caller gives no HTML, the same words also go as an HTML version made
    from the text (§7.4), so a reader sees the caller's words either way.
 3. **`send_draft` shows before it sends.** Its result names every
@@ -1163,7 +1165,31 @@ none. Either needs `body`. A plain-text-only draft takes one only with
 version. A draft whose signature is not found, because the composer
 rewrote its HTML or the signature's text left the plain part, is one
 whose HTML was written another way, and needs `body_html` beside
-`body`.
+`body`. New `body_html` on a draft whose HTML holds a signature block
+that is not carried — the composer's, or one in quoted mail — is
+refused `[conflict]` unless `signature` says what to do: `false` writes
+it without one, `true` puts Gmail's below it, and the result names the
+block as removed, replaced or kept, though it is never carried itself.
+Replacing it silently would destroy what the caller cannot see (the
+shared standard's §3); new HTML that keeps a block of its own is taken
+as given.
+
+`GMAIL_DRAFT_SIGNATURE=true` is the operator's default for the same
+signature: a new draft whose `create_draft` call leaves `signature` out
+is signed, as Gmail's composer signs a new email, and the result says
+`by_default`. It is the person running the server who asks, outside the
+conversation, never the model (the standard's §3), so `signature` is
+`true`, `false` or left out. A reply or a forward is signed only with
+`signature: true`: the API holds only the signature for new emails, and
+the reply/forward choice, often none, is not in it (§18 row 88). The
+default never refuses: a body that already holds the signature's text,
+`body_html` that already holds the composer's block, or `plain_only`
+goes without it, and the result says `skipped` and why. `create_draft`'s
+description says whether the server signs, so the model leaves the
+signature out of `body`. `update_draft` ignores the setting. Off by
+default, as every switch is (the standard's §10b), so a server that does
+not set it behaves as 3.2.0 did. Other servers sign for everyone by
+default; this one asks the operator (§18 row 100).
 
 `update_draft` per §4.4, as a tree edit of the draft's own bytes:
 headers the call names are replaced, parts it names are rebuilt or
@@ -1528,6 +1554,7 @@ nothing the server adds is phrased as something to do.
 | `GMAIL_ENABLE_SEND=true` | adds `send_draft` | `gmail.modify` (no change: §2.10) |
 | `GMAIL_ENABLE_DESTRUCTIVE=true` | adds `delete_permanently`, `delete_label`; with `GMAIL_ENABLE_SETTINGS`, also `create_trash_filter`, `delete_filter` | `https://mail.google.com/` |
 | `GMAIL_ENABLE_SETTINGS=true` | adds `update_signature`, `create_filter`; with `GMAIL_ENABLE_DESTRUCTIVE`, also `create_trash_filter`, `delete_filter`; with `GMAIL_ENABLE_SEND`, also `set_vacation` | adds `gmail.settings.basic` |
+| `GMAIL_DRAFT_SIGNATURE=true` | nothing: `create_draft` signs a new draft when the call leaves `signature` out (§7.4) | no change |
 | `GMAIL_REQUIRE_PROMPT` | removed in 3.0.0; anything but `false` refuses to start (§4.13) | — |
 
 `READ_ONLY` with any enable flag is refused at startup, naming both.
@@ -1686,6 +1713,7 @@ declared list.
 | `read_attachment` reads an attachment's text into a result, registered by default, reversing §7.3's "never inlined" | maintainer, 2026-10-09 | §7.3, §18 row 84; text types only, inside the boundaries |
 | `create_draft` forwards a message by attaching it, with its `Bcc` left out; the server adds to a draft only what the caller names | maintainer, 2026-10-09 | §4.2, §7.4, §18 row 85; never inline, so the original goes as Gmail stored it |
 | A draft carries the From address's send-as signature when `create_draft` or `update_draft` is asked to, in the markup Gmail's composer writes; §4.2.2 no longer says never | maintainer, 2026-10-30, issue #39 | §4.2, §7.4, §18 rows 97 and 98; CLAUDE.md rule 5 |
+| The person running the server may have every new draft signed, with `GMAIL_DRAFT_SIGNATURE`, off by default; rule 5 and §4.2.2 now read "what the caller names, or what the person running the server set". Signing by default for everyone (4.0.0) was weighed and not taken | maintainer, 2026-10-30 | §4.2, §7.4, §9.4, §18 row 100; CLAUDE.md rule 5 |
 | A reply quotes its parent below the body only when `quote` asks, reversing "no suffix" for that one block | maintainer, 2026-10-09 | §4.2, §7.4, §18 row 86; the body the caller wrote is never changed |
 | Spikes D and E send in phase 2, from the live driver's run, to a second address the maintainer passes on the command line and never commits | maintainer, 2026-09-26 | §15; the transcript records the address redacted only |
 
@@ -2389,6 +2417,22 @@ body, the signature kept with its image part, then dropped with it,
 and a signed draft sent with `send_draft` (§18 row 99). Owed: the
 signature steps on an account whose signature Gmail takes back
 unchanged.
+
+**3.3.0 — new drafts signed by the operator's choice (unreleased).**
+A draft went out unsigned unless every call that made one asked for the
+signature. Approved by the maintainer 2026-10-30, option A of two (§14).
+
+- `GMAIL_DRAFT_SIGNATURE=true`, off by default and the bundle's
+  `draft_signature`, signs a new draft when `create_draft` leaves
+  `signature` out; a reply or forward only when asked. The default
+  never refuses: a body that already carries the signature, or plain
+  text alone, goes without it, and the result says `skipped` and why.
+  `create_draft`'s description says whether the server signs (§7.4).
+- `signature` on `create_draft` is `true`, `false` or left out, as on
+  `update_draft`; the result adds `by_default` and `reason`.
+- `update_draft` refuses `[conflict]` new `body_html` that would drop a
+  signature the draft's HTML holds and cannot carry, unless `signature`
+  says what to do. 3.2.0 dropped it silently (§16a, the second review).
 
 ### 16a. Found by review, and fixed
 
@@ -3210,6 +3254,24 @@ what fixed them.
   signature is now carried only when the rest of the HTML is the version
   made from the text, which a test of a quoted reply and a forward
   holds.
+- **The operator's signature default, 3.3.0.** `/simplify`: three tests
+  for a signature block became one detector for what is refused and
+  reported, the composer's own mark kept apart for the create guard on
+  purpose; the old HTML is decoded once; `Carried` became `Found`.
+  `/security-review` and `/code-review high` both found that detector
+  panicking on a sender's HTML whose mark sits after the div before it
+  closed, which would end the server: a guard the simplify pass had
+  removed as dead, since no test held it, is back with a bound and a
+  fuzz target. From the review: new `body_html` that kept a block of its
+  own was reported as removing it; the descriptions of `body_html` and
+  `signature` did not name the refusal, and `create_draft`'s said a
+  second signature is refused where the default leaves it out; the
+  refusal's text said "ends with"; the new HTML was tokenized before the
+  cheap conditions; two goldens showed a forward signed by default; and
+  a sentence named another repository, against rule 1. All fixed. Kept:
+  `GMAIL_READ_ONLY` with `GMAIL_DRAFT_SIGNATURE` starts, the setting
+  having no effect, which the configuration page says; refusing it would
+  guard nothing.
 
 ### Closing a phase
 
@@ -3468,3 +3530,4 @@ live** — §15 exists to settle these, and they are marked.
 | 97 | Gmail's web composer puts the signature in a draft the API saved | Live 2026-10-30, by the maintainer, on a Workspace account whose one address had a signature for new emails, after the API reported it. Draft A was saved through `drafts.create` with no signature. Drafts B and C carried one, B in the shape above a quote. Draft B's HTML part ended in `<div><br clear="all"></div><div><div dir="ltr" class="gmail_signature" data-smartmail="gmail_signature">…</div></div>`, with the signature after a `-- ` line in its plain part. Each was opened in the composer and sent from there to a second mailbox, and arrived with a `Message-ID` at `mail.gmail.com`. Discovery document revision 20261005: the signature is "added to new emails only" | **Refuted.** The composer showed no signature in A, and A arrived with none in either part. It showed one in B, and B arrived with one, which Gmail's reader drew in gray as a signature. The composer rebuilt B's plain part from its HTML, and the `-- ` line the server had written there was gone. Draft C, sent the same way, carried the signature in the shape that ends a message, after `<span class="gmail_signature_prefix">-- </span>` (row 98): the composer showed one signature with its `--` line, and C arrived with one, its rebuilt plain part keeping the `-- ` line. Draft D was written by this server's own `signature: true`, from the 3.2.0 build, with the account's signature as Gmail held it, a logo included: the composer showed one signature with the logo, and D arrived with one, the `-- ` line kept, and the logo as an inline PNG part of 59 KB. The draft was 86 KB, so the signature carries the image inside its HTML, and the composer made it a part when it sent; Gmail also refused that signature written back unchanged through `sendAs.patch`, HTTP 400, twice. So a draft the server writes carries a signature only when the server puts it there, and one it puts there is not doubled. Not seen: whether changing From in the composer swaps a block the API wrote, since the account has one address, tier 3. Owed: an account with two signed send-as addresses |
 | 98 | Gmail's composer writes a signature in one markup | Read 2026-10-30. Raw messages with a `Message-ID` at `mail.gmail.com`, read for their markup alone: rf-peixoto/phishing_pot@80a4867 `email/sample-12514.eml` and `email/sample-12424.eml`, both 2026-10, opened and checked here, and intentionet/netconan@0b05e94 `LICENSE.email`, 2025-01. Gmail's settings label, as stackoverflow.com/q/49375769 quotes it: 'Insert this signature before quoted text in replies and remove the "--" line that precedes it'. Five Gmail API clients that add a signature: openclaw/gogcli@82e7fd6, taylorwilsdon/google_workspace_mcp@b28e1bc, marlinjai/email-mcp@2777049, jasonmlong/gmail-send@354436a and PipedreamHQ/pipedream@7a88158 `components/gmail` | **Two shapes.** Ending a message, the signature follows `<div><br clear="all"></div><div><br></div><span class="gmail_signature_prefix">-- </span><br>` inside `<div dir="ltr" class="gmail_signature" data-smartmail="gmail_signature">`, and the plain part has a `-- ` line. The other wraps it in `<div><br clear="all"></div><div>…</div>`, with no `-- ` in either part. That the setting the label names makes the second shape, and puts the signature above the quote, is inferred from the label, tier 3. Gmail's default reply puts the signature below the quote; every client that adds one puts it above, gogcli "so it stays above it". So the server writes the first shape when the signature ends the draft and the second above a `quote`, where a delimiter would let a reader drop the quote with the signature. Each client fetches `sendAs` and appends, the method here; none is a dependency (rule 10). One skips a body that already holds a `gmail_signature` block, which here is refused |
 | 99 | Gmail keeps a draft as the API wrote it when its HTML carries an image inside it | Live 2026-10-30, by this server's 3.2.0 build on the maintainer's account, whose signature carries its logo as a base64 `data:` URL in the HTML: drafts saved through `drafts.create`, each read back with `format=raw` by the live driver's own client, their MIME headers alone printed | **Refuted.** A draft written as `multipart/alternative` of the plain text and HTML holding the `data:` image was stored as `multipart/mixed` of the HTML, the image now `cid:` to a part of its own with an `ii_` Content-ID, and an inline PNG part; the plain part was gone. `update_draft` then refused a new body as a draft whose only text is HTML, and `send_draft` sent HTML alone, the image beside it as a part the receiving Gmail counted as an attachment. The same signature written with the image already a part, `multipart/alternative` of the plain text and `multipart/related` of the HTML and the image, was stored as written, the plain part, its `-- ` line and the block intact; a new body kept the signature and its part, and `signature: false` took both out. So the server moves such an image into a part itself (§7.4) |
+| 100 | A Gmail MCP server signs a draft only when asked | Read 2026-10-30, in each project's source: taylorwilsdon/google_workspace_mcp@b28e1bc `gmail/gmail_tools.py` lines 2740–2743 and 3397–3400, `include_signature`: "Whether to append the Gmail signature from Settings > Signature when available. Defaults to true."; marlinjai/email-mcp@2777049 `src/tools/sending.ts` line 23, `signature`: "Add the account's signature (default true)", and `src/tools/signature.ts` lines 101–102, a body that already holds one is left as it is (`already_present`); openclaw/gogcli@82e7fd6 `gmail_send_signature.go` line 30, a `--signature` flag | **Refuted for MCP servers.** Both MCP servers sign by default for everyone, with a per-call opt-out, skip a body that already carries one, and report what they did; the CLI signs only when asked. This server matches the skip and the report, and leaves the default to the person running it (§7.4, §14): a default for everyone would change every 3.x caller's drafts, which rule 5 and the standard's §7c make a major release. Neither server's default for replies was taken: the API cannot see the reply signature (row 88) |
