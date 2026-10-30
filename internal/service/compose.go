@@ -39,8 +39,11 @@ type Compose struct {
 	Quote bool
 	// Forward is a message id, or rfc822:<Message-ID>, to attach as it
 	// is but for its Bcc (§7.4). Not with a reply.
-	Forward  string
-	LocalDir string
+	Forward string
+	// Signature puts the From address's send-as signature below the
+	// body, above a quote (§7.4).
+	Signature bool
+	LocalDir  string
 }
 
 // maxReferences bounds the References a reply carries: the thread's
@@ -65,19 +68,32 @@ func (s *Service) CreateDraft(ctx context.Context, in Compose) (model.DraftWrite
 		return out, err
 	}
 	parent := src.parent
-	from, err := pickFrom(senders, in.From)
+	sender, err := pickFrom(senders, in.From)
 	if err != nil {
 		return out, err
 	}
-	text, quoted := in.Body, 0
-	if in.Quote {
-		text, quoted = quoteBelow(in.Body, parent)
+	from := mime.Address{Name: sender.DisplayName, Email: sender.SendAsEmail}
+	sig := ""
+	if in.Signature {
+		sig = signatureOf(sender)
+		out.Signature, _ = signatureOutcome(&in.Signature, "", sig)
 	}
-	htm := in.HTML
-	if htm == "" && !in.PlainOnly {
-		// Without an HTML part, Gmail's web composer wraps the text when
-		// the person sends the draft (§7.4). A quote goes in it too.
-		htm = mime.HTMLFromText(text)
+	quote, quoted := "", 0
+	if in.Quote {
+		quote, quoted = quoteText(parent)
+	}
+	// Without an HTML part, Gmail's web composer wraps the text when the
+	// person sends the draft (§7.4), so one is made, a quote in it too.
+	var given *string
+	if in.HTML != "" {
+		given = &in.HTML
+	}
+	text, htm, err := mime.Bodies(in.Body, given, sig, quote)
+	if err != nil {
+		return out, editError(err)
+	}
+	if in.PlainOnly {
+		htm = ""
 	}
 	o := mime.Outgoing{From: &from, Subject: in.Subject, Text: text, HTML: htm, Attachments: files,
 		MessageID: mime.NewMessageID(from.Email)}
@@ -207,6 +223,9 @@ func (in Compose) check() ([]model.Recipient, error) {
 		return nil, gapi.Errf(gapi.ClassInvalid, "body_html needs body as well: the plain text is what a reader without HTML sees")
 	case in.HTML != "" && in.PlainOnly:
 		return nil, gapi.Errf(gapi.ClassInvalid, "give plain_only or body_html, not both")
+	case in.Signature && in.PlainOnly:
+		return nil, gapi.Errf(gapi.ClassInvalid, "give plain_only or signature, not both: the signature is the HTML "+
+			"Gmail holds, and plain text alone has nowhere for its links and images; write a text signature into body")
 	}
 	if _, err := mime.FormatText(in.Subject); err != nil {
 		return nil, gapi.Errf(gapi.ClassInvalid, "subject may not contain line breaks or control characters")
@@ -282,24 +301,34 @@ func parseRecipients(field string, in []string) ([]mime.Address, error) {
 
 // pickFrom is the send-as address to write as From: the one asked for,
 // or the account's default.
-func pickFrom(senders []gmail.SendAs, want string) (mime.Address, error) {
+func pickFrom(senders []gmail.SendAs, want string) (gmail.SendAs, error) {
 	if want != "" {
 		list, strict := mime.ParseAddressList(strings.TrimSpace(want))
 		if strict && len(list) == 1 {
 			for _, s := range senders {
 				if strings.EqualFold(s.SendAsEmail, list[0].Email) {
-					return mime.Address{Name: s.DisplayName, Email: s.SendAsEmail}, nil
+					return s, nil
 				}
 			}
 		}
-		return mime.Address{}, gapi.Errf(gapi.ClassInvalid,
+		return gmail.SendAs{}, gapi.Errf(gapi.ClassInvalid,
 			"from must be one of the addresses this account sends as; get_settings lists them")
 	}
 	pick, err := defaultSender(senders)
 	if err != nil {
-		return mime.Address{}, err
+		return gmail.SendAs{}, err
 	}
-	return mime.Address{Name: senders[pick].DisplayName, Email: senders[pick].SendAsEmail}, nil
+	return senders[pick], nil
+}
+
+// signatureOf is the signature Gmail holds for a send-as address as a
+// draft carries it: "" when it has none, or only markup an emptied
+// editor leaves (§7.7).
+func signatureOf(s gmail.SendAs) string {
+	if !model.SettingFromHTML(s.Signature).Set {
+		return ""
+	}
+	return s.Signature
 }
 
 // defaultSender is the index of the account's default send-as address,
@@ -404,25 +433,17 @@ func (s *Service) wholeText(ctx context.Context, g *gmail.Message, m model.Messa
 	return msgs[0], len(text), nil
 }
 
-// quoteBelow is a reply's text with its parent quoted below the body
-// (§7.4): the body as given, a blank line, "On <Date>, <From> wrote:",
-// and each line of the parent's text after "> ", an empty one as ">".
-// The Date header is shown as the sender wrote it. It returns the
-// characters of the parent's text quoted; a parent with no text leaves
-// the body as given.
-func quoteBelow(body string, p model.Message) (string, int) {
+// quoteText is a reply's quote of its parent (§7.4): "On <Date>, <From>
+// wrote:", and each line of the parent's text after "> ", an empty one as
+// ">". The Date header is shown as the sender wrote it. It returns the
+// characters of the parent's text quoted; a parent with no text gives
+// no quote.
+func quoteText(p model.Message) (string, int) {
 	text := p.Body.Text
 	if strings.TrimSpace(text) == "" {
-		return body, 0
+		return "", 0
 	}
 	var b strings.Builder
-	if body != "" {
-		b.WriteString(body)
-		if !strings.HasSuffix(body, "\n") {
-			b.WriteString("\n")
-		}
-		b.WriteString("\n")
-	}
 	who := p.Sender().String()
 	if who == "" {
 		who = "the sender"
@@ -683,6 +704,10 @@ type Revise struct {
 	// PlainOnly, with Body, drops (true) or adds (false) the HTML version
 	// made from the text; nil keeps the draft's shape (§7.4).
 	PlainOnly *bool
+	// Signature, with Body, puts the From address's send-as signature
+	// below it (true) or leaves the draft's out (false); nil keeps the one
+	// the draft carries (§7.4).
+	Signature *bool
 	// Attach adds files from LocalDir; Remove drops attachments by part id.
 	Attach, Remove []string
 	LocalDir       string
@@ -718,7 +743,7 @@ func (s *Service) UpdateDraft(ctx context.Context, in Revise) (model.DraftWrite,
 	}
 	e.Add, out.Added = files, filesOf(files)
 
-	d, err := s.client.GetDraft(ctx, in.DraftID, gapi.FormatRaw)
+	d, senders, err := s.draftReads(ctx, in.DraftID, in.Signature != nil && *in.Signature)
 	if err != nil {
 		return out, err
 	}
@@ -746,14 +771,19 @@ func (s *Service) UpdateDraft(ctx context.Context, in Revise) (model.DraftWrite,
 		out.Removed = append(out.Removed, model.File{Name: model.Untrusted(a.Filename),
 			MediaType: model.Untrusted(a.MimeType), Size: a.Size, PartID: a.PartID})
 	}
-	edited, htmlChanged, err := mime.EditRaw(raw, e)
+	if e.Signature, err = signatureEdit(in.Signature, before, senders); err != nil {
+		return out, err
+	}
+	ed, err := mime.EditRaw(raw, e)
 	if err != nil {
 		return out, editError(err)
 	}
-	if htmlChanged && in.HTML == nil {
+	edited := ed.Raw
+	if ed.HTMLChanged && in.HTML == nil {
 		// The HTML version made from the text moved with the body.
 		out.Changed = append(out.Changed, "body_html")
 	}
+	in.noteSignature(&out, ed)
 	if len(e.Remove) > 0 || len(e.Add) > 0 {
 		out.Changed = append(out.Changed, "attachments")
 	}
@@ -774,6 +804,87 @@ func (s *Service) UpdateDraft(ctx context.Context, in Revise) (model.DraftWrite,
 	}
 	s.written(&out, saved)
 	return out, nil
+}
+
+// draftReads reads a draft and, for signature: true, the account's
+// send-as addresses beside it, which are independent reads.
+func (s *Service) draftReads(ctx context.Context, id string, sendAs bool) (*gmail.Draft, []gmail.SendAs, error) {
+	var (
+		list *gmail.ListSendAsResponse
+		lerr error
+		wg   sync.WaitGroup
+	)
+	if sendAs {
+		wg.Go(func() { list, lerr = s.client.SendAs(ctx) })
+	}
+	d, err := s.client.GetDraft(ctx, id, gapi.FormatRaw)
+	wg.Wait()
+	switch {
+	case err != nil:
+		return nil, nil, err
+	case lerr != nil:
+		return nil, nil, lerr
+	case list == nil:
+		return d, nil, nil
+	}
+	return d, list.SendAs, nil
+}
+
+// signatureEdit is the signature an update puts below its new body: for
+// signature: true the one Gmail holds for the draft's From address, for
+// false none, "", and nil, which keeps the draft's own, when not asked.
+func signatureEdit(asked *bool, m *mime.Message, senders []gmail.SendAs) (*string, error) {
+	if asked == nil {
+		return nil, nil
+	}
+	sig := ""
+	if *asked {
+		// Not sender, which takes "" for the default address: a draft
+		// with no From matches no address.
+		from := ""
+		if len(m.From) > 0 {
+			from = m.From[0].Email
+		}
+		i := slices.IndexFunc(senders, func(a gmail.SendAs) bool { return strings.EqualFold(a.SendAsEmail, from) })
+		if i < 0 {
+			return nil, gapi.Errf(gapi.ClassInvalid,
+				"the draft's From is not one of the addresses this account sends as, so Gmail holds no signature for it")
+		}
+		sig = signatureOf(senders[i])
+	}
+	return &sig, nil
+}
+
+// noteSignature puts in an update's result what its new body did with
+// the signature below it, naming the signature as changed when it did.
+func (in Revise) noteSignature(out *model.DraftWrite, ed mime.Edited) {
+	if in.Body == nil {
+		return
+	}
+	var moved bool
+	if out.Signature, moved = signatureOutcome(in.Signature, ed.Carried, ed.Signature); moved {
+		out.Changed = append(out.Changed, "signature")
+	}
+}
+
+// signatureOutcome says what a write did with the signature below the
+// body, and whether that changed the draft: asked is the call's
+// signature, carried the one the draft had, and now the one it has, each
+// "" for none. It is nil when there was none and none was asked for.
+func signatureOutcome(asked *bool, carried, now string) (*model.DraftSignature, bool) {
+	switch {
+	case asked != nil && *asked && now == "":
+		return &model.DraftSignature{Outcome: model.SignatureNoneSet, Dropped: carried != ""}, carried != ""
+	case carried != "" && now == carried:
+		return model.NewDraftSignature(model.SignatureKept, now), false
+	case asked != nil && *asked && carried != "":
+		return model.NewDraftSignature(model.SignatureReplaced, now), true
+	case asked != nil && *asked:
+		return model.NewDraftSignature(model.SignatureAdded, now), true
+	case carried != "":
+		return &model.DraftSignature{Outcome: model.SignatureRemoved}, true
+	}
+	return nil, false
 }
 
 // edit turns the fields given into an edit of the draft's headers and
@@ -810,6 +921,9 @@ func (in Revise) edit(out *model.DraftWrite) (mime.Edit, []model.Recipient, erro
 		out.Changed = append(out.Changed, "subject")
 	}
 	e.Text, e.HTML = in.Body, in.HTML
+	if err := in.checkSignature(); err != nil {
+		return e, nil, err
+	}
 	if p := in.PlainOnly; p != nil {
 		switch {
 		case in.Body == nil:
@@ -829,6 +943,19 @@ func (in Revise) edit(out *model.DraftWrite) (mime.Edit, []model.Recipient, erro
 		out.Changed = append(out.Changed, "body_html")
 	}
 	return e, set, nil
+}
+
+// checkSignature refuses a signature the update has nowhere to put.
+func (in Revise) checkSignature() error {
+	switch {
+	case in.Signature != nil && in.Body == nil:
+		return gapi.Errf(gapi.ClassInvalid,
+			"signature needs body: the signature goes below a new body, so pass the text that goes above it")
+	case in.Signature != nil && *in.Signature && in.PlainOnly != nil && *in.PlainOnly:
+		return gapi.Errf(gapi.ClassInvalid, "give plain_only: true or signature: true, not both: plain text "+
+			"alone has nowhere for the signature's links and images")
+	}
+	return nil
 }
 
 // describe fills an update's result from the draft as it will be saved.
@@ -877,6 +1004,15 @@ func editError(err error) error {
 		return gapi.Errf(gapi.ClassConflict, "the draft's plain and HTML versions are not one pair this server can make plain; edit the draft in Gmail")
 	case errors.Is(err, mime.ErrNoPlainBody):
 		return gapi.Errf(gapi.ClassInvalid, "the draft has no text yet; give body as well as body_html")
+	case errors.Is(err, mime.ErrSignedHTML):
+		return gapi.Errf(gapi.ClassInvalid, "body_html already holds a signature block as Gmail's composer marks one, "+
+			"and the signature would go below it as well; pass signature: false, or take the block out of body_html")
+	case errors.Is(err, mime.ErrSignedText):
+		return gapi.Errf(gapi.ClassInvalid, "body already ends with the signature's text, and the signature would go "+
+			"below it as well; leave it out of body, or pass signature: false")
+	case errors.Is(err, mime.ErrPlainSignature):
+		return gapi.Errf(gapi.ClassInvalid, "the draft is plain text alone, with nowhere for the signature's links and "+
+			"images; pass plain_only: false with signature: true to give it an HTML version")
 	case errors.Is(err, mime.ErrTooManyParts):
 		return gapi.Errf(gapi.ClassUnsupported, "the draft has more MIME parts than this server edits without losing some; edit it in Gmail")
 	case errors.Is(err, mime.ErrNotAttachment):

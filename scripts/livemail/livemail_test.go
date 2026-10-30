@@ -474,8 +474,9 @@ func TestCleanTakesOnlyARunName(t *testing.T) {
 // passes the guard with the arguments it builds.
 func TestTheGuardHoldsTheSettingsSteps(t *testing.T) {
 	r := newRunLabel(time.Now())
-	e := &env{seed: &seeded{label: r}, account: "reader@example.com", signatureAddress: "alias@example.com",
-		settings: true, filters: []string{"ANe1Bmg1"}}
+	e := &env{seed: &seeded{label: r, drafts: []string{"r0000000000000031"}, draftMessages: []string{"0000000000000032"}},
+		account: "reader@example.com", signatureAddress: "alias@example.com", settings: true, filters: []string{"ANe1Bmg1"},
+		signedDraft: "r0000000000000031", signedMessage: "0000000000000032", signatureSet: true}
 	soon := time.Now().Add(24 * time.Hour).Format(time.RFC3339)
 	ahead := time.Now().Add(250 * 24 * time.Hour).Format(time.RFC3339)
 	for _, tc := range []struct {
@@ -511,6 +512,11 @@ func TestTheGuardHoldsTheSettingsSteps(t *testing.T) {
 		}
 		if s.tool == "delete_filter" && s.needs(&env{settings: true}) == "" {
 			t.Errorf("%s runs with no filter to delete", s.name)
+		}
+		// A draft step after a failed set would carry the account's own
+		// signature into the transcript (CLAUDE.md rule 1).
+		if strings.Contains(s.tool, "draft") && s.needs(&env{settings: true}) == "" {
+			t.Errorf("%s runs without the run's own signature in place", s.name)
 		}
 		args := s.args(e)
 		if err := e.guard(s, args); err != nil {

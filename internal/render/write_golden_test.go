@@ -75,6 +75,29 @@ func TestGoldenDraftWrites(t *testing.T) {
 	}
 	golden(t, "draft_update", render.DraftWrite(update, opts()).Text)
 
+	signed := forward
+	signed.Forward, signed.Files = nil, nil
+	signed.Signature = &model.DraftSignature{Outcome: model.SignatureAdded, Lines: 6, Images: 1,
+		Hidden: []mime.HiddenCount{{Reason: mime.HiddenDisplayNone, Chars: 12}}}
+	golden(t, "draft_signature_added", render.DraftWrite(signed, opts()).Text)
+	signed.Signature = &model.DraftSignature{Outcome: model.SignatureNoneSet}
+	golden(t, "draft_signature_none_set", render.DraftWrite(signed, opts()).Text)
+	resigned := update
+	resigned.Added, resigned.Removed, resigned.ThreadingAtRisk = nil, nil, false
+	for _, c := range []struct {
+		sig     model.DraftSignature
+		changed []string
+	}{
+		{model.DraftSignature{Outcome: model.SignatureKept, Lines: 1}, []string{"body", "body_html"}},
+		{model.DraftSignature{Outcome: model.SignatureReplaced, Lines: 2}, []string{"body", "body_html", "signature"}},
+		{model.DraftSignature{Outcome: model.SignatureRemoved}, []string{"body", "body_html", "signature"}},
+	} {
+		resigned.Signature, resigned.Changed = &c.sig, c.changed
+		golden(t, "draft_signature_"+string(c.sig.Outcome), render.DraftWrite(resigned, opts()).Text)
+	}
+	resigned.Signature = &model.DraftSignature{Outcome: model.SignatureNoneSet, Dropped: true}
+	golden(t, "draft_signature_none_set_dropped", render.DraftWrite(resigned, opts()).Text)
+
 	deleted := model.DraftWrite{Op: "delete", DraftID: "r0000000000000021", MessageID: "0000000000000024",
 		ThreadID: "0000000000000001", From: &from, Subject: "Offsite, revised",
 		Recipients: []model.Recipient{{Address: addr(gmailtest.Bruno), Field: "to", Origin: model.FromDraft}}}

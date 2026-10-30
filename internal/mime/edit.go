@@ -25,6 +25,10 @@ type Edit struct {
 	// HTMLMode says what Text alone does to that.
 	Text, HTML *string
 	HTMLMode   HTMLMode
+	// Signature is the send-as signature new text carries below it, as
+	// SignHTML and SignText write one, "" for none. Nil keeps the one the
+	// message carries, found by its markup.
+	Signature *string
 	// Remove drops attachments by part id, as the unedited message
 	// numbers them.
 	Remove []string
@@ -72,17 +76,37 @@ var (
 	// ErrTooManyParts is a message with more parts than this package
 	// reads, which an edit could not write back whole.
 	ErrTooManyParts = errors.New("the message has more MIME parts than this server edits")
+	// ErrPlainSignature is a signature set on a message that stays plain
+	// text alone, with no HTML version to carry it.
+	ErrPlainSignature = errors.New("the message is plain text alone; a signature needs its HTML version")
+	// ErrSignedHTML is HTML that already holds a signature block, below
+	// which a signature would go again.
+	ErrSignedHTML = errors.New("the HTML already holds a signature")
+	// ErrSignedText is text that already ends with the signature's text,
+	// below which the signature would go again.
+	ErrSignedText = errors.New("the text already ends with the signature")
 )
 
-// EditRaw applies e to raw RFC 5322 bytes, and reports whether it
-// changed the HTML version, as given or as e.HTMLMode made it.
-func EditRaw(raw []byte, e Edit) (out []byte, htmlChanged bool, err error) {
+// Edited is a message an edit wrote, and what the edit did to its body.
+type Edited struct {
+	Raw []byte
+	// HTMLChanged is set when the HTML version changed, as given or as
+	// HTMLMode made it.
+	HTMLChanged bool
+	// Signature is the signature below the new text, and Carried the one
+	// the old text carried, each "" for none, and both "" for an edit
+	// that gave no text.
+	Signature, Carried string
+}
+
+// EditRaw applies e to raw RFC 5322 bytes.
+func EditRaw(raw []byte, e Edit) (Edited, error) {
 	count := 0
 	root := readEntity(raw, "", 0, &count)
 	if count >= maxParts {
 		// readEntity stopped reading parts at the cap, and a multipart
 		// rewritten from what was read would drop the rest silently.
-		return nil, false, ErrTooManyParts
+		return Edited{}, ErrTooManyParts
 	}
 
 	// Every part is found by its original id before anything moves.
@@ -90,7 +114,7 @@ func EditRaw(raw []byte, e Edit) (out []byte, htmlChanged bool, err error) {
 	for _, id := range e.Remove {
 		n, parent := root.find(id)
 		if n == nil || parent == nil || n.isMultipart() || n.isBody() {
-			return nil, false, fmt.Errorf("%w: %q", ErrNotAttachment, id)
+			return Edited{}, fmt.Errorf("%w: %q", ErrNotAttachment, id)
 		}
 		removals = append(removals, n)
 	}
@@ -98,45 +122,45 @@ func EditRaw(raw []byte, e Edit) (out []byte, htmlChanged bool, err error) {
 
 	for _, h := range e.Headers {
 		if isContentHeader(h.Name) {
-			return nil, false, fmt.Errorf("header %s describes the content and is not set by name", h.Name)
+			return Edited{}, fmt.Errorf("header %s describes the content and is not set by name", h.Name)
 		}
 		if HasControl(h.Value) {
-			return nil, false, fmt.Errorf("header %s: %w", h.Name, ErrControl)
+			return Edited{}, fmt.Errorf("header %s: %w", h.Name, ErrControl)
 		}
 		root.headers = setHeader(root.headers, h.Name, h.Value)
 	}
 	for _, n := range removals {
 		if !root.remove(n) {
-			return nil, false, fmt.Errorf("part %q is the only part of its multipart, so removing it would leave an empty one", n.partID)
+			return Edited{}, fmt.Errorf("part %q is the only part of its multipart, so removing it would leave an empty one", n.partID)
 		}
 	}
-	htm, drop, err := e.htmlFor(plain, html)
+	b, err := e.bodiesFor(plain, html)
 	if err != nil {
-		return nil, false, err
+		return Edited{}, err
 	}
-	if drop {
-		root, err = dropHTML(root, plain, html, *e.Text)
+	if b.drop {
+		root, err = dropHTML(root, plain, html, *b.text)
 	} else {
-		root, err = replaceBody(root, plain, html, e.Text, htm)
+		root, err = replaceBody(root, plain, html, b.text, b.htm)
 	}
 	if err != nil {
-		return nil, false, err
+		return Edited{}, err
 	}
 	if len(e.Add) > 0 {
 		var atts []*entity
 		for _, a := range e.Add {
 			att, err := attachmentEntity(a)
 			if err != nil {
-				return nil, false, err
+				return Edited{}, err
 			}
 			atts = append(atts, att)
 		}
 		root = appendAttachments(root, atts)
 	}
-	var b bytes.Buffer
-	b.Grow(root.size())
-	root.write(&b)
-	return b.Bytes(), drop || htm != nil, nil
+	var out bytes.Buffer
+	out.Grow(root.size())
+	root.write(&out)
+	return Edited{Raw: out.Bytes(), HTMLChanged: b.drop || b.htm != nil, Signature: b.sig, Carried: b.carried}, nil
 }
 
 // setHeader replaces every line of name with one line of value, where
@@ -221,27 +245,95 @@ func swap(root, old, with *entity) *entity {
 	return with
 }
 
-// htmlFor is the HTML an edit writes beside new text: the caller's, or
-// the version made from the text as e.HTMLMode says. drop is set when a
-// made version goes and the text stays alone. HTML written another way
-// is left to replaceBody, which refuses text alone beside it.
-func (e Edit) htmlFor(plain, html *entity) (htm *string, drop bool, err error) {
-	if e.Text == nil || e.HTML != nil {
-		return e.HTML, false, nil
+// bodies is what an edit writes for the body: the text and HTML, nil
+// for left as they are; drop, when the made version goes and the text
+// stays alone; and the signature below the new text and the one the old
+// text carried.
+type bodies struct {
+	text, htm    *string
+	drop         bool
+	sig, carried string
+}
+
+// bodiesFor is what an edit writes for the body: the caller's text and
+// HTML, or the HTML version made from the text as e.HTMLMode says, with
+// the signature e.Signature names, or the message carries, below the
+// text. A new body replaces a quote too, so the signature ends the
+// message. A made version that goes takes the signature with it. HTML
+// written another way is left to replaceBody, which refuses text alone
+// beside it.
+func (e Edit) bodiesFor(plain, html *entity) (bodies, error) {
+	if e.Text == nil {
+		return bodies{htm: e.HTML}, nil
 	}
-	if html != nil && (plain == nil || !isMade(plain, html)) {
+	b := bodies{text: e.Text}
+	var made bool
+	b.carried, made = carried(plain, html)
+	b.sig = b.carried
+	if e.Signature != nil {
+		b.sig = *e.Signature
+	}
+	switch {
+	case e.HTML != nil:
+	case html != nil && !made:
 		if e.HTMLMode == PlainOnly {
-			return nil, false, ErrDropsHTML
+			return b, ErrDropsHTML
 		}
-		return nil, false, nil
+		b.sig = ""
+		return b, nil
+	case e.HTMLMode == PlainOnly || e.HTMLMode == KeepShape && html == nil && hasText(plain):
+		if e.Signature != nil && *e.Signature != "" {
+			return b, ErrPlainSignature
+		}
+		b.drop, b.sig = html != nil, ""
+		return b, nil
 	}
-	if e.HTMLMode == PlainOnly || e.HTMLMode == KeepShape && html == nil && hasText(plain) {
-		return nil, html != nil, nil
+	text, htm, err := Bodies(*e.Text, e.HTML, b.sig, "")
+	if err != nil {
+		return b, err
 	}
-	if h := HTMLFromText(*e.Text); h != "" {
-		return &h, false, nil
+	b.text = &text
+	if htm == "" && e.HTML == nil {
+		// Emptied text with no signature: the made version goes.
+		b.drop = html != nil
+		return b, nil
 	}
-	return nil, html != nil, nil
+	b.htm = &htm
+	return b, nil
+}
+
+// carried is the signature a message carries below its body, "" for
+// none, and whether its HTML version, that signature aside, is the one
+// HTMLFromText makes of its text. The signature is found by its block in
+// the HTML and by the last place its lines stand whole in the plain
+// part: a quote below that repeats them has them after "> ". It is the
+// message's own only when the rest is that made version, so a block in
+// someone else's mail, quoted or forwarded in HTML written another way,
+// is never carried.
+func carried(plain, html *entity) (sig string, made bool) {
+	if plain == nil || html == nil {
+		return "", false
+	}
+	p, h := plainText(plain.decoded()), htmlText(html.decoded())
+	b, ok := findBlock(h)
+	if !ok {
+		return "", madeOf(p, h)
+	}
+	rest := p
+	want := strings.TrimSuffix(sigLines(b.html, b.ending), "\n")
+	for i, upto := 0, len(p); want != ""; upto = i + len(want) - 1 {
+		if i = strings.LastIndex(p[:upto], want); i < 0 {
+			return "", madeOf(p, h)
+		}
+		if j := i + len(want); (i == 0 || p[i-1] == '\n') && (j == len(p) || p[j] == '\n') {
+			rest = p[:i] + p[j:]
+			break
+		}
+	}
+	if !madeOf(rest, h[:b.start]+h[b.end:]) {
+		return "", madeOf(p, h)
+	}
+	return b.html, true
 }
 
 // hasText reports whether a plain part says anything: a draft with no
@@ -250,13 +342,13 @@ func hasText(plain *entity) bool {
 	return plain != nil && strings.TrimSpace(plainText(plain.decoded())) != ""
 }
 
-// isMade reports whether html says nothing the plain text does not: it
+// madeOf reports whether html says nothing the plain text does not: it
 // holds only paragraphs, line breaks and links whose text is their
 // target, and it reads back as the text. Every HTML version this server
 // makes is such HTML, whatever its line rules were when it was made.
-func isMade(plain, html *entity) bool {
-	text, ok := madeText(htmlText(html.decoded()))
-	return ok && text == madeNormal(plainText(plain.decoded()))
+func madeOf(plain, html string) bool {
+	text, ok := madeText(html)
+	return ok && text == madeNormal(plain)
 }
 
 // madeTag is the markup HTMLFromText writes.

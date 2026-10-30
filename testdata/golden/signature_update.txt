@@ -1,5 +1,5 @@
 set the signature of reader@example.com.
-Gmail adds it to new emails written in Gmail; drafts this server writes carry no signature.
+Gmail adds it to new emails written in Gmail; a draft this server writes carries it only with signature: true.
 <<<untrusted-mail TESTTOKEN: signature before>>>
 Rae Reader
 Example Org

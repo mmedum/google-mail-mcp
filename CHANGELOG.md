@@ -15,6 +15,10 @@ lifted verbatim.
 
 ## [Unreleased]
 
+### Added
+
+- `create_draft` and `update_draft` take `signature`, which puts the signature Gmail holds for the From address below the body, as Gmail's composer writes one; a new body keeps the signature a draft carries.
+
 ### Changed
 
 - `golang.org/x/sys` v0.49.0, `golang.org/x/text` v0.43.0 and `golang.org/x/sync` v0.24.0.

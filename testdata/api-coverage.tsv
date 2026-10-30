@@ -59,7 +59,7 @@ gmail.users.settings.getVacation	used	-	Used: `get_settings`
 gmail.users.settings.sendAs.create	out	-	Written off: `gmail.settings.sharing`; identity administration; discovery: "This method is only available to service account clients that have been delegated domain-wide authority", which this server's per-user login is not (§18 row 79)
 gmail.users.settings.sendAs.delete	out	-	Written off: `gmail.settings.sharing`; discovery: "This method is only available to service account clients that have been delegated domain-wide authority", which this server's per-user login is not (§18 row 79)
 gmail.users.settings.sendAs.get	out	-	Written off: `sendAs.list` returns every field `get` does for the same one unit, and `create_draft` reads the list anyway for the default sender and the account's own addresses (§18 row 39)
-gmail.users.settings.sendAs.list	used	-	Used: `get_settings`, and the `from` choices of `create_draft`
+gmail.users.settings.sendAs.list	used	-	Used: `get_settings`; the `from` choices of `create_draft`, and the signature it puts below a body; and `update_draft`'s `signature: true`
 gmail.users.settings.sendAs.patch	used	-	Gated: `update_signature`, behind `GMAIL_ENABLE_SETTINGS`; the signature only, of one of the account's own addresses. Discovery says nothing of service accounts for `patch`, though it does for `update`; whether a per-user login can patch an address other than the primary is unproven (§18 row 79)
 gmail.users.settings.sendAs.smimeInfo.delete	out	-	Written off: key administration
 gmail.users.settings.sendAs.smimeInfo.get	out	-	Written off with `smimeInfo.list`

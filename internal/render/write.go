@@ -7,6 +7,7 @@ import (
 	"strconv"
 	"strings"
 
+	"github.com/mmedum/google-mail-mcp/v3/internal/mime"
 	"github.com/mmedum/google-mail-mcp/v3/internal/model"
 )
 
@@ -88,7 +89,46 @@ func (w *writer) draftCreated(d model.DraftWrite) {
 	if f := d.Forward; f != nil {
 		w.forwardLines(d, f)
 	}
+	w.signatureLines(d.Signature)
 	w.recipientCounts(d.Recipients)
+}
+
+// signatureLines say what a write did with the send-as signature below
+// the body, and what it shows, never what it says (§7.4).
+func (w *writer) signatureLines(s *model.DraftSignature) {
+	if s == nil {
+		return
+	}
+	lines, images := plural(s.Lines, "line", "lines"), plural(s.Images, "image", "images")
+	shows := lines
+	switch {
+	case s.Lines > 0 && s.Images > 0:
+		shows = fill("%s and %s", lines, images)
+	case s.Images > 0:
+		shows = images
+	case s.Lines == 0:
+		shows = fill("no text or image")
+	}
+	switch s.Outcome {
+	case model.SignatureAdded:
+		w.say("signature: added below the body, the one Gmail holds for the From address: %s.", shows)
+	case model.SignatureReplaced:
+		w.say("signature: replaced below the new body by the one Gmail holds for the From address: %s.", shows)
+	case model.SignatureKept:
+		w.say("signature: the draft's own, kept below the new body: %s.", shows)
+	case model.SignatureRemoved:
+		w.say("signature: removed from the draft.")
+	case model.SignatureNoneSet:
+		if s.Dropped {
+			w.say("signature: removed from the draft, since Gmail holds no signature for the From address now.")
+		} else {
+			w.say("signature: none, since Gmail holds no signature for the From address; the draft has none.")
+		}
+	}
+	if n := mime.HiddenTotal(s.Hidden); n > 0 {
+		w.say("note: the signature holds %s a reader would not see (%s), which go out as Gmail's composer sends them.",
+			plural(n, "character", "characters"), hiddenList(s.Hidden))
+	}
 }
 
 func (w *writer) forwardLines(d model.DraftWrite, f *model.Forward) {
@@ -207,6 +247,7 @@ func (w *writer) draftUpdated(d model.DraftWrite) {
 	if d.ThreadingAtRisk {
 		w.say("note: this draft is a reply and its subject changed; Gmail threads by subject, so it may leave its thread.")
 	}
+	w.signatureLines(d.Signature)
 	w.recipientCounts(d.Recipients)
 }
 

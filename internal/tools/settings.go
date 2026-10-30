@@ -122,7 +122,8 @@ func registerSettings(s *mcp.Server, d Deps) {
 	register(s, d, Spec{Name: "update_signature", Kind: Settings, Description: "Set the signature of one of the " +
 		"account's send-as addresses, the default one unless send_as names another. The text is plain: line breaks " +
 		"are kept, markup is not applied, and a web address becomes a link. An empty signature clears it. Gmail adds the signature to new emails " +
-		"written in Gmail; drafts this server writes carry none. The result shows the signature before and after. " +
+		"written in Gmail; a draft this server writes carries it only when asked, with signature: true. The result shows the signature " +
+		"before and after. " +
 		"101 units." + dryRunNote + untrustedNote},
 		func(ctx context.Context, in UpdateSignatureIn) (SignatureOut, error) {
 			sw, err := svc.UpdateSignature(ctx, in.SendAs, in.Signature)

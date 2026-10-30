@@ -11,6 +11,12 @@ import (
 
 func ptrTo(s string) *string { return &s }
 
+// editRaw is the message EditRaw writes.
+func editRaw(raw []byte, e Edit) ([]byte, error) {
+	ed, err := EditRaw(raw, e)
+	return ed.Raw, err
+}
+
 func build(t *testing.T, o Outgoing) []byte {
 	t.Helper()
 	if o.MessageID == "" {
@@ -45,7 +51,7 @@ func entityBytes(t *testing.T, a OutAttachment) []byte {
 func TestEditRawWithNothingIsTheSameBytes(t *testing.T) {
 	raw := build(t, Outgoing{To: []Address{{Email: "a@example.com"}}, Subject: "s", Text: "t", HTML: "<p>t</p>",
 		Attachments: []OutAttachment{attA, attB}})
-	out, _, err := EditRaw(raw, Edit{})
+	out, err := editRaw(raw, Edit{})
 	if err != nil || !bytes.Equal(out, raw) {
 		t.Fatalf("changed: %v\n%s", err, out)
 	}
@@ -57,7 +63,7 @@ func TestEditRawHeaders(t *testing.T) {
 		Subject: "old", Text: "t", InReplyTo: "<p@example.com>", References: []string{"<p@example.com>"},
 	})
 	subject, _ := FormatText("new — Neu")
-	out, _, err := EditRaw(raw, Edit{Headers: []SetHeader{
+	out, err := editRaw(raw, Edit{Headers: []SetHeader{
 		{Name: "Subject", Value: subject}, {Name: "Cc", Value: ""}, {Name: "Bcc", Value: "b@example.com"},
 		{Name: "To", Value: "d@example.com"},
 	}})
@@ -80,7 +86,7 @@ func TestEditRawHeaders(t *testing.T) {
 		t.Fatalf("header order %s", got)
 	}
 	for _, bad := range []SetHeader{{Name: "Content-Type", Value: "text/html"}, {Name: "Subject", Value: "a\r\nBcc: x"}} {
-		if _, _, err := EditRaw(raw, Edit{Headers: []SetHeader{bad}}); err == nil {
+		if _, err := editRaw(raw, Edit{Headers: []SetHeader{bad}}); err == nil {
 			t.Errorf("set %s", bad.Name)
 		}
 	}
@@ -110,7 +116,7 @@ func TestEditRawBodies(t *testing.T) {
 	}
 	for _, tt := range cases {
 		t.Run(tt.name, func(t *testing.T) {
-			out, _, err := EditRaw(tt.raw, Edit{Text: tt.text, HTML: tt.html})
+			out, err := editRaw(tt.raw, Edit{Text: tt.text, HTML: tt.html})
 			if tt.err != nil {
 				if !errors.Is(err, tt.err) {
 					t.Fatalf("err %v, want %v", err, tt.err)
@@ -154,7 +160,7 @@ func TestEditRawAttachments(t *testing.T) {
 		t.Fatalf("attachments %+v", m.Attachments)
 	}
 	added := OutAttachment{Filename: "Отчёт.pdf", MediaType: "application/pdf", Content: []byte("third")}
-	out, _, err := EditRaw(raw, Edit{Remove: []string{"1"}, Add: []OutAttachment{added}})
+	out, err := editRaw(raw, Edit{Remove: []string{"1"}, Add: []OutAttachment{added}})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -174,7 +180,7 @@ func TestEditRawAttachments(t *testing.T) {
 	}
 
 	for _, id := range []string{"0", "0.0", "", "9"} {
-		if _, _, err := EditRaw(raw, Edit{Remove: []string{id}}); !errors.Is(err, ErrNotAttachment) {
+		if _, err := editRaw(raw, Edit{Remove: []string{id}}); !errors.Is(err, ErrNotAttachment) {
 			t.Errorf("remove %q: %v", id, err)
 		}
 	}
@@ -182,7 +188,7 @@ func TestEditRawAttachments(t *testing.T) {
 
 func TestEditRawAddsToASinglePart(t *testing.T) {
 	raw := build(t, Outgoing{To: []Address{{Email: "a@example.com"}}, Subject: "s", Text: "only text"})
-	out, _, err := EditRaw(raw, Edit{Add: []OutAttachment{attA}})
+	out, err := editRaw(raw, Edit{Add: []OutAttachment{attA}})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -199,7 +205,7 @@ func TestEditRawAddsToASinglePart(t *testing.T) {
 func TestEditRawGivesABodyToAMessageWithout(t *testing.T) {
 	raw := []byte("To: a@example.com\r\nMIME-Version: 1.0\r\nContent-Type: application/pdf; name=x.pdf\r\n" +
 		"Content-Transfer-Encoding: base64\r\n\r\nJVBERg==\r\n")
-	out, _, err := EditRaw(raw, Edit{Text: ptrTo("see attached")})
+	out, err := editRaw(raw, Edit{Text: ptrTo("see attached")})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -210,11 +216,11 @@ func TestEditRawGivesABodyToAMessageWithout(t *testing.T) {
 		string(ls[1].data) != "<p>see attached</p>\n" || string(ls[2].data) != "%PDF" {
 		t.Fatalf("%q %+v, %d parts", m.Body.Text, m.Attachments, len(ls))
 	}
-	if _, _, err := EditRaw(raw, Edit{HTML: ptrTo("<p>x</p>")}); !errors.Is(err, ErrNoPlainBody) {
+	if _, err := editRaw(raw, Edit{HTML: ptrTo("<p>x</p>")}); !errors.Is(err, ErrNoPlainBody) {
 		t.Fatalf("html alone: %v", err)
 	}
 	html := []byte("To: a@example.com\r\nContent-Type: text/html\r\n\r\n<p>x</p>")
-	if _, _, err := EditRaw(html, Edit{Text: ptrTo("x")}); !errors.Is(err, ErrHTMLOnly) {
+	if _, err := editRaw(html, Edit{Text: ptrTo("x")}); !errors.Is(err, ErrHTMLOnly) {
 		t.Fatalf("text on HTML only: %v", err)
 	}
 }
@@ -222,7 +228,7 @@ func TestEditRawGivesABodyToAMessageWithout(t *testing.T) {
 func TestEditRawRefusesEmptyingAMultipart(t *testing.T) {
 	raw := []byte("To: a@example.com\r\nContent-Type: multipart/mixed; boundary=b\r\n\r\n--b\r\n" +
 		"Content-Type: application/pdf; name=x.pdf\r\n\r\nx\r\n--b--\r\n")
-	if _, _, err := EditRaw(raw, Edit{Remove: []string{"0"}}); err == nil || errors.Is(err, ErrNotAttachment) {
+	if _, err := editRaw(raw, Edit{Remove: []string{"0"}}); err == nil || errors.Is(err, ErrNotAttachment) {
 		t.Fatalf("err %v", err)
 	}
 }
@@ -231,6 +237,8 @@ func FuzzEditRaw(f *testing.F) {
 	f.Add([]byte(placeholderAlt), "new", "<p>new</p>", "1")
 	f.Add([]byte(nested), "x", "", "0.1")
 	f.Add([]byte("Content-Type: multipart/mixed; boundary=b\n\n--b\n\n--b--"), "", "h", "0")
+	f.Add([]byte("Content-Type: multipart/alternative; boundary=b\n\n--b\nContent-Type: text/plain\n\nx\n\n-- \nAda\n"+
+		"--b\nContent-Type: text/html\n\n<p>x</p>\n"+sigEnding.lead+sigEnding.open+"<div>Ada</div>"+sigEnding.close+"\n--b--"), "y", "", "1")
 	f.Fuzz(func(t *testing.T, raw []byte, text, html, remove string) {
 		e := Edit{Remove: []string{remove}, Add: []OutAttachment{attA}}
 		if text != "" {
@@ -239,7 +247,7 @@ func FuzzEditRaw(f *testing.F) {
 		if html != "" {
 			e.HTML = &html
 		}
-		out, _, err := EditRaw(raw, e)
+		out, err := editRaw(raw, e)
 		if err != nil {
 			return
 		}
@@ -250,7 +258,7 @@ func FuzzEditRaw(f *testing.F) {
 // An edit finds the body where ParseRaw reads it: a multipart at the
 // nesting limit is text to both.
 func TestEditRawAgreesWithParseRawAtTheNestingLimit(t *testing.T) {
-	out, _, err := EditRaw([]byte(nestedToLimit(unsplitPart)), Edit{Text: ptrTo("new")})
+	out, err := editRaw([]byte(nestedToLimit(unsplitPart)), Edit{Text: ptrTo("new")})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -268,7 +276,7 @@ func TestEditRawRefusesATruncatedTree(t *testing.T) {
 		b.WriteString("--b\r\nContent-Type: application/pdf; name=x.pdf\r\n\r\nx\r\n")
 	}
 	b.WriteString("--b--\r\n")
-	if _, _, err := EditRaw([]byte(b.String()), Edit{Text: ptrTo("x")}); !errors.Is(err, ErrTooManyParts) {
+	if _, err := editRaw([]byte(b.String()), Edit{Text: ptrTo("x")}); !errors.Is(err, ErrTooManyParts) {
 		t.Fatalf("err %v", err)
 	}
 }
@@ -330,7 +338,8 @@ func TestEditRawKeepsTheHTMLMadeFromTheText(t *testing.T) {
 		{"with HTML keeps HTML written by hand", hand, WithHTML, "New.", ErrBothBodies, "", "", false, false},
 	}
 	for _, c := range cases {
-		out, changed, err := EditRaw(c.raw, Edit{Text: ptrTo(c.text), HTMLMode: c.mode})
+		ed, err := EditRaw(c.raw, Edit{Text: ptrTo(c.text), HTMLMode: c.mode})
+		out, changed := ed.Raw, ed.HTMLChanged
 		if c.err != nil || err != nil {
 			if !errors.Is(err, c.err) {
 				t.Errorf("%s: err %v, want %v", c.name, err, c.err)

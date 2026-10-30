@@ -374,6 +374,11 @@ type env struct {
 	// quoteDraft and quoteMessage are the quoting reply the quote steps
 	// make, read back and delete.
 	quoteDraft, quoteMessage string
+	// signedDraft and signedMessage are the draft the signature steps
+	// make below the signature the run set, update and delete;
+	// signatureSet is whether that signature is in place.
+	signedDraft, signedMessage string
+	signatureSet               bool
 	// spikeE is the draft side of spike E, from reading a draft back.
 	spikeE string
 	// sendTo is -send-to, the one address a step may send to; full is
