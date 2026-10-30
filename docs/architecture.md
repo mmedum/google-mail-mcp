@@ -7,8 +7,10 @@ writes one, and a new body keeps it. Reviewed by `/simplify`,
 `/code-review high` and `/security-review` (§16a); a live run of 96
 steps passed, its transcript read, the seven sending steps left unarmed
 and the eight signature steps stopped by the driver's own guard, so the
-signature was checked by hand through four drafts sent from the
-composer (§16, §18 row 97). 3.1.2 is cut, 2026-10-24: the family sweep (§16a). A variable of
+signature was checked by hand through drafts sent from the composer and
+by `send_draft`, which found Gmail rewriting a draft whose signature
+carries its image inside the HTML; such an image now goes as a part of
+its own (§16, §18 rows 97 and 99). 3.1.2 is cut, 2026-10-24: the family sweep (§16a). A variable of
 spaces alone is unset and the spaces around a value dropped, the
 refresh token included, every reader through `config.Lookup`; the
 bundle gate holds the identity, refuses a repeated key and validates
@@ -1112,7 +1114,12 @@ when a signature would go below the body, on either tool, `body_html`
 that holds a block marked `data-smartmail="gmail_signature"`, as the
 composer marks the person's own, is `[invalid]`, and so is a `body`
 that ends with the signature's text. A signature quoted from someone
-else's mail carries the class alone and is no reason to refuse. An address with no signature, or only the markup an
+else's mail carries the class alone and is no reason to refuse. An
+image the signature carries inside its HTML, as a base64 `data:` URL,
+goes as a part of its own beside the HTML in `multipart/related` (RFC
+2387), its `src` a `cid:`, and its Content-ID made from the image, so
+one image is one part. Gmail moves such an image out on save itself,
+and drops the plain version as it does (§18 row 99). An address with no signature, or only the markup an
 emptied editor leaves, gets none, and the result says `none_set`
 rather than failing. `signature` with `plain_only` is `[invalid]`:
 plain text alone has nowhere for its links and images. The API holds
@@ -1129,7 +1136,9 @@ that repeats it has it after `> `. It is the draft's own only when the
 HTML, the block aside, is the version made from the text, so a block in
 someone else's mail, quoted or forwarded in HTML the composer wrote, is
 never carried into a new body; a draft whose HTML was written another
-way takes its signature again with `signature: true`. A new body replaces
+way takes its signature again with `signature: true`. A new body keeps
+the image parts the signature shows; a signature dropped or replaced
+takes the parts only it showed, and one set again adds none twice. A new body replaces
 a quote too, so a signature that sat above one ends the message
 afterwards, with its delimiter. `signature: false` leaves it out, and
 `signature: true` puts the one Gmail holds for the draft's From address
@@ -2343,6 +2352,13 @@ starts (§18 row 97). Approved by the maintainer 2026-10-30 (§14).
   carried below a new one.
 - The result reports what the signature shows, never its text; a test
   plants a canary signature and reads every result and log line.
+- A signature's image carried inside its HTML goes as an inline part in
+  `multipart/related`. Found live: Gmail rewrote a draft holding a
+  `data:` image as HTML and an image part, without the plain version,
+  so a new body was refused and `drafts.send` would have sent HTML
+  alone (§18 row 99). `EditRaw` keeps such parts beside a new body,
+  adds none twice, and takes out those only a dropped or replaced
+  signature showed.
 - `golang.org/x/net` v0.62.0, for GO-2026-6860, which failed `make check`
   on `main`.
 
@@ -2354,10 +2370,12 @@ account's own signature written back unchanged, HTTP 400
 so the driver changed nothing and read the signature back as it found
 it. The signature was checked by hand instead, through four drafts sent
 from the composer to a second mailbox, the last written by this build's
-own `signature: true` (§18 row 97). Owed: the signature steps on an
-account whose signature Gmail takes back unchanged, and a `send_draft`
-send of a signed draft whose signature carries its image inside the
-HTML.
+own `signature: true` (§18 row 97). Then by this build against the
+account's own signature, logo included: a draft written, given a new
+body, the signature kept with its image part, then dropped with it,
+and a signed draft sent with `send_draft` (§18 row 99). Owed: the
+signature steps on an account whose signature Gmail takes back
+unchanged.
 
 ### 16a. Found by review, and fixed
 
@@ -3412,5 +3430,6 @@ live** — §15 exists to settle these, and they are marked.
 | 94 | A platform override adds to `mcp_config`, and a bundle's settings reach the server only through `env` | Read 2026-10-24. anthropics/mcpb at v2.1.2, `src/shared/config.ts`: L114-120 take `platformConfig.args \|\| result.args` and `platformConfig.env \|\| result.env`; L173-177 run `replaceVariables` over the whole result, `args` included; L139-154 set each default first and the person's values over it; L197-222 check a required key against the person's values alone | **Refuted (tier 1, the reference host; Claude Desktop not probed).** An override's `args` or `env` replaces the base's rather than adding to it, and an empty `[]` or `{}` is truthy, so it replaces the base too. An argument such as `--enable-send=true` reaches the server substituted, past every check on `env`. The `mcpb` gate refuses `args` and `env` on an override whenever present, and holds the base `args` to `[]`; the key stays, since no Claude Desktop launch has shown it optional. A required key's default reaches the server whenever the person's form keeps it, so the defaults check substitutes it |
 | 95 | Any `command` the specification shows runs from the bundle | Read 2026-10-24. anthropics/mcpb v2.1.2: MANIFEST.md L497 and L510-515 give a binary the command `server/my-server`, and L532 says `${__dirname}` "is replaced with the absolute path to the extension's directory"; `src/shared/config.ts` L118, L133 and L173-176 substitute variables in `command` and resolve no path | **Refined (tier 1, the specification and the reference host; Claude Desktop not probed).** The specification shows a relative command once and never says what it is resolved against, and the reference host passes it to the spawn as written. `${__dirname}` is the one form whose meaning the specification fixes. The `mcpb` gate requires every command to start with `${__dirname}/`, as the committed manifest's do, and refuses a relative or absolute one; a probe of Claude Desktop's working directory would settle the relative form |
 | 96 | A key repeated in the manifest reads the same to every reader of it | Probed 2026-10-24 with `{"server": {"type": "binary", "env": {"A": "1"}}, "server": {"env": {"B": "2"}}}`: Go's `encoding/json` into a struct gives `type` `binary` and both `A` and `B`, into a map only `B`; Node's `JSON.parse` only `B`. Probed again 2026-10-24 with `{"command": "${__dirname}/server/a", "Command": "/bin/b", "env": {"A": "1"}, "ENV": {"B": "2"}}`: the struct decode gives command `/bin/b` and env `A` and `B`, the map decode and `JSON.parse` keep all four keys apart; a Kelvin-sign `\u212aelvin` fills a field tagged `kelvin` | **Refuted (tier 1 for the decoders; the host's reader not read).** The typed decode the gate's checks read merges a repeated object into the first, and matches a key to a field under Unicode case folding, while the schema validator, which decodes into a map, the packer's stamp and a JavaScript host keep the last and read a key only as spelled. The `mcpb` gate refuses a key repeated in any object of the committed manifest, or two equal under `strings.EqualFold`, before any other check, naming its path |
-| 97 | Gmail's web composer puts the signature in a draft the API saved | Live 2026-10-30, by the maintainer, on a Workspace account whose one address had a signature for new emails, after the API reported it. Draft A was saved through `drafts.create` with no signature. Drafts B and C carried one, B in the shape above a quote. Draft B's HTML part ended in `<div><br clear="all"></div><div><div dir="ltr" class="gmail_signature" data-smartmail="gmail_signature">…</div></div>`, with the signature after a `-- ` line in its plain part. Each was opened in the composer and sent from there to a second mailbox, and arrived with a `Message-ID` at `mail.gmail.com`. Discovery document revision 20261005: the signature is "added to new emails only" | **Refuted.** The composer showed no signature in A, and A arrived with none in either part. It showed one in B, and B arrived with one, which Gmail's reader drew in gray as a signature. The composer rebuilt B's plain part from its HTML, and the `-- ` line the server had written there was gone. Draft C, sent the same way, carried the signature in the shape that ends a message, after `<span class="gmail_signature_prefix">-- </span>` (row 98): the composer showed one signature with its `--` line, and C arrived with one, its rebuilt plain part keeping the `-- ` line. Draft D was written by this server's own `signature: true`, from the 3.2.0 build, with the account's signature as Gmail held it, a logo included: the composer showed one signature with the logo, and D arrived with one, the `-- ` line kept, and the logo as an inline PNG part of 59 KB. The draft was 86 KB, so the signature carries the image inside its HTML, and the composer made it a part when it sent; Gmail also refused that signature written back unchanged through `sendAs.patch`, HTTP 400, twice. So a draft the server writes carries a signature only when the server puts it there, and one it puts there is not doubled. Not seen: whether changing From in the composer swaps a block the API wrote, since the account has one address, tier 3. Owed: an account with two signed send-as addresses; and a `send_draft` send of a draft whose signature carries its image inside the HTML, since `drafts.send` sends a draft as saved (§15) and a reader may not show an image carried that way |
+| 97 | Gmail's web composer puts the signature in a draft the API saved | Live 2026-10-30, by the maintainer, on a Workspace account whose one address had a signature for new emails, after the API reported it. Draft A was saved through `drafts.create` with no signature. Drafts B and C carried one, B in the shape above a quote. Draft B's HTML part ended in `<div><br clear="all"></div><div><div dir="ltr" class="gmail_signature" data-smartmail="gmail_signature">…</div></div>`, with the signature after a `-- ` line in its plain part. Each was opened in the composer and sent from there to a second mailbox, and arrived with a `Message-ID` at `mail.gmail.com`. Discovery document revision 20261005: the signature is "added to new emails only" | **Refuted.** The composer showed no signature in A, and A arrived with none in either part. It showed one in B, and B arrived with one, which Gmail's reader drew in gray as a signature. The composer rebuilt B's plain part from its HTML, and the `-- ` line the server had written there was gone. Draft C, sent the same way, carried the signature in the shape that ends a message, after `<span class="gmail_signature_prefix">-- </span>` (row 98): the composer showed one signature with its `--` line, and C arrived with one, its rebuilt plain part keeping the `-- ` line. Draft D was written by this server's own `signature: true`, from the 3.2.0 build, with the account's signature as Gmail held it, a logo included: the composer showed one signature with the logo, and D arrived with one, the `-- ` line kept, and the logo as an inline PNG part of 59 KB. The draft was 86 KB, so the signature carries the image inside its HTML, and the composer made it a part when it sent; Gmail also refused that signature written back unchanged through `sendAs.patch`, HTTP 400, twice. So a draft the server writes carries a signature only when the server puts it there, and one it puts there is not doubled. Not seen: whether changing From in the composer swaps a block the API wrote, since the account has one address, tier 3. Owed: an account with two signed send-as addresses |
 | 98 | Gmail's composer writes a signature in one markup | Read 2026-10-30. Raw messages with a `Message-ID` at `mail.gmail.com`, read for their markup alone: rf-peixoto/phishing_pot@80a4867 `email/sample-12514.eml` and `email/sample-12424.eml`, both 2026-10, opened and checked here, and intentionet/netconan@0b05e94 `LICENSE.email`, 2025-01. Gmail's settings label, as stackoverflow.com/q/49375769 quotes it: 'Insert this signature before quoted text in replies and remove the "--" line that precedes it'. Five Gmail API clients that add a signature: openclaw/gogcli@82e7fd6, taylorwilsdon/google_workspace_mcp@b28e1bc, marlinjai/email-mcp@2777049, jasonmlong/gmail-send@354436a and PipedreamHQ/pipedream@7a88158 `components/gmail` | **Two shapes.** Ending a message, the signature follows `<div><br clear="all"></div><div><br></div><span class="gmail_signature_prefix">-- </span><br>` inside `<div dir="ltr" class="gmail_signature" data-smartmail="gmail_signature">`, and the plain part has a `-- ` line. The other wraps it in `<div><br clear="all"></div><div>…</div>`, with no `-- ` in either part. That the setting the label names makes the second shape, and puts the signature above the quote, is inferred from the label, tier 3. Gmail's default reply puts the signature below the quote; every client that adds one puts it above, gogcli "so it stays above it". So the server writes the first shape when the signature ends the draft and the second above a `quote`, where a delimiter would let a reader drop the quote with the signature. Each client fetches `sendAs` and appends, the method here; none is a dependency (rule 10). One skips a body that already holds a `gmail_signature` block, which here is refused |
+| 99 | Gmail keeps a draft as the API wrote it when its HTML carries an image inside it | Live 2026-10-30, by this server's 3.2.0 build on the maintainer's account, whose signature carries its logo as a base64 `data:` URL in the HTML: drafts saved through `drafts.create`, each read back with `format=raw` by the live driver's own client, their MIME headers alone printed | **Refuted.** A draft written as `multipart/alternative` of the plain text and HTML holding the `data:` image was stored as `multipart/mixed` of the HTML, the image now `cid:` to a part of its own with an `ii_` Content-ID, and an inline PNG part; the plain part was gone. `update_draft` then refused a new body as a draft whose only text is HTML, and `send_draft` sent HTML alone, the image beside it as a part the receiving Gmail counted as an attachment. The same signature written with the image already a part, `multipart/alternative` of the plain text and `multipart/related` of the HTML and the image, was stored as written, the plain part, its `-- ` line and the block intact; a new body kept the signature and its part, and `signature: false` took both out. So the server moves such an image into a part itself (§7.4) |

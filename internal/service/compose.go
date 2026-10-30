@@ -88,15 +88,15 @@ func (s *Service) CreateDraft(ctx context.Context, in Compose) (model.DraftWrite
 	if in.HTML != "" {
 		given = &in.HTML
 	}
-	text, htm, err := mime.Bodies(in.Body, given, sig, quote)
+	body, err := mime.Bodies(in.Body, given, sig, quote)
 	if err != nil {
 		return out, editError(err)
 	}
 	if in.PlainOnly {
-		htm = ""
+		body.HTML = ""
 	}
-	o := mime.Outgoing{From: &from, Subject: in.Subject, Text: text, HTML: htm, Attachments: files,
-		MessageID: mime.NewMessageID(from.Email)}
+	o := mime.Outgoing{From: &from, Subject: in.Subject, Text: body.Text, HTML: body.HTML, Inline: body.Inline,
+		Attachments: files, MessageID: mime.NewMessageID(from.Email)}
 	out.Recipients = callers
 	threadID := ""
 	if in.Forward != "" {

@@ -3,6 +3,7 @@ package mime
 import (
 	"errors"
 	"html"
+	"strings"
 	"testing"
 	"unicode/utf8"
 )
@@ -54,10 +55,39 @@ func TestBodies(t *testing.T) {
 			"<p>Hi, Ada Quill<br>\nExample Org</p>\n" + endAda, nil},
 	}
 	for _, c := range cases {
-		plain, htm, err := Bodies(c.text, c.h, c.sig, c.quote)
-		if !errors.Is(err, c.err) || plain != c.plain || htm != c.htm {
-			t.Errorf("%s: %q %q %v; want %q %q %v", c.name, plain, htm, err, c.plain, c.htm, c.err)
+		out, err := Bodies(c.text, c.h, c.sig, c.quote)
+		if !errors.Is(err, c.err) || out.Text != c.plain || out.HTML != c.htm || len(out.Inline) != 0 {
+			t.Errorf("%s: %q %q %d images %v; want %q %q %v", c.name, out.Text, out.HTML, len(out.Inline), err, c.plain, c.htm, c.err)
 		}
+	}
+}
+
+// An image a signature carries inside its HTML goes as a part of its
+// own, named by a Content-ID made from the image, once however often it
+// shows; anything else stays as written.
+func TestBodiesMoveImagesIntoParts(t *testing.T) {
+	sig := `<div>Ada<img src="data:image/png;base64,UE5HREFUQQ==" alt="logo">` +
+		`<IMG SRC='data:image/jpg;base64,T1RI&#10;RVJQTkc='><img src="data:image/png;base64,UE5H REFUQQ=="></div>` +
+		`<img src="https://example.com/remote.png"><img src="data:image/svg+xml;base64,PHN2Zy8+">` +
+		`<img src="data:image/png;base64,!!!">`
+	out, err := Bodies("Hi.", nil, sig, "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := "<p>Hi.</p>\n" + sigEnding.lead + sigEnding.open +
+		`<div>Ada<img src="cid:sig.2d4566582844690f@signature" alt="logo">` +
+		`<IMG SRC='data:image/jpg;base64,T1RI&#10;RVJQTkc='><img src="cid:sig.2d4566582844690f@signature"></div>` +
+		`<img src="https://example.com/remote.png"><img src="data:image/svg+xml;base64,PHN2Zy8+">` +
+		`<img src="data:image/png;base64,!!!">` + sigEnding.close
+	if out.HTML != want {
+		t.Errorf("HTML %q, want %q", out.HTML, want)
+	}
+	if len(out.Inline) != 1 || out.Inline[0].ContentID != "sig.2d4566582844690f@signature" ||
+		out.Inline[0].MediaType != "image/png" || string(out.Inline[0].Content) != "PNGDATA" {
+		t.Errorf("inline %+v, want the one PNG", out.Inline)
+	}
+	if out.Text != "Hi.\n\n-- \nAda[image: logo]\n" {
+		t.Errorf("text %q", out.Text)
 	}
 }
 
@@ -182,7 +212,7 @@ func FuzzSignatureIsCarried(f *testing.F) {
 			t.Skip()
 		}
 		sig := "<div>" + html.EscapeString(name) + "</div>"
-		text, htm, err := Bodies(body, nil, sig, "")
+		out, err := Bodies(body, nil, sig, "")
 		if errors.Is(err, ErrSignedText) {
 			t.Skip() // a body that ends with the signature takes no second
 		}
@@ -190,7 +220,7 @@ func FuzzSignatureIsCarried(f *testing.F) {
 			t.Fatal(err)
 		}
 		want := normalizeNewlines(sig)
-		raw := build(t, Outgoing{Text: text, HTML: htm})
+		raw := build(t, Outgoing{Text: out.Text, HTML: out.HTML, Inline: out.Inline})
 		for i := range 2 {
 			ed, err := EditRaw(raw, Edit{Text: ptrTo("New.")})
 			if err != nil || ed.Carried != want || ed.Signature != want {
@@ -199,4 +229,63 @@ func FuzzSignatureIsCarried(f *testing.F) {
 			raw = ed.Raw
 		}
 	})
+}
+
+// A signature's images live in parts beside the HTML: a new body keeps
+// them, one the edit drops or replaces takes its own with it, and one it
+// sets brings them, never twice.
+func TestEditRawCarriesTheSignaturesImages(t *testing.T) {
+	logo := `<div>Ada<img src="data:image/png;base64,UE5HREFUQQ=="></div>`
+	other := `<div>Bo<img src="data:image/png;base64,T1RIRVJQTkc="></div>`
+	signed, err := Bodies("Old text.", nil, logo, "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	raw := build(t, Outgoing{Text: signed.Text, HTML: signed.HTML, Inline: signed.Inline,
+		Attachments: []OutAttachment{attA}})
+	made := build(t, Outgoing{Text: "Old text.\n", HTML: "<p>Old text.</p>\n", Attachments: []OutAttachment{attA}})
+	const cidAda, cidBo = "sig.2d4566582844690f@signature", "sig.fea0ae0a8e8d6693@signature"
+	cases := []struct {
+		name   string
+		raw    []byte
+		mode   HTMLMode
+		sig    *string
+		images []string
+		html   string
+	}{
+		{"a new body keeps them", raw, KeepShape, nil, []string{cidAda},
+			`<p>New.</p>` + "\n" + sigEnding.lead + sigEnding.open + `<div>Ada<img src="cid:` + cidAda + `"></div>` + sigEnding.close},
+		{"the same one set again keeps one", raw, KeepShape, &logo, []string{cidAda},
+			`<p>New.</p>` + "\n" + sigEnding.lead + sigEnding.open + `<div>Ada<img src="cid:` + cidAda + `"></div>` + sigEnding.close},
+		{"another takes its place", raw, KeepShape, &other, []string{cidBo},
+			`<p>New.</p>` + "\n" + sigEnding.lead + sigEnding.open + `<div>Bo<img src="cid:` + cidBo + `"></div>` + sigEnding.close},
+		{"dropped, they go", raw, KeepShape, ptrTo(""), nil, "<p>New.</p>\n"},
+		{"plain only takes them with the HTML", raw, PlainOnly, nil, nil, "(none)"},
+		{"set on a made draft, they come", made, KeepShape, &logo, []string{cidAda},
+			`<p>New.</p>` + "\n" + sigEnding.lead + sigEnding.open + `<div>Ada<img src="cid:` + cidAda + `"></div>` + sigEnding.close},
+	}
+	for _, c := range cases {
+		ed, err := EditRaw(c.raw, Edit{Text: ptrTo("New."), HTMLMode: c.mode, Signature: c.sig})
+		if err != nil {
+			t.Errorf("%s: %v", c.name, err)
+			continue
+		}
+		var images []string
+		gotHTML, attached := "(none)", false
+		m := ParseRaw(ed.Raw)
+		for _, l := range leaves(ed.Raw) {
+			switch {
+			case l.mediaType == "text/html":
+				gotHTML = string(l.data)
+			case l.declaredName() == "a.txt":
+				attached = true
+			case l.mediaType == "image/png":
+				images = append(images, strings.Trim(headerGet(l.headers, "Content-ID"), "<>"))
+			}
+		}
+		if gotHTML != c.html || strings.Join(images, ",") != strings.Join(c.images, ",") || !attached ||
+			m.Body.Source == "" {
+			t.Errorf("%s: html %q images %v attachment %v; want %q %v", c.name, gotHTML, images, attached, c.html, c.images)
+		}
+	}
 }

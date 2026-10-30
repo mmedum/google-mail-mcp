@@ -1325,3 +1325,37 @@ func TestTheSignatureStaysInTheDraft(t *testing.T) {
 		t.Errorf("the logs carry the signature:\n%s", linesWith(logs.String(), canary))
 	}
 }
+
+// A signature's image goes as a part of its own beside the HTML, never
+// inside it, since Gmail would move it on save and drop the plain text
+// (§18 row 99). A new body keeps the part, and a signature taken out
+// takes its part with it.
+func TestTheSignaturesImageIsAPartOfItsOwn(t *testing.T) {
+	h, fake := connectFake(t, config.Config{})
+	setSignature(fake, 0, `<div>Rae<img src="data:image/png;base64,UE5HREFUQQ=="></div>`)
+	const part = "Content-ID: <sig.2d4566582844690f@signature>"
+	check := func(step, messageID string, parts int, html string) {
+		t.Helper()
+		raw, _ := fake.Raw(messageID)
+		text, got := stored(t, fake, messageID)
+		if n := strings.Count(string(raw), part); n != parts || got != html || strings.Contains(string(raw), "data:image") {
+			t.Errorf("%s: %d image parts, html %q; want %d, %q, and no data URL", step, n, got, parts, html)
+		}
+		if !strings.HasPrefix(text, "Hello") {
+			t.Errorf("%s: plain text %q, want the body", step, text)
+		}
+	}
+	signed := `<div><br clear="all"></div><div><br></div><span class="gmail_signature_prefix">-- </span><br>` +
+		`<div dir="ltr" class="gmail_signature" data-smartmail="gmail_signature"><div>Rae<img src="cid:sig.2d4566582844690f@signature"></div></div>`
+	var d tools.DraftWriteOut
+	call(t, h, "create_draft", map[string]any{"body": "Hello.", "signature": true}, &d)
+	check("create_draft", d.MessageID, 1, "<p>Hello.</p>\n"+signed)
+	if d.Signature == nil || *d.Signature != (tools.DraftSignatureOut{Outcome: "added", Lines: 1, Images: 1}) {
+		t.Errorf("create_draft signature %+v", d.Signature)
+	}
+	call(t, h, "update_draft", map[string]any{"draft_id": d.DraftID, "message_id": d.MessageID, "body": "Hello again."}, &d)
+	check("a new body", d.MessageID, 1, "<p>Hello again.</p>\n"+signed)
+	call(t, h, "update_draft", map[string]any{"draft_id": d.DraftID, "message_id": d.MessageID, "body": "Hello, unsigned.",
+		"signature": false}, &d)
+	check("signature false", d.MessageID, 0, "<p>Hello, unsigned.</p>\n")
+}

@@ -17,7 +17,7 @@ lifted verbatim.
 
 ### Added
 
-- `create_draft` and `update_draft` take `signature`, which puts the signature Gmail holds for the From address below the body, as Gmail's composer writes one; a new body keeps the signature a draft carries.
+- `create_draft` and `update_draft` take `signature`, which puts the signature Gmail holds for the From address below the body, as Gmail's composer writes one, its images as inline parts; a new body keeps the signature a draft carries.
 
 ### Changed
 

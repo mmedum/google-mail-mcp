@@ -141,10 +141,18 @@ func EditRaw(raw []byte, e Edit) (Edited, error) {
 	if b.drop {
 		root, err = dropHTML(root, plain, html, *b.text)
 	} else {
-		root, err = replaceBody(root, plain, html, b.text, b.htm)
+		root, err = replaceBody(root, plain, html, b.text, b.htm, b.inline)
 	}
 	if err != nil {
 		return Edited{}, err
+	}
+	if b.htm != nil && b.carried != "" {
+		// The images only the carried signature showed go with it.
+		gone := cids(b.carried)
+		for id := range cids(*b.htm) {
+			delete(gone, id)
+		}
+		root = pruneParts(root, gone)
 	}
 	if len(e.Add) > 0 {
 		var atts []*entity
@@ -251,6 +259,7 @@ func swap(root, old, with *entity) *entity {
 // text carried.
 type bodies struct {
 	text, htm    *string
+	inline       []InlineImage
 	drop         bool
 	sig, carried string
 }
@@ -288,17 +297,17 @@ func (e Edit) bodiesFor(plain, html *entity) (bodies, error) {
 		b.drop, b.sig = html != nil, ""
 		return b, nil
 	}
-	text, htm, err := Bodies(*e.Text, e.HTML, b.sig, "")
+	out, err := Bodies(*e.Text, e.HTML, b.sig, "")
 	if err != nil {
 		return b, err
 	}
-	b.text = &text
-	if htm == "" && e.HTML == nil {
+	b.text, b.inline = &out.Text, out.Inline
+	if out.HTML == "" && e.HTML == nil {
 		// Emptied text with no signature: the made version goes.
 		b.drop = html != nil
 		return b, nil
 	}
-	b.htm = &htm
+	b.htm = &out.HTML
 	return b, nil
 }
 
@@ -405,6 +414,10 @@ func madeNormal(s string) string {
 // plain part.
 func dropHTML(root, plain, html *entity, text string) (*entity, error) {
 	_, pair := root.find(html.partID)
+	if pair != nil && pair.mediaType == "multipart/related" {
+		// The images the HTML shows go with it.
+		_, pair = root.find(pair.partID)
+	}
 	if pair == nil || pair.mediaType != "multipart/alternative" || len(pair.children) != 2 ||
 		!slices.Contains(pair.children, plain) {
 		return nil, ErrTextLayout
@@ -422,7 +435,7 @@ func (e *entity) decoded() *node {
 
 // replaceBody applies new text and HTML to the body parts found before
 // any change. A part that is replaced is rebuilt; its siblings are kept.
-func replaceBody(root, plain, html *entity, text, htm *string) (*entity, error) {
+func replaceBody(root, plain, html *entity, text, htm *string, inline []InlineImage) (*entity, error) {
 	switch {
 	case text == nil && htm == nil:
 		return root, nil
@@ -430,13 +443,13 @@ func replaceBody(root, plain, html *entity, text, htm *string) (*entity, error) 
 		switch {
 		case plain != nil && html != nil:
 			root = swap(root, plain, textEntity("plain", *text))
-			return swap(root, html, textEntity("html", *htm)), nil
+			return swapHTML(root, html, *htm, inline), nil
 		case plain != nil:
-			return swap(root, plain, bodyEntity(*text, *htm)), nil
+			return swap(root, plain, bodyEntity(*text, *htm, inline)), nil
 		case html != nil:
-			return swap(root, html, bodyEntity(*text, *htm)), nil
+			return swap(root, html, bodyEntity(*text, *htm, inline)), nil
 		}
-		return insertBody(root, bodyEntity(*text, *htm)), nil
+		return insertBody(root, bodyEntity(*text, *htm, inline)), nil
 	case text != nil:
 		switch {
 		case plain != nil && html != nil:
@@ -452,10 +465,10 @@ func replaceBody(root, plain, html *entity, text, htm *string) (*entity, error) 
 		case plain != nil && html != nil:
 			return nil, ErrBothBodies
 		case html != nil:
-			return swap(root, html, textEntity("html", *htm)), nil
+			return swapHTML(root, html, *htm, inline), nil
 		case plain != nil:
 			// The plain part stays as it was, now beside the HTML.
-			alt := multipartEntity("alternative", plain, textEntity("html", *htm))
+			alt := multipartEntity("alternative", plain, htmlEntity(*htm, inline))
 			if plain == root {
 				alt.children[0] = contentOnly(plain)
 			}
@@ -463,6 +476,61 @@ func replaceBody(root, plain, html *entity, text, htm *string) (*entity, error) 
 		}
 		return nil, ErrNoPlainBody
 	}
+}
+
+// swapHTML puts new HTML in the old one's place with the images it shows
+// beside it: in the multipart/related the old one sits in, less those
+// already there, or in one of its own.
+func swapHTML(root, html *entity, htm string, inline []InlineImage) *entity {
+	_, rel := root.find(html.partID)
+	if rel == nil || rel.mediaType != "multipart/related" {
+		return swap(root, html, htmlEntity(htm, inline))
+	}
+	root = swap(root, html, textEntity("html", htm))
+	have := map[string]bool{}
+	for _, c := range rel.children {
+		have[contentID(c)] = true
+	}
+	for _, img := range inline {
+		if !have[img.ContentID] {
+			rel.children = append(rel.children, inlineEntity(img))
+		}
+	}
+	return root
+}
+
+// pruneParts takes out the parts whose Content-ID is in gone. A
+// multipart/related left with the HTML alone stays: it reads the same.
+func pruneParts(root *entity, gone map[string]bool) *entity {
+	if len(gone) == 0 {
+		return root
+	}
+	var prune func(e *entity) bool
+	prune = func(e *entity) bool {
+		changed := false
+		kept := make([]*entity, 0, len(e.children))
+		for _, c := range e.children {
+			if !c.isMultipart() && gone[contentID(c)] {
+				changed = true
+				continue
+			}
+			if prune(c) {
+				changed = true
+			}
+			kept = append(kept, c)
+		}
+		if changed {
+			e.children, e.dirty = kept, true
+		}
+		return changed
+	}
+	prune(root)
+	return root
+}
+
+// contentID is a part's Content-ID, without its angle brackets.
+func contentID(e *entity) string {
+	return strings.Trim(rawGet(e.headers, "Content-ID"), "<> ")
 }
 
 // contentOnly is a copy of e with only its content headers, for moving

@@ -1,6 +1,10 @@
 package mime
 
 import (
+	"crypto/sha256"
+	"encoding/base64"
+	"encoding/hex"
+	"regexp"
 	"strings"
 
 	"golang.org/x/net/html"
@@ -45,30 +49,97 @@ func shape(ending bool) sigShape {
 	return sigAbove
 }
 
+// OutBody is a message's plain text, its HTML version, and the images
+// the HTML shows from parts of their own.
+type OutBody struct {
+	Text, HTML string
+	Inline     []InlineImage
+}
+
+// InlineImage is an image an HTML version shows from a part of its own,
+// by the part's Content-ID (RFC 2392).
+type InlineImage struct {
+	// ContentID is the part's Content-ID, without its angle brackets.
+	ContentID string
+	MediaType string
+	Content   []byte
+}
+
 // Bodies is a message's plain text and HTML version (§7.4): text, the
 // signature sig below it as Gmail's composer puts one, and quote below
 // that. The HTML is h with the signature, or with h nil the version
 // HTMLFromText makes of the text and the quote with the signature
 // between them, "" when there is nothing to show. A signature ends the
 // message unless a quote follows it. A quote goes only with the made
-// version. A signature does not go below one already there: h that
-// holds a block the composer marks as one is ErrSignedHTML, and text
-// that ends with the signature's text is ErrSignedText.
-func Bodies(text string, h *string, sig, quote string) (plain, htm string, err error) {
+// version. An image the signature carries inside its HTML goes as a part
+// of its own (inlineImages). A signature does not go below one already
+// there: h that holds a block the composer marks as one is
+// ErrSignedHTML, and text that ends with the signature's text is
+// ErrSignedText.
+func Bodies(text string, h *string, sig, quote string) (OutBody, error) {
 	if sig != "" {
 		switch t := sigText(sig); {
 		case h != nil && strings.Contains(*h, `data-smartmail="gmail_signature"`):
-			return "", "", ErrSignedHTML
+			return OutBody{}, ErrSignedHTML
 		case t != "" && endsWithLines(text, t):
-			return "", "", ErrSignedText
+			return OutBody{}, ErrSignedText
 		}
 	}
 	ending := quote == ""
-	plain = below(below(text, sigLines(sig, ending)), quote)
+	b := OutBody{Text: below(below(text, sigLines(sig, ending)), quote)}
+	sig, b.Inline = inlineImages(sig)
 	if h == nil {
-		return plain, signHTML(HTMLFromText(text), sig, ending) + HTMLFromText(quote), nil
+		b.HTML = signHTML(HTMLFromText(text), sig, ending) + HTMLFromText(quote)
+	} else {
+		b.HTML = signHTML(*h, sig, ending)
 	}
-	return plain, signHTML(*h, sig, ending), nil
+	return b, nil
+}
+
+// dataImage is an img whose src is the image itself, as a base64 data
+// URL (RFC 2397).
+var dataImage = regexp.MustCompile(`(?i)(<img\b[^>]*?\bsrc\s*=\s*)(["'])data:(image/(?:png|jpeg|jpg|gif|webp|bmp));base64,([A-Za-z0-9+/=\s]*)(["'])`)
+
+// inlineImages moves each image sig carries as a base64 data URL into a
+// part of its own, its src becoming cid:, as Gmail's composer sends one.
+// Gmail does the same to such an image when a draft is saved, and drops
+// the plain-text version as it does (§18 row 99), so the server does it
+// first. The Content-ID is made from the image, so the same image gets
+// the same one. Anything else stays as written.
+func inlineImages(sig string) (string, []InlineImage) {
+	var imgs []InlineImage
+	seen := map[string]bool{}
+	out := dataImage.ReplaceAllStringFunc(sig, func(m string) string {
+		g := dataImage.FindStringSubmatch(m)
+		content, err := base64.StdEncoding.DecodeString(strings.Join(strings.Fields(g[4]), ""))
+		if g[2] != g[5] || err != nil || len(content) == 0 {
+			return m
+		}
+		sum := sha256.Sum256(content)
+		id := "sig." + hex.EncodeToString(sum[:8]) + "@signature"
+		if !seen[id] {
+			seen[id] = true
+			mt := strings.ToLower(g[3])
+			if mt == "image/jpg" {
+				mt = "image/jpeg"
+			}
+			imgs = append(imgs, InlineImage{ContentID: id, MediaType: mt, Content: content})
+		}
+		return g[1] + g[2] + "cid:" + id + g[5]
+	})
+	return out, imgs
+}
+
+// cidRef is a reference from HTML to a part by its Content-ID.
+var cidRef = regexp.MustCompile(`(?i)\bcid:([^"'\s>]+)`)
+
+// cids is the Content-IDs h refers to.
+func cids(h string) map[string]bool {
+	out := map[string]bool{}
+	for _, m := range cidRef.FindAllStringSubmatch(h, -1) {
+		out[m[1]] = true
+	}
+	return out
 }
 
 // endsWithLines reports whether text, its trailing blank lines and the
