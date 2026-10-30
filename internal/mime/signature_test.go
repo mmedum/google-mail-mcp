@@ -49,6 +49,12 @@ func TestBodies(t *testing.T) {
 			"Hi.\n\n-- \nAda Quill\nExample Org\n",
 			`<p>Hi.</p><div class="gmail_quote"><div class="gmail_signature">Bo</div></div>` + endAda, nil},
 		{"text that ends with the signature's", "Hi.\n\nAda Quill\nExample Org  \n\n", nil, sigAda, "", "", "", ErrSignedText},
+		{"text that holds it above a quote", "Hi.\n\nAda Quill\nExample Org\n\nOn Mon, Bo wrote:\n> x", nil, sigAda, "",
+			"", "", ErrSignedText},
+		{"text that holds it with plain spaces", "Hi.\n\nAda Quill\nExample Org", nil, `<div>Ada&nbsp;Quill<br>Example&nbsp;Org</div>`,
+			"", "", "", ErrSignedText},
+		{"a one-line signature a body signs off with", "Thanks,\nAda", nil, `<div>Ada</div>`, "",
+			"Thanks,\nAda\n\n-- \nAda\n", "<p>Thanks,<br>\nAda</p>\n" + sigEnding.lead + sigEnding.open + `<div>Ada</div>` + sigEnding.close, nil},
 		{"text that ends with it after a delimiter", "Hi.\n-- \nAda Quill\nExample Org", nil, sigAda, "", "", "", ErrSignedText},
 		{"text that ends with it, inside a line", "Hi, Ada Quill\nExample Org", nil, sigAda, "",
 			"Hi, Ada Quill\nExample Org\n\n-- \nAda Quill\nExample Org\n",
@@ -69,7 +75,8 @@ func TestBodiesMoveImagesIntoParts(t *testing.T) {
 	sig := `<div>Ada<img src="data:image/png;base64,UE5HREFUQQ==" alt="logo">` +
 		`<IMG SRC='data:image/jpg;base64,T1RI&#10;RVJQTkc='><img src="data:image/png;base64,UE5H REFUQQ=="></div>` +
 		`<img src="https://example.com/remote.png"><img src="data:image/svg+xml;base64,PHN2Zy8+">` +
-		`<img src="data:image/png;base64,!!!">`
+		`<img src="data:image/png;base64,!!!"><img data-src="data:image/png;base64,UE5HREFUQQ==" src="https://example.com/x.png">` +
+		`<img src="data:image/png;name=logo.png;base64,TkFNRURQTkc=">`
 	out, err := Bodies("Hi.", nil, sig, "")
 	if err != nil {
 		t.Fatal(err)
@@ -77,14 +84,19 @@ func TestBodiesMoveImagesIntoParts(t *testing.T) {
 	want := "<p>Hi.</p>\n" + sigEnding.lead + sigEnding.open +
 		`<div>Ada<img src="cid:sig.2d4566582844690f@signature" alt="logo">` +
 		`<IMG SRC='data:image/jpg;base64,T1RI&#10;RVJQTkc='><img src="cid:sig.2d4566582844690f@signature"></div>` +
-		`<img src="https://example.com/remote.png"><img src="data:image/svg+xml;base64,PHN2Zy8+">` +
-		`<img src="data:image/png;base64,!!!">` + sigEnding.close
+		`<img src="https://example.com/remote.png"><img src="cid:sig.d4dc56669143034f@signature">` +
+		`<img src="data:image/png;base64,!!!"><img data-src="data:image/png;base64,UE5HREFUQQ==" src="https://example.com/x.png">` +
+		`<img src="cid:sig.cace2150934eb976@signature">` + sigEnding.close
 	if out.HTML != want {
 		t.Errorf("HTML %q, want %q", out.HTML, want)
 	}
-	if len(out.Inline) != 1 || out.Inline[0].ContentID != "sig.2d4566582844690f@signature" ||
-		out.Inline[0].MediaType != "image/png" || string(out.Inline[0].Content) != "PNGDATA" {
-		t.Errorf("inline %+v, want the one PNG", out.Inline)
+	var got []string
+	for _, img := range out.Inline {
+		got = append(got, img.ContentID+" "+img.MediaType+" "+string(img.Content))
+	}
+	if strings.Join(got, "; ") != "sig.2d4566582844690f@signature image/png PNGDATA; "+
+		"sig.d4dc56669143034f@signature image/svg+xml <svg/>; sig.cace2150934eb976@signature image/png NAMEDPNG" {
+		t.Errorf("inline %q, want the PNG once, the SVG and the named PNG", got)
 	}
 	if out.Text != "Hi.\n\n-- \nAda[image: logo]\n" {
 		t.Errorf("text %q", out.Text)
@@ -287,5 +299,29 @@ func TestEditRawCarriesTheSignaturesImages(t *testing.T) {
 			m.Body.Source == "" {
 			t.Errorf("%s: html %q images %v attachment %v; want %q %v", c.name, gotHTML, images, attached, c.html, c.images)
 		}
+	}
+}
+
+// HTML a new body replaces in Gmail's own layout, which keeps the images
+// a level above the plain and HTML pair, takes the images it no longer
+// shows with it; one it still shows stays.
+func TestEditRawPrunesImagesTheNewHTMLDoesNotShow(t *testing.T) {
+	raw := []byte("Content-Type: multipart/related; boundary=r\r\n\r\n--r\r\n" +
+		"Content-Type: multipart/alternative; boundary=a\r\n\r\n--a\r\nContent-Type: text/plain; charset=utf-8\r\n\r\nOld.\r\n" +
+		"--a\r\nContent-Type: text/html; charset=utf-8\r\n\r\n<p>Old.</p><img src=\"cid:ii_one\"><img src=\"cid:ii_two\">\r\n--a--\r\n" +
+		"--r\r\nContent-Type: image/png\r\nContent-ID: <ii_one>\r\nContent-Transfer-Encoding: base64\r\n\r\nR01BSUxJTUc=\r\n" +
+		"--r\r\nContent-Type: image/png\r\nContent-ID: <ii_two>\r\nContent-Transfer-Encoding: base64\r\n\r\nR01BSUxJTUc=\r\n" +
+		"--r\r\nContent-Type: application/pdf; name=\"a.pdf\"\r\nContent-ID: <ii_pdf>\r\nContent-Disposition: attachment; filename=\"a.pdf\"\r\n" +
+		"Content-Transfer-Encoding: base64\r\n\r\nJVBERg==\r\n--r--\r\n")
+	ed, err := EditRaw(raw, Edit{Text: ptrTo("New."), HTML: ptrTo(`<p>New.</p><img src="cid:ii_two">`)})
+	if err != nil {
+		t.Fatal(err)
+	}
+	var parts []string
+	for _, l := range leaves(ed.Raw) {
+		parts = append(parts, l.mediaType+" "+strings.Trim(headerGet(l.headers, "Content-ID"), "<>"))
+	}
+	if got := strings.Join(parts, ", "); got != "text/plain , text/html , image/png ii_two, application/pdf ii_pdf" {
+		t.Errorf("parts %s; want the plain text, the HTML, the image still shown and the attachment", got)
 	}
 }

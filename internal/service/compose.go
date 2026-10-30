@@ -93,7 +93,7 @@ func (s *Service) CreateDraft(ctx context.Context, in Compose) (model.DraftWrite
 		return out, editError(err)
 	}
 	if in.PlainOnly {
-		body.HTML = ""
+		body.HTML, body.Inline = "", nil
 	}
 	o := mime.Outgoing{From: &from, Subject: in.Subject, Text: body.Text, HTML: body.HTML, Inline: body.Inline,
 		Attachments: files, MessageID: mime.NewMessageID(from.Email)}
@@ -875,7 +875,7 @@ func signatureOutcome(asked *bool, carried, now string) (*model.DraftSignature, 
 	switch {
 	case asked != nil && *asked && now == "":
 		return &model.DraftSignature{Outcome: model.SignatureNoneSet, Dropped: carried != ""}, carried != ""
-	case carried != "" && now == carried:
+	case carried != "" && mime.SameSignature(carried, now):
 		return model.NewDraftSignature(model.SignatureKept, now), false
 	case asked != nil && *asked && carried != "":
 		return model.NewDraftSignature(model.SignatureReplaced, now), true

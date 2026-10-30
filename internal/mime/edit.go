@@ -26,8 +26,8 @@ type Edit struct {
 	Text, HTML *string
 	HTMLMode   HTMLMode
 	// Signature is the send-as signature new text carries below it, as
-	// SignHTML and SignText write one, "" for none. Nil keeps the one the
-	// message carries, found by its markup.
+	// Bodies writes one, "" for none. Nil keeps the one the message
+	// carries, found by its markup.
 	Signature *string
 	// Remove drops attachments by part id, as the unedited message
 	// numbers them.
@@ -146,13 +146,8 @@ func EditRaw(raw []byte, e Edit) (Edited, error) {
 	if err != nil {
 		return Edited{}, err
 	}
-	if b.htm != nil && b.carried != "" {
-		// The images only the carried signature showed go with it.
-		gone := cids(b.carried)
-		for id := range cids(*b.htm) {
-			delete(gone, id)
-		}
-		root = pruneParts(root, gone)
+	if b.htm != nil {
+		root = pruneUnshown(root, cids(*b.htm))
 	}
 	if len(e.Add) > 0 {
 		var atts []*entity
@@ -499,18 +494,21 @@ func swapHTML(root, html *entity, htm string, inline []InlineImage) *entity {
 	return root
 }
 
-// pruneParts takes out the parts whose Content-ID is in gone. A
-// multipart/related left with the HTML alone stays: it reads the same.
-func pruneParts(root *entity, gone map[string]bool) *entity {
-	if len(gone) == 0 {
-		return root
-	}
+// pruneUnshown takes out each inline part of a multipart/related that
+// new HTML no longer shows: one with a Content-ID shown names nowhere.
+// A part declared an attachment stays whatever its Content-ID. A
+// signature dropped or replaced takes its images so, and HTML replaced
+// in Gmail's own layout, which keeps the images beside the plain and
+// HTML pair, its images; left, Gmail shows each as an attachment (§18
+// row 99). A related left with the HTML alone stays: it reads the same.
+func pruneUnshown(root *entity, shown map[string]bool) *entity {
 	var prune func(e *entity) bool
 	prune = func(e *entity) bool {
 		changed := false
 		kept := make([]*entity, 0, len(e.children))
 		for _, c := range e.children {
-			if !c.isMultipart() && gone[contentID(c)] {
+			if id := contentID(c); e.mediaType == "multipart/related" && !c.isMultipart() && !c.isBody() &&
+				c.disposition != "attachment" && id != "" && !shown[id] {
 				changed = true
 				continue
 			}

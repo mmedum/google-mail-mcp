@@ -74,14 +74,15 @@ type InlineImage struct {
 // version. An image the signature carries inside its HTML goes as a part
 // of its own (inlineImages). A signature does not go below one already
 // there: h that holds a block the composer marks as one is
-// ErrSignedHTML, and text that ends with the signature's text is
-// ErrSignedText.
+// ErrSignedHTML, and text that holds the signature's text, as whole
+// lines, is ErrSignedText. A signature of one line, such as a name a body
+// may sign off with, is not looked for.
 func Bodies(text string, h *string, sig, quote string) (OutBody, error) {
 	if sig != "" {
 		switch t := sigText(sig); {
 		case h != nil && strings.Contains(*h, `data-smartmail="gmail_signature"`):
 			return OutBody{}, ErrSignedHTML
-		case t != "" && endsWithLines(text, t):
+		case lineCount(t) > 1 && holdsLines(text, t):
 			return OutBody{}, ErrSignedText
 		}
 	}
@@ -97,8 +98,9 @@ func Bodies(text string, h *string, sig, quote string) (OutBody, error) {
 }
 
 // dataImage is an img whose src is the image itself, as a base64 data
-// URL (RFC 2397).
-var dataImage = regexp.MustCompile(`(?i)(<img\b[^>]*?\bsrc\s*=\s*)(["'])data:(image/(?:png|jpeg|jpg|gif|webp|bmp));base64,([A-Za-z0-9+/=\s]*)(["'])`)
+// URL of any image type, with or without parameters (RFC 2397). The src
+// follows a space, so a data-src is not one.
+var dataImage = regexp.MustCompile(`(?i)(<img\b[^>]*?\ssrc\s*=\s*)(["'])data:(image/[a-z0-9.+-]+)(?:;[^;,"']*)*;base64,([A-Za-z0-9+/=\s]*)(["'])`)
 
 // inlineImages moves each image sig carries as a base64 data URL into a
 // part of its own, its src becoming cid:, as Gmail's composer sends one.
@@ -142,11 +144,45 @@ func cids(h string) map[string]bool {
 	return out
 }
 
-// endsWithLines reports whether text, its trailing blank lines and the
-// spaces ending its lines aside, ends with whole lines that are lines.
-func endsWithLines(text, lines string) bool {
-	t := strings.TrimRight(trimLineEnds(normalizeNewlines(text)), "\n")
-	return strings.HasSuffix(t, lines) && (len(t) == len(lines) || t[len(t)-len(lines)-1] == '\n')
+// holdsLines reports whether text holds lines as whole lines anywhere,
+// the spaces ending a line aside. A signature's lines come from
+// HTMLToText, which reads a no-break space as a space.
+func holdsLines(text, lines string) bool {
+	norm := func(s string) string { return trimLineEnds(normalizeNewlines(s)) }
+	t, l := norm(text), norm(lines)
+	for at := 0; ; {
+		i := strings.Index(t[at:], l)
+		if i < 0 {
+			return false
+		}
+		i += at
+		if j := i + len(l); (i == 0 || t[i-1] == '\n') && (j == len(t) || t[j] == '\n') {
+			return true
+		}
+		at = i + 1
+	}
+}
+
+// lineCount is how many lines of s say something.
+func lineCount(s string) int {
+	n := 0
+	for l := range strings.SplitSeq(s, "\n") {
+		if strings.TrimSpace(l) != "" {
+			n++
+		}
+	}
+	return n
+}
+
+// SameSignature reports whether two signatures are one: the HTML Gmail
+// holds and the one a draft carries read the same once its images are
+// parts and its line endings one kind.
+func SameSignature(a, b string) bool {
+	norm := func(s string) string {
+		s, _ = inlineImages(s)
+		return normalizeNewlines(s)
+	}
+	return norm(a) == norm(b)
 }
 
 // below is text with more below it after a blank line; either alone is

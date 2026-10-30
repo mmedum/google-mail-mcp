@@ -1113,7 +1113,9 @@ the block goes before its closing `</body>`. A draft never carries two:
 when a signature would go below the body, on either tool, `body_html`
 that holds a block marked `data-smartmail="gmail_signature"`, as the
 composer marks the person's own, is `[invalid]`, and so is a `body`
-that ends with the signature's text. A signature quoted from someone
+that holds the signature's text as whole lines anywhere, a quote kept
+in it included. A signature of one line, such as a name a body signs
+off with, is not looked for. A signature quoted from someone
 else's mail carries the class alone and is no reason to refuse. An
 image the signature carries inside its HTML, as a base64 `data:` URL,
 goes as a part of its own beside the HTML in `multipart/related` (RFC
@@ -1138,7 +1140,12 @@ someone else's mail, quoted or forwarded in HTML the composer wrote, is
 never carried into a new body; a draft whose HTML was written another
 way takes its signature again with `signature: true`. A new body keeps
 the image parts the signature shows; a signature dropped or replaced
-takes the parts only it showed, and one set again adds none twice. A new body replaces
+takes the parts only it showed, and one set again adds none twice.
+Whenever the HTML is replaced, an inline part of a `multipart/related`
+that the new HTML no longer shows goes, in Gmail's own layout too,
+since Gmail shows such a part as an attachment; a part declared an
+attachment stays. The same signature set again with `signature: true`
+reads as `kept`, its images and line endings aside. A new body replaces
 a quote too, so a signature that sat above one ends the message
 afterwards, with its delimiter. `signature: false` leaves it out, and
 `signature: true` puts the one Gmail holds for the draft's From address
@@ -3165,6 +3172,22 @@ what fixed them.
   replaced, and over none did not say the draft's was removed. Rule 5
   and the `body` and `body_html` descriptions now say a carried
   signature stays. A draft with no From was told its address was wrong.
+  A second `/code-review high`, over the image parts found live (§18
+  row 99): HTML replaced on a draft whose HTML was not made from its
+  text, or in Gmail's own layout, left image parts nothing showed, which
+  Gmail lists as attachments; every inline part of a related the new
+  HTML no longer shows now goes, an attachment never, which a test of
+  Gmail's layout holds. The same image signature set again said
+  replaced, being compared as a `data:` URL with its `cid:`; it is
+  compared with its images as parts. The text guard looked only at the
+  end, so a quote kept in the body let a signature in twice, and it
+  refused a one-line name a body signs off with; it now looks for whole
+  lines anywhere, for a signature of two lines or more. A `data-src`
+  was taken for the `src`, and an image type other than five, or a
+  `data:` URL with parameters, stayed in the HTML. Kept: a draft whose
+  HTML was not made from its text does not carry its signature into
+  new `body_html`, which its description says, so a block in someone
+  else's mail is never taken for the draft's.
   Kept: a signature above a quote with unbalanced markup is not found,
   and the draft then needs both bodies, as one whose HTML was written
   another way. `/security-review`: `update_draft` given `body` and

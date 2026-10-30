@@ -199,6 +199,8 @@ func TestCreateDraftRefusals(t *testing.T) {
 			gapi.ClassInvalid},
 		{"quote a forward", map[string]any{"forward": plain.MessageIDs[0], "quote": true}, gapi.ClassInvalid},
 		{"signature and plain_only", map[string]any{"body": "x", "signature": true, "plain_only": true}, gapi.ClassInvalid},
+		{"signature in body as well", map[string]any{"body": "Hi.\n\nRae Reader\nExample Org\n\n> earlier", "signature": true},
+			gapi.ClassInvalid},
 		{"signature below one in body_html", map[string]any{"body": "x", "signature": true,
 			"body_html": `<p>x</p><div class="gmail_signature" data-smartmail="gmail_signature">Rae</div>`}, gapi.ClassInvalid},
 		{"forward and reply_to", map[string]any{"forward": plain.MessageIDs[0], "reply_to": plain.MessageIDs[1]}, gapi.ClassInvalid},
@@ -1281,7 +1283,6 @@ func TestUpdateDraftCarriesTheSignature(t *testing.T) {
 		{"from an address no longer sent as", alias, map[string]any{"body": "x", "signature": true}},
 		{"below one in body_html", d, map[string]any{"body": "x",
 			"body_html": `<p>x</p><div class="gmail_signature" data-smartmail="gmail_signature">Rae</div>`}},
-		{"below its own text in body", d, map[string]any{"body": "x\n\nRae"}},
 	} {
 		c.args["draft_id"], c.args["message_id"] = c.draft.DraftID, c.draft.MessageID
 		fake.ResetAccounting()
@@ -1355,6 +1356,12 @@ func TestTheSignaturesImageIsAPartOfItsOwn(t *testing.T) {
 	}
 	call(t, h, "update_draft", map[string]any{"draft_id": d.DraftID, "message_id": d.MessageID, "body": "Hello again."}, &d)
 	check("a new body", d.MessageID, 1, "<p>Hello again.</p>\n"+signed)
+	call(t, h, "update_draft", map[string]any{"draft_id": d.DraftID, "message_id": d.MessageID, "body": "Hello again.",
+		"signature": true}, &d)
+	check("the same signature set again", d.MessageID, 1, "<p>Hello again.</p>\n"+signed)
+	if d.Signature == nil || d.Signature.Outcome != "kept" || slices.Contains(d.Changed, "signature") {
+		t.Errorf("the same signature set again: %+v, changed %v; want kept, the signature unchanged", d.Signature, d.Changed)
+	}
 	call(t, h, "update_draft", map[string]any{"draft_id": d.DraftID, "message_id": d.MessageID, "body": "Hello, unsigned.",
 		"signature": false}, &d)
 	check("signature false", d.MessageID, 0, "<p>Hello, unsigned.</p>\n")
