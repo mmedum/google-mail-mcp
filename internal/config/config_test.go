@@ -205,7 +205,7 @@ func TestLoad(t *testing.T) {
 func TestEnvVars(t *testing.T) {
 	got := EnvVars()
 	want := []string{
-		"GMAIL_API_BASE", "GMAIL_CLIENT_SECRET", "GMAIL_CONFIG_DIR", "GMAIL_ENABLE_DESTRUCTIVE",
+		"GMAIL_API_BASE", "GMAIL_CLIENT_SECRET", "GMAIL_CONFIG_DIR", "GMAIL_DRAFT_SIGNATURE", "GMAIL_ENABLE_DESTRUCTIVE",
 		"GMAIL_ENABLE_SEND", "GMAIL_ENABLE_SETTINGS", "GMAIL_HTTP_TIMEOUT", "GMAIL_LOCAL_DIR", "GMAIL_LOG_FORMAT",
 		"GMAIL_LOG_LEVEL", "GMAIL_PROFILE", "GMAIL_READ_ONLY", "GMAIL_REFRESH_TOKEN", "GMAIL_REQUIRE_PROMPT",
 	}
@@ -290,14 +290,14 @@ func TestEmptyValuesMeanUnset(t *testing.T) {
 	c, err := build(t, map[string]string{
 		"GMAIL_LOCAL_DIR": "", "GMAIL_CLIENT_SECRET": "", "GMAIL_CONFIG_DIR": "",
 		"GMAIL_READ_ONLY": "false", "GMAIL_ENABLE_SEND": "", "GMAIL_ENABLE_DESTRUCTIVE": "false",
-		"GMAIL_ENABLE_SETTINGS": "false", "GMAIL_PROFILE": "", "GMAIL_LOG_LEVEL": "", "GMAIL_HTTP_TIMEOUT": "",
-		"GMAIL_API_BASE": "",
+		"GMAIL_ENABLE_SETTINGS": "false", "GMAIL_DRAFT_SIGNATURE": "", "GMAIL_PROFILE": "", "GMAIL_LOG_LEVEL": "",
+		"GMAIL_HTTP_TIMEOUT": "", "GMAIL_API_BASE": "",
 	})
 	if err != nil {
 		t.Fatalf("empty values refused: %v", err)
 	}
 	if c.LocalDir != "" || c.ClientSecretPath != "" || c.ReadOnly || c.EnableSend || c.EnableDestructive ||
-		c.EnableSettings || c.Profile != "default" {
+		c.EnableSettings || c.DraftSignature || c.Profile != "default" {
 		t.Errorf("empty values = %+v", c)
 	}
 	// Whitespace alone is also unset.
@@ -312,8 +312,8 @@ func TestEmptyValuesMeanUnset(t *testing.T) {
 func TestVarsDescribeWhatBuildDoes(t *testing.T) {
 	isolate(t)
 	vars := Vars()
-	if len(vars) < 14 {
-		t.Fatalf("Vars has %d variables; the server reads 14", len(vars))
+	if len(vars) < 15 {
+		t.Fatalf("Vars has %d variables; the server reads 15", len(vars))
 	}
 	var switches []string
 	for _, v := range vars {
@@ -328,7 +328,8 @@ func TestVarsDescribeWhatBuildDoes(t *testing.T) {
 			switches = append(switches, v.Name)
 		}
 	}
-	want := []string{"GMAIL_READ_ONLY", "GMAIL_ENABLE_SEND", "GMAIL_ENABLE_DESTRUCTIVE", "GMAIL_ENABLE_SETTINGS"}
+	want := []string{"GMAIL_READ_ONLY", "GMAIL_ENABLE_SEND", "GMAIL_ENABLE_DESTRUCTIVE", "GMAIL_ENABLE_SETTINGS",
+		"GMAIL_DRAFT_SIGNATURE"}
 	if !slices.Equal(switches, want) {
 		t.Errorf("switches %v, want %v", switches, want)
 	}
@@ -379,4 +380,16 @@ func readTwice(names []string) []string {
 	}
 	slices.Sort(twice)
 	return twice
+}
+
+// The signature default is the operator's switch: on with "true", off
+// unset or "false", which is the server's own default.
+func TestDraftSignatureIsASwitchThatStartsOff(t *testing.T) {
+	isolate(t)
+	for v, want := range map[string]bool{"": false, "false": false, "true": true, "1": true} {
+		c, err := build(t, map[string]string{"GMAIL_DRAFT_SIGNATURE": v})
+		if err != nil || c.DraftSignature != want {
+			t.Errorf("GMAIL_DRAFT_SIGNATURE=%q: %v, %v; want %v", v, c.DraftSignature, err, want)
+		}
+	}
 }

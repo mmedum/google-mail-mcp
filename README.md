@@ -70,11 +70,12 @@ gives the same bytes.
 
 Every release also carries a `.mcpb` bundle. Open it and Claude Desktop
 installs the server and asks for the settings a client's configuration
-would carry: your OAuth client JSON, the profile, read-only, the three
+would carry: your OAuth client JSON, the profile, read-only, the four
 switches and the attachment folder. Sending (`enable_send`), permanent
 deletion (`enable_destructive`) and settings changes (`enable_settings`)
 stay off unless you turn them on, and read-only cannot be combined with
-any of them. This server asks nobody before a call. Claude Desktop
+any of them. Signing new drafts (`draft_signature`) is off too, and
+registers no tool. This server asks nobody before a call. Claude Desktop
 approves each tool, with Allow once or Always allow, and a tool you
 always allow then runs unasked, so leave a switch off unless you need
 its tools.

@@ -1,0 +1,10 @@
+created draft r0000000000000025 · message 0000000000000026 · thread 0000000000000027 · labels: DRAFT
+update_draft needs draft_id r0000000000000025 and message_id 0000000000000026.
+signature: added below the body by default, since this server signs new drafts: the one Gmail holds for the From address, 6 lines and 1 image. signature: false leaves it out.
+recipients: 1 named in this call
+size: 3.3 KB, sent as JSON
+<<<untrusted-mail TESTTOKEN: draft headers in 0000000000000026>>>
+From: Rae Reader <reader@example.com>
+To: Chiara Oddleaf <chiara@example.com>
+Subject: Offsite venue
+<<<end-untrusted-mail TESTTOKEN>>>

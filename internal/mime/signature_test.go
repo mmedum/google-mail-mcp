@@ -168,12 +168,19 @@ func TestEditRawCarriesTheSignature(t *testing.T) {
 		{"HTML written by hand still needs both", "New.", hand, KeepShape, nil, nil, ErrBothBodies, "", "", "", ""},
 		{"new HTML keeps it", "New.", signed, KeepShape, ptrTo("<p><b>New.</b></p>"), nil, nil, newSigned,
 			"<p><b>New.</b></p>" + endAda, sigAda, sigAda},
-		{"HTML written by hand carries none", "New.", hand, KeepShape, ptrTo("<p><b>New.</b></p>"), nil, nil, "New.",
-			"<p><b>New.</b></p>", "", ""},
-		{"a block in a quoted reply is not the draft's", "New.", quotedBlock, KeepShape, ptrTo("<p>New.</p>"), nil, nil,
-			"New.", "<p>New.</p>", "", ""},
-		{"a block in a forward is not the draft's", "New.", forwardedBlock, KeepShape, ptrTo("<p>New.</p>"), nil, nil,
-			"New.", "<p>New.</p>", "", ""},
+		{"HTML written by hand will not drop its block unsaid", "New.", hand, KeepShape, ptrTo("<p><b>New.</b></p>"), nil,
+			ErrSignatureDropped, "", "", "", ""},
+		{"HTML written by hand, told to drop it", "New.", hand, KeepShape, ptrTo("<p><b>New.</b></p>"), ptrTo(""), nil,
+			"New.", "<p><b>New.</b></p>", sigAda, ""},
+		{"a block in a quoted reply is not the draft's", "New.", quotedBlock, KeepShape, ptrTo("<p>New.</p>"), nil,
+			ErrSignatureDropped, "", "", "", ""},
+		{"a block in a quoted reply, told to drop it", "New.", quotedBlock, KeepShape, ptrTo("<p>New.</p>"), ptrTo(""), nil,
+			"New.", "<p>New.</p>", `<div>Bo Vale<img src="https://example.com/pixel.png"></div>`, ""},
+		{"a block in a forward is not the draft's", "New.", forwardedBlock, KeepShape, ptrTo("<p>New.</p>"), nil,
+			ErrSignatureDropped, "", "", "", ""},
+		{"new HTML that keeps a block of its own", "New.", forwardedBlock, KeepShape,
+			ptrTo(`<p>New.</p><div class="gmail_signature">Bo</div>`), nil, nil, "New.",
+			`<p>New.</p><div class="gmail_signature">Bo</div>`, "", ""},
 		{"new HTML with a signature of its own", "New.", signed, KeepShape, ptrTo(`<p>New.</p>` + endAda), nil, ErrSignedHTML,
 			"", "", "", ""},
 		{"text gone from the plain part", "New.", textGone, KeepShape, nil, nil, ErrBothBodies, "", "", "", ""},
@@ -205,9 +212,9 @@ func TestEditRawCarriesTheSignature(t *testing.T) {
 				gotHTML = string(l.data)
 			}
 		}
-		if gotPlain != c.plain || gotHTML != c.htm || ed.Carried != c.carried || ed.Signature != c.now {
+		if gotPlain != c.plain || gotHTML != c.htm || ed.Found != c.carried || ed.Signature != c.now {
 			t.Errorf("%s: plain %q html %q carried %q signature %q; want %q %q %q %q", c.name, gotPlain, gotHTML,
-				ed.Carried, ed.Signature, c.plain, c.htm, c.carried, c.now)
+				ed.Found, ed.Signature, c.plain, c.htm, c.carried, c.now)
 		}
 	}
 }
@@ -235,8 +242,8 @@ func FuzzSignatureIsCarried(f *testing.F) {
 		raw := build(t, Outgoing{Text: out.Text, HTML: out.HTML, Inline: out.Inline})
 		for i := range 2 {
 			ed, err := EditRaw(raw, Edit{Text: ptrTo("New.")})
-			if err != nil || ed.Carried != want || ed.Signature != want {
-				t.Fatalf("signed %q below %q, edit %d: carried %q, wrote %q, err %v", sig, body, i, ed.Carried, ed.Signature, err)
+			if err != nil || ed.Found != want || ed.Signature != want {
+				t.Fatalf("signed %q below %q, edit %d: carried %q, wrote %q, err %v", sig, body, i, ed.Found, ed.Signature, err)
 			}
 			raw = ed.Raw
 		}
@@ -329,4 +336,41 @@ func TestEditRawPrunesImagesTheNewHTMLDoesNotShow(t *testing.T) {
 		t.Errorf("parts %s, %d pruned; want the plain text, the HTML, the three images still shown and the attachment, "+
 			"one pruned", got, ed.Pruned)
 	}
+}
+
+// anyBlock reads a sender's HTML, so a mark on an element that is not the
+// div before it, or after that div closed, is no block, never a panic.
+func TestAnyBlockOnlyTakesAMarkedDiv(t *testing.T) {
+	cases := []struct {
+		name, h, want string
+		ok            bool
+	}{
+		{"the person's own", `<p>x</p><div dir="ltr" class="gmail_signature" data-smartmail="gmail_signature"><b>Ada</b></div>`,
+			"<b>Ada</b>", true},
+		{"quoted, the class alone", `<blockquote><div class="gmail_signature">Bo</div></blockquote>`, "Bo", true},
+		{"a mark after the div before it closed",
+			`<div dir="ltr">hi</div><div class="gmail_quote"><div>a</div><span class="gmail_signature">x</span></div>`, "", false},
+		{"a mark on a span in a div", `<div><span class="gmail_signature">x</span></div>`, "", false},
+		{"a div left open", `<div class="gmail_signature">Bo`, "", false},
+		{"the mark as text", `<p>class="gmail_signature"</p>`, "", false},
+		{"none", `<p>x</p>`, "", false},
+	}
+	for _, c := range cases {
+		if got, ok := anyBlock(c.h); got != c.want || ok != c.ok {
+			t.Errorf("%s: %q %v, want %q %v", c.name, got, ok, c.want, c.ok)
+		}
+	}
+}
+
+func FuzzAnyBlock(f *testing.F) {
+	for _, s := range []string{`<div class="gmail_signature">Bo</div>`,
+		`<div>hi</div><div><div>a</div><span class="gmail_signature">x</span></div>`, `<div data-smartmail="gmail_signature">`} {
+		f.Add(s)
+	}
+	f.Fuzz(func(t *testing.T, h string) {
+		got, ok := anyBlock(h)
+		if !ok && got != "" || ok && !strings.Contains(h, got) {
+			t.Fatalf("anyBlock(%q) = %q, %v", h, got, ok)
+		}
+	})
 }

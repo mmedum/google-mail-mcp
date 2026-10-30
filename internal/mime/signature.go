@@ -27,17 +27,25 @@ type sigShape struct {
 	lead, open, close string
 }
 
+// The marks Gmail's composer puts on a signature block: the class on any
+// signature, its own or one in quoted mail, and the person's own, which
+// it writes on a signature it adds itself.
+const (
+	markClass = `class="gmail_signature"`
+	markOwn   = `data-smartmail="gmail_signature"`
+)
+
 var (
 	// sigEnding ends a message, after the delimiter.
 	sigEnding = sigShape{
 		lead:  `<div><br clear="all"></div><div><br></div><span class="gmail_signature_prefix">-- </span><br>`,
-		open:  `<div dir="ltr" class="gmail_signature" data-smartmail="gmail_signature">`,
+		open:  `<div dir="ltr" ` + markClass + ` ` + markOwn + `>`,
 		close: `</div>`,
 	}
 	// sigAbove sits above a quote, with no delimiter.
 	sigAbove = sigShape{
 		lead:  `<div><br clear="all"></div>`,
-		open:  `<div><div dir="ltr" class="gmail_signature" data-smartmail="gmail_signature">`,
+		open:  `<div><div dir="ltr" ` + markClass + ` ` + markOwn + `>`,
 		close: `</div></div>`,
 	}
 )
@@ -76,16 +84,10 @@ type InlineImage struct {
 // of its own (inlineImages). A signature does not go below one already
 // there: h that holds a block the composer marks as one is
 // ErrSignedHTML, and text that holds the signature's text, as whole
-// lines, is ErrSignedText. A signature of one line, such as a name a body
-// may sign off with, is not looked for.
+// lines, is ErrSignedText (SignedAlready).
 func Bodies(text string, h *string, sig, quote string) (OutBody, error) {
-	if sig != "" {
-		switch t := sigText(sig); {
-		case h != nil && strings.Contains(*h, `data-smartmail="gmail_signature"`):
-			return OutBody{}, ErrSignedHTML
-		case lineCount(t) > 1 && holdsLines(text, t):
-			return OutBody{}, ErrSignedText
-		}
+	if err := SignedAlready(text, h, sig); err != nil {
+		return OutBody{}, err
 	}
 	ending := quote == ""
 	b := OutBody{Text: below(below(text, sigLines(sig, ending)), quote)}
@@ -189,6 +191,50 @@ func SameSignature(a, b string) bool {
 		return normalizeNewlines(s)
 	}
 	return norm(a) == norm(b)
+}
+
+// SignedAlready says whether a body already carries the signature sig,
+// so a second would go below it: ErrSignedHTML when h holds a block the
+// composer marks as the person's own (markOwn), ErrSignedText when text
+// holds the signature's text as whole lines. A signature quoted from
+// someone else's mail carries the class alone and is no reason to
+// refuse, and a signature of one line, such as a name a body may sign
+// off with, is not looked for.
+func SignedAlready(text string, h *string, sig string) error {
+	if sig == "" {
+		return nil
+	}
+	switch t := sigText(sig); {
+	case h != nil && strings.Contains(*h, markOwn):
+		return ErrSignedHTML
+	case lineCount(t) > 1 && holdsLines(text, t):
+		return ErrSignedText
+	}
+	return nil
+}
+
+// anyBlock is the last signature block in h as Gmail's composer marks
+// one, the person's own or one in quoted mail: what the div carrying the
+// mark holds, to its matching close. A mark on another element, outside
+// the open tag of the div before it, or a div left open, is none. h may
+// be a sender's, so every bound is checked: the div before a mark can
+// close before the mark.
+func anyBlock(h string) (string, bool) {
+	at := max(strings.LastIndex(h, markClass), strings.LastIndex(h, markOwn))
+	if at < 0 {
+		return "", false
+	}
+	open := strings.LastIndex(h[:at], "<div")
+	gt := strings.IndexByte(h[at:], '>')
+	if open < 0 || gt < 0 || strings.ContainsRune(h[open:at], '>') {
+		return "", false
+	}
+	end, ok := divEnd(h, open)
+	from, to := at+gt+1, end-len("</div>")
+	if !ok || to < from {
+		return "", false
+	}
+	return h[from:to], true
 }
 
 // below is text with more below it after a blank line; either alone is

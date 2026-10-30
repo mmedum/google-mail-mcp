@@ -239,6 +239,9 @@ func FuzzEditRaw(f *testing.F) {
 	f.Add([]byte("Content-Type: multipart/mixed; boundary=b\n\n--b\n\n--b--"), "", "h", "0")
 	f.Add([]byte("Content-Type: multipart/alternative; boundary=b\n\n--b\nContent-Type: text/plain\n\nx\n\n-- \nAda\n"+
 		"--b\nContent-Type: text/html\n\n<p>x</p>\n"+sigEnding.lead+sigEnding.open+"<div>Ada</div>"+sigEnding.close+"\n--b--"), "y", "", "1")
+	f.Add([]byte("Content-Type: multipart/alternative; boundary=b\n\n--b\nContent-Type: text/plain\n\nhi\n"+
+		"--b\nContent-Type: text/html\n\n<div dir=\"ltr\">hi</div><div class=\"gmail_quote\"><div>a</div>"+
+		"<span class=\"gmail_signature\">x</span></div>\n--b--"), "y", "<p>y</p>", "1")
 	f.Fuzz(func(t *testing.T, raw []byte, text, html, remove string) {
 		e := Edit{Remove: []string{remove}, Add: []OutAttachment{attA}}
 		if text != "" {

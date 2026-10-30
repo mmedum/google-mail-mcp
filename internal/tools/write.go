@@ -5,6 +5,7 @@ import (
 
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 
+	"github.com/mmedum/google-mail-mcp/v3/internal/config"
 	"github.com/mmedum/google-mail-mcp/v3/internal/mime"
 	"github.com/mmedum/google-mail-mcp/v3/internal/model"
 	"github.com/mmedum/google-mail-mcp/v3/internal/render"
@@ -13,6 +14,17 @@ import (
 
 // dryRunNote ends the description of every write.
 const dryRunNote = " dry_run shows what the call would do and changes nothing."
+
+// signatureNote says, in create_draft's description, whether this server
+// signs a new draft when the call leaves signature out (§7.4), so the
+// model knows not to write the signature itself.
+func signatureNote(c config.Config) string {
+	if !c.DraftSignature {
+		return " A draft is signed only with signature: true."
+	}
+	return " This server signs a new draft with the From address's Gmail signature unless signature is false; a " +
+		"reply or forward only with signature: true. Leave the signature out of body."
+}
 
 // CreateDraftIn is a new draft or a reply.
 type CreateDraftIn struct {
@@ -32,7 +44,7 @@ type CreateDraftIn struct {
 	ReplyAll      bool     `json:"reply_all,omitempty" jsonschema:"with a reply, also address the parent's other recipients, leaving out this account's own addresses"`
 	Quote         bool     `json:"quote,omitempty" jsonschema:"with a reply, put the parent's text below the body: a blank line, a line saying when and who wrote it, then each of its lines starting with '> '. A parent with only HTML is quoted as converted, its links reduced to their host. 20 more units for each part of the parent's text Gmail stored apart. Not with body_html. A later update_draft with body replaces the quote too"`
 	Forward       string   `json:"forward,omitempty" jsonschema:"a message id to forward, or rfc822: followed by its Message-ID: the message goes attached as <subject>.eml, unchanged but for its Bcc header, which is left out. The subject is Fwd: and the original's unless subject is given. Not with reply_to, reply_to_thread or reply_all"`
-	Signature     bool     `json:"signature,omitempty" jsonschema:"true puts the signature Gmail holds for the From address below the body, links and images included, as Gmail's web composer adds it to a new email; with quote, between the body and the quote. Gmail holds one signature per address, the one for new emails, so a reply gets that one too. When the address has none, the draft is saved without one and the result says so. The signature never appears in the result. Not with plain_only"`
+	Signature     *bool    `json:"signature,omitempty" jsonschema:"true puts the signature Gmail holds for the From address below the body, links and images included, as Gmail's web composer adds it to a new email; with quote, between the body and the quote. Gmail holds one signature per address, the one for new emails, so a reply gets that one too. When the address has none, the draft is saved without one and the result says so. false leaves it out. Left out, the server's setting decides for a new draft, which the tool's description states; a reply or forward goes unsigned. Never write the signature into body: the server refuses a second one. The signature never appears in the result. true not with plain_only"`
 	DryRun        bool     `json:"dry_run,omitempty" jsonschema:"build the draft and report it without saving"`
 }
 
@@ -46,9 +58,9 @@ type UpdateDraftIn struct {
 	Bcc       []string `json:"bcc,omitempty" jsonschema:"replaces the Bcc recipients; [] clears them; left out, they stay"`
 	Subject   *string  `json:"subject,omitempty" jsonschema:"replaces the subject; on a reply, a changed subject may take it out of its thread"`
 	Body      *string  `json:"body,omitempty" jsonschema:"replaces the plain-text body, a quote create_draft put below it included, written as for create_draft: each paragraph on one line, never broken to a width. A signature the draft carries stays below it, so leave the signature out of body. The draft keeps its shape: plain text alone stays alone, and an HTML version made from the old body is made again (plain_only changes that); HTML written another way needs body_html too"`
-	BodyHTML  *string  `json:"body_html,omitempty" jsonschema:"replaces the HTML body, or adds one beside the plain text; a signature the draft carries below an HTML version made from its text goes below it unless signature is false, and HTML written another way takes it again with signature: true"`
+	BodyHTML  *string  `json:"body_html,omitempty" jsonschema:"replaces the HTML body, or adds one beside the plain text. A signature the draft carries below an HTML version made from its text goes below it unless signature is false. When the draft's HTML was written another way and holds a signature block, signature must say what to do, or the update is refused [conflict]: true puts Gmail's below the new HTML, false writes it without one"`
 	PlainOnly *bool    `json:"plain_only,omitempty" jsonschema:"with body: true drops the HTML version made from the old body, and a signature below it, false adds one made from the new; left out, the draft keeps its shape"`
-	Signature *bool    `json:"signature,omitempty" jsonschema:"with body: true puts the signature Gmail holds for the draft's From address below the new body, replacing one the draft carries, for 1 more unit; false leaves the draft's signature out; left out, a signature the draft carries stays below the new body"`
+	Signature *bool    `json:"signature,omitempty" jsonschema:"with body: true puts the signature Gmail holds for the draft's From address below the new body, replacing one the draft carries, for 1 more unit; false leaves the draft's signature out; left out, a signature the draft carries stays below the new body, and new body_html on a draft whose HTML holds a signature block it cannot carry is refused [conflict] until signature says which"`
 	// AddAttachments are base names in GMAIL_LOCAL_DIR, as create_draft's.
 	AddAttachments    []string `json:"add_attachments,omitempty" jsonschema:"names of files in GMAIL_LOCAL_DIR to attach; a name, never a path"`
 	RemoveAttachments []string `json:"remove_attachments,omitempty" jsonschema:"part_ids of attachments to remove, as get_draft lists them; attachments not named stay"`
@@ -104,7 +116,9 @@ type ForwardOut struct {
 // DraftSignatureOut is the send-as signature below a draft's body. Its
 // text is never part of a result.
 type DraftSignatureOut struct {
-	Outcome     string `json:"outcome" jsonschema:"added, replaced, kept (the one the draft carried, below the new body), removed, or none_set: asked for, but Gmail holds no signature for the From address, so the draft has none"`
+	Outcome     string `json:"outcome" jsonschema:"added, replaced, kept (the one the draft carried, below the new body), removed, none_set (asked for, but Gmail holds no signature for the From address, so the draft has none), or skipped (the server's default left out, for reason)"`
+	ByDefault   bool   `json:"by_default,omitempty" jsonschema:"the server's setting, not the call, asked for the signature"`
+	Reason      string `json:"reason,omitempty" jsonschema:"why the default was skipped: plain_only, in_body (the body already holds the signature's text) or in_body_html (body_html already holds a signature block)"`
 	Lines       int    `json:"lines,omitempty" jsonschema:"lines of text the signature shows"`
 	Images      int    `json:"images,omitempty"`
 	HiddenChars int    `json:"hidden_chars,omitempty" jsonschema:"characters of the signature a reader would not see, which go out as Gmail's composer sends them"`
@@ -241,12 +255,12 @@ func registerWrite(s *mcp.Server, d Deps) {
 		"draft in the original's thread; the result says whether it did. " +
 		"Addresses you add are extra recipients. Attachments are files the person put in GMAIL_LOCAL_DIR, named, never a " +
 		"path. About 11 units, plus 20 for reply_to or forward, or 40 for reply_to_thread, and 20 for each part of a " +
-		"quoted parent's text Gmail stored apart." + dryRunNote + untrustedNote},
+		"quoted parent's text Gmail stored apart." + signatureNote(d.Config) + dryRunNote + untrustedNote},
 		func(ctx context.Context, in CreateDraftIn) (DraftWriteOut, error) {
 			dw, err := svc.CreateDraft(ctx, service.Compose{To: in.To, Cc: in.Cc, Bcc: in.Bcc, Subject: in.Subject,
 				Body: in.Body, HTML: in.BodyHTML, PlainOnly: in.PlainOnly, Attachments: in.Attachments, From: in.From, ReplyTo: in.ReplyTo,
 				ReplyToThread: in.ReplyToThread, ReplyAll: in.ReplyAll, Quote: in.Quote, Forward: in.Forward, Signature: in.Signature,
-				LocalDir: d.Config.LocalDir})
+				SignByDefault: d.Config.DraftSignature, LocalDir: d.Config.LocalDir})
 			if err != nil {
 				return DraftWriteOut{}, err
 			}
@@ -368,7 +382,8 @@ func draftWriteOut(dw model.DraftWrite) DraftWriteOut {
 		out.Forwarded = &ForwardOut{MessageID: f.MessageID, ThreadID: f.ThreadID, Bytes: f.Bytes, BccRemoved: f.BccRemoved}
 	}
 	if s := dw.Signature; s != nil {
-		out.Signature = &DraftSignatureOut{Outcome: string(s.Outcome), Lines: s.Lines, Images: s.Images,
+		out.Signature = &DraftSignatureOut{Outcome: string(s.Outcome), ByDefault: s.ByDefault, Reason: s.Reason,
+			Lines: s.Lines, Images: s.Images,
 			HiddenChars: mime.HiddenTotal(s.Hidden)}
 	}
 	return out

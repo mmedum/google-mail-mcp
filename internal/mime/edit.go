@@ -82,9 +82,13 @@ var (
 	// ErrSignedHTML is HTML that already holds a signature block, below
 	// which a signature would go again.
 	ErrSignedHTML = errors.New("the HTML already holds a signature")
-	// ErrSignedText is text that already ends with the signature's text,
+	// ErrSignedText is text that already holds the signature's text,
 	// below which the signature would go again.
-	ErrSignedText = errors.New("the text already ends with the signature")
+	ErrSignedText = errors.New("the text already holds the signature")
+	// ErrSignatureDropped is new HTML for a message whose HTML holds a
+	// signature block it cannot carry, given with no word on the
+	// signature: replacing the HTML would drop what the caller cannot see.
+	ErrSignatureDropped = errors.New("the new HTML would drop the signature the message's HTML holds")
 )
 
 // Edited is a message an edit wrote, and what the edit did to its body.
@@ -93,10 +97,10 @@ type Edited struct {
 	// HTMLChanged is set when the HTML version changed, as given or as
 	// HTMLMode made it.
 	HTMLChanged bool
-	// Signature is the signature below the new text, and Carried the one
-	// the old text carried, each "" for none, and both "" for an edit
-	// that gave no text.
-	Signature, Carried string
+	// Signature is the signature below the new text, and Found the
+	// signature block the old HTML held, each "" for none, and both ""
+	// for an edit that gave no text.
+	Signature, Found string
 	// Pruned counts the inline parts new HTML no longer shows, taken out,
 	// besides those of a signature the edit dropped or replaced.
 	Pruned int
@@ -151,7 +155,7 @@ func EditRaw(raw []byte, e Edit) (Edited, error) {
 	}
 	pruned := 0
 	if b.htm != nil {
-		pruned = pruneUnshown(root, cids(*b.htm), cids(b.carried))
+		pruned = pruneUnshown(root, cids(*b.htm), cids(b.found))
 	}
 	if len(e.Add) > 0 {
 		var atts []*entity
@@ -167,7 +171,7 @@ func EditRaw(raw []byte, e Edit) (Edited, error) {
 	var out bytes.Buffer
 	out.Grow(root.size())
 	root.write(&out)
-	return Edited{Raw: out.Bytes(), HTMLChanged: b.drop || b.htm != nil, Signature: b.sig, Carried: b.carried,
+	return Edited{Raw: out.Bytes(), HTMLChanged: b.drop || b.htm != nil, Signature: b.sig, Found: b.found,
 		Pruned: pruned}, nil
 }
 
@@ -258,10 +262,10 @@ func swap(root, old, with *entity) *entity {
 // stays alone; and the signature below the new text and the one the old
 // text carried.
 type bodies struct {
-	text, htm    *string
-	inline       []InlineImage
-	drop         bool
-	sig, carried string
+	text, htm  *string
+	inline     []InlineImage
+	drop       bool
+	sig, found string
 }
 
 // bodiesFor is what an edit writes for the body: the caller's text and
@@ -275,15 +279,35 @@ func (e Edit) bodiesFor(plain, html *entity) (bodies, error) {
 	if e.Text == nil {
 		return bodies{htm: e.HTML}, nil
 	}
-	b := bodies{text: e.Text}
-	var made bool
-	b.carried, made = carried(plain, html)
-	b.sig = b.carried
+	var p, old string
+	if plain != nil {
+		p = plainText(plain.decoded())
+	}
+	if html != nil {
+		old = htmlText(html.decoded())
+	}
+	own, made := carried(p, old, plain != nil && html != nil)
+	// found is named in the outcome whether or not it is the message's
+	// own to carry; only own is ever written back. The message's own is
+	// found by its exact markup, whatever the signature's own divs.
+	found := own
+	if found == "" {
+		found, _ = anyBlock(old)
+	}
+	b := bodies{text: e.Text, sig: own, found: found}
 	if e.Signature != nil {
 		b.sig = *e.Signature
 	}
 	switch {
 	case e.HTML != nil:
+		if e.Signature == nil && own == "" && found != "" {
+			if _, keeps := anyBlock(*e.HTML); !keeps {
+				return b, ErrSignatureDropped
+			}
+			// The new HTML keeps a block of its own: the caller's, as
+			// given, and nothing the server removed.
+			b.found = ""
+		}
 	case html != nil && !made:
 		if e.HTMLMode == PlainOnly {
 			return b, ErrDropsHTML
@@ -319,11 +343,10 @@ func (e Edit) bodiesFor(plain, html *entity) (bodies, error) {
 // message's own only when the rest is that made version, so a block in
 // someone else's mail, quoted or forwarded in HTML written another way,
 // is never carried.
-func carried(plain, html *entity) (sig string, made bool) {
-	if plain == nil || html == nil {
+func carried(p, h string, pair bool) (sig string, made bool) {
+	if !pair {
 		return "", false
 	}
-	p, h := plainText(plain.decoded()), htmlText(html.decoded())
 	b, ok := findBlock(h)
 	if !ok {
 		return "", madeOf(p, h)

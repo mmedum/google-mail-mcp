@@ -15,6 +15,20 @@ lifted verbatim.
 
 ## [Unreleased]
 
+## [3.3.0] - 2026-10-30
+
+### Added
+
+- `GMAIL_DRAFT_SIGNATURE=true`, off by default, signs a new draft with the From address's Gmail signature when `create_draft` leaves `signature` out; a reply or forward only when asked, and a body that already carries the signature goes without it.
+
+### Changed
+
+- `signature` on `create_draft` is `true`, `false` or left out, and the result's `signature` adds `by_default` and `reason`.
+
+### Fixed
+
+- `update_draft` refuses new `body_html` that would drop a signature the draft's HTML holds, unless `signature` says what to do; it was dropped silently.
+
 ## [3.2.0] - 2026-10-30
 
 ### Added
@@ -260,7 +274,8 @@ lifted verbatim.
 - Repository gates run by `make check` and CI: leaks, pins, error classes, API coverage, schema diff, smoke, staleness and more.
 - Signed release archives for six platforms with SBOMs, build provenance, a Claude Desktop bundle and an MCP registry entry.
 
-[Unreleased]: https://github.com/mmedum/google-mail-mcp/compare/v3.2.0...HEAD
+[Unreleased]: https://github.com/mmedum/google-mail-mcp/compare/v3.3.0...HEAD
+[3.3.0]: https://github.com/mmedum/google-mail-mcp/compare/v3.2.0...v3.3.0
 [3.2.0]: https://github.com/mmedum/google-mail-mcp/compare/v3.1.2...v3.2.0
 [3.1.2]: https://github.com/mmedum/google-mail-mcp/compare/v3.1.1...v3.1.2
 [3.1.1]: https://github.com/mmedum/google-mail-mcp/compare/v3.1.0...v3.1.1
