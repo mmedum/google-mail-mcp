@@ -1,6 +1,10 @@
 package model
 
-import "github.com/mmedum/google-mail-mcp/v3/internal/mime"
+import (
+	"strings"
+
+	"github.com/mmedum/google-mail-mcp/v3/internal/mime"
+)
 
 // The results of writes. Each says the state the write produced, read
 // from Gmail's answer rather than assumed from the request (§4.12), and
@@ -82,6 +86,48 @@ type Forward struct {
 	Joined bool
 }
 
+// SignatureOutcome is what a draft write did with the send-as signature.
+type SignatureOutcome string
+
+// Signature outcomes.
+const (
+	SignatureAdded    SignatureOutcome = "added"
+	SignatureReplaced SignatureOutcome = "replaced"
+	// SignatureKept is the one the draft carried, below its new body.
+	SignatureKept    SignatureOutcome = "kept"
+	SignatureRemoved SignatureOutcome = "removed"
+	// SignatureNoneSet is a signature asked for where Gmail holds none
+	// for the draft's From address, so the draft has none.
+	SignatureNoneSet SignatureOutcome = "none_set"
+)
+
+// DraftSignature is the send-as signature below a draft's body (§7.4):
+// what the write did with it, and what it shows. The signature itself
+// is never part of a result.
+type DraftSignature struct {
+	Outcome SignatureOutcome
+	// Dropped is set on SignatureNoneSet when the draft carried one,
+	// which it no longer does.
+	Dropped bool
+	// Lines counts its lines of text, and Images its images.
+	Lines, Images int
+	// Hidden is what a reader would not see, which goes out as Gmail's
+	// composer sends it.
+	Hidden []mime.HiddenCount
+}
+
+// NewDraftSignature describes the signature a write left below the body.
+func NewDraftSignature(o SignatureOutcome, sigHTML string) *DraftSignature {
+	t := mime.HTMLToText([]byte(sigHTML))
+	s := &DraftSignature{Outcome: o, Images: t.Images, Hidden: t.Hidden}
+	for l := range strings.SplitSeq(t.Text, "\n") {
+		if strings.TrimSpace(l) != "" {
+			s.Lines++
+		}
+	}
+	return s
+}
+
 // DraftWrite is a created, updated or deleted draft.
 type DraftWrite struct {
 	// Op is "create", "update" or "delete".
@@ -110,6 +156,8 @@ type DraftWrite struct {
 	Changed []string
 	Reply   *Reply
 	Forward *Forward
+	// Signature is set when the write asked for, kept or removed one.
+	Signature *DraftSignature
 	// Bytes is the size of the message sent to Gmail, and Upload whether
 	// it went as a media upload (§7.4).
 	Bytes  int
@@ -238,7 +286,7 @@ var Verbs = []Verb{
 // DraftFields are the fields an update_draft can change, as Changed
 // names them; LabelFields are update_label's.
 var (
-	DraftFields = []string{"to", "cc", "bcc", "subject", "body", "body_html", "attachments"}
+	DraftFields = []string{"to", "cc", "bcc", "subject", "body", "body_html", "signature", "attachments"}
 	LabelFields = []string{"name", "in_label_list", "in_message_list", "color"}
 )
 

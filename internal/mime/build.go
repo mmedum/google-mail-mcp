@@ -44,7 +44,10 @@ type Outgoing struct {
 	// line endings written as CRLF, which RFC 5322 requires.
 	Text string
 	// HTML, when set, is sent beside Text as multipart/alternative.
-	HTML        string
+	HTML string
+	// Inline are the images HTML shows from parts of their own, which go
+	// beside it in multipart/related (RFC 2387).
+	Inline      []InlineImage
 	Attachments []OutAttachment
 	// MessageID is the Message-ID header, with its brackets. Required:
 	// it is what a send is settled by (§4.3).
@@ -135,7 +138,7 @@ func Build(o Outgoing) ([]byte, error) {
 	add("References", strings.Join(o.References, " "))
 	add("MIME-Version", "1.0")
 
-	root := bodyEntity(o.Text, o.HTML)
+	root := bodyEntity(o.Text, o.HTML, o.Inline)
 	if len(o.Attachments) > 0 {
 		kids := []*entity{root}
 		for _, a := range o.Attachments {
@@ -535,12 +538,44 @@ func isASCIIAlnum(c byte) bool {
 }
 
 // bodyEntity is the plain part, or plain and HTML as alternatives.
-func bodyEntity(text, html string) *entity {
+func bodyEntity(text, html string, inline []InlineImage) *entity {
 	plain := textEntity("plain", text)
 	if html == "" {
 		return plain
 	}
-	return multipartEntity("alternative", plain, textEntity("html", html))
+	return multipartEntity("alternative", plain, htmlEntity(html, inline))
+}
+
+// htmlEntity is an HTML version, in multipart/related with the images it
+// shows from parts of their own when it has any (RFC 2387).
+func htmlEntity(html string, inline []InlineImage) *entity {
+	h := textEntity("html", html)
+	if len(inline) == 0 {
+		return h
+	}
+	children := []*entity{h}
+	for _, img := range inline {
+		children = append(children, inlineEntity(img))
+	}
+	rel := multipartEntity("related", children...)
+	rel.headers = []rawHeader{{name: "Content-Type",
+		text: "Content-Type: multipart/related; type=\"text/html\"; boundary=\"" + rel.boundary + "\""}}
+	return rel
+}
+
+// inlineEntity is an image part an HTML version shows by its Content-ID.
+func inlineEntity(img InlineImage) *entity {
+	return &entity{
+		mediaType:   img.MediaType,
+		disposition: "inline",
+		headers: []rawHeader{
+			{name: "Content-Type", text: "Content-Type: " + img.MediaType},
+			{name: "Content-Transfer-Encoding", text: "Content-Transfer-Encoding: base64"},
+			{name: "Content-ID", text: "Content-ID: <" + img.ContentID + ">"},
+			{name: "Content-Disposition", text: "Content-Disposition: inline"},
+		},
+		body: base64Lines(img.Content),
+	}
 }
 
 func multipartEntity(subtype string, children ...*entity) *entity {

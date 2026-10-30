@@ -50,6 +50,20 @@ func needSignature(e *env) string {
 	return e.signatureSkip
 }
 
+// needRunSignature keeps a step that puts the address's signature in a
+// draft to a run whose own signature is in place: after a failed set,
+// the draft would carry the account's real one, and the transcript
+// with it.
+func needRunSignature(e *env) string {
+	if why := needSignature(e); why != "" {
+		return why
+	}
+	if !e.signatureSet {
+		return "the run's own signature is not in place, so a draft would carry the account's"
+	}
+	return ""
+}
+
 // keptSettings are the account's own settings as the run found them, and
 // where a copy of them waits until they are put back.
 type keptSettings struct {
@@ -253,12 +267,71 @@ var settingsSteps = []step{
 			if err := want(text, "set the signature of"); err != nil {
 				return err
 			}
-			return want(text, "Synthetic signature for "+e.seed.label.name+"\nline two")
+			if err := want(text, "Synthetic signature for "+e.seed.label.name+"\nline two"); err != nil {
+				return err
+			}
+			e.signatureSet = true
+			return nil
 		}},
 
+	// The signature is the one the run just set, so the draft that takes
+	// it holds only what the run wrote. Gmail must keep the markup around
+	// it as written, or the update cannot find it to carry over (§7.4).
+	{name: "a draft takes the address's signature", tool: "create_draft", needs: needRunSignature,
+		args: func(e *env) map[string]any {
+			// No from: the draft goes from the default address, whose
+			// signature the run set.
+			return map[string]any{"to": []any{rcptTo}, "subject": e.seed.label.name + " signed", "body": "A signed draft.",
+				"signature": true}
+		},
+		check: func(e *env, text string) error {
+			var err error
+			if e.signedDraft, e.signedMessage, err = e.composed(text); err != nil {
+				return err
+			}
+			return want(text, "signature: added below the body, the one Gmail holds for the From address: 2 lines.")
+		}},
+
+	{name: "read the signed draft back", tool: "get_draft", needs: needRunSignature,
+		args: func(e *env) map[string]any { return map[string]any{"draft_id": e.signedDraft, "show_quoted": true} },
+		check: func(e *env, text string) error {
+			return want(text, "A signed draft.\n\n-- \nSynthetic signature for "+e.seed.label.name+"\nline two")
+		}},
+
+	{name: "a new body keeps the signature", tool: "update_draft", needs: needRunSignature,
+		args: func(e *env) map[string]any {
+			return map[string]any{"draft_id": e.signedDraft, "message_id": e.signedMessage, "body": "A revised signed draft."}
+		},
+		check: func(e *env, text string) error {
+			var err error
+			if _, e.signedMessage, _, err = e.updated(text); err != nil {
+				return err
+			}
+			return want(text, "signature: the draft's own, kept below the new body: 2 lines.")
+		}},
+
+	{name: "signature false takes it out", tool: "update_draft", needs: needRunSignature,
+		args: func(e *env) map[string]any {
+			return map[string]any{"draft_id": e.signedDraft, "message_id": e.signedMessage, "body": "An unsigned draft.",
+				"signature": false}
+		},
+		check: func(e *env, text string) error {
+			var err error
+			if _, e.signedMessage, _, err = e.updated(text); err != nil {
+				return err
+			}
+			return want(text, "signature: removed from the draft.")
+		}},
+
+	deleteStepDraft("delete the signed draft", func(e *env) (string, string) { return e.signedDraft, e.signedMessage }).
+		needing(needRunSignature),
+
 	{name: "clear the signature", tool: "update_signature", quiet: true, needs: needSignature,
-		args:  func(*env) map[string]any { return map[string]any{"signature": ""} },
-		check: func(_ *env, text string) error { return want(text, "signature after: none") }},
+		args: func(*env) map[string]any { return map[string]any{"signature": ""} },
+		check: func(e *env, text string) error {
+			e.signatureSet = false
+			return want(text, "signature after: none")
+		}},
 
 	// The filter has every criterion and the common actions, and matches
 	// only mail from the run's own sender, which never comes. The dry run

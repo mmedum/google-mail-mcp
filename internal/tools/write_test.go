@@ -2,14 +2,19 @@ package tools_test
 
 import (
 	"bytes"
+	"encoding/json"
+	"log/slog"
 	"maps"
 	"os"
 	"path/filepath"
+	"reflect"
 	"regexp"
 	"slices"
 	"strconv"
 	"strings"
 	"testing"
+
+	"github.com/modelcontextprotocol/go-sdk/mcp"
 
 	"github.com/mmedum/google-mail-mcp/v3/internal/config"
 	"github.com/mmedum/google-mail-mcp/v3/internal/gapi"
@@ -193,6 +198,11 @@ func TestCreateDraftRefusals(t *testing.T) {
 		{"quote and body_html", map[string]any{"reply_to": plain.MessageIDs[0], "quote": true, "body": "x", "body_html": "<p>x</p>"},
 			gapi.ClassInvalid},
 		{"quote a forward", map[string]any{"forward": plain.MessageIDs[0], "quote": true}, gapi.ClassInvalid},
+		{"signature and plain_only", map[string]any{"body": "x", "signature": true, "plain_only": true}, gapi.ClassInvalid},
+		{"signature in body as well", map[string]any{"body": "Hi.\n\nRae Reader\nExample Org\n\n> earlier", "signature": true},
+			gapi.ClassInvalid},
+		{"signature below one in body_html", map[string]any{"body": "x", "signature": true,
+			"body_html": `<p>x</p><div class="gmail_signature" data-smartmail="gmail_signature">Rae</div>`}, gapi.ClassInvalid},
 		{"forward and reply_to", map[string]any{"forward": plain.MessageIDs[0], "reply_to": plain.MessageIDs[1]}, gapi.ClassInvalid},
 		{"forward and reply_to_thread", map[string]any{"forward": plain.MessageIDs[0], "reply_to_thread": plain.ThreadID}, gapi.ClassInvalid},
 		{"forward and reply_all", map[string]any{"forward": plain.MessageIDs[0], "reply_all": true}, gapi.ClassInvalid},
@@ -1097,4 +1107,262 @@ func TestDryRunPredictsLabelsAfter(t *testing.T) {
 			t.Errorf("%s: the write left %v, the dry run said %v", c.name, got, c.want)
 		}
 	}
+}
+
+// raeEnding is the fake account's own signature below a body, as Gmail's
+// composer writes one that ends a message.
+const raeEnding = `<div><br clear="all"></div><div><br></div><span class="gmail_signature_prefix">-- </span><br>` +
+	`<div dir="ltr" class="gmail_signature" data-smartmail="gmail_signature"><div>Rae Reader<br>Example Org</div></div>`
+
+// stored is a stored message's plain text and HTML version, read by the
+// standard library rather than by internal/mime.
+func stored(t *testing.T, fake *gmailtest.Server, messageID string) (text, html string) {
+	t.Helper()
+	raw, ok := fake.Raw(messageID)
+	if !ok {
+		t.Fatalf("no stored message %s", messageID)
+	}
+	text, _ = gmailtest.PlainPart(raw)
+	html, _ = gmailtest.HTMLPart(raw)
+	return text, html
+}
+
+// setSignature sets a send-as address's signature, as a person would in
+// Gmail's settings: the account's own is the first, the alias the second.
+func setSignature(fake *gmailtest.Server, i int, html string) {
+	fake.UpdateSettings(func(s *gmailtest.Settings) { s.SendAs[i].Signature = html })
+}
+
+// signature puts the signature Gmail holds for the From address below
+// the body, as Gmail's composer writes one, for no read beyond the
+// sendAs.list create_draft makes anyway; without it a draft is as it was.
+func TestCreateDraftSignsWhenAsked(t *testing.T) {
+	h, fake := connectFake(t, config.Config{})
+	const signed = "Hello.\n\n-- \nRae Reader\nExample Org\n"
+	added := &tools.DraftSignatureOut{Outcome: "added", Lines: 2}
+	cases := []struct {
+		name        string
+		args        map[string]any
+		html, plain string
+		sig         *tools.DraftSignatureOut
+	}{
+		{"not asked", map[string]any{"body": "Hello."}, "<p>Hello.</p>\n", "Hello.", nil},
+		{"the default address's", map[string]any{"body": "Hello.", "signature": true}, "<p>Hello.</p>\n" + raeEnding, signed, added},
+		{"an address with none", map[string]any{"body": "Hello.", "signature": true, "from": gmailtest.AliasAddress},
+			"<p>Hello.</p>\n", "Hello.", &tools.DraftSignatureOut{Outcome: "none_set"}},
+		{"in body_html, before its close", map[string]any{"body": "Hello.", "signature": true,
+			"body_html": "<html><body><p>Hello.</p></body></html>"},
+			"<html><body><p>Hello.</p>" + raeEnding + "</body></html>", signed, added},
+	}
+	for _, c := range cases {
+		fake.ResetAccounting()
+		var out tools.DraftWriteOut
+		call(t, h, "create_draft", c.args, &out)
+		if text, html := stored(t, fake, out.MessageID); text != c.plain || html != c.html {
+			t.Errorf("%s: stored %q and %q, want %q and %q", c.name, text, html, c.plain, c.html)
+		}
+		if !reflect.DeepEqual(out.Signature, c.sig) {
+			t.Errorf("%s: signature %+v, want %+v", c.name, out.Signature, c.sig)
+		}
+		if n := len(fake.CallsOf("gmail.users.settings.sendAs.list")); n != 1 || out.Units != 11 {
+			t.Errorf("%s: %d sendAs.list reads and %d units, want 1 and 11", c.name, n, out.Units)
+		}
+	}
+
+	setSignature(fake, 1, "<p>Rae, projects</p>")
+	var alias tools.DraftWriteOut
+	call(t, h, "create_draft", map[string]any{"body": "Hello.", "signature": true, "from": gmailtest.AliasAddress}, &alias)
+	if got, want := storedHTML(t, fake, alias.MessageID), "<p>Hello.</p>\n"+
+		`<div><br clear="all"></div><div><br></div><span class="gmail_signature_prefix">-- </span><br>`+
+		`<div dir="ltr" class="gmail_signature" data-smartmail="gmail_signature"><p>Rae, projects</p></div>`; got != want {
+		t.Errorf("from the alias: stored HTML %q, want %q", got, want)
+	}
+}
+
+// Above a quote the signature carries no delimiter, as Gmail writes it
+// there, so a reader that drops a signature does not drop the quote.
+func TestCreateDraftSignsAboveTheQuote(t *testing.T) {
+	h, fake := connectFake(t, config.Config{})
+	parentID := fake.Scenario(gmailtest.ScenarioPlainThread).MessageIDs[2]
+	var out tools.DraftWriteOut
+	call(t, h, "create_draft", map[string]any{"reply_to": parentID, "body": "Thanks.", "quote": true, "signature": true}, &out)
+	text, html := stored(t, fake, out.MessageID)
+	if !strings.HasPrefix(text, "Thanks.\n\nRae Reader\nExample Org\n\nOn ") || strings.Contains(text, "\n-- \n") {
+		t.Errorf("stored text %q, want the body, the signature without a delimiter, then the quote", text)
+	}
+	if want := "<p>Thanks.</p>\n" + `<div><br clear="all"></div><div>` +
+		`<div dir="ltr" class="gmail_signature" data-smartmail="gmail_signature"><div>Rae Reader<br>Example Org</div></div></div><p>On `; !strings.HasPrefix(html, want) {
+		t.Errorf("stored HTML %q, want it to start %q", html, want)
+	}
+}
+
+// A new body keeps the signature the draft carries; signature: false
+// takes it out, true puts the address's current one there for one
+// sendAs.list, and plain_only takes it with the HTML version.
+func TestUpdateDraftCarriesTheSignature(t *testing.T) {
+	h, fake := connectFake(t, config.Config{})
+	var d tools.DraftWriteOut
+	call(t, h, "create_draft", map[string]any{"to": []any{"a@example.com"}, "body": "Hello.", "signature": true}, &d)
+	update := func(args map[string]any) tools.DraftWriteOut {
+		t.Helper()
+		args["draft_id"], args["message_id"] = d.DraftID, d.MessageID
+		fake.ResetAccounting()
+		var out tools.DraftWriteOut
+		call(t, h, "update_draft", args, &out)
+		if !out.DryRun {
+			d = out
+		}
+		return out
+	}
+	steps := []struct {
+		name          string
+		args          map[string]any
+		html, plain   string
+		sig           *tools.DraftSignatureOut
+		changed       string
+		units, sendAs int
+	}{
+		{"a new body keeps it", map[string]any{"body": "Revised."}, "<p>Revised.</p>\n" + raeEnding,
+			"Revised.\n\n-- \nRae Reader\nExample Org\n", &tools.DraftSignatureOut{Outcome: "kept", Lines: 2}, "body,body_html", 35, 0},
+		{"false takes it out", map[string]any{"body": "Plain.", "signature": false}, "<p>Plain.</p>\n", "Plain.",
+			&tools.DraftSignatureOut{Outcome: "removed"}, "body,body_html,signature", 35, 0},
+		{"a dry run saves nothing", map[string]any{"body": "Dry.", "signature": true, "dry_run": true}, "<p>Plain.</p>\n", "Plain.",
+			&tools.DraftSignatureOut{Outcome: "added", Lines: 2}, "body,body_html,signature", 21, 1},
+		{"true puts it back", map[string]any{"body": "Again.", "signature": true}, "<p>Again.</p>\n" + raeEnding,
+			"Again.\n\n-- \nRae Reader\nExample Org\n", &tools.DraftSignatureOut{Outcome: "added", Lines: 2},
+			"body,body_html,signature", 36, 1},
+		{"plain_only takes it with the HTML", map[string]any{"body": "Bare.", "plain_only": true}, "", "Bare.",
+			&tools.DraftSignatureOut{Outcome: "removed"}, "body,body_html,signature", 35, 0},
+		{"with HTML, a plain draft takes one", map[string]any{"body": "Back.", "plain_only": false, "signature": true},
+			"<p>Back.</p>\n" + raeEnding, "Back.\n\n-- \nRae Reader\nExample Org\n",
+			&tools.DraftSignatureOut{Outcome: "added", Lines: 2}, "body,body_html,signature", 36, 1},
+	}
+	for _, c := range steps {
+		out := update(c.args)
+		if text, html := stored(t, fake, d.MessageID); text != c.plain || html != c.html {
+			t.Errorf("%s: stored %q and %q, want %q and %q", c.name, text, html, c.plain, c.html)
+		}
+		if !reflect.DeepEqual(out.Signature, c.sig) || strings.Join(out.Changed, ",") != c.changed {
+			t.Errorf("%s: signature %+v, changed %v; want %+v, %s", c.name, out.Signature, out.Changed, c.sig, c.changed)
+		}
+		if n := len(fake.CallsOf("gmail.users.settings.sendAs.list")); n != c.sendAs || out.Units != c.units {
+			t.Errorf("%s: %d sendAs.list reads and %d units, want %d and %d", c.name, n, out.Units, c.sendAs, c.units)
+		}
+	}
+
+	for _, c := range []struct {
+		name, gmail string
+		want        tools.DraftSignatureOut
+		changed     string
+	}{
+		{"true over another", "<p>Rae</p>", tools.DraftSignatureOut{Outcome: "replaced", Lines: 1}, "body,body_html,signature"},
+		{"true over the same", "<p>Rae</p>", tools.DraftSignatureOut{Outcome: "kept", Lines: 1}, "body,body_html"},
+		{"true with none set", "", tools.DraftSignatureOut{Outcome: "none_set"}, "body,body_html,signature"},
+	} {
+		setSignature(fake, 0, c.gmail)
+		out := update(map[string]any{"body": "Again.", "signature": true})
+		if out.Signature == nil || *out.Signature != c.want || strings.Join(out.Changed, ",") != c.changed {
+			t.Errorf("%s: %+v, changed %v; want %+v, %s", c.name, out.Signature, out.Changed, c.want, c.changed)
+		}
+	}
+	setSignature(fake, 0, "<p>Rae</p>")
+	update(map[string]any{"body": "Again.", "signature": true})
+
+	var bare, alias tools.DraftWriteOut
+	call(t, h, "create_draft", map[string]any{"body": "List mail.", "plain_only": true}, &bare)
+	call(t, h, "create_draft", map[string]any{"body": "From the alias.", "from": gmailtest.AliasAddress}, &alias)
+	fake.UpdateSettings(func(s *gmailtest.Settings) { s.SendAs = s.SendAs[:1] })
+	for _, c := range []struct {
+		name  string
+		draft tools.DraftWriteOut
+		args  map[string]any
+	}{
+		{"without a body", d, map[string]any{"subject": "x", "signature": true}},
+		{"with plain_only", d, map[string]any{"body": "x", "signature": true, "plain_only": true}},
+		{"on a plain draft", bare, map[string]any{"body": "x", "signature": true}},
+		{"from an address no longer sent as", alias, map[string]any{"body": "x", "signature": true}},
+		{"below one in body_html", d, map[string]any{"body": "x",
+			"body_html": `<p>x</p><div class="gmail_signature" data-smartmail="gmail_signature">Rae</div>`}},
+	} {
+		c.args["draft_id"], c.args["message_id"] = c.draft.DraftID, c.draft.MessageID
+		fake.ResetAccounting()
+		refused(t, h, "update_draft", c.args, gapi.ClassInvalid)
+		if n := writeCalls(fake); n != 0 {
+			t.Errorf("%s: %d writes reached Gmail", c.name, n)
+		}
+	}
+}
+
+// The signature goes into the draft and nowhere else: not into a result,
+// whose text and structured content say what it shows, and not into a log.
+func TestTheSignatureStaysInTheDraft(t *testing.T) {
+	var logs bytes.Buffer
+	lg := slog.New(slog.NewJSONHandler(&logs, &slog.HandlerOptions{Level: slog.LevelDebug}))
+	h, fake := connectFake(t, config.Config{}, func(o *gapi.Options) { o.Logger = lg })
+	const canary = "CANARY-signature-line"
+	setSignature(fake, 0, "<div>"+canary+"</div>")
+	results := []*mcp.CallToolResult{h.Call(t, "create_draft", map[string]any{"body": "Hello.", "signature": true})}
+	var d tools.DraftWriteOut
+	structured(t, results[0], testutil.Text(results[0]), results[0].StructuredContent, &d)
+	for _, args := range []map[string]any{{"body": "Kept."}, {"body": "Again.", "signature": true}} {
+		args["draft_id"], args["message_id"] = d.DraftID, d.MessageID
+		res := h.Call(t, "update_draft", args)
+		structured(t, res, testutil.Text(res), res.StructuredContent, &d)
+		results = append(results, res)
+	}
+	if _, got := stored(t, fake, d.MessageID); !strings.Contains(got, canary) {
+		t.Fatalf("stored HTML %q does not carry the signature; this test would pass on a server that adds none", got)
+	}
+	for i, res := range results {
+		b, _ := json.Marshal(res.StructuredContent)
+		if strings.Contains(testutil.Text(res), canary) || strings.Contains(string(b), canary) {
+			t.Errorf("result %d carries the signature:\n%s\n%s", i, testutil.Text(res), b)
+		}
+	}
+	if strings.TrimSpace(logs.String()) == "" {
+		t.Fatal("nothing was logged; this test would pass on a client that logs nothing")
+	}
+	if strings.Contains(logs.String(), canary) {
+		t.Errorf("the logs carry the signature:\n%s", linesWith(logs.String(), canary))
+	}
+}
+
+// A signature's image goes as a part of its own beside the HTML, never
+// inside it, since Gmail would move it on save and drop the plain text
+// (§18 row 99). A new body keeps the part, and a signature taken out
+// takes its part with it.
+func TestTheSignaturesImageIsAPartOfItsOwn(t *testing.T) {
+	h, fake := connectFake(t, config.Config{})
+	setSignature(fake, 0, `<div>Rae<img src="data:image/png;base64,UE5HREFUQQ=="></div>`)
+	const part = "Content-ID: <sig.2d4566582844690f@signature>"
+	check := func(step, messageID string, parts int, html string) {
+		t.Helper()
+		raw, _ := fake.Raw(messageID)
+		text, got := stored(t, fake, messageID)
+		if n := strings.Count(string(raw), part); n != parts || got != html || strings.Contains(string(raw), "data:image") {
+			t.Errorf("%s: %d image parts, html %q; want %d, %q, and no data URL", step, n, got, parts, html)
+		}
+		if !strings.HasPrefix(text, "Hello") {
+			t.Errorf("%s: plain text %q, want the body", step, text)
+		}
+	}
+	signed := `<div><br clear="all"></div><div><br></div><span class="gmail_signature_prefix">-- </span><br>` +
+		`<div dir="ltr" class="gmail_signature" data-smartmail="gmail_signature"><div>Rae<img src="cid:sig.2d4566582844690f@signature"></div></div>`
+	var d tools.DraftWriteOut
+	call(t, h, "create_draft", map[string]any{"body": "Hello.", "signature": true}, &d)
+	check("create_draft", d.MessageID, 1, "<p>Hello.</p>\n"+signed)
+	if d.Signature == nil || *d.Signature != (tools.DraftSignatureOut{Outcome: "added", Lines: 1, Images: 1}) {
+		t.Errorf("create_draft signature %+v", d.Signature)
+	}
+	call(t, h, "update_draft", map[string]any{"draft_id": d.DraftID, "message_id": d.MessageID, "body": "Hello again."}, &d)
+	check("a new body", d.MessageID, 1, "<p>Hello again.</p>\n"+signed)
+	call(t, h, "update_draft", map[string]any{"draft_id": d.DraftID, "message_id": d.MessageID, "body": "Hello again.",
+		"signature": true}, &d)
+	check("the same signature set again", d.MessageID, 1, "<p>Hello again.</p>\n"+signed)
+	if d.Signature == nil || d.Signature.Outcome != "kept" || slices.Contains(d.Changed, "signature") {
+		t.Errorf("the same signature set again: %+v, changed %v; want kept, the signature unchanged", d.Signature, d.Changed)
+	}
+	call(t, h, "update_draft", map[string]any{"draft_id": d.DraftID, "message_id": d.MessageID, "body": "Hello, unsigned.",
+		"signature": false}, &d)
+	check("signature false", d.MessageID, 0, "<p>Hello, unsigned.</p>\n")
 }

@@ -1,0 +1,14 @@
+updated draft r0000000000000021 · message 0000000000000024, was 0000000000000022 · thread 0000000000000001
+the next update_draft needs message_id 0000000000000024.
+changed: body, body_html, signature; everything else was carried over as Gmail stored it.
+signature: removed from the draft, since Gmail holds no signature for the From address now.
+recipients: 1 named in this call; 1 kept from the draft
+size: 1.2 KB, sent as JSON
+<<<untrusted-mail TESTTOKEN: draft headers in 0000000000000024>>>
+From: Rae Reader <reader@example.com>
+To: Bruno Fennick <bruno.fennick@example.org>
+Cc: Dmitri Vale <dmitri.vale@example.org>
+Subject: Offsite, revised
+Message-ID: <0f3c2a@example.com>
+Attachment: notes.txt (text/plain, 120 B)
+<<<end-untrusted-mail TESTTOKEN>>>

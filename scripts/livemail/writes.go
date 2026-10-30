@@ -503,7 +503,7 @@ var (
 		// Carry no id, address or file: text, flags, part ids of the run's
 		// own drafts, and the system labels STARRED and IMPORTANT.
 		"dry_run": true, "confirm": true, "reply_all": true, "quote": true, "subject": true, "first_line": true, "body": true,
-		"body_html": true, "plain_only": true,
+		"body_html": true, "plain_only": true, "signature": true,
 		"remove_attachments": true, "add": true, "remove": true, "in_label_list": true, "in_message_list": true,
 		"text_color": true, "background_color": true,
 	}

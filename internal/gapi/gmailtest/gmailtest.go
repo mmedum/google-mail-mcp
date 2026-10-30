@@ -31,6 +31,7 @@ import (
 	"maps"
 	"mime"
 	stdmultipart "mime/multipart"
+	"mime/quotedprintable"
 	"net"
 	"net/http"
 	"net/http/httptest"
@@ -578,19 +579,30 @@ func (s *Server) Raw(id string) ([]byte, bool) {
 // and the live driver check with it. Quoted-printable and base64 are
 // undone and line endings made LF; ok is false when there is no such
 // part.
-func HTMLPart(raw []byte) (html string, ok bool) {
+func HTMLPart(raw []byte) (html string, ok bool) { return storedText(raw, "text/html") }
+
+// PlainPart returns a message's first text/plain part, decoded as
+// HTMLPart decodes one.
+func PlainPart(raw []byte) (text string, ok bool) { return storedText(raw, "text/plain") }
+
+func storedText(raw []byte, want string) (string, bool) {
 	msg, err := mail.ReadMessage(bytes.NewReader(raw))
 	if err != nil {
 		return "", false
 	}
-	return htmlIn(msg.Header.Get("Content-Type"), msg.Header.Get("Content-Transfer-Encoding"), msg.Body)
+	return textIn(want, msg.Header.Get("Content-Type"), msg.Header.Get("Content-Transfer-Encoding"), msg.Body)
 }
 
-func htmlIn(contentType, encoding string, body io.Reader) (string, bool) {
+func textIn(want, contentType, encoding string, body io.Reader) (string, bool) {
 	mt, params, _ := mime.ParseMediaType(contentType)
-	if mt == "text/html" {
-		if strings.EqualFold(strings.TrimSpace(encoding), "base64") {
+	if mt == want {
+		switch strings.ToLower(strings.TrimSpace(encoding)) {
+		case "base64":
 			body = base64.NewDecoder(base64.StdEncoding, newlineStripper{body})
+		case "quoted-printable":
+			// A part's own is undone by the multipart reader, which then
+			// drops the header; this is a message that is one part.
+			body = quotedprintable.NewReader(body)
 		}
 		b, err := io.ReadAll(body)
 		return strings.ReplaceAll(string(b), "\r\n", "\n"), err == nil
@@ -604,8 +616,8 @@ func htmlIn(contentType, encoding string, body io.Reader) (string, bool) {
 		if err != nil {
 			return "", false
 		}
-		if html, ok := htmlIn(p.Header.Get("Content-Type"), p.Header.Get("Content-Transfer-Encoding"), p); ok {
-			return html, true
+		if text, ok := textIn(want, p.Header.Get("Content-Type"), p.Header.Get("Content-Transfer-Encoding"), p); ok {
+			return text, true
 		}
 	}
 }
