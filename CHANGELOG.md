@@ -17,7 +17,11 @@ lifted verbatim.
 
 ### Changed
 
-- `golang.org/x/net` v0.61.0, `golang.org/x/sys` v0.49.0, `golang.org/x/text` v0.43.0 and `golang.org/x/sync` v0.24.0.
+- `golang.org/x/sys` v0.49.0, `golang.org/x/text` v0.43.0 and `golang.org/x/sync` v0.24.0.
+
+### Security
+
+- `golang.org/x/net` v0.62.0, which fixes GO-2026-6860: parsing HTML could take quadratic time, and every read of an HTML body parses it.
 
 ## [3.1.2] - 2026-10-24
 
