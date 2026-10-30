@@ -1143,8 +1143,10 @@ the image parts the signature shows; a signature dropped or replaced
 takes the parts only it showed, and one set again adds none twice.
 Whenever the HTML is replaced, an inline part of a `multipart/related`
 that the new HTML no longer shows goes, in Gmail's own layout too,
-since Gmail shows such a part as an attachment; a part declared an
-attachment stays. The same signature set again with `signature: true`
+since Gmail shows such a part as an attachment, and the result names
+`attachments` changed for any besides a signature's; a part declared
+an attachment stays, and one the HTML shows, through `cid:` in an
+attribute or a CSS `url()`, percent-decoded (RFC 2392), stays. The same signature set again with `signature: true`
 reads as `kept`, its images and line endings aside. A new body replaces
 a quote too, so a signature that sat above one ends the message
 afterwards, with its delimiter. `signature: false` leaves it out, and
@@ -3187,7 +3189,13 @@ what fixed them.
   `data:` URL with parameters, stayed in the HTML. Kept: a draft whose
   HTML was not made from its text does not carry its signature into
   new `body_html`, which its description says, so a block in someone
-  else's mail is never taken for the draft's.
+  else's mail is never taken for the draft's. A `/security-review` of
+  the image parts: nothing at confidence 8 or above. From its notes, a
+  `cid:` in a CSS `url()` was read with its parenthesis and a
+  percent-encoded one not decoded, so a part still shown could go; and
+  parts that went were not reported. Both fixed, with tests. Kept: a
+  signature whose own markup quotes attributes brokenly could swallow
+  what follows it; only the account's owner writes it.
   Kept: a signature above a quote with unbalanced markup is not found,
   and the draft then needs both bodies, as one whose HTML was written
   another way. `/security-review`: `update_draft` given `body` and

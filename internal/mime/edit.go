@@ -97,6 +97,9 @@ type Edited struct {
 	// the old text carried, each "" for none, and both "" for an edit
 	// that gave no text.
 	Signature, Carried string
+	// Pruned counts the inline parts new HTML no longer shows, taken out,
+	// besides those of a signature the edit dropped or replaced.
+	Pruned int
 }
 
 // EditRaw applies e to raw RFC 5322 bytes.
@@ -146,8 +149,9 @@ func EditRaw(raw []byte, e Edit) (Edited, error) {
 	if err != nil {
 		return Edited{}, err
 	}
+	pruned := 0
 	if b.htm != nil {
-		root = pruneUnshown(root, cids(*b.htm))
+		pruned = pruneUnshown(root, cids(*b.htm), cids(b.carried))
 	}
 	if len(e.Add) > 0 {
 		var atts []*entity
@@ -163,7 +167,8 @@ func EditRaw(raw []byte, e Edit) (Edited, error) {
 	var out bytes.Buffer
 	out.Grow(root.size())
 	root.write(&out)
-	return Edited{Raw: out.Bytes(), HTMLChanged: b.drop || b.htm != nil, Signature: b.sig, Carried: b.carried}, nil
+	return Edited{Raw: out.Bytes(), HTMLChanged: b.drop || b.htm != nil, Signature: b.sig, Carried: b.carried,
+		Pruned: pruned}, nil
 }
 
 // setHeader replaces every line of name with one line of value, where
@@ -501,7 +506,9 @@ func swapHTML(root, html *entity, htm string, inline []InlineImage) *entity {
 // in Gmail's own layout, which keeps the images beside the plain and
 // HTML pair, its images; left, Gmail shows each as an attachment (§18
 // row 99). A related left with the HTML alone stays: it reads the same.
-func pruneUnshown(root *entity, shown map[string]bool) *entity {
+// It returns how many parts went, besides those named in signature.
+func pruneUnshown(root *entity, shown, signature map[string]bool) int {
+	n := 0
 	var prune func(e *entity) bool
 	prune = func(e *entity) bool {
 		changed := false
@@ -510,6 +517,9 @@ func pruneUnshown(root *entity, shown map[string]bool) *entity {
 			if id := contentID(c); e.mediaType == "multipart/related" && !c.isMultipart() && !c.isBody() &&
 				c.disposition != "attachment" && id != "" && !shown[id] {
 				changed = true
+				if !signature[id] {
+					n++
+				}
 				continue
 			}
 			if prune(c) {
@@ -523,7 +533,7 @@ func pruneUnshown(root *entity, shown map[string]bool) *entity {
 		return changed
 	}
 	prune(root)
-	return root
+	return n
 }
 
 // contentID is a part's Content-ID, without its angle brackets.

@@ -309,11 +309,14 @@ func TestEditRawPrunesImagesTheNewHTMLDoesNotShow(t *testing.T) {
 	raw := []byte("Content-Type: multipart/related; boundary=r\r\n\r\n--r\r\n" +
 		"Content-Type: multipart/alternative; boundary=a\r\n\r\n--a\r\nContent-Type: text/plain; charset=utf-8\r\n\r\nOld.\r\n" +
 		"--a\r\nContent-Type: text/html; charset=utf-8\r\n\r\n<p>Old.</p><img src=\"cid:ii_one\"><img src=\"cid:ii_two\">\r\n--a--\r\n" +
+		"--r\r\nContent-Type: image/png\r\nContent-ID: <ii_css>\r\nContent-Transfer-Encoding: base64\r\n\r\nR01BSUxJTUc=\r\n" +
+		"--r\r\nContent-Type: image/png\r\nContent-ID: <ii four>\r\nContent-Transfer-Encoding: base64\r\n\r\nR01BSUxJTUc=\r\n" +
 		"--r\r\nContent-Type: image/png\r\nContent-ID: <ii_one>\r\nContent-Transfer-Encoding: base64\r\n\r\nR01BSUxJTUc=\r\n" +
 		"--r\r\nContent-Type: image/png\r\nContent-ID: <ii_two>\r\nContent-Transfer-Encoding: base64\r\n\r\nR01BSUxJTUc=\r\n" +
 		"--r\r\nContent-Type: application/pdf; name=\"a.pdf\"\r\nContent-ID: <ii_pdf>\r\nContent-Disposition: attachment; filename=\"a.pdf\"\r\n" +
 		"Content-Transfer-Encoding: base64\r\n\r\nJVBERg==\r\n--r--\r\n")
-	ed, err := EditRaw(raw, Edit{Text: ptrTo("New."), HTML: ptrTo(`<p>New.</p><img src="cid:ii_two">`)})
+	ed, err := EditRaw(raw, Edit{Text: ptrTo("New."),
+		HTML: ptrTo(`<p style="background:url(cid:ii_css)">New.</p><img src="cid:ii_two"><img src="cid:ii%20four">`)})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -321,7 +324,9 @@ func TestEditRawPrunesImagesTheNewHTMLDoesNotShow(t *testing.T) {
 	for _, l := range leaves(ed.Raw) {
 		parts = append(parts, l.mediaType+" "+strings.Trim(headerGet(l.headers, "Content-ID"), "<>"))
 	}
-	if got := strings.Join(parts, ", "); got != "text/plain , text/html , image/png ii_two, application/pdf ii_pdf" {
-		t.Errorf("parts %s; want the plain text, the HTML, the image still shown and the attachment", got)
+	if got := strings.Join(parts, ", "); got != "text/plain , text/html , image/png ii_css, image/png ii four, "+
+		"image/png ii_two, application/pdf ii_pdf" || ed.Pruned != 1 {
+		t.Errorf("parts %s, %d pruned; want the plain text, the HTML, the three images still shown and the attachment, "+
+			"one pruned", got, ed.Pruned)
 	}
 }

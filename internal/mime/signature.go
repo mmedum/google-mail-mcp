@@ -4,6 +4,7 @@ import (
 	"crypto/sha256"
 	"encoding/base64"
 	"encoding/hex"
+	"net/url"
 	"regexp"
 	"strings"
 
@@ -132,14 +133,19 @@ func inlineImages(sig string) (string, []InlineImage) {
 	return out, imgs
 }
 
-// cidRef is a reference from HTML to a part by its Content-ID.
-var cidRef = regexp.MustCompile(`(?i)\bcid:([^"'\s>]+)`)
+// cidRef is a reference from HTML to a part by its Content-ID, in an
+// attribute or in CSS's url().
+var cidRef = regexp.MustCompile(`(?i)\bcid:([^"'\s>)]+)`)
 
-// cids is the Content-IDs h refers to.
+// cids is the Content-IDs h refers to, percent-decoded as a cid URL is
+// (RFC 2392).
 func cids(h string) map[string]bool {
 	out := map[string]bool{}
 	for _, m := range cidRef.FindAllStringSubmatch(h, -1) {
 		out[m[1]] = true
+		if id, err := url.PathUnescape(m[1]); err == nil {
+			out[id] = true
+		}
 	}
 	return out
 }

@@ -784,7 +784,8 @@ func (s *Service) UpdateDraft(ctx context.Context, in Revise) (model.DraftWrite,
 		out.Changed = append(out.Changed, "body_html")
 	}
 	in.noteSignature(&out, ed)
-	if len(e.Remove) > 0 || len(e.Add) > 0 {
+	if len(e.Remove) > 0 || len(e.Add) > 0 || ed.Pruned > 0 {
+		// Inline images the new HTML no longer shows went with it.
 		out.Changed = append(out.Changed, "attachments")
 	}
 	if err := checkSize(len(edited)); err != nil {
