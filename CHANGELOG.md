@@ -15,6 +15,8 @@ lifted verbatim.
 
 ## [Unreleased]
 
+## [3.2.0] - 2026-10-30
+
 ### Added
 
 - `create_draft` and `update_draft` take `signature`, which puts the signature Gmail holds for the From address below the body, as Gmail's composer writes one, its images as inline parts; a new body keeps the signature a draft carries.
@@ -258,7 +260,8 @@ lifted verbatim.
 - Repository gates run by `make check` and CI: leaks, pins, error classes, API coverage, schema diff, smoke, staleness and more.
 - Signed release archives for six platforms with SBOMs, build provenance, a Claude Desktop bundle and an MCP registry entry.
 
-[Unreleased]: https://github.com/mmedum/google-mail-mcp/compare/v3.1.2...HEAD
+[Unreleased]: https://github.com/mmedum/google-mail-mcp/compare/v3.2.0...HEAD
+[3.2.0]: https://github.com/mmedum/google-mail-mcp/compare/v3.1.2...v3.2.0
 [3.1.2]: https://github.com/mmedum/google-mail-mcp/compare/v3.1.1...v3.1.2
 [3.1.1]: https://github.com/mmedum/google-mail-mcp/compare/v3.1.0...v3.1.1
 [3.1.0]: https://github.com/mmedum/google-mail-mcp/compare/v3.0.0...v3.1.0

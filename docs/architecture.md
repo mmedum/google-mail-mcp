@@ -1,16 +1,16 @@
 # Architecture — google-mail-mcp
 
-**Status: 3.2.0 is ready to cut, 2026-10-30: `create_draft` and
-`update_draft` take `signature` (issue #39), which puts the signature
-Gmail holds for the From address below the body as Gmail's composer
-writes one, and a new body keeps it. Reviewed by `/simplify`,
-`/code-review high` and `/security-review` (§16a); a live run of 96
-steps passed, its transcript read, the seven sending steps left unarmed
-and the eight signature steps stopped by the driver's own guard, so the
-signature was checked by hand through drafts sent from the composer and
-by `send_draft`, which found Gmail rewriting a draft whose signature
-carries its image inside the HTML; such an image now goes as a part of
-its own (§16, §18 rows 97 and 99). 3.1.2 is cut, 2026-10-24: the family sweep (§16a). A variable of
+**Status: 3.2.0 is cut, 2026-10-30: `create_draft` and `update_draft`
+take `signature` (issue #39), which puts the signature Gmail holds for
+the From address below the body as Gmail's composer writes one, its
+images as inline parts, and a new body keeps it. Reviewed by
+`/simplify`, two rounds of `/code-review high` and `/security-review`
+(§16a). A live run of 96 steps passed, its transcript read, the seven
+sending steps left unarmed and the eight signature steps stopped by the
+driver's own guard; the signature was checked by hand against the
+account's own, through drafts sent from the composer and by
+`send_draft`, which found Gmail rewriting a draft whose signature
+carries its image inside the HTML (§16, §18 rows 97 and 99). 3.1.2 is cut, 2026-10-24: the family sweep (§16a). A variable of
 spaces alone is unset and the spaces around a value dropped, the
 refresh token included, every reader through `config.Lookup`; the
 bundle gate holds the identity, refuses a repeated key and validates
