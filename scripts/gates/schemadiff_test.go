@@ -454,15 +454,7 @@ func TestBaselineNormalizeSorts(t *testing.T) {
 // schemaDiffSame reports whether two dumps publish the same surface.
 func schemaDiffSame(t *testing.T, a, b []byte) bool {
 	t.Helper()
-	x, err := schemaDiffDecode(a, "a")
-	if err != nil {
-		t.Fatal(err)
-	}
-	y, err := schemaDiffDecode(b, "b")
-	if err != nil {
-		t.Fatal(err)
-	}
-	return schemaDiffCompare(x, y).empty()
+	return schemaDiffCompare(surfaceOf(t, string(a)), surfaceOf(t, string(b))).empty()
 }
 
 // texts is the report line of each change.

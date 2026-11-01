@@ -95,29 +95,25 @@ func TestChangelogCheckOverGit(t *testing.T) {
 		"CHANGELOG.md":    "# Changelog\n\n## [Unreleased]\n\n[Unreleased]: https://h\n",
 		"internal/a/a.go": "package a\n",
 	})
-	git := func(args ...string) {
-		t.Helper()
-		gitIn(t, root, args...)
-	}
 	write := func(name, body string) {
 		t.Helper()
 		if err := os.WriteFile(filepath.Join(root, filepath.FromSlash(name)), []byte(body), 0o600); err != nil {
 			t.Fatal(err)
 		}
 	}
-	git("init", "-q")
-	git("add", ".")
-	git("commit", "-qm", "one")
+	gitIn(t, root, "init", "-q")
+	gitIn(t, root, "add", ".")
+	gitIn(t, root, "commit", "-qm", "one")
 
 	write("internal/a/a.go", "package a\n\nvar X = 1\n")
-	git("commit", "-qam", "two")
+	gitIn(t, root, "commit", "-qam", "two")
 	var out sink
 	if err := changelogCheck(&out, root, "HEAD~1", "HEAD", map[string]bool{"internal/a": true}); err == nil || !strings.Contains(err.Error(), "did not") {
 		t.Errorf("a source change with no entry passed: %v", err)
 	}
 
 	write("CHANGELOG.md", "# Changelog\n\n## [Unreleased]\n\n- X exists\n\n[Unreleased]: https://h\n")
-	git("commit", "-qam", "three")
+	gitIn(t, root, "commit", "-qam", "three")
 	if err := changelogCheck(&out, root, "HEAD~2", "HEAD", map[string]bool{"internal/a": true}); err != nil {
 		t.Errorf("an entry under [Unreleased] failed: %v", err)
 	}

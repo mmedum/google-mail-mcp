@@ -25,6 +25,13 @@ func (s *sink) mustSay(t *testing.T, want string) {
 func writeTree(t *testing.T, files map[string]string) string {
 	t.Helper()
 	root := t.TempDir()
+	writeFiles(t, root, files)
+	return root
+}
+
+// writeFiles writes files (slash-separated path → content) under root.
+func writeFiles(t *testing.T, root string, files map[string]string) {
+	t.Helper()
 	for name, body := range files {
 		path := filepath.Join(root, filepath.FromSlash(name))
 		if err := os.MkdirAll(filepath.Dir(path), 0o750); err != nil {
@@ -34,7 +41,6 @@ func writeTree(t *testing.T, files map[string]string) string {
 			t.Fatal(err)
 		}
 	}
-	return root
 }
 
 // gitIn runs git in dir as a fixture identity, reading none of the
@@ -50,4 +56,14 @@ func gitIn(t *testing.T, dir string, args ...string) {
 	if out, err := cmd.CombinedOutput(); err != nil {
 		t.Fatalf("git %v: %v\n%s", args, err, out)
 	}
+}
+
+// gitRepo is writeTree's files committed to a fresh repository.
+func gitRepo(t *testing.T, files map[string]string) string {
+	t.Helper()
+	root := writeTree(t, files)
+	gitIn(t, root, "init", "-q")
+	gitIn(t, root, "add", "-A")
+	gitIn(t, root, "commit", "-qm", "first")
+	return root
 }

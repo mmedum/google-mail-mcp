@@ -17,7 +17,7 @@ lifted verbatim.
 
 ### Changed
 
-- `--dump-schemas` also prints the instructions the server gives the model, as a default, a read-only and a full server give them, and lists prompts.
+- `--dump-schemas` also prints the instructions the server gives the model, as a default, a read-only and a full server give them, and lists prompts. It no longer depends on the settings it runs with: a draft signature, for one, no longer changes it.
 - For contributors: CI fails a pull request that changes the tool surface until a commit footer names each item that changed. `SCHEMA-CHANGE:` names a change and `BREAKING CHANGE:` a break of the newest release. `make schema-diff` now also reports a changed instruction or prompt.
 
 ## [4.0.0] - 2026-11-01

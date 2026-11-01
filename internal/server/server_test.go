@@ -206,15 +206,22 @@ func TestTheSDKLoggerOnlyAtDebug(t *testing.T) {
 	}
 }
 
-func TestDumpSchemas(t *testing.T) {
+// dumpOf is DumpSchemas run with cfg, as written and as read back.
+func dumpOf(t *testing.T, cfg config.Config) ([]byte, SchemaDump) {
+	t.Helper()
 	var buf bytes.Buffer
-	if err := DumpSchemas(context.Background(), &buf, Deps{Version: "test"}); err != nil {
+	if err := DumpSchemas(context.Background(), &buf, Deps{Deps: tools.Deps{Config: cfg}, Version: "test"}); err != nil {
 		t.Fatal(err)
 	}
 	var dump SchemaDump
 	if err := json.Unmarshal(buf.Bytes(), &dump); err != nil {
 		t.Fatalf("dump is not JSON: %v\n%s", err, buf.String())
 	}
+	return buf.Bytes(), dump
+}
+
+func TestDumpSchemas(t *testing.T) {
+	raw, dump := dumpOf(t, config.Config{})
 	if dump.Server != Name {
 		t.Errorf("server = %q", dump.Server)
 	}
@@ -225,7 +232,7 @@ func TestDumpSchemas(t *testing.T) {
 		t.Errorf("sdk version = %q; it must come from build info", dump.SDKVersion)
 	}
 	if dump.Tools == nil || dump.Resources == nil || dump.ResourceTemplates == nil || dump.Prompts == nil {
-		t.Errorf("an empty list must be [], not null: %s", buf.String())
+		t.Errorf("an empty list must be [], not null: %s", raw)
 	}
 	// Every tool dumped has its kind, and only those.
 	for _, tool := range dump.Tools {
@@ -242,25 +249,12 @@ func TestDumpSchemas(t *testing.T) {
 // sentence the instructions can say, so an edit to any of them is a
 // change the schema gates see.
 func TestTheDumpCarriesEverySentenceOfTheInstructions(t *testing.T) {
-	dumped := func(cfg config.Config) SchemaDump {
-		t.Helper()
-		var buf bytes.Buffer
-		if err := DumpSchemas(context.Background(), &buf, Deps{Deps: tools.Deps{Config: cfg}, Version: "test"}); err != nil {
-			t.Fatal(err)
-		}
-		var dump SchemaDump
-		if err := json.Unmarshal(buf.Bytes(), &dump); err != nil {
-			t.Fatal(err)
-		}
-		return dump
-	}
-	dump := dumped(config.Config{})
-	// What the dump says does not depend on the settings it runs with.
-	everything := dumped(config.Config{ReadOnly: true, EnableSend: true, EnableDestructive: true, EnableSettings: true,
-		LocalDir: t.TempDir()})
-	if !maps.Equal(everything.Instructions, dump.Instructions) {
-		t.Errorf("the instructions dumped with every switch on differ from the default's:\n%v\n%v",
-			everything.Instructions, dump.Instructions)
+	raw, dump := dumpOf(t, config.Config{})
+	// The dump does not depend on the settings it runs with.
+	everything, _ := dumpOf(t, config.Config{ReadOnly: true, EnableSend: true, EnableDestructive: true, EnableSettings: true,
+		LocalDir: t.TempDir(), DraftSignature: true})
+	if !bytes.Equal(everything, raw) {
+		t.Error("the dump made with every setting on differs from the one made with none")
 	}
 	if got := slices.Sorted(maps.Keys(dump.Instructions)); !slices.Equal(got, []string{"default", "full", "read_only"}) {
 		t.Fatalf("instruction modes = %v, want default, full and read_only", got)

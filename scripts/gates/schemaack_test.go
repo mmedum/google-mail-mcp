@@ -4,7 +4,6 @@ import (
 	"errors"
 	"fmt"
 	"io"
-	"os"
 	"path/filepath"
 	"slices"
 	"strings"
@@ -226,11 +225,8 @@ func TestABreakOfTheReleaseIsNotMatchedByItsText(t *testing.T) {
 // The release is the baseline the base branch records. Before the first
 // release there is none, and nothing breaks one.
 func TestReleasedBreaksReadTheBaseBranchBaseline(t *testing.T) {
-	dir := writeTree(t, map[string]string{"README.md": "x\n"})
+	dir := gitRepo(t, map[string]string{"README.md": "x\n"})
 	t.Chdir(dir)
-	gitIn(t, dir, "init", "-q")
-	gitIn(t, dir, "add", ".")
-	gitIn(t, dir, "commit", "-qm", "Start")
 	head := surfaceOf(t, renamed)
 
 	breaks, err := releasedBreaks("HEAD", head)
@@ -238,15 +234,9 @@ func TestReleasedBreaksReadTheBaseBranchBaseline(t *testing.T) {
 		t.Fatalf("releasedBreaks with no baseline = %v, %v; want none", breaks, err)
 	}
 
-	baseline := filepath.Join(dir, filepath.FromSlash(schemaDiffBaseline))
 	put := func(body string) {
 		t.Helper()
-		if err := os.MkdirAll(filepath.Dir(baseline), 0o750); err != nil {
-			t.Fatal(err)
-		}
-		if err := os.WriteFile(baseline, []byte(body), 0o600); err != nil {
-			t.Fatal(err)
-		}
+		writeFiles(t, dir, map[string]string{schemaDiffBaseline: body})
 	}
 	put(plain)
 	gitIn(t, dir, "add", filepath.FromSlash(schemaDiffBaseline))
@@ -267,11 +257,7 @@ func TestSchemaAckTellsARefusalFromAFailure(t *testing.T) {
 	if refused == nil || errors.As(refused, new(couldNotRun)) {
 		t.Errorf("a refusal (%v) reads as a gate that could not run", refused)
 	}
-	dir := writeTree(t, map[string]string{"README.md": "x\n"})
-	t.Chdir(dir)
-	gitIn(t, dir, "init", "-q")
-	gitIn(t, dir, "add", ".")
-	gitIn(t, dir, "commit", "-qm", "Start")
+	t.Chdir(gitRepo(t, map[string]string{"README.md": "x\n"}))
 	// git's own words, which a locale would translate.
 	t.Setenv("LC_ALL", "C")
 	t.Setenv("LANGUAGE", "")
@@ -279,7 +265,7 @@ func TestSchemaAckTellsARefusalFromAFailure(t *testing.T) {
 	if code := run([]string{"schema-ack", "no-such-ref", "HEAD"}, &stdout, &stderr); code != 2 {
 		t.Errorf("schema-ack with no base exits %d, want 2: %s", code, stderr.String())
 	}
-	const want = "gates: schema-ack: could not run: git merge-base no-such-ref HEAD: fatal: Not a valid object name no-such-ref\n"
+	const want = "gates: schema-ack: could not run: git merge-base no-such-ref HEAD: exit status 128: fatal: Not a valid object name no-such-ref\n"
 	if stderr.String() != want {
 		t.Errorf("stderr = %q, want %q", stderr.String(), want)
 	}

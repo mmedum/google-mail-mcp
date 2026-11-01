@@ -291,8 +291,8 @@ func dumpAt(rev string) (raw []byte, err error) {
 			err = rmErr
 		}
 	}()
-	bin := filepath.Join(tmp, "google-mail-mcp"+exeSuffix())
-	build := exec.Command("go", "build", "-trimpath", "-o", bin, "./cmd/google-mail-mcp")
+	bin := filepath.Join(tmp, binaryName+exeSuffix())
+	build := exec.Command("go", "build", "-trimpath", "-o", bin, mainPackage)
 	build.Dir = src
 	build.Env = append(os.Environ(), "CGO_ENABLED=0")
 	if out, err := build.CombinedOutput(); err != nil {

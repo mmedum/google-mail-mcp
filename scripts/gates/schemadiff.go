@@ -137,11 +137,11 @@ var schemaDiffStamp = []string{"server", "version", "sdk_version", "kinds"}
 
 // schemaDiffItem is one item of a dumped list. name is what a footer or
 // a **Breaking:** entry names it by: a tool's or a prompt's name, a
-// resource's URI or template. label is how the report says it.
+// resource's URI or template.
 type schemaDiffItem struct {
-	name, label string
-	tool        bool
-	body        map[string]any
+	name string
+	tool bool
+	body map[string]any
 }
 
 // schemaDiffSurface is a dump decoded generically, so every field a
@@ -149,7 +149,8 @@ type schemaDiffItem struct {
 type schemaDiffSurface struct {
 	version string
 	kinds   map[string]string
-	// items is every item of every list in schemaDiffLists, by label.
+	// items is every item of every list in schemaDiffLists, by how the
+	// report says it: the list's word and the item's name.
 	items map[string]schemaDiffItem
 	// rest is every other key, such as the instructions.
 	rest map[string]any
@@ -188,7 +189,7 @@ func schemaDiffDecode(b []byte, source string) (*schemaDiffSurface, error) {
 			if _, dup := s.items[label]; dup {
 				return nil, fmt.Errorf("%s: %s listed twice", source, label)
 			}
-			s.items[label] = schemaDiffItem{name: name, label: label, tool: key == "tools", body: body}
+			s.items[label] = schemaDiffItem{name: name, tool: key == "tools", body: body}
 			s.count[list.word]++
 		}
 	}
@@ -319,20 +320,23 @@ func schemaDiffTool(name string, was, now map[string]any) []change {
 	var out []change
 	wasIn, _ := was["inputSchema"].(map[string]any)
 	nowIn, _ := now["inputSchema"].(map[string]any)
-	out = append(out, schemaDiffFields(name, "input", "", wasIn, nowIn, true)...)
+	out = append(out, schemaDiffFields(name, "", wasIn, nowIn, true)...)
 	wasOut, _ := was["outputSchema"].(map[string]any)
 	nowOut, _ := now["outputSchema"].(map[string]any)
 	if wasOut != nil && nowOut == nil {
 		out = append(out, change{item: name, text: name + ": output schema removed", field: "output"})
 	}
-	out = append(out, schemaDiffFields(name, "output", "", wasOut, nowOut, false)...)
+	out = append(out, schemaDiffFields(name, "", wasOut, nowOut, false)...)
 	return out
 }
 
-// schemaBroke is a break of tool's field at path on side, input or
-// output, said as the report says it, so the text and the field cannot
-// drift apart.
-func schemaBroke(tool, side, path, how string) change {
+// schemaBroke is a break of tool's input or output field at path, said
+// as the report says it, so the text and the field cannot drift apart.
+func schemaBroke(tool string, input bool, path, how string) change {
+	side := "output"
+	if input {
+		side = "input"
+	}
 	return change{item: tool, text: tool + " " + side + ": field " + path + " " + how, field: side + " " + path}
 }
 
@@ -344,7 +348,7 @@ func schemaBroke(tool, side, path, how string) change {
 //
 // A path names a field the way a caller reaches it: `opts.deep`, and
 // `messages[].id` for a field of each element of a list.
-func schemaDiffFields(tool, side, prefix string, was, now map[string]any, input bool) []change {
+func schemaDiffFields(tool, prefix string, was, now map[string]any, input bool) []change {
 	if was == nil || now == nil {
 		return nil
 	}
@@ -354,16 +358,16 @@ func schemaDiffFields(tool, side, prefix string, was, now map[string]any, input 
 	for _, p := range slices.Sorted(maps.Keys(wasProps)) {
 		child, ok := nowProps[p]
 		if !ok {
-			out = append(out, schemaBroke(tool, side, prefix+p, "removed"))
+			out = append(out, schemaBroke(tool, input, prefix+p, "removed"))
 			continue
 		}
-		out = append(out, schemaDiffField(tool, side, prefix+p, schemaDiffNode(wasProps[p]), schemaDiffNode(child), input)...)
+		out = append(out, schemaDiffField(tool, prefix+p, schemaDiffNode(wasProps[p]), schemaDiffNode(child), input)...)
 	}
 	wasRequired, nowRequired := schemaDiffSet(was["required"]), schemaDiffSet(now["required"])
 	if input {
 		for _, r := range schemaDiffStrings(now["required"]) {
 			if !wasRequired[r] {
-				out = append(out, schemaBroke(tool, side, prefix+r, "newly required"))
+				out = append(out, schemaBroke(tool, input, prefix+r, "newly required"))
 			}
 		}
 		return out
@@ -371,7 +375,7 @@ func schemaDiffFields(tool, side, prefix string, was, now map[string]any, input 
 	for _, r := range schemaDiffStrings(was["required"]) {
 		// A field removed is reported as removed.
 		if _, kept := nowProps[r]; kept && !nowRequired[r] {
-			out = append(out, schemaBroke(tool, side, prefix+r, "no longer always there"))
+			out = append(out, schemaBroke(tool, input, prefix+r, "no longer always there"))
 		}
 	}
 	return out
@@ -414,13 +418,13 @@ func schemaDiffEnumBreaks(was, now any) string {
 // schemaDiffField compares one field both schemas have: its type, then
 // the fields inside it, then a list's elements. A list with no schema
 // for its elements takes any, as the schema `true` does.
-func schemaDiffField(tool, side, path string, was, now map[string]any, input bool) []change {
+func schemaDiffField(tool, path string, was, now map[string]any, input bool) []change {
 	if was == nil || now == nil {
 		return nil
 	}
 	var out []change
 	if b := schemaDiffTypeBreaks(was["type"], now["type"], input); b != "" {
-		out = append(out, schemaBroke(tool, side, path, b))
+		out = append(out, schemaBroke(tool, input, path, b))
 	}
 	if input && schemaDiffAny(now) {
 		// An input that takes any value breaks no caller, whatever was
@@ -428,9 +432,9 @@ func schemaDiffField(tool, side, path string, was, now map[string]any, input boo
 		return out
 	}
 	if b := schemaDiffEnumBreaks(was["enum"], now["enum"]); input && b != "" {
-		out = append(out, schemaBroke(tool, side, path, b))
+		out = append(out, schemaBroke(tool, input, path, b))
 	}
-	out = append(out, schemaDiffFields(tool, side, path+".", was, now, input)...)
+	out = append(out, schemaDiffFields(tool, path+".", was, now, input)...)
 	wasItems, nowItems := schemaDiffNode(was["items"]), schemaDiffNode(now["items"])
 	if wasItems != nil || nowItems != nil {
 		if wasItems == nil {
@@ -439,7 +443,7 @@ func schemaDiffField(tool, side, path string, was, now map[string]any, input boo
 		if nowItems == nil {
 			nowItems = map[string]any{}
 		}
-		out = append(out, schemaDiffField(tool, side, path+"[]", wasItems, nowItems, input)...)
+		out = append(out, schemaDiffField(tool, path+"[]", wasItems, nowItems, input)...)
 	}
 	return out
 }
