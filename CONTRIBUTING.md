@@ -45,7 +45,19 @@ The released tool surface is a contract. `make schema-diff` fails on a
 renamed tool, a lost or retyped field, a new required input, an input
 enum that takes fewer values or an output field no longer required. It
 compares with `testdata/schema-baseline.json`, the newest release's
-surface, which moves only in a release commit.
+surface, which moves only in a release commit. Anything else that moved
+is reported and allowed: a description, an annotation, a `_meta` mark,
+a kind, the instructions. A client decides from those whether to ask,
+so a reviewer has to see them.
+
+On a pull request, CI also runs `schema-ack`. A commit footer has to
+name each item that changed since the merge-base:
+`SCHEMA-CHANGE: modify_labels, trash: destructiveHint true`. Name a tool
+by its name, a resource or template by its URI, a prompt by its name,
+and the instructions as `instructions`. Put a name with a comma in it in
+backticks. If the change breaks something a release shipped, name that
+item in a `BREAKING CHANGE:` footer instead. When it fails, it prints
+the footer to add, in an empty commit, never an amend.
 
 ## Adding an API call
 

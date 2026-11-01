@@ -18,6 +18,10 @@ MCPB_OUT  ?= dist/google-mail-mcp_$(VERSION).mcpb
 # The ref a pull request's CHANGELOG entry is measured from.
 CHANGELOG_BASE ?= origin/main
 CHANGELOG_HEAD ?= HEAD
+# What schema-ack measures: a pull request's base branch and its head
+# commit, never the merge commit CI checks out.
+PR_BASE_REF ?= origin/main
+PR_HEAD     ?= HEAD
 
 # The repository's own checks, one command with one registry.
 GATES     ?= $(GO) run ./scripts/gates
@@ -165,6 +169,10 @@ checklist: ## CLAUDE.md's definition of done against `check`
 .PHONY: changelog
 changelog: ## A pull request adds a CHANGELOG entry, unless it cuts a release
 	$(GATES) changelog $(CHANGELOG_BASE) $(CHANGELOG_HEAD)
+
+.PHONY: schema-ack
+schema-ack: ## A pull request's commits name each tool-surface change since the merge-base with PR_BASE_REF
+	$(GATES) schema-ack $(PR_BASE_REF) $(PR_HEAD)
 
 .PHONY: changelog-links
 changelog-links: ## Every CHANGELOG version heading has its link reference

@@ -3,6 +3,7 @@ package main
 import (
 	"bytes"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"go/ast"
 	"go/build"
@@ -55,12 +56,17 @@ func gitFiles(root string) ([]string, error) {
 	return slices.Compact(files), nil
 }
 
-// gitOutput runs git in root and returns what it wrote to stdout.
+// gitOutput runs git in root and returns what it wrote to stdout. A
+// failure carries what git said, not only its exit status.
 func gitOutput(root string, args ...string) (string, error) {
 	cmd := exec.Command("git", args...)
 	cmd.Dir = root
 	out, err := cmd.Output()
 	if err != nil {
+		var ee *exec.ExitError
+		if errors.As(err, &ee) && len(ee.Stderr) > 0 {
+			return "", fmt.Errorf("git %s: %s", strings.Join(args, " "), strings.TrimSpace(string(ee.Stderr)))
+		}
 		return "", fmt.Errorf("git %s: %w", strings.Join(args, " "), err)
 	}
 	return string(out), nil

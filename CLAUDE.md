@@ -188,7 +188,9 @@ release server-json actionlint goreleaser-check parity
 
 Plus tests for new behavior, `/simplify`, and `/code-review high` and
 `/security-review` with findings resolved or written down in §16a. Look
-at the schema diff for anything breaking, resources included.
+at the schema diff for anything breaking, resources included. On a pull
+request CI also runs `schema-ack`: a commit footer names each changed
+item of the tool surface.
 
 Green gates are not done. Anything touching the send path, MIME
 building or an API response shape gets a live run before it counts, and

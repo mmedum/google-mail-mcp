@@ -34,6 +34,7 @@ const (
 var parityCIOnly = map[string]string{
 	"leaks-history": "reads every commit in the clone, which needs fetch-depth 0 and is slow on a laptop",
 	"changelog":     "measures a pull request against its base, which only a pull request has",
+	"schema-ack":    "measures a pull request against its merge-base, which only a pull request has",
 }
 
 // parityReleaseOnly are the inRelease commands, each with where it runs.

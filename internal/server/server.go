@@ -226,17 +226,21 @@ func outcome(res mcp.Result, err error) string {
 
 // SchemaDump is the tool surface a client is told about, for the
 // schema diff: every tool whole — _meta, annotations, input and output
-// schema — and every resource and template, since removing one is as
-// breaking as removing a tool.
+// schema — every resource, template and prompt, since removing one is
+// as breaking as removing a tool, and the instructions.
 type SchemaDump struct {
 	Server string `json:"server"`
 	// Version is the build's, which is how the schema diff tells which
 	// release a recorded baseline holds.
-	Version           string                  `json:"version"`
-	SDKVersion        string                  `json:"sdk_version"`
+	Version    string `json:"version"`
+	SDKVersion string `json:"sdk_version"`
+	// Instructions are what each mode's server tells the model before
+	// any call, by mode (instructionModes).
+	Instructions      map[string]string       `json:"instructions"`
 	Tools             []*mcp.Tool             `json:"tools"`
 	Resources         []*mcp.Resource         `json:"resources"`
 	ResourceTemplates []*mcp.ResourceTemplate `json:"resource_templates"`
+	Prompts           []*mcp.Prompt           `json:"prompts"`
 	// Kinds names each tool's kind, which decides the switch it sits
 	// behind; clients read annotations, and two kinds share them.
 	Kinds map[string]string `json:"kinds"`
@@ -246,60 +250,110 @@ type SchemaDump struct {
 // because a gated tool can lose a field like any other — as the client
 // sees it, through a real in-memory session rather than a registry.
 func DumpSchemas(ctx context.Context, w io.Writer, d Deps) error {
-	d.Config = tools.FullSurface(d.Config)
 	d.Logger = slog.New(slog.DiscardHandler)
 	if d.Client == nil {
 		d.Client = gapi.New(gapi.Options{})
 	}
-	return dump(ctx, w, New(d), d.Version, tools.Kinds(d.Deps))
+	instructions := map[string]string{}
+	for mode, cfg := range instructionModes(d.Config) {
+		m := d
+		m.Config = cfg
+		text, err := withSession(ctx, New(m), func(cs *mcp.ClientSession) (string, error) {
+			return cs.InitializeResult().Instructions, nil
+		})
+		if err != nil {
+			return err
+		}
+		instructions[mode] = text
+	}
+	d.Config = tools.FullSurface(d.Config)
+	return dump(ctx, w, New(d), d.Version, tools.Kinds(d.Deps), instructions)
 }
 
-// dump lists srv's surface through an in-memory client and writes it,
-// stamped with the build's version.
-func dump(ctx context.Context, w io.Writer, srv *mcp.Server, build string, kinds map[string]string) error {
+// instructionModes are the configurations whose instructions the dump
+// carries, by name. instructionsFor says what the registered tools
+// allow, so between them every sentence it can say is said: the default
+// server cannot send, a read-only one says so, and the full surface has
+// every tool.
+func instructionModes(cfg config.Config) map[string]config.Config {
+	def := cfg
+	def.ReadOnly, def.EnableSend, def.EnableDestructive, def.EnableSettings, def.LocalDir = false, false, false, false, ""
+	readOnly := def
+	readOnly.ReadOnly = true
+	return map[string]config.Config{"default": def, "read_only": readOnly, "full": tools.FullSurface(cfg)}
+}
+
+// withSession connects an in-memory client to srv, hands it to use, and
+// closes both.
+func withSession[T any](ctx context.Context, srv *mcp.Server, use func(*mcp.ClientSession) (T, error)) (T, error) {
+	var zero T
 	ct, st := mcp.NewInMemoryTransports()
 	ss, err := srv.Connect(ctx, st, nil)
 	if err != nil {
-		return fmt.Errorf("server: connect: %w", err)
+		return zero, fmt.Errorf("server: connect: %w", err)
 	}
 	defer func() { _ = ss.Close() }()
 	cs, err := mcp.NewClient(&mcp.Implementation{Name: "schema-dump", Version: "0"}, nil).Connect(ctx, ct, nil)
 	if err != nil {
-		return fmt.Errorf("server: client connect: %w", err)
+		return zero, fmt.Errorf("server: client connect: %w", err)
 	}
 	defer func() { _ = cs.Close() }()
+	return use(cs)
+}
 
+// dump lists srv's surface through an in-memory client and writes it,
+// stamped with the build's version.
+func dump(ctx context.Context, w io.Writer, srv *mcp.Server, build string, kinds, instructions map[string]string) error {
+	out, err := withSession(ctx, srv, func(cs *mcp.ClientSession) (SchemaDump, error) {
+		return listSurface(ctx, cs)
+	})
+	if err != nil {
+		return err
+	}
+	out.Server, out.Version, out.SDKVersion = Name, build, version.Module(sdkModule)
+	out.Instructions, out.Kinds = instructions, kinds
+	enc := json.NewEncoder(w)
+	enc.SetIndent("", "  ")
+	enc.SetEscapeHTML(false)
+	return enc.Encode(out)
+}
+
+// listSurface is every tool, resource, template and prompt cs lists,
+// each list sorted and never null.
+func listSurface(ctx context.Context, cs *mcp.ClientSession) (SchemaDump, error) {
 	out := SchemaDump{
-		Server: Name, Version: build, SDKVersion: version.Module(sdkModule),
 		Tools: []*mcp.Tool{}, Resources: []*mcp.Resource{}, ResourceTemplates: []*mcp.ResourceTemplate{},
-		Kinds: kinds,
+		Prompts: []*mcp.Prompt{},
 	}
 	for t, err := range cs.Tools(ctx, nil) {
 		if err != nil {
-			return fmt.Errorf("server: list tools: %w", err)
+			return SchemaDump{}, fmt.Errorf("server: list tools: %w", err)
 		}
 		out.Tools = append(out.Tools, t)
 	}
 	for r, err := range cs.Resources(ctx, nil) {
 		if err != nil {
-			return fmt.Errorf("server: list resources: %w", err)
+			return SchemaDump{}, fmt.Errorf("server: list resources: %w", err)
 		}
 		out.Resources = append(out.Resources, r)
 	}
 	for r, err := range cs.ResourceTemplates(ctx, nil) {
 		if err != nil {
-			return fmt.Errorf("server: list resource templates: %w", err)
+			return SchemaDump{}, fmt.Errorf("server: list resource templates: %w", err)
 		}
 		out.ResourceTemplates = append(out.ResourceTemplates, r)
+	}
+	for p, err := range cs.Prompts(ctx, nil) {
+		if err != nil {
+			return SchemaDump{}, fmt.Errorf("server: list prompts: %w", err)
+		}
+		out.Prompts = append(out.Prompts, p)
 	}
 	slices.SortFunc(out.Tools, func(a, b *mcp.Tool) int { return strings.Compare(a.Name, b.Name) })
 	slices.SortFunc(out.Resources, func(a, b *mcp.Resource) int { return strings.Compare(a.URI, b.URI) })
 	slices.SortFunc(out.ResourceTemplates, func(a, b *mcp.ResourceTemplate) int {
 		return strings.Compare(a.URITemplate, b.URITemplate)
 	})
-
-	enc := json.NewEncoder(w)
-	enc.SetIndent("", "  ")
-	enc.SetEscapeHTML(false)
-	return enc.Encode(out)
+	slices.SortFunc(out.Prompts, func(a, b *mcp.Prompt) int { return strings.Compare(a.Name, b.Name) })
+	return out, nil
 }

@@ -69,7 +69,7 @@ func schemaBaselineRecord(out io.Writer, changelog string, prev, raw []byte) ([]
 		if err != nil {
 			return nil, 0, err
 		}
-		if breaking := schemaDiffReport(out, old, now); len(breaking) > 0 && !schemaNewMajor(old.version, want) {
+		if breaking := schemaDiffReport(out, old, now).breaking; len(breaking) > 0 && !schemaNewMajor(old.version, want) {
 			msg := fmt.Sprintf("%s breaks a caller of %q in %d way(s) above, and is not a new major version; %s is unchanged",
 				want, old.version, len(breaking), schemaDiffBaseline)
 			if old.version == want {
@@ -116,9 +116,9 @@ func baselineNormalize(raw []byte) ([]byte, int, error) {
 			return 0
 		})
 	}
-	sortBy("tools", "name")
-	sortBy("resources", "uri")
-	sortBy("resource_templates", "uriTemplate")
+	for field, list := range schemaDiffLists {
+		sortBy(field, list.id)
+	}
 	tools, _ := d["tools"].([]any)
 	b, err := json.MarshalIndent(d, "", "  ")
 	if err != nil {

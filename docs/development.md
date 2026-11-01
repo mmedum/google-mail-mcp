@@ -35,6 +35,7 @@ with no argument lists them.
 | `staleness` | README, `docs/` and `CLAUDE.md` against the code, including the generated scope lists in `gcp-setup.md` | check |
 | `checklist` | `CLAUDE.md`'s definition of done against `make check` | check |
 | `changelog` | a pull request adds a CHANGELOG entry, unless it is a release cut | CI |
+| `schema-ack` | a pull request's commits name, in a `SCHEMA-CHANGE:` or `BREAKING CHANGE:` footer, each item of the tool surface that changed since the merge-base; a break of the newest release needs `BREAKING CHANGE:`; a refusal prints the footer that fixes it | CI |
 | `changelog-links` | every CHANGELOG version heading has its link | check |
 | `pins` | actions pinned to SHAs, tools to versions, the rehearsal's goreleaser to the release's, and architecture §5a's pin table to all of them | check |
 | `parity` | `make check` and `ci.yml` run the same set | check |
@@ -139,7 +140,9 @@ and the recovery for each step no rehearsal reaches.
 3. Add it to the README's tool table, or `staleness` fails.
 4. Add a step to `scripts/livemail`, or `live-cover` fails.
 5. Run `schema-diff` and read it. The baseline moves only in a release
-   commit.
+   commit. On the pull request, `schema-ack` wants a commit footer
+   naming the tool: `SCHEMA-CHANGE: <tool>: what changed`, or
+   `BREAKING CHANGE:` for a break of the newest release.
 
 ## Adding an API call
 
