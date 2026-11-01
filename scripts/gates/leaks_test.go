@@ -2,7 +2,6 @@ package main
 
 import (
 	"os"
-	"os/exec"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -121,20 +120,10 @@ func leaksRepo(t *testing.T, n int) string {
 		files[filepath.Join("docs", "f"+string(rune('a'+i))+".md")] = "reader@example.com\n"
 	}
 	root := writeTree(t, files)
-	leaksGitIn(t, root, "init", "-q")
-	leaksGitIn(t, root, "add", "-A")
-	leaksGitIn(t, root, "commit", "-qm", "first")
+	gitIn(t, root, "init", "-q")
+	gitIn(t, root, "add", "-A")
+	gitIn(t, root, "commit", "-qm", "first")
 	return root
-}
-
-func leaksGitIn(t *testing.T, dir string, args ...string) {
-	t.Helper()
-	cmd := exec.Command("git", append([]string{"-c", "user.name=Fixture", "-c", "user.email=fixture@example.com",
-		"-c", "commit.gpgsign=false", "-c", "tag.gpgsign=false"}, args...)...)
-	cmd.Dir = dir
-	if out, err := cmd.CombinedOutput(); err != nil {
-		t.Fatalf("git %v: %v\n%s", args, err, out)
-	}
 }
 
 func TestLeaksTreeScansTrackedAndUntracked(t *testing.T) {
@@ -161,7 +150,7 @@ func TestLeaksTreeRefusesABinaryAndAShortScan(t *testing.T) {
 	if err := os.WriteFile(filepath.Join(root, "gates"), []byte("\x7fELF\x02\x01\x01\x00binary"), 0o600); err != nil {
 		t.Fatal(err)
 	}
-	leaksGitIn(t, root, "add", "-f", "gates")
+	gitIn(t, root, "add", "-f", "gates")
 	var out sink
 	if err := leaksTree(&out, root, 3); err == nil {
 		t.Fatal("a tracked executable passed")
@@ -186,13 +175,13 @@ func TestLeaksHistoryReadsBlobsMessagesAndTags(t *testing.T) {
 	if err := os.WriteFile(path, []byte(leaksPlant("message ", "18c3f2a4b5d6e7f8")), 0o600); err != nil {
 		t.Fatal(err)
 	}
-	leaksGitIn(t, root, "add", "-A")
-	leaksGitIn(t, root, "commit", "-qm", "add")
-	leaksGitIn(t, root, "rm", "-q", "gone.md")
-	leaksGitIn(t, root, "commit", "-qm", "remove")
+	gitIn(t, root, "add", "-A")
+	gitIn(t, root, "commit", "-qm", "add")
+	gitIn(t, root, "rm", "-q", "gone.md")
+	gitIn(t, root, "commit", "-qm", "remove")
 	// And one in a commit message, and one in a tag message.
-	leaksGitIn(t, root, "commit", "-q", "--allow-empty", "-m", leaksPlant("thanks dave", "@", "acme.co.uk"))
-	leaksGitIn(t, root, "tag", "-a", "v0.0.1", "-m", leaksPlant("thread ", "18c3f2a4b5d6e7f9"))
+	gitIn(t, root, "commit", "-q", "--allow-empty", "-m", leaksPlant("thanks dave", "@", "acme.co.uk"))
+	gitIn(t, root, "tag", "-a", "v0.0.1", "-m", leaksPlant("thread ", "18c3f2a4b5d6e7f9"))
 
 	out = sink{}
 	if err := leaksScanHistory(&out, root); err == nil {

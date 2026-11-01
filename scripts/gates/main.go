@@ -12,6 +12,7 @@ package main
 
 import (
 	"cmp"
+	"errors"
 	"fmt"
 	"io"
 	"maps"
@@ -121,6 +122,8 @@ func init() {
 			doc: "CLAUDE.md's definition of done against the Makefile's check: prerequisites"},
 		"changelog": {run: changelog, minArgs: 2, maxArgs: 2, args: "BASE HEAD", runsIn: inCI,
 			doc: "a pull request adds a CHANGELOG entry unless it is a release cut"},
+		"schema-ack": {run: schemaAck, minArgs: 2, maxArgs: 2, args: "BASE HEAD", runsIn: inCI,
+			doc: "a pull request's commits name, in a footer, each item of the tool surface it changes"},
 		"changelog-links": {run: changelogLinks, runsIn: inCheck,
 			doc: "every CHANGELOG version heading has its link reference"},
 
@@ -200,10 +203,23 @@ func run(args []string, stdout, stderr io.Writer) int {
 	}
 	if err := c.run(stdout, rest); err != nil {
 		_, _ = fmt.Fprintf(stderr, "gates: %s: %v\n", args[0], err)
+		if errors.As(err, new(couldNotRun)) {
+			return 2
+		}
 		return 1
 	}
 	return 0
 }
+
+// couldNotRun is an error that stopped schema-ack before it could judge:
+// a build or a git call that failed. It exits 2, as a usage error does,
+// and its message says so, which is what tells it from a refusal in CI,
+// since `go run` exits 1 whatever the program's own status was.
+type couldNotRun struct{ error }
+
+func (e couldNotRun) Error() string { return "could not run: " + e.error.Error() }
+
+func (e couldNotRun) Unwrap() error { return e.error }
 
 // usage is generated from the command list, so it cannot fall behind it.
 func usage(w io.Writer) {

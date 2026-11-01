@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"errors"
 	"log/slog"
+	"maps"
 	"regexp"
 	"slices"
 	"strings"
@@ -205,15 +206,22 @@ func TestTheSDKLoggerOnlyAtDebug(t *testing.T) {
 	}
 }
 
-func TestDumpSchemas(t *testing.T) {
+// dumpOf is DumpSchemas run with cfg, as written and as read back.
+func dumpOf(t *testing.T, cfg config.Config) ([]byte, SchemaDump) {
+	t.Helper()
 	var buf bytes.Buffer
-	if err := DumpSchemas(context.Background(), &buf, Deps{Version: "test"}); err != nil {
+	if err := DumpSchemas(context.Background(), &buf, Deps{Deps: tools.Deps{Config: cfg}, Version: "test"}); err != nil {
 		t.Fatal(err)
 	}
 	var dump SchemaDump
 	if err := json.Unmarshal(buf.Bytes(), &dump); err != nil {
 		t.Fatalf("dump is not JSON: %v\n%s", err, buf.String())
 	}
+	return buf.Bytes(), dump
+}
+
+func TestDumpSchemas(t *testing.T) {
+	raw, dump := dumpOf(t, config.Config{})
 	if dump.Server != Name {
 		t.Errorf("server = %q", dump.Server)
 	}
@@ -223,8 +231,8 @@ func TestDumpSchemas(t *testing.T) {
 	if dump.SDKVersion == "" || dump.SDKVersion == "unknown" {
 		t.Errorf("sdk version = %q; it must come from build info", dump.SDKVersion)
 	}
-	if dump.Tools == nil || dump.Resources == nil || dump.ResourceTemplates == nil {
-		t.Errorf("an empty list must be [], not null: %s", buf.String())
+	if dump.Tools == nil || dump.Resources == nil || dump.ResourceTemplates == nil || dump.Prompts == nil {
+		t.Errorf("an empty list must be [], not null: %s", raw)
 	}
 	// Every tool dumped has its kind, and only those.
 	for _, tool := range dump.Tools {
@@ -237,8 +245,38 @@ func TestDumpSchemas(t *testing.T) {
 	}
 }
 
+// The dump carries the instructions of each mode, and between them every
+// sentence the instructions can say, so an edit to any of them is a
+// change the schema gates see.
+func TestTheDumpCarriesEverySentenceOfTheInstructions(t *testing.T) {
+	raw, dump := dumpOf(t, config.Config{})
+	// The dump does not depend on the settings it runs with.
+	everything, _ := dumpOf(t, config.Config{ReadOnly: true, EnableSend: true, EnableDestructive: true, EnableSettings: true,
+		LocalDir: t.TempDir(), DraftSignature: true})
+	if !bytes.Equal(everything, raw) {
+		t.Error("the dump made with every setting on differs from the one made with none")
+	}
+	if got := slices.Sorted(maps.Keys(dump.Instructions)); !slices.Equal(got, []string{"default", "full", "read_only"}) {
+		t.Fatalf("instruction modes = %v, want default, full and read_only", got)
+	}
+	all := strings.Join(slices.Collect(maps.Values(dump.Instructions)), "\n")
+	texts := []string{untrustedMail, "This server is read-only:", "Each result reports the quota units it spent."}
+	for _, s := range sentences {
+		texts = append(texts, s.text)
+	}
+	for _, text := range texts {
+		if !strings.Contains(all, text) {
+			t.Errorf("no mode's instructions say %q", text)
+		}
+	}
+	if !strings.Contains(dump.Instructions["default"], "This server cannot send mail") ||
+		strings.Contains(dump.Instructions["full"], "This server cannot send mail") {
+		t.Errorf("the default server should say it cannot send, and the full one not:\n%v", dump.Instructions)
+	}
+}
+
 // The dump carries each tool whole — _meta and output schema included —
-// and resources and templates, sorted.
+// and resources, templates and prompts, sorted.
 func TestDumpCarriesTheWholeSurface(t *testing.T) {
 	s := mcp.NewServer(&mcp.Implementation{Name: "x", Version: "0"}, nil)
 	for _, name := range []string{"zeta", "alpha"} {
@@ -250,8 +288,10 @@ func TestDumpCarriesTheWholeSurface(t *testing.T) {
 	noop := func(context.Context, *mcp.ReadResourceRequest) (*mcp.ReadResourceResult, error) { return nil, nil }
 	s.AddResource(&mcp.Resource{Name: "labels", URI: "gmail://labels"}, noop)
 	s.AddResourceTemplate(&mcp.ResourceTemplate{Name: "thread", URITemplate: "gmail://threads/{id}"}, noop)
+	s.AddPrompt(&mcp.Prompt{Name: "summarize"},
+		func(context.Context, *mcp.GetPromptRequest) (*mcp.GetPromptResult, error) { return nil, nil })
 	var buf bytes.Buffer
-	if err := dump(context.Background(), &buf, s, "v9.9.9", map[string]string{"alpha": "read", "zeta": "send"}); err != nil {
+	if err := dump(context.Background(), &buf, s, "v9.9.9", map[string]string{"alpha": "read", "zeta": "send"}, nil); err != nil {
 		t.Fatal(err)
 	}
 	var got SchemaDump
@@ -266,5 +306,8 @@ func TestDumpCarriesTheWholeSurface(t *testing.T) {
 	}
 	if len(got.Resources) != 1 || len(got.ResourceTemplates) != 1 {
 		t.Errorf("resources = %+v %+v", got.Resources, got.ResourceTemplates)
+	}
+	if len(got.Prompts) != 1 || got.Prompts[0].Name != "summarize" {
+		t.Errorf("prompts = %+v, want summarize", got.Prompts)
 	}
 }

@@ -2,6 +2,7 @@ package main
 
 import (
 	"os"
+	"os/exec"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -24,6 +25,13 @@ func (s *sink) mustSay(t *testing.T, want string) {
 func writeTree(t *testing.T, files map[string]string) string {
 	t.Helper()
 	root := t.TempDir()
+	writeFiles(t, root, files)
+	return root
+}
+
+// writeFiles writes files (slash-separated path → content) under root.
+func writeFiles(t *testing.T, root string, files map[string]string) {
+	t.Helper()
 	for name, body := range files {
 		path := filepath.Join(root, filepath.FromSlash(name))
 		if err := os.MkdirAll(filepath.Dir(path), 0o750); err != nil {
@@ -33,5 +41,29 @@ func writeTree(t *testing.T, files map[string]string) string {
 			t.Fatal(err)
 		}
 	}
+}
+
+// gitIn runs git in dir as a fixture identity, reading none of the
+// machine's configuration: no signing key, no hooks, no default branch
+// of its own.
+func gitIn(t *testing.T, dir string, args ...string) {
+	t.Helper()
+	cmd := exec.Command("git", args...)
+	cmd.Dir = dir
+	cmd.Env = append(os.Environ(), "GIT_AUTHOR_NAME=Fixture", "GIT_AUTHOR_EMAIL=fixture@example.com",
+		"GIT_COMMITTER_NAME=Fixture", "GIT_COMMITTER_EMAIL=fixture@example.com",
+		"GIT_CONFIG_GLOBAL="+os.DevNull, "GIT_CONFIG_NOSYSTEM=1")
+	if out, err := cmd.CombinedOutput(); err != nil {
+		t.Fatalf("git %v: %v\n%s", args, err, out)
+	}
+}
+
+// gitRepo is writeTree's files committed to a fresh repository.
+func gitRepo(t *testing.T, files map[string]string) string {
+	t.Helper()
+	root := writeTree(t, files)
+	gitIn(t, root, "init", "-q")
+	gitIn(t, root, "add", "-A")
+	gitIn(t, root, "commit", "-qm", "first")
 	return root
 }

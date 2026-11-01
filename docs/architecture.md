@@ -746,6 +746,7 @@ comment, re-resolved at scaffold time.
 | `api-diff` (manual) | one fetch covering methods and fields; written through a temp file and rename; a network failure leaves the committed snapshot untouched, **held by a test against a closed port** |
 | `api-fields` | recursive over inline objects; every struct the wire package declares judged; floors on published and modeled fields |
 | `schema-diff` | a committed baseline, never a tag, because CI's checkout is shallow and has no tags; the baseline is the CHANGELOG's newest release, stamped with its version, and the gate fails on any other; with nothing under `[Unreleased]` the build must match it exactly, which proves a release commit recorded it rather than relabeled it; the tool surface **and resources**; fails on a removed tool, a lost input or output field at any depth, a type change that breaks a caller (an input that takes less, an output that may return more, `null` included), a new required input, an input enum that loses a value or newly limits one, or an output field no longer required, which a caller read as always there; a field with no type, a list with no element schema and the boolean schema `true` take any value, and `false` none; the whole `mcp.Tool` dumped, `_meta` and output schema included; the dump free of `GMAIL_` settings; a floor on tools. `schema-baseline` refuses a build stamped with another version, and a break unless the release is a new major version |
+| `schema-ack` (CI) | both sides built from commits, the merge-base and the pull request's head, never the merge commit CI checks out; the whole dump compared, the instructions of each mode and the prompts included; every changed item named as a whole token in a footer of the commit messages' footer block, never the subject; a break counts only if it breaks the newest release's baseline, read from the base branch, matched by item and field; `SCHEMA-CHANGE:` in any case, `BREAKING CHANGE:` only in capitals (§18 row 105); the refusal prints the footer that fixes it, and a gate that could not run says so |
 | `leaks` | allow-list rules, each anchored on a shape generated fields cannot take (an `@` with a dotted domain; a Gmail URL prefix; a keyword before a hex id; the OAuth shapes); every allow-list entry carries a reason, asserted; tracked files and untracked-unignored files both scanned; a tracked binary (ELF, Mach-O, PE magic) is a finding; history mode covering blobs, commit messages and tags with a derived floor; findings printed redacted |
 | `transcript` | drivers cannot reach `os.Stdout`, `os.Stderr` or `log.*`; exactly one exempt package with exactly one write site, which redacts; an unlisted driver fails; a listed directory that is missing fails; a floor on mentions |
 | `live-cover` | per tool **option**, not per tool, recorded at run time through the stdio client; waivers in a TSV with a reason each, a ceiling, and a failure on a waiver whose option is now driven; a map inside an option's value read as that value, never as options (2026-10-23) |
@@ -3428,10 +3429,6 @@ Open:
   Deferred from the port's review (§16a): it moves every refusal's
   wording and order, and each of the five tools' own tests refuses a
   call without `confirm`.
-- **`schema-diff` reads a break's subject back from its message.** A
-  break reported in a new shape could take the wrong subject. Returning
-  the subject with each break is the change, made with the other
-  servers of the family, whose gate is built the same way.
 
 Written off:
 
@@ -3442,6 +3439,11 @@ Written off:
 
 Phase 1 closed the header-block entry: a read's header block is capped
 at half its budget, cut at a line, and the cut is stated.
+
+`schema-ack` closed the entry on a break's subject: each change the
+schema diff reports carries the item it is to and the field it breaks,
+so a **Breaking:** entry and a commit footer are matched against that,
+never against the message.
 
 ### 17b. Deviations from the shared standard
 
@@ -3584,3 +3586,4 @@ live** — §15 exists to settle these, and they are marked.
 | 102 | Google writes a time it does not have as the Unix epoch | Seen live from another Google API on 2026-10-31, answering `1970-01-01T00:00:00Z` for a time it lacked. Not seen from Gmail, and the discovery document's `internalDate` says only "the internal message creation timestamp (epoch ms)" | **A guard, not a verified convention** (rule 18 asks for a probe Gmail cannot be made to answer). No mail Gmail holds dates from 1970, so an `internalDate` of zero reads as no date, the Date header stands in, and nothing is shown as sent in 1970 |
 | 103 | An unknown date can go out as Go's zero time | Read 2026-10-31: a message with neither an `internalDate` nor a Date header went out as `"date": "0001-01-01T00:00:00Z"` in the structured half while the text said "unknown date", and a thread row's `latest` the same | **Refuted.** Both are left out when unknown, as the settings and search times already were: a breaking change, so 4.0.0, with the module path at `/v4` |
 | 104 | A scope must be on the consent screen to be granted | Google's configure-oauth-consent guide (updated 2026-09-03): "you only need to list scopes for apps used by people outside your Google Workspace organization", and for internal apps "scopes aren't listed on the consent screen". Confirmed live 2026-10-31 on an Internal app, whose token held scopes its Data Access page does not list | **Refined.** The setup page asks for the scope list on External apps only |
+| 105 | A commit footer's token is matched exactly, so `SCHEMA-CHANGE:` must be written in capitals | Read 2026-11-01: Conventional Commits 1.0.0, item 15, "The units of information that make up Conventional Commits MUST NOT be treated as case-sensitive by implementors, with the exception of BREAKING CHANGE which MUST be uppercase"; item 16, "BREAKING-CHANGE MUST be synonymous with BREAKING CHANGE" | **Refuted.** `schema-ack` reads `SCHEMA-CHANGE:` in any case, and `BREAKING CHANGE:` and `BREAKING-CHANGE:` only in capitals |

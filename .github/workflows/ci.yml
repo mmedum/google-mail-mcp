@@ -161,3 +161,32 @@ jobs:
         env:
           BASE_REF: ${{ github.base_ref }}
         run: make changelog CHANGELOG_BASE="origin/${BASE_REF}"
+
+  # A pull request whose tool surface changes says so in a commit footer
+  # naming each item, since an annotation or an instruction change breaks
+  # no schema and still changes what a client does. It measures from the
+  # merge-base, which only a pull request has, so it is not in `make
+  # check`.
+  schema-ack:
+    if: github.event_name == 'pull_request'
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    env:
+      # The flags schema-ack builds both sides with; `go run` uses them
+      # too, so the gates and the server share compiled packages.
+      CGO_ENABLED: "0"
+      GOFLAGS: -trimpath
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+          fetch-depth: 0
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        with:
+          go-version-file: go.mod
+      - name: tool surface acknowledged
+        env:
+          BASE_REF: ${{ github.base_ref }}
+          # The head commit, not the merge commit the checkout sits on.
+          HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+        run: make schema-ack PR_BASE_REF="origin/${BASE_REF}" PR_HEAD="${HEAD_SHA}"

@@ -79,10 +79,11 @@ func schemaDiffCheck(out io.Writer, changelog string, baselineBytes, currentByte
 	if err != nil {
 		return err
 	}
-	if len(now.tools) < schemaDiffMinTools {
-		return fmt.Errorf("the built surface has %d tools, below the floor of %d", len(now.tools), schemaDiffMinTools)
+	if now.count["tool"] < schemaDiffMinTools {
+		return fmt.Errorf("the built surface has %d tools, below the floor of %d", now.count["tool"], schemaDiffMinTools)
 	}
-	breaking := schemaDiffReport(out, old, now)
+	changes := schemaDiffReport(out, old, now)
+	breaking := changes.breaking
 
 	want := schemaBaselineVersion(changelog)
 	var problems []string
@@ -108,8 +109,7 @@ func schemaDiffCheck(out io.Writer, changelog string, baselineBytes, currentByte
 				len(breaking))
 		}
 	}
-	if len(problems) == 0 && want != "" && strings.TrimSpace(stalenessUnreleased(changelog)) == "" &&
-		!schemaDiffSame(baselineBytes, currentBytes) {
+	if len(problems) == 0 && want != "" && strings.TrimSpace(stalenessUnreleased(changelog)) == "" && !changes.empty() {
 		problems = append(problems, fmt.Sprintf("nothing is under [Unreleased], so this build is %s, and its surface "+
 			"differs from the baseline; in %s's release commit, run `make schema-baseline VERSION=%s`, "+
 			"otherwise say what changed under [Unreleased]", want, want, want))
@@ -120,14 +120,42 @@ func schemaDiffCheck(out io.Writer, changelog string, baselineBytes, currentByte
 	return nil
 }
 
+// schemaDiffLists are the dump's lists of named items: the word the
+// report gives an item of each, and the field that names it. Every
+// other key but schemaDiffStamp is compared whole, so a list the dump
+// gains later is still seen.
+var schemaDiffLists = map[string]struct{ word, id string }{
+	"tools":              {"tool", "name"},
+	"resources":          {"resource", "uri"},
+	"resource_templates": {"resource template", "uriTemplate"},
+	"prompts":            {"prompt", "name"},
+}
+
+// schemaDiffStamp are the dump's keys that are not compared whole: the
+// build's stamp, and the kinds, which are compared tool by tool.
+var schemaDiffStamp = []string{"server", "version", "sdk_version", "kinds"}
+
+// schemaDiffItem is one item of a dumped list. name is what a footer or
+// a **Breaking:** entry names it by: a tool's or a prompt's name, a
+// resource's URI or template.
+type schemaDiffItem struct {
+	name string
+	tool bool
+	body map[string]any
+}
+
 // schemaDiffSurface is a dump decoded generically, so every field a
 // client can read is compared, including ones no type here names.
 type schemaDiffSurface struct {
-	version   string
-	kinds     map[string]string
-	tools     map[string]map[string]any
-	resources map[string]map[string]any
-	templates map[string]map[string]any
+	version string
+	kinds   map[string]string
+	// items is every item of every list in schemaDiffLists, by how the
+	// report says it: the list's word and the item's name.
+	items map[string]schemaDiffItem
+	// rest is every other key, such as the instructions.
+	rest map[string]any
+	// count is how many items each list holds, by its word.
+	count map[string]int
 }
 
 func schemaDiffDecode(b []byte, source string) (*schemaDiffSurface, error) {
@@ -135,147 +163,181 @@ func schemaDiffDecode(b []byte, source string) (*schemaDiffSurface, error) {
 	if err != nil {
 		return nil, err
 	}
-	var raw struct {
-		Tools             []map[string]any `json:"tools"`
-		Resources         []map[string]any `json:"resources"`
-		ResourceTemplates []map[string]any `json:"resource_templates"`
-	}
-	if err := json.Unmarshal(b, &raw); err != nil {
+	var whole map[string]any
+	if err := json.Unmarshal(b, &whole); err != nil {
 		return nil, fmt.Errorf("%s: %w", source, err)
 	}
-	s := &schemaDiffSurface{version: d.Version, kinds: d.Kinds, tools: map[string]map[string]any{},
-		resources: map[string]map[string]any{}, templates: map[string]map[string]any{}}
-	index := func(items []map[string]any, key string, into map[string]map[string]any) error {
-		for _, it := range items {
-			k, _ := it[key].(string)
-			if k == "" {
-				return fmt.Errorf("%s: an entry has no %s", source, key)
-			}
-			if _, dup := into[k]; dup {
-				return fmt.Errorf("%s: %s listed twice", source, k)
-			}
-			into[k] = it
+	for _, k := range schemaDiffStamp {
+		delete(whole, k)
+	}
+	s := &schemaDiffSurface{version: d.Version, kinds: d.Kinds, items: map[string]schemaDiffItem{},
+		rest: map[string]any{}, count: map[string]int{}}
+	for key, v := range whole {
+		list, named := schemaDiffLists[key]
+		if !named {
+			s.rest[key] = v
+			continue
 		}
-		return nil
-	}
-	if err := index(raw.Tools, "name", s.tools); err != nil {
-		return nil, err
-	}
-	if err := index(raw.Resources, "uri", s.resources); err != nil {
-		return nil, err
-	}
-	if err := index(raw.ResourceTemplates, "uriTemplate", s.templates); err != nil {
-		return nil, err
+		entries, _ := v.([]any)
+		for _, e := range entries {
+			body, _ := e.(map[string]any)
+			name, _ := body[list.id].(string)
+			if name == "" {
+				return nil, fmt.Errorf("%s: an entry of %s has no %s", source, key, list.id)
+			}
+			label := list.word + " " + name
+			if _, dup := s.items[label]; dup {
+				return nil, fmt.Errorf("%s: %s listed twice", source, label)
+			}
+			s.items[label] = schemaDiffItem{name: name, tool: key == "tools", body: body}
+			s.count[list.word]++
+		}
 	}
 	return s, nil
 }
 
-// schemaDiffReport prints what changed from old to now, and returns what
-// breaks a caller.
-func schemaDiffReport(out io.Writer, old, now *schemaDiffSurface) []string {
-	var breaking, changed []string
-	breaking = append(breaking, schemaDiffRemoved("tool", old.tools, now.tools)...)
-	breaking = append(breaking, schemaDiffRemoved("resource", old.resources, now.resources)...)
-	breaking = append(breaking, schemaDiffRemoved("resource template", old.templates, now.templates)...)
+// A change is one difference between two dumps: the item it is to, which
+// is what a footer or a **Breaking:** entry names, and how the report
+// says it. field is, on the break of a tool still there, the field it
+// breaks, such as "input id".
+type change struct {
+	item, text, field string
+}
 
-	for _, name := range slices.Sorted(maps.Keys(old.tools)) {
-		was, ok := now.tools[name]
-		if !ok {
+// surfaceChanges is what differs between two surfaces. breaking is what
+// breaks a caller; changed is every other difference, a description, an
+// annotation, a _meta mark, a kind or the instructions, for a reviewer
+// to look at.
+type surfaceChanges struct {
+	added, changed, breaking []change
+}
+
+func (c surfaceChanges) empty() bool {
+	return len(c.added) == 0 && len(c.changed) == 0 && len(c.breaking) == 0
+}
+
+// schemaDiffCompare is what changed from old to now. An item gone breaks
+// a caller, and so does a tool still there that broke at any depth
+// (schemaDiffTool). Every other difference is listed, a broken tool's
+// included: the break names only the fields it broke.
+func schemaDiffCompare(old, now *schemaDiffSurface) surfaceChanges {
+	var c surfaceChanges
+	var fields []change
+	for _, label := range sortedUnion(old.items, now.items) {
+		was, inOld := old.items[label]
+		is, inNow := now.items[label]
+		switch {
+		case !inNow:
+			c.breaking = append(c.breaking, change{item: was.name, text: label + " removed"})
+		case !inOld:
+			c.added = append(c.added, change{item: is.name, text: label})
+		default:
+			who := label
+			if was.tool {
+				who = was.name
+			}
+			for _, k := range sortedUnion(was.body, is.body) {
+				if !reflect.DeepEqual(was.body[k], is.body[k]) {
+					c.changed = append(c.changed, change{item: was.name, text: who + ": " + k + " changed"})
+				}
+			}
+			if !was.tool {
+				continue
+			}
+			// The kind decides which setting a tool sits behind.
+			if k, n := old.kinds[was.name], now.kinds[was.name]; k != n {
+				c.changed = append(c.changed, change{item: was.name,
+					text: fmt.Sprintf("%s: kind changed from %q to %q", was.name, k, n)})
+			}
+			fields = append(fields, schemaDiffTool(was.name, was.body, is.body)...)
+		}
+	}
+	for _, part := range changedParts(old.rest, now.rest) {
+		top, _, _ := strings.Cut(part, ".")
+		c.changed = append(c.changed, change{item: top, text: part + " changed"})
+	}
+	c.breaking = append(c.breaking, fields...)
+	return c
+}
+
+// write prints the changes, one a line.
+func (c surfaceChanges) write(out io.Writer) {
+	for _, a := range c.added {
+		_, _ = fmt.Fprintln(out, "  added: "+a.text)
+	}
+	for _, ch := range c.changed {
+		_, _ = fmt.Fprintln(out, "  look at this: "+ch.text)
+	}
+	for _, b := range c.breaking {
+		_, _ = fmt.Fprintln(out, "  BREAKING: "+b.text)
+	}
+}
+
+// schemaDiffReport prints what changed from old to now, under a line
+// counting both surfaces, and returns it.
+func schemaDiffReport(out io.Writer, old, now *schemaDiffSurface) surfaceChanges {
+	c := schemaDiffCompare(old, now)
+	_, _ = fmt.Fprintf(out, "schema-diff: baseline (%s) %d tools, %d resources, %d templates; built %d tools, %d resources, %d templates\n",
+		old.version, old.count["tool"], old.count["resource"], old.count["resource template"],
+		now.count["tool"], now.count["resource"], now.count["resource template"])
+	c.write(out)
+	return c
+}
+
+// changedParts names what differs between two dumped objects, one level
+// deep, so a changed mode's instructions read as instructions.read_only.
+// Values are compared decoded, so key order is no change.
+func changedParts(o, n map[string]any) []string {
+	var parts []string
+	for _, k := range sortedUnion(o, n) {
+		if reflect.DeepEqual(o[k], n[k]) {
 			continue
 		}
-		before := old.tools[name]
-		b := schemaDiffTool(name, before, was)
-		breaking = append(breaking, b...)
-		for _, key := range slices.Sorted(maps.Keys(schemaDiffUnion(before, was))) {
-			if !reflect.DeepEqual(before[key], was[key]) {
-				changed = append(changed, name+": "+key+" changed")
-			}
+		om, oMap := o[k].(map[string]any)
+		nm, nMap := n[k].(map[string]any)
+		if !oMap || !nMap {
+			parts = append(parts, k)
+			continue
 		}
-		// The kind decides which setting a tool sits behind.
-		if k, n := old.kinds[name], now.kinds[name]; k != n {
-			changed = append(changed, fmt.Sprintf("%s: kind changed from %q to %q", name, k, n))
-		}
-	}
-	for _, kind := range []struct {
-		what     string
-		old, now map[string]map[string]any
-	}{{"resource", old.resources, now.resources}, {"resource template", old.templates, now.templates}} {
-		for _, k := range slices.Sorted(maps.Keys(kind.old)) {
-			if n, ok := kind.now[k]; ok && !reflect.DeepEqual(kind.old[k], n) {
-				changed = append(changed, kind.what+" "+k+" changed")
+		for _, sub := range sortedUnion(om, nm) {
+			if !reflect.DeepEqual(om[sub], nm[sub]) {
+				parts = append(parts, k+"."+sub)
 			}
 		}
 	}
-
-	added := schemaDiffRemoved("tool", now.tools, old.tools)
-	added = append(added, schemaDiffRemoved("resource", now.resources, old.resources)...)
-	added = append(added, schemaDiffRemoved("resource template", now.templates, old.templates)...)
-
-	_, _ = fmt.Fprintf(out, "schema-diff: baseline (%s) %d tools, %d resources, %d templates; built %d tools, %d resources, %d templates\n",
-		old.version, len(old.tools), len(old.resources), len(old.templates), len(now.tools), len(now.resources), len(now.templates))
-	for _, a := range added {
-		_, _ = fmt.Fprintln(out, "  added: "+strings.TrimSuffix(a, " removed"))
-	}
-	for _, c := range changed {
-		_, _ = fmt.Fprintln(out, "  look at this: "+c)
-	}
-	for _, b := range breaking {
-		_, _ = fmt.Fprintln(out, "  BREAKING: "+b)
-	}
-	return breaking
+	return parts
 }
 
-// schemaDiffSame reports whether two dumps publish the same surface,
-// field for field: tools, resources, templates and kinds. The version
-// and SDK stamps are not part of it, and neither is the order of keys
-// or of the lists.
-func schemaDiffSame(a, b []byte) bool {
-	var surfaces [2]map[string]any
-	for i, raw := range [][]byte{a, b} {
-		norm, _, err := baselineNormalize(raw)
-		if err != nil || json.Unmarshal(norm, &surfaces[i]) != nil {
-			return false
-		}
-		delete(surfaces[i], "version")
-		delete(surfaces[i], "sdk_version")
-	}
-	return reflect.DeepEqual(surfaces[0], surfaces[1])
-}
-
-func schemaDiffUnion(a, b map[string]any) map[string]bool {
-	u := map[string]bool{}
-	for k := range a {
-		u[k] = true
-	}
-	for k := range b {
-		u[k] = true
-	}
-	return u
-}
-
-func schemaDiffRemoved(what string, old, now map[string]map[string]any) []string {
-	var out []string
-	for _, k := range slices.Sorted(maps.Keys(old)) {
-		if _, ok := now[k]; !ok {
-			out = append(out, what+" "+k+" removed")
-		}
-	}
-	return out
+// sortedUnion is every key of a and b, sorted.
+func sortedUnion[V any](a, b map[string]V) []string {
+	keys := slices.AppendSeq(slices.Collect(maps.Keys(a)), maps.Keys(b))
+	slices.Sort(keys)
+	return slices.Compact(keys)
 }
 
 // schemaDiffTool is the breaking half for one tool.
-func schemaDiffTool(name string, was, now map[string]any) []string {
-	var out []string
+func schemaDiffTool(name string, was, now map[string]any) []change {
+	var out []change
 	wasIn, _ := was["inputSchema"].(map[string]any)
 	nowIn, _ := now["inputSchema"].(map[string]any)
-	out = append(out, schemaDiffFields(name+" input", "", wasIn, nowIn, true)...)
+	out = append(out, schemaDiffFields(name, "", wasIn, nowIn, true)...)
 	wasOut, _ := was["outputSchema"].(map[string]any)
 	nowOut, _ := now["outputSchema"].(map[string]any)
 	if wasOut != nil && nowOut == nil {
-		out = append(out, name+": output schema removed")
+		out = append(out, change{item: name, text: name + ": output schema removed", field: "output"})
 	}
-	out = append(out, schemaDiffFields(name+" output", "", wasOut, nowOut, false)...)
+	out = append(out, schemaDiffFields(name, "", wasOut, nowOut, false)...)
 	return out
+}
+
+// schemaBroke is a break of tool's input or output field at path, said
+// as the report says it, so the text and the field cannot drift apart.
+func schemaBroke(tool string, input bool, path, how string) change {
+	side := "output"
+	if input {
+		side = "input"
+	}
+	return change{item: tool, text: tool + " " + side + ": field " + path + " " + how, field: side + " " + path}
 }
 
 // schemaDiffFields walks two object schemas together. A property lost
@@ -286,26 +348,26 @@ func schemaDiffTool(name string, was, now map[string]any) []string {
 //
 // A path names a field the way a caller reaches it: `opts.deep`, and
 // `messages[].id` for a field of each element of a list.
-func schemaDiffFields(where, prefix string, was, now map[string]any, input bool) []string {
+func schemaDiffFields(tool, prefix string, was, now map[string]any, input bool) []change {
 	if was == nil || now == nil {
 		return nil
 	}
-	var out []string
+	var out []change
 	wasProps, _ := was["properties"].(map[string]any)
 	nowProps, _ := now["properties"].(map[string]any)
 	for _, p := range slices.Sorted(maps.Keys(wasProps)) {
 		child, ok := nowProps[p]
 		if !ok {
-			out = append(out, fmt.Sprintf("%s: field %s%s removed", where, prefix, p))
+			out = append(out, schemaBroke(tool, input, prefix+p, "removed"))
 			continue
 		}
-		out = append(out, schemaDiffField(where, prefix+p, schemaDiffNode(wasProps[p]), schemaDiffNode(child), input)...)
+		out = append(out, schemaDiffField(tool, prefix+p, schemaDiffNode(wasProps[p]), schemaDiffNode(child), input)...)
 	}
 	wasRequired, nowRequired := schemaDiffSet(was["required"]), schemaDiffSet(now["required"])
 	if input {
 		for _, r := range schemaDiffStrings(now["required"]) {
 			if !wasRequired[r] {
-				out = append(out, fmt.Sprintf("%s: field %s%s newly required", where, prefix, r))
+				out = append(out, schemaBroke(tool, input, prefix+r, "newly required"))
 			}
 		}
 		return out
@@ -313,7 +375,7 @@ func schemaDiffFields(where, prefix string, was, now map[string]any, input bool)
 	for _, r := range schemaDiffStrings(was["required"]) {
 		// A field removed is reported as removed.
 		if _, kept := nowProps[r]; kept && !nowRequired[r] {
-			out = append(out, fmt.Sprintf("%s: field %s%s no longer always there", where, prefix, r))
+			out = append(out, schemaBroke(tool, input, prefix+r, "no longer always there"))
 		}
 	}
 	return out
@@ -356,13 +418,13 @@ func schemaDiffEnumBreaks(was, now any) string {
 // schemaDiffField compares one field both schemas have: its type, then
 // the fields inside it, then a list's elements. A list with no schema
 // for its elements takes any, as the schema `true` does.
-func schemaDiffField(where, path string, was, now map[string]any, input bool) []string {
+func schemaDiffField(tool, path string, was, now map[string]any, input bool) []change {
 	if was == nil || now == nil {
 		return nil
 	}
-	var out []string
+	var out []change
 	if b := schemaDiffTypeBreaks(was["type"], now["type"], input); b != "" {
-		out = append(out, fmt.Sprintf("%s: field %s %s", where, path, b))
+		out = append(out, schemaBroke(tool, input, path, b))
 	}
 	if input && schemaDiffAny(now) {
 		// An input that takes any value breaks no caller, whatever was
@@ -370,9 +432,9 @@ func schemaDiffField(where, path string, was, now map[string]any, input bool) []
 		return out
 	}
 	if b := schemaDiffEnumBreaks(was["enum"], now["enum"]); input && b != "" {
-		out = append(out, fmt.Sprintf("%s: field %s %s", where, path, b))
+		out = append(out, schemaBroke(tool, input, path, b))
 	}
-	out = append(out, schemaDiffFields(where, path+".", was, now, input)...)
+	out = append(out, schemaDiffFields(tool, path+".", was, now, input)...)
 	wasItems, nowItems := schemaDiffNode(was["items"]), schemaDiffNode(now["items"])
 	if wasItems != nil || nowItems != nil {
 		if wasItems == nil {
@@ -381,7 +443,7 @@ func schemaDiffField(where, path string, was, now map[string]any, input bool) []
 		if nowItems == nil {
 			nowItems = map[string]any{}
 		}
-		out = append(out, schemaDiffField(where, path+"[]", wasItems, nowItems, input)...)
+		out = append(out, schemaDiffField(tool, path+"[]", wasItems, nowItems, input)...)
 	}
 	return out
 }
@@ -510,7 +572,7 @@ func schemaBaselineVersion(changelog string) string {
 // template in backticks. A version heading there that does not raise
 // the baseline's major is one too, since only a major release may break
 // the surface.
-func schemaDiffUndeclared(breaking []string, changelog, baseline string) ([]string, error) {
+func schemaDiffUndeclared(breaking []change, changelog, baseline string) ([]string, error) {
 	version := strings.TrimPrefix(baseline, "v")
 	unreleased, _, found := strings.Cut(changelog, "\n## ["+version+"]")
 	if !found {
@@ -528,8 +590,8 @@ func schemaDiffUndeclared(breaking []string, changelog, baseline string) ([]stri
 	}
 	var out []string
 	for _, b := range breaking {
-		if !named[schemaDiffSubject(b)] {
-			out = append(out, b)
+		if !named[b.item] {
+			out = append(out, b.text)
 		}
 	}
 	for _, m := range changelogVersionHeading.FindAllStringSubmatch(unreleased, -1) {
@@ -538,21 +600,6 @@ func schemaDiffUndeclared(breaking []string, changelog, baseline string) ([]stri
 		}
 	}
 	return out, nil
-}
-
-// schemaDiffSubject is what a breaking change is about: the tool,
-// resource or template a CHANGELOG entry names.
-func schemaDiffSubject(b string) string {
-	for _, what := range []string{"tool ", "resource template ", "resource "} {
-		if rest, ok := strings.CutPrefix(b, what); ok {
-			if name, ok := strings.CutSuffix(rest, " removed"); ok {
-				return name
-			}
-		}
-	}
-	name, _, _ := strings.Cut(b, ":")
-	name, _, _ = strings.Cut(name, " ")
-	return name
 }
 
 // schemaNewMajor reports whether release to is a later major version

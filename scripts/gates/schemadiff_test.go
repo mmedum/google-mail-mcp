@@ -182,8 +182,13 @@ func TestSchemaDiffAcceptsADeclaredBreak(t *testing.T) {
 }
 
 func TestSchemaDiffUndeclared(t *testing.T) {
-	breaking := []string{"tool send_draft removed", "delete_draft input: field message_id newly required",
-		"create_filter: output schema removed", "resource template gmail://threads/{id} removed", "resource gmail://labels removed"}
+	breaking := []change{
+		{"send_draft", "tool send_draft removed", ""},
+		{"delete_draft", "delete_draft input: field message_id newly required", "input message_id"},
+		{"create_filter", "create_filter: output schema removed", "output"},
+		{"gmail://threads/{id}", "resource template gmail://threads/{id} removed", ""},
+		{"gmail://labels", "resource gmail://labels removed", ""},
+	}
 	all := "`send_draft`, `delete_draft`, `create_filter`, `gmail://threads/{id}` and `gmail://labels`"
 	released := "\n## [2.3.0] - 2026-10-13\n\n- **Breaking:** " + all + ".\n"
 	for _, tc := range []struct {
@@ -193,8 +198,8 @@ func TestSchemaDiffUndeclared(t *testing.T) {
 		{"every one declared", "## [Unreleased]\n\n- **Breaking:** " + all + ".\n" + released, nil},
 		{"one not named", "## [Unreleased]\n\n- **Breaking:** `send_draft`, `create_filter`, `gmail://threads/{id}` and " +
 			"`gmail://labels`.\n" + released, []string{"delete_draft input: field message_id newly required"}},
-		{"named outside a Breaking entry", "## [Unreleased]\n\n- " + all + " changed.\n" + released, breaking},
-		{"declared only in a release made", "## [Unreleased]\n" + released, breaking},
+		{"named outside a Breaking entry", "## [Unreleased]\n\n- " + all + " changed.\n" + released, texts(breaking)},
+		{"declared only in a release made", "## [Unreleased]\n" + released, texts(breaking)},
 		{"a release that raises the major", "## [3.0.0] - 2026-10-24\n\n- **Breaking:** " + all + ".\n" + released, nil},
 		{"a release that does not", "## [2.4.0] - 2026-10-24\n\n- **Breaking:** " + all + ".\n" + released,
 			[]string{"release 2.4.0 breaks the surface without raising the major version from 2.3.0"}},
@@ -390,7 +395,7 @@ func TestSchemaBaselineRecord(t *testing.T) {
 			if err != nil {
 				t.Fatal(err)
 			}
-			if !schemaDiffSame(norm, raw) || !strings.Contains(string(norm), "\n  \"version\": \"v") {
+			if !schemaDiffSame(t, norm, raw) || !strings.Contains(string(norm), "\n  \"version\": \"v") {
 				t.Errorf("recorded something other than the build:\n%s", norm)
 			}
 		})
@@ -444,4 +449,19 @@ func TestBaselineNormalizeSorts(t *testing.T) {
 	if string(again) != string(norm) {
 		t.Error("normalizing twice changed the bytes")
 	}
+}
+
+// schemaDiffSame reports whether two dumps publish the same surface.
+func schemaDiffSame(t *testing.T, a, b []byte) bool {
+	t.Helper()
+	return schemaDiffCompare(surfaceOf(t, string(a)), surfaceOf(t, string(b))).empty()
+}
+
+// texts is the report line of each change.
+func texts(cs []change) []string {
+	out := make([]string, 0, len(cs))
+	for _, c := range cs {
+		out = append(out, c.text)
+	}
+	return out
 }
