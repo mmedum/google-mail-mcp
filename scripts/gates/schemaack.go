@@ -180,8 +180,8 @@ var (
 	continuation = regexp.MustCompile(`^[ \t]+\S`)
 )
 
-// paragraphBreak is a blank line, which ends a paragraph.
-var paragraphBreak = regexp.MustCompile(`\n[ \t]*\n`)
+// paragraphBreak is one or more blank lines, which end a paragraph.
+var paragraphBreak = regexp.MustCompile(`\n([ \t]*\n)+`)
 
 // A footer is one Token: value of a commit message, its continuation
 // lines joined onto its value.
@@ -280,7 +280,9 @@ func dumpAt(rev string) (raw []byte, err error) {
 	}
 	src := filepath.Join(tmp, "src")
 	if _, err := git("worktree", "add", "--quiet", "--detach", src, rev); err != nil {
+		// A checkout that failed can leave its registration behind.
 		_ = os.RemoveAll(tmp)
+		_, _ = git("worktree", "prune")
 		return nil, err
 	}
 	defer func() {

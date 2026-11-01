@@ -69,6 +69,7 @@ func TestSchemaAckNeedsEveryItemNamed(t *testing.T) {
 		{"a subject is not a footer", plain, flipped, "SCHEMA-CHANGE: modify_labels", wantUnnamed},
 		{"an indented block is not a footer block", plain, flipped, "Mark it\n\nSCHEMA-CHANGE: modify_labels: hints\n\n    go run ./scripts/gates schema-ack", wantUnnamed},
 		{"a footer above the co-author trailer", plain, flipped, "Mark it\n\nSCHEMA-CHANGE: modify_labels: hints\n\nCo-Authored-By: someone <x@example.com>", ""},
+		{"a footer above three blank lines", plain, flipped, "Mark it\n\nSCHEMA-CHANGE: modify_labels: hints\n\n\n\nCo-Authored-By: someone <x@example.com>", ""},
 		{"a footer beside the co-author trailer", plain, flipped, "Mark it\n\nCo-Authored-By: someone <x@example.com>\nSCHEMA-CHANGE: modify_labels: hints", ""},
 		{"a kind is a change to its tool", with(`"kinds":{"modify_labels":"write"}`), with(`"kinds":{"modify_labels":"destructive"}`),
 			"Move it behind the destructive switch", wantUnnamed},
