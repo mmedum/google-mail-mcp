@@ -16,8 +16,8 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/mmedum/google-mail-mcp/v3/internal/config"
-	"github.com/mmedum/google-mail-mcp/v3/internal/credentials"
+	"github.com/mmedum/google-mail-mcp/v4/internal/config"
+	"github.com/mmedum/google-mail-mcp/v4/internal/credentials"
 )
 
 // These tests read the server's code and its readers outside this

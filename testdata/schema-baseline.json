@@ -1,8 +1,8 @@
 {
   "kinds": {
-    "create_draft": "write",
+    "create_draft": "adding",
     "create_filter": "settings",
-    "create_label": "write",
+    "create_label": "adding",
     "create_trash_filter": "settings-for-good",
     "delete_draft": "write-for-good",
     "delete_filter": "settings-for-good",
@@ -2469,8 +2469,12 @@
                 ]
               },
               "date": {
+                "description": "when the message arrived; absent when neither Gmail nor the Date header says",
                 "format": "date-time",
-                "type": "string"
+                "type": [
+                  "null",
+                  "string"
+                ]
               },
               "has_attachments": {
                 "type": "boolean"
@@ -2586,7 +2590,6 @@
             "required": [
               "id",
               "thread_id",
-              "date",
               "labels",
               "untrusted_from",
               "untrusted_subject",
@@ -2797,8 +2800,12 @@
                 ]
               },
               "date": {
+                "description": "when the message arrived; absent when neither Gmail nor the Date header says",
                 "format": "date-time",
-                "type": "string"
+                "type": [
+                  "null",
+                  "string"
+                ]
               },
               "has_attachments": {
                 "type": "boolean"
@@ -2914,7 +2921,6 @@
             "required": [
               "id",
               "thread_id",
-              "date",
               "labels",
               "untrusted_from",
               "untrusted_subject",
@@ -3411,8 +3417,12 @@
                   ]
                 },
                 "date": {
+                  "description": "when the message arrived; absent when neither Gmail nor the Date header says",
                   "format": "date-time",
-                  "type": "string"
+                  "type": [
+                    "null",
+                    "string"
+                  ]
                 },
                 "has_attachments": {
                   "type": "boolean"
@@ -3528,7 +3538,6 @@
               "required": [
                 "id",
                 "thread_id",
-                "date",
                 "labels",
                 "untrusted_from",
                 "untrusted_subject",
@@ -3916,8 +3925,12 @@
                       ]
                     },
                     "date": {
+                      "description": "when the message arrived; absent when neither Gmail nor the Date header says",
                       "format": "date-time",
-                      "type": "string"
+                      "type": [
+                        "null",
+                        "string"
+                      ]
                     },
                     "has_attachments": {
                       "type": "boolean"
@@ -4033,7 +4046,6 @@
                   "required": [
                     "id",
                     "thread_id",
-                    "date",
                     "labels",
                     "untrusted_from",
                     "untrusted_subject",
@@ -4362,7 +4374,7 @@
     },
     {
       "annotations": {
-        "destructiveHint": false,
+        "destructiveHint": true,
         "idempotentHint": false,
         "openWorldHint": false,
         "readOnlyHint": false
@@ -4751,8 +4763,12 @@
                 ]
               },
               "date": {
+                "description": "when the message arrived; absent when neither Gmail nor the Date header says",
                 "format": "date-time",
-                "type": "string"
+                "type": [
+                  "null",
+                  "string"
+                ]
               },
               "has_attachments": {
                 "type": "boolean"
@@ -4868,7 +4884,6 @@
             "required": [
               "id",
               "thread_id",
-              "date",
               "labels",
               "untrusted_from",
               "untrusted_subject",
@@ -4939,7 +4954,7 @@
     },
     {
       "annotations": {
-        "destructiveHint": false,
+        "destructiveHint": true,
         "idempotentHint": false,
         "openWorldHint": false,
         "readOnlyHint": false
@@ -5315,8 +5330,12 @@
                   ]
                 },
                 "date": {
+                  "description": "when the message arrived; absent when neither Gmail nor the Date header says",
                   "format": "date-time",
-                  "type": "string"
+                  "type": [
+                    "null",
+                    "string"
+                  ]
                 },
                 "has_attachments": {
                   "type": "boolean"
@@ -5432,7 +5451,6 @@
               "required": [
                 "id",
                 "thread_id",
-                "date",
                 "labels",
                 "untrusted_from",
                 "untrusted_subject",
@@ -5669,9 +5687,12 @@
                   ]
                 },
                 "latest": {
-                  "description": "when the newest message that is not a draft or in the trash arrived; the snippet is that message's",
+                  "description": "when the newest message that is not a draft or in the trash arrived, absent when its date is unknown; the snippet is that message's",
                   "format": "date-time",
-                  "type": "string"
+                  "type": [
+                    "null",
+                    "string"
+                  ]
                 },
                 "latest_from_me": {
                   "description": "true when this account sent that newest message",
@@ -5704,7 +5725,6 @@
                 "message_count",
                 "unread",
                 "drafts",
-                "latest",
                 "latest_from_me",
                 "labels",
                 "has_attachments",
@@ -6181,7 +6201,7 @@
     },
     {
       "annotations": {
-        "destructiveHint": false,
+        "destructiveHint": true,
         "idempotentHint": false,
         "openWorldHint": false,
         "readOnlyHint": false
@@ -6383,7 +6403,7 @@
     },
     {
       "annotations": {
-        "destructiveHint": false,
+        "destructiveHint": true,
         "idempotentHint": false,
         "openWorldHint": false,
         "readOnlyHint": false
@@ -6859,7 +6879,7 @@
     },
     {
       "annotations": {
-        "destructiveHint": false,
+        "destructiveHint": true,
         "idempotentHint": false,
         "openWorldHint": false,
         "readOnlyHint": false
@@ -7106,5 +7126,5 @@
       }
     }
   ],
-  "version": "v3.3.0"
+  "version": "v4.0.0"
 }

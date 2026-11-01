@@ -3,10 +3,10 @@ package render_test
 import (
 	"testing"
 
-	"github.com/mmedum/google-mail-mcp/v3/internal/gapi/gmailtest"
-	"github.com/mmedum/google-mail-mcp/v3/internal/gmail"
-	"github.com/mmedum/google-mail-mcp/v3/internal/model"
-	"github.com/mmedum/google-mail-mcp/v3/internal/render"
+	"github.com/mmedum/google-mail-mcp/v4/internal/gapi/gmailtest"
+	"github.com/mmedum/google-mail-mcp/v4/internal/gmail"
+	"github.com/mmedum/google-mail-mcp/v4/internal/model"
+	"github.com/mmedum/google-mail-mcp/v4/internal/render"
 )
 
 func TestGoldenChanges(t *testing.T) {

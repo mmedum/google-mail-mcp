@@ -15,6 +15,19 @@ lifted verbatim.
 
 ## [Unreleased]
 
+## [4.0.0] - 2026-11-01
+
+### Changed
+
+- **Breaking:** the Go module path is `/v4`. Install with `go install github.com/mmedum/google-mail-mcp/v4/cmd/google-mail-mcp@latest`; the `/v3` path stays at 3.3.0. The release archives and the Claude Desktop bundle are unchanged.
+- **Breaking:** a message whose date is unknown leaves `date` out of the structured result rather than sending `0001-01-01T00:00:00Z`, as the text says "unknown date", and a thread row leaves out `latest` the same way. This is in `get_message`, `get_draft`, `get_thread`, `list_drafts`, `read_attachment`, `search_messages` and `search_threads`; read both fields as optional.
+- **Breaking:** the five writes that change or remove what is in the mailbox now say `destructiveHint: true`, as the MCP spec reads `false` as "only additive updates": `update_draft`, `modify_labels`, `trash`, `restore` and `update_label`. Only `create_draft` and `create_label` say false among the writes. claude.ai and Codex may now ask before these; if you run them unattended there, allow them again. They still need no flag and no `confirm`, and the README's `permissions.ask` example names them.
+
+### Fixed
+
+- A message whose `internalDate` is zero, the Unix epoch Google writes elsewhere for a time it does not have, now takes its Date header's date, or none, rather than showing 1970.
+- The setup page said every app must list its scopes on the consent screen. Google asks for that list only from External apps, so an Internal app can skip the step.
+
 ## [3.3.0] - 2026-10-30
 
 ### Added
@@ -274,7 +287,8 @@ lifted verbatim.
 - Repository gates run by `make check` and CI: leaks, pins, error classes, API coverage, schema diff, smoke, staleness and more.
 - Signed release archives for six platforms with SBOMs, build provenance, a Claude Desktop bundle and an MCP registry entry.
 
-[Unreleased]: https://github.com/mmedum/google-mail-mcp/compare/v3.3.0...HEAD
+[Unreleased]: https://github.com/mmedum/google-mail-mcp/compare/v4.0.0...HEAD
+[4.0.0]: https://github.com/mmedum/google-mail-mcp/compare/v3.3.0...v4.0.0
 [3.3.0]: https://github.com/mmedum/google-mail-mcp/compare/v3.2.0...v3.3.0
 [3.2.0]: https://github.com/mmedum/google-mail-mcp/compare/v3.1.2...v3.2.0
 [3.1.2]: https://github.com/mmedum/google-mail-mcp/compare/v3.1.1...v3.1.2

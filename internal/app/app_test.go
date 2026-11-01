@@ -12,11 +12,11 @@ import (
 
 	"github.com/zalando/go-keyring"
 
-	"github.com/mmedum/google-mail-mcp/v3/internal/config"
-	"github.com/mmedum/google-mail-mcp/v3/internal/credentials"
-	"github.com/mmedum/google-mail-mcp/v3/internal/gapi"
-	"github.com/mmedum/google-mail-mcp/v3/internal/scopes"
-	"github.com/mmedum/google-mail-mcp/v3/internal/userconfig"
+	"github.com/mmedum/google-mail-mcp/v4/internal/config"
+	"github.com/mmedum/google-mail-mcp/v4/internal/credentials"
+	"github.com/mmedum/google-mail-mcp/v4/internal/gapi"
+	"github.com/mmedum/google-mail-mcp/v4/internal/scopes"
+	"github.com/mmedum/google-mail-mcp/v4/internal/userconfig"
 )
 
 // memKeyring keeps every test in this package off the OS keyring.

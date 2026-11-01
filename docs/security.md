@@ -156,9 +156,9 @@ The server asks you nothing; your client approves each call. `confirm`
 and `confirm_recipients` are arguments the model writes, and a model
 persuaded by a message writes them too, so they are witnesses that the
 caller meant the call, never your approval. Tool annotations are set
-for the client's prompt: every write that sends, changes a setting or
-cannot be undone is marked destructive, which claude.ai and Codex
-prompt for, and VS Code prompts for every tool that writes.
+for the client's prompt: every write but the ones that only add is
+marked destructive, which claude.ai and Codex prompt for, and VS Code
+prompts for every tool that writes.
 `delete_permanently` and `delete_label` carry `requiresUserInteraction`,
 so Claude Code prompts on every call of either whatever your rules say.
 These are hints: a host in an auto-approve mode runs a tool without

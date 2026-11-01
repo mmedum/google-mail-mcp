@@ -12,7 +12,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/mmedum/google-mail-mcp/v3/internal/scopes"
+	"github.com/mmedum/google-mail-mcp/v4/internal/scopes"
 )
 
 // isolate points the home directory at a temporary one, so the config

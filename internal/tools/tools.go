@@ -9,8 +9,8 @@ import (
 
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 
-	"github.com/mmedum/google-mail-mcp/v3/internal/config"
-	"github.com/mmedum/google-mail-mcp/v3/internal/gapi"
+	"github.com/mmedum/google-mail-mcp/v4/internal/config"
+	"github.com/mmedum/google-mail-mcp/v4/internal/gapi"
 )
 
 // Deps are what the tools need.

@@ -3,7 +3,7 @@ package model
 import (
 	"strings"
 
-	"github.com/mmedum/google-mail-mcp/v3/internal/mime"
+	"github.com/mmedum/google-mail-mcp/v4/internal/mime"
 )
 
 // The results of writes. Each says the state the write produced, read

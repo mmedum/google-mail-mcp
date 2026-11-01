@@ -4,10 +4,10 @@ import (
 	"slices"
 	"testing"
 
-	"github.com/mmedum/google-mail-mcp/v3/internal/gapi/gmailtest"
-	"github.com/mmedum/google-mail-mcp/v3/internal/mime"
-	"github.com/mmedum/google-mail-mcp/v3/internal/model"
-	"github.com/mmedum/google-mail-mcp/v3/internal/render"
+	"github.com/mmedum/google-mail-mcp/v4/internal/gapi/gmailtest"
+	"github.com/mmedum/google-mail-mcp/v4/internal/mime"
+	"github.com/mmedum/google-mail-mcp/v4/internal/model"
+	"github.com/mmedum/google-mail-mcp/v4/internal/render"
 )
 
 func addr(p gmailtest.Person) mime.Address { return mime.Address{Name: p.Name, Email: p.Email} }

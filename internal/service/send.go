@@ -7,10 +7,10 @@ import (
 	"strings"
 	"time"
 
-	"github.com/mmedum/google-mail-mcp/v3/internal/gapi"
-	"github.com/mmedum/google-mail-mcp/v3/internal/gmail"
-	"github.com/mmedum/google-mail-mcp/v3/internal/mime"
-	"github.com/mmedum/google-mail-mcp/v3/internal/model"
+	"github.com/mmedum/google-mail-mcp/v4/internal/gapi"
+	"github.com/mmedum/google-mail-mcp/v4/internal/gmail"
+	"github.com/mmedum/google-mail-mcp/v4/internal/mime"
+	"github.com/mmedum/google-mail-mcp/v4/internal/model"
 )
 
 // MaxSendRecipients is the most recipients one send may have (§4.2).

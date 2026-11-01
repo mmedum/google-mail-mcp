@@ -18,7 +18,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/mmedum/google-mail-mcp/v3/internal/gmail"
+	"github.com/mmedum/google-mail-mcp/v4/internal/gmail"
 )
 
 // Body sources.

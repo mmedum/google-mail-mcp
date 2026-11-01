@@ -4,9 +4,9 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/mmedum/google-mail-mcp/v3/internal/model"
-	coreredact "github.com/mmedum/google-mail-mcp/v3/internal/redact"
-	"github.com/mmedum/google-mail-mcp/v3/internal/render"
+	"github.com/mmedum/google-mail-mcp/v4/internal/model"
+	coreredact "github.com/mmedum/google-mail-mcp/v4/internal/redact"
+	"github.com/mmedum/google-mail-mcp/v4/internal/render"
 )
 
 // Planted values are built by concatenation, so the repository's own leak

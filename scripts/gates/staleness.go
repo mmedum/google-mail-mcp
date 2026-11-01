@@ -621,8 +621,8 @@ var stalenessReadmeTool = regexp.MustCompile("(?m)^\\| `([a-z_]+)` \\|")
 // what the server does, so a tool it omits does not exist for them, and
 // one it lists that the binary lacks is a promise nothing keeps. The
 // README's permissions.ask rules name registered tools, and every tool
-// annotated destructive: the writes that send, change a setting or
-// delete, which a new one must not join unasked.
+// annotated destructive, every write but the ones that only add, which a
+// new one must not join unasked.
 func stalenessReadmeTools(readme string, tools, destructive []string) (int, []string) {
 	rows := stalenessReadmeTool.FindAllStringSubmatch(markdownSection(readme, "## Tools"), -1)
 	listed := make([]string, 0, len(rows))

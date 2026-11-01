@@ -53,7 +53,7 @@ var outcomesDirs = []string{outcomesDir, outcomesServiceDir}
 // Spec literal names one, there are no writes to hold and the floors on
 // fields do not apply; from the first, each write tool must bring at
 // least one boolean input (its dry_run) for the gate to read.
-var outcomesWriteKinds = map[string]bool{"Write": true, "WriteForGood": true, "Send": true, "Destructive": true}
+var outcomesWriteKinds = map[string]bool{"Write": true, "WriteForGood": true, "Send": true, "Destructive": true, "Adding": true}
 
 // outcomesFile is one parsed file with its slash path.
 type outcomesFile struct {

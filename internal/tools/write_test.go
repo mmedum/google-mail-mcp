@@ -16,13 +16,13 @@ import (
 
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 
-	"github.com/mmedum/google-mail-mcp/v3/internal/config"
-	"github.com/mmedum/google-mail-mcp/v3/internal/gapi"
-	"github.com/mmedum/google-mail-mcp/v3/internal/gapi/gmailtest"
-	"github.com/mmedum/google-mail-mcp/v3/internal/mime"
-	"github.com/mmedum/google-mail-mcp/v3/internal/model"
-	"github.com/mmedum/google-mail-mcp/v3/internal/server/testutil"
-	"github.com/mmedum/google-mail-mcp/v3/internal/tools"
+	"github.com/mmedum/google-mail-mcp/v4/internal/config"
+	"github.com/mmedum/google-mail-mcp/v4/internal/gapi"
+	"github.com/mmedum/google-mail-mcp/v4/internal/gapi/gmailtest"
+	"github.com/mmedum/google-mail-mcp/v4/internal/mime"
+	"github.com/mmedum/google-mail-mcp/v4/internal/model"
+	"github.com/mmedum/google-mail-mcp/v4/internal/server/testutil"
+	"github.com/mmedum/google-mail-mcp/v4/internal/tools"
 )
 
 // refused calls a tool that must fail and returns its error text.

@@ -8,7 +8,7 @@ import (
 
 	"golang.org/x/text/encoding/charmap"
 
-	"github.com/mmedum/google-mail-mcp/v3/internal/gmail"
+	"github.com/mmedum/google-mail-mcp/v4/internal/gmail"
 )
 
 func crlf(s string) []byte { return []byte(strings.ReplaceAll(s, "\n", "\r\n")) }

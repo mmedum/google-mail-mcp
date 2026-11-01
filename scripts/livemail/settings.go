@@ -20,7 +20,7 @@ import (
 	"sync"
 	"time"
 
-	"github.com/mmedum/google-mail-mcp/v3/scripts/internal/transcript"
+	"github.com/mmedum/google-mail-mcp/v4/scripts/internal/transcript"
 )
 
 // The settings steps, run only when the profile's login granted

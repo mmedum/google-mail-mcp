@@ -12,9 +12,9 @@ import (
 
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 
-	"github.com/mmedum/google-mail-mcp/v3/internal/config"
-	"github.com/mmedum/google-mail-mcp/v3/internal/gapi"
-	"github.com/mmedum/google-mail-mcp/v3/internal/server/testutil"
+	"github.com/mmedum/google-mail-mcp/v4/internal/config"
+	"github.com/mmedum/google-mail-mcp/v4/internal/gapi"
+	"github.com/mmedum/google-mail-mcp/v4/internal/server/testutil"
 )
 
 type probeIn struct {
@@ -43,7 +43,7 @@ func probe(ctx context.Context, in probeIn) (probeOut, error) {
 }
 
 // allKinds is every Kind, for the tests that probe each one.
-var allKinds = []Kind{Read, ReadWritesLocally, Write, WriteForGood, Send, Destructive, Settings, SettingsForGood, AutoReply}
+var allKinds = []Kind{Read, ReadWritesLocally, Write, WriteForGood, Send, Destructive, Settings, SettingsForGood, AutoReply, Adding}
 
 // confirmingProbeIn is probeIn with confirm, which a kind that cannot be
 // undone must take.
@@ -86,21 +86,21 @@ func TestRegistrationGates(t *testing.T) {
 		cfg  config.Config
 		want []string
 	}{
-		{"default", config.Config{}, []string{"read", "write", "write_for_good"}},
-		{"local dir", config.Config{LocalDir: "/x"}, []string{"read", "read_writes_locally", "write", "write_for_good"}},
+		{"default", config.Config{}, []string{"adding", "read", "write", "write_for_good"}},
+		{"local dir", config.Config{LocalDir: "/x"}, []string{"adding", "read", "read_writes_locally", "write", "write_for_good"}},
 		{"read-only", config.Config{ReadOnly: true}, []string{"read"}},
 		{"read-only with local dir", config.Config{ReadOnly: true, LocalDir: "/x"}, []string{"read", "read_writes_locally"}},
-		{"send", config.Config{EnableSend: true}, []string{"read", "send", "write", "write_for_good"}},
-		{"destructive", config.Config{EnableDestructive: true}, []string{"destructive", "read", "write", "write_for_good"}},
-		{"settings", config.Config{EnableSettings: true}, []string{"read", "settings", "write", "write_for_good"}},
+		{"send", config.Config{EnableSend: true}, []string{"adding", "read", "send", "write", "write_for_good"}},
+		{"destructive", config.Config{EnableDestructive: true}, []string{"adding", "destructive", "read", "write", "write_for_good"}},
+		{"settings", config.Config{EnableSettings: true}, []string{"adding", "read", "settings", "write", "write_for_good"}},
 		{"settings and destructive", config.Config{EnableSettings: true, EnableDestructive: true},
-			[]string{"destructive", "read", "settings", "settings_for_good", "write", "write_for_good"}},
+			[]string{"adding", "destructive", "read", "settings", "settings_for_good", "write", "write_for_good"}},
 		{"settings and send", config.Config{EnableSettings: true, EnableSend: true},
-			[]string{"auto_reply", "read", "send", "settings", "write", "write_for_good"}},
+			[]string{"adding", "auto_reply", "read", "send", "settings", "write", "write_for_good"}},
 		// Config refuses this pair; the gate still holds if it is ever built.
 		{"read-only beats enable", config.Config{ReadOnly: true, EnableSend: true, EnableDestructive: true, EnableSettings: true},
 			[]string{"read"}},
-		{"full surface", FullSurface(config.Config{ReadOnly: true}), []string{"auto_reply", "destructive", "read",
+		{"full surface", FullSurface(config.Config{ReadOnly: true}), []string{"adding", "auto_reply", "destructive", "read",
 			"read_writes_locally", "send", "settings", "settings_for_good", "write", "write_for_good"}},
 	}
 	for _, tt := range tests {
@@ -130,13 +130,14 @@ func TestAnnotationsAndMetaComeFromKind(t *testing.T) {
 	wants := map[string]want{
 		"read":                {readOnly: true, idempotent: true},
 		"read_writes_locally": {},
-		"write":               {},
+		"write":               {destructive: true},
 		"write_for_good":      {destructive: true, idempotent: true},
 		"send":                {destructive: true, openWorld: true},
 		"destructive":         {destructive: true, idempotent: true, interaction: true},
 		"settings":            {destructive: true, idempotent: true},
 		"settings_for_good":   {destructive: true, idempotent: true},
 		"auto_reply":          {destructive: true, openWorld: true},
+		"adding":              {},
 	}
 	if len(wants) != len(allKinds) {
 		t.Fatalf("%d kinds have a want, of %d", len(wants), len(allKinds))
@@ -302,11 +303,11 @@ func registers[In any](k Kind) (ok bool) {
 }
 
 // confirm says a write cannot be undone (§4.13), so a tool that takes it
-// is annotated destructive, and a client that prompts by annotation
-// prompts for it.
+// is annotated destructive, and a plain Write, which another write
+// undoes, takes none.
 func TestAToolThatTakesConfirmIsAnnotatedDestructive(t *testing.T) {
 	for _, k := range allKinds {
-		want := k != Read && k != ReadWritesLocally && k != Write
+		want := k != Read && k != ReadWritesLocally && k != Adding && k != Write
 		if got := registers[confirmIn](k); got != want {
 			t.Errorf("%s with confirm: registered %t, want %t", k, got, want)
 		}

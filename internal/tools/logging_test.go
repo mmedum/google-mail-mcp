@@ -15,11 +15,11 @@ import (
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 	"golang.org/x/oauth2"
 
-	"github.com/mmedum/google-mail-mcp/v3/internal/config"
-	"github.com/mmedum/google-mail-mcp/v3/internal/gapi"
-	"github.com/mmedum/google-mail-mcp/v3/internal/server"
-	"github.com/mmedum/google-mail-mcp/v3/internal/server/testutil"
-	"github.com/mmedum/google-mail-mcp/v3/internal/tools"
+	"github.com/mmedum/google-mail-mcp/v4/internal/config"
+	"github.com/mmedum/google-mail-mcp/v4/internal/gapi"
+	"github.com/mmedum/google-mail-mcp/v4/internal/server"
+	"github.com/mmedum/google-mail-mcp/v4/internal/server/testutil"
+	"github.com/mmedum/google-mail-mcp/v4/internal/tools"
 )
 
 // minTools is the floor on how many tools this test drives: the whole

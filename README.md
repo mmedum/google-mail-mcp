@@ -41,7 +41,7 @@ subjects, names and filenames decode in any charset.
 ## Install
 
 ```bash
-go install github.com/mmedum/google-mail-mcp/v3/cmd/google-mail-mcp@latest
+go install github.com/mmedum/google-mail-mcp/v4/cmd/google-mail-mcp@latest
 ```
 
 Or take an archive from the
@@ -90,8 +90,9 @@ bundle uses the same credentials.
 ## Set up Google
 
 [`docs/gcp-setup.md`](docs/gcp-setup.md) has the whole of it: a Cloud
-project with the Gmail API enabled, a consent screen, the scopes for how
-you will run the server, and a **Desktop app** OAuth client. Then:
+project with the Gmail API enabled, a consent screen (with the scopes
+for how you will run the server, on an External app), and a **Desktop
+app** OAuth client. Then:
 
 ```bash
 google-mail-mcp login --client-secret ~/path/to/client_secret.json
@@ -212,19 +213,22 @@ For clients that attach rather than call, `gmail://threads/{id}`,
   scope that can delete; each call needs `confirm: true`.
 - **Your client approves each call.** The server does not ask you
   itself. claude.ai and Codex prompt for the tools marked destructive:
-  every write that sends, changes a setting or cannot be undone. VS Code
-  prompts for every tool that writes. In Claude Code,
+  every tool that changes the mailbox but `create_draft` and
+  `create_label`, which only add. VS Code prompts for every tool that
+  writes. In Claude Code,
   `delete_permanently` and `delete_label` ask on every call whatever
   your rules say, since mail deleted for good skips the trash and a
   label comes off every message. For the rest, list the calls you want
   to approve one by one under `permissions.ask` in your settings, with
   the name you gave the server in place of `google-mail`. For example,
-  the writes that send, change a setting or delete:
+  the tools marked destructive:
 
   ```json
   {
     "permissions": {
       "ask": [
+        "mcp__google-mail__update_draft", "mcp__google-mail__modify_labels",
+        "mcp__google-mail__trash", "mcp__google-mail__restore", "mcp__google-mail__update_label",
         "mcp__google-mail__send_draft", "mcp__google-mail__set_vacation",
         "mcp__google-mail__update_signature", "mcp__google-mail__create_filter",
         "mcp__google-mail__create_trash_filter", "mcp__google-mail__delete_filter",

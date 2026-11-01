@@ -5,10 +5,10 @@ import (
 
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 
-	"github.com/mmedum/google-mail-mcp/v3/internal/mime"
-	"github.com/mmedum/google-mail-mcp/v3/internal/model"
-	"github.com/mmedum/google-mail-mcp/v3/internal/render"
-	"github.com/mmedum/google-mail-mcp/v3/internal/service"
+	"github.com/mmedum/google-mail-mcp/v4/internal/mime"
+	"github.com/mmedum/google-mail-mcp/v4/internal/model"
+	"github.com/mmedum/google-mail-mcp/v4/internal/render"
+	"github.com/mmedum/google-mail-mcp/v4/internal/service"
 )
 
 // DownloadAttachmentIn names one attachment.

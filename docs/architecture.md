@@ -1,6 +1,15 @@
 # Architecture — google-mail-mcp
 
-**Status: 3.3.0 is released, 2026-10-30, from `main`, and verified from
+**Status: 4.0.0 is cut, 2026-11-01: the module path is `/v4`.** A message's `date` and a thread row's `latest` are left
+out of the structured result when unknown, rather than sent as
+`0001-01-01T00:00:00Z`; an `internalDate` of zero reads as no date. Write
+is annotated destructive and the new Adding kind, for `create_draft` and
+`create_label`, is the one write that is not (§18 rows 101 to 103).
+Unproven again since 3.3.0: those annotations and the two dates. Reviewed
+by `/simplify`, `/code-review medium` and a security review (§16a). A
+live run of 96 calls passed, its transcript read, the seven sending
+steps left unarmed and the eight signature steps stopped by the
+driver's own guard. 3.3.0 is released, 2026-10-30, from `main`, and verified from
 outside: checksums, the cosign signature and the provenance
 attestation, each also against a tampered copy, the version in all
 five places, the registry entry, and the Go proxy resolving v3.3.0.
@@ -609,8 +618,10 @@ What stays is what holds on every client:
    to contacts or the domain (§17.4).
 4. **`dry_run`** on every write.
 5. **Annotations.** `destructiveHint` is true on every kind but Read,
-   Read (local write) and Write: a write that cannot be undone, a send,
-   the vacation reply and every settings write. claude.ai and Codex
+   Read (local write) and Adding, since the MCP schema reads `false` as
+   "only additive updates": a write that changes or removes what is
+   there, one that cannot be undone, a send, the vacation reply and every
+   settings write. claude.ai and Codex
    prompt by it. VS Code ignores it and prompts on every tool without
    `readOnlyHint`, which only the Read tools carry.
    `delete_permanently` and `delete_label` carry Claude Code's
@@ -624,8 +635,8 @@ What stays is what holds on every client:
    standard marks, and a delete done many times in a row, as
    `delete_draft` is, would bring back a prompt on every call. For every
    other tool the operator decides in Claude Code with
-   `permissions.allow` and `ask`; the README gives `ask` rules for the
-   writes that send, change a setting or delete.
+   `permissions.allow` and `ask`; the README gives `ask` rules for every
+   tool annotated destructive.
 6. **What a client's prompt shows.** A client's prompt shows the call's
    arguments. Where the question used to say what an argument means,
    the argument now carries it: `confirm_recipients` names every
@@ -1414,20 +1425,23 @@ Thirty tools: twenty-two by default, fourteen in read-only mode,
 two fewer in each when `GMAIL_LOCAL_DIR` is unset.
 Annotations come from `Kind` in one place (`CLAUDE.md` rule 11);
 `openWorldHint` is true only where the call reaches another person.
-"Write, for good" is registered as a Write is and annotated destructive,
+"Write, for good" is registered as a Write is and takes `confirm`,
 because Gmail deletes a draft rather than trashing it. Every kind but
-Read, Read (local write) and Write is annotated destructive, so a
-client that prompts by annotation prompts for it: Send and Auto-reply
-because mail that left cannot be recalled (§4.13).
+Read, Read (local write) and Adding is annotated destructive, since the
+MCP schema reads `false` as "only additive updates", so a client that
+prompts by annotation prompts for it: Send and Auto-reply because mail
+that left cannot be recalled (§4.13).
 `_meta["anthropic/requiresUserInteraction"]` is set on the Destructive
 kind alone, as a signal and not a control: `delete_permanently` skips
 the trash Gmail offers, and `delete_label` takes a label off every
 message (§4.13). `register` refuses a kind that cannot be undone —
 Write, for good, Destructive and Settings, for good — without
-`confirm`, and a tool that takes `confirm` under a kind not annotated
-destructive. The schema dump names each tool's kind, since Settings
-looks like Write, for good to a client and Auto-reply like Send, and
-the smoke gate reads which switch a tool sits behind from it.
+`confirm`, a tool that takes `confirm` under a kind not annotated
+destructive, and a Write that takes it, since another write undoes a
+Write. The schema dump names each tool's kind, since Write, Write for
+good and both Settings kinds look alike to a client, and Auto-reply
+like Send, and the smoke gate reads which switch a tool sits behind
+from it.
 
 | Tool | Kind | Registered | Scope needed | Units |
 |---|---|---|---|---|
@@ -1445,13 +1459,13 @@ the smoke gate reads which switch a tool sits behind from it.
 | `list_filters` | Read | always | `gmail.readonly` | 1 + 1 |
 | `download_attachment` | Read (local write) | `GMAIL_LOCAL_DIR` set | `gmail.readonly` | 20 + 20 |
 | `download_attachments` | Read (local write) | `GMAIL_LOCAL_DIR` set | `gmail.readonly` | 20 + 20/part stored apart |
-| `create_draft` | Write | not read-only | `gmail.modify` | 1 + 10 (+20 reply_to or forward, +40 reply_to_thread, +20/quoted part stored apart) |
+| `create_draft` | Adding | not read-only | `gmail.modify` | 1 + 10 (+20 reply_to or forward, +40 reply_to_thread, +20/quoted part stored apart) |
 | `update_draft` | Write | not read-only | `gmail.modify` | 20 + 15 (+1 `signature: true`) |
 | `delete_draft` | Write, for good | not read-only | `gmail.modify` | 20 + 10 |
 | `modify_labels` | Write | not read-only | `gmail.modify` | 1 + 25/message, 50/thread |
 | `trash` | Write | not read-only | `gmail.modify` | 1 + 40/message, 60/thread |
 | `restore` | Write | not read-only | `gmail.modify` | 1 + 25/message, 50/thread |
-| `create_label` | Write | not read-only | `gmail.modify` | 1 + 5 |
+| `create_label` | Adding | not read-only | `gmail.modify` | 1 + 5 |
 | `update_label` | Write | not read-only | `gmail.modify` | 1 + 5 |
 | `send_draft` | Send | `GMAIL_ENABLE_SEND` | `gmail.modify` | 20 + 40 + 100 (+20/part of its text stored apart) |
 | `delete_permanently` | Destructive | `GMAIL_ENABLE_DESTRUCTIVE` | `https://mail.google.com/` | 1 + 30/message, 60/thread |
@@ -1563,7 +1577,7 @@ nothing the server adds is phrased as something to do.
 | Setting | Registers | Requests |
 |---|---|---|
 | `GMAIL_READ_ONLY=true` | the Read kind | `gmail.readonly` |
-| default | Read and Write | `gmail.modify` |
+| default | Read, Write, Write for good and Adding | `gmail.modify` |
 | `GMAIL_ENABLE_SEND=true` | adds `send_draft` | `gmail.modify` (no change: §2.10) |
 | `GMAIL_ENABLE_DESTRUCTIVE=true` | adds `delete_permanently`, `delete_label`; with `GMAIL_ENABLE_SETTINGS`, also `create_trash_filter`, `delete_filter` | `https://mail.google.com/` |
 | `GMAIL_ENABLE_SETTINGS=true` | adds `update_signature`, `create_filter`; with `GMAIL_ENABLE_DESTRUCTIVE`, also `create_trash_filter`, `delete_filter`; with `GMAIL_ENABLE_SEND`, also `set_vacation` | adds `gmail.settings.basic` |
@@ -3286,6 +3300,24 @@ what fixed them.
   having no effect, which the configuration page says; refusing it would
   guard nothing.
 
+- **4.0.0, `/simplify`, `/code-review medium` and a security review.**
+  From `/simplify`: the outcomes gate's list of write kinds lacked
+  Adding, so `create_draft` and `create_label` stopped counting as
+  writes; the smoke gate named annotation shapes after kinds, so a Write
+  that lost its hint would have read "a write tool annotated as a write
+  tool", and the shapes now say what they are; nothing kept `confirm` off
+  a Write once Write was destructive, and `register` now refuses it; and
+  five passages still said only sends, settings and deletes prompt. From
+  the review: the hint change asked the reader to act without
+  **Breaking:**; the zero-`internalDate` row read as a verified
+  convention rather than a guard; no test held a thread row's unknown
+  `latest`; the README called the downloads writes. All fixed. Kept: the
+  dates' schema type allows null though the server omits rather than
+  nulls them, as the optional settings and search times already do;
+  Write's idempotency, which this release does not change; and the smoke
+  gate's shapes not reading idempotency, which the kinds' unit test
+  holds. The security review found nothing at confidence 8 or above.
+
 ### Closing a phase
 
 1. `make check` green; the live driver run and its transcript read.
@@ -3544,3 +3576,7 @@ live** — §15 exists to settle these, and they are marked.
 | 98 | Gmail's composer writes a signature in one markup | Read 2026-10-30. Raw messages with a `Message-ID` at `mail.gmail.com`, read for their markup alone: rf-peixoto/phishing_pot@80a4867 `email/sample-12514.eml` and `email/sample-12424.eml`, both 2026-10, opened and checked here, and intentionet/netconan@0b05e94 `LICENSE.email`, 2025-01. Gmail's settings label, as stackoverflow.com/q/49375769 quotes it: 'Insert this signature before quoted text in replies and remove the "--" line that precedes it'. Five Gmail API clients that add a signature: openclaw/gogcli@82e7fd6, taylorwilsdon/google_workspace_mcp@b28e1bc, marlinjai/email-mcp@2777049, jasonmlong/gmail-send@354436a and PipedreamHQ/pipedream@7a88158 `components/gmail` | **Two shapes.** Ending a message, the signature follows `<div><br clear="all"></div><div><br></div><span class="gmail_signature_prefix">-- </span><br>` inside `<div dir="ltr" class="gmail_signature" data-smartmail="gmail_signature">`, and the plain part has a `-- ` line. The other wraps it in `<div><br clear="all"></div><div>…</div>`, with no `-- ` in either part. That the setting the label names makes the second shape, and puts the signature above the quote, is inferred from the label, tier 3. Gmail's default reply puts the signature below the quote; every client that adds one puts it above, gogcli "so it stays above it". So the server writes the first shape when the signature ends the draft and the second above a `quote`, where a delimiter would let a reader drop the quote with the signature. Each client fetches `sendAs` and appends, the method here; none is a dependency (rule 10). One skips a body that already holds a `gmail_signature` block, which here is refused |
 | 99 | Gmail keeps a draft as the API wrote it when its HTML carries an image inside it | Live 2026-10-30, by this server's 3.2.0 build on the maintainer's account, whose signature carries its logo as a base64 `data:` URL in the HTML: drafts saved through `drafts.create`, each read back with `format=raw` by the live driver's own client, their MIME headers alone printed | **Refuted.** A draft written as `multipart/alternative` of the plain text and HTML holding the `data:` image was stored as `multipart/mixed` of the HTML, the image now `cid:` to a part of its own with an `ii_` Content-ID, and an inline PNG part; the plain part was gone. `update_draft` then refused a new body as a draft whose only text is HTML, and `send_draft` sent HTML alone, the image beside it as a part the receiving Gmail counted as an attachment. The same signature written with the image already a part, `multipart/alternative` of the plain text and `multipart/related` of the HTML and the image, was stored as written, the plain part, its `-- ` line and the block intact; a new body kept the signature and its part, and `signature: false` took both out. So the server moves such an image into a part itself (§7.4) |
 | 100 | A Gmail MCP server signs a draft only when asked | Read 2026-10-30, in each project's source: taylorwilsdon/google_workspace_mcp@b28e1bc `gmail/gmail_tools.py` lines 2740–2743 and 3397–3400, `include_signature`: "Whether to append the Gmail signature from Settings > Signature when available. Defaults to true."; marlinjai/email-mcp@2777049 `src/tools/sending.ts` line 23, `signature`: "Add the account's signature (default true)", and `src/tools/signature.ts` lines 101–102, a body that already holds one is left as it is (`already_present`); openclaw/gogcli@82e7fd6 `gmail_send_signature.go` line 30, a `--signature` flag | **Refuted for MCP servers.** Both MCP servers sign by default for everyone, with a per-call opt-out, skip a body that already carries one, and report what they did; the CLI signs only when asked. This server matches the skip and the report, and leaves the default to the person running it (§7.4, §14): a default for everyone would change every 3.x caller's drafts, which rule 5 and the standard's §7c make a major release. Neither server's default for replies was taken: the API cannot see the reply signature (row 88) |
+| 101 | `destructiveHint: false` fits a write that changes what is there but can be undone, as trash and a label change can | The MCP schema (2025-11-25), `ToolAnnotations`: "If false, the tool performs only additive updates", and the default is true. Read 2026-10-31 | **Refuted.** `update_draft`, `modify_labels`, `trash`, `restore` and `update_label` change what is there. Write is annotated destructive, the schema's default, and the new Adding kind, for `create_draft` and `create_label`, is the one write that says false. None moves behind a flag or takes confirm. The README's `permissions.ask` example names the five, as the staleness gate holds every destructive tool to it |
+| 102 | Google writes a time it does not have as the Unix epoch | Seen live from another Google API on 2026-10-31, answering `1970-01-01T00:00:00Z` for a time it lacked. Not seen from Gmail, and the discovery document's `internalDate` says only "the internal message creation timestamp (epoch ms)" | **A guard, not a verified convention** (rule 18 asks for a probe Gmail cannot be made to answer). No mail Gmail holds dates from 1970, so an `internalDate` of zero reads as no date, the Date header stands in, and nothing is shown as sent in 1970 |
+| 103 | An unknown date can go out as Go's zero time | Read 2026-10-31: a message with neither an `internalDate` nor a Date header went out as `"date": "0001-01-01T00:00:00Z"` in the structured half while the text said "unknown date", and a thread row's `latest` the same | **Refuted.** Both are left out when unknown, as the settings and search times already were: a breaking change, so 4.0.0, with the module path at `/v4` |
+| 104 | A scope must be on the consent screen to be granted | Google's configure-oauth-consent guide (updated 2026-09-03): "you only need to list scopes for apps used by people outside your Google Workspace organization", and for internal apps "scopes aren't listed on the consent screen". Confirmed live 2026-10-31 on an Internal app, whose token held scopes its Data Access page does not list | **Refined.** The setup page asks for the scope list on External apps only |

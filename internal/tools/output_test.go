@@ -1,6 +1,7 @@
 package tools
 
 import (
+	"encoding/json"
 	"go/ast"
 	"go/parser"
 	"go/token"
@@ -8,8 +9,9 @@ import (
 	"reflect"
 	"strings"
 	"testing"
+	"time"
 
-	"github.com/mmedum/google-mail-mcp/v3/internal/model"
+	"github.com/mmedum/google-mail-mcp/v4/internal/model"
 )
 
 // outputTypes are the tools' output types by name. The list of names is
@@ -142,5 +144,24 @@ func TestUntrustedFieldsAreNamed(t *testing.T) {
 	}
 	if untrusted < 10 {
 		t.Fatalf("checked only %d untrusted fields", untrusted)
+	}
+}
+
+// A date neither Gmail nor the Date header gives is left out of the
+// structured half, as the text says "unknown date", rather than sent as
+// the zero time, 0001-01-01.
+func TestAnUnknownDateIsLeftOut(t *testing.T) {
+	b, err := json.Marshal(messageMeta(model.Message{ID: "m1", ThreadID: "t1"}))
+	if err != nil || strings.Contains(string(b), `"date"`) {
+		t.Errorf("an undated message: %s, %v", b, err)
+	}
+	b, err = json.Marshal(messageMeta(model.Message{ID: "m1", ThreadID: "t1", Date: time.Date(2026, 3, 3, 9, 0, 0, 0, time.UTC)}))
+	if err != nil || !strings.Contains(string(b), `"date":"2026-03-03T09:00:00Z"`) {
+		t.Errorf("a dated message: %s, %v", b, err)
+	}
+	// A thread row whose newest message has no date leaves out latest.
+	b, err = json.Marshal(threadSummary(model.Thread{ID: "t1", Messages: []model.Message{{ID: "m1", ThreadID: "t1"}}}))
+	if err != nil || strings.Contains(string(b), `"latest"`) {
+		t.Errorf("an undated thread row: %s, %v", b, err)
 	}
 }

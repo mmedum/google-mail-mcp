@@ -11,8 +11,8 @@ import (
 	"github.com/google/jsonschema-go/jsonschema"
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 
-	"github.com/mmedum/google-mail-mcp/v3/internal/config"
-	"github.com/mmedum/google-mail-mcp/v3/internal/gapi"
+	"github.com/mmedum/google-mail-mcp/v4/internal/config"
+	"github.com/mmedum/google-mail-mcp/v4/internal/gapi"
 )
 
 // Kind is what a tool does to the world. One field decides a tool's
@@ -29,13 +29,15 @@ const (
 	// when that directory is set, read-only mode included, since
 	// read-only is about the mailbox.
 	ReadWritesLocally
-	// Write changes the mailbox and reaches nobody else: drafts, labels,
-	// trash. Not registered in read-only mode.
+	// Write changes or removes what is in the mailbox and reaches nobody
+	// else: a draft's text, labels, trash. Not registered in read-only
+	// mode. Annotated destructive, the MCP schema's default, because the
+	// schema reads destructiveHint false as "the tool performs only
+	// additive updates". It takes no confirm: another write undoes it.
 	Write
 	// WriteForGood is a Write that cannot be undone: delete_draft, since
 	// Gmail deletes a draft rather than trashing it. Registered as Write
-	// is (§17.1, §17b), and annotated destructive, so a client that
-	// prompts by annotation prompts for it. Its call takes confirm: true.
+	// is (§17.1, §17b), and its call takes confirm: true.
 	WriteForGood
 	// Send delivers mail to other people. Registered only with
 	// GMAIL_ENABLE_SEND (§4.2), and annotated destructive: a send cannot
@@ -64,6 +66,10 @@ const (
 	// GMAIL_ENABLE_SETTINGS and GMAIL_ENABLE_SEND (§17.4), and carries a
 	// send's annotations.
 	AutoReply
+	// Adding creates something new and changes nothing already there: a
+	// new draft, a new label. Registered as Write is, and the one write
+	// annotated not destructive.
+	Adding
 )
 
 // String names the kind, for tests and the logging harness.
@@ -87,6 +93,8 @@ func (k Kind) String() string {
 		return "settings-for-good"
 	case AutoReply:
 		return "auto-reply"
+	case Adding:
+		return "adding"
 	}
 	return fmt.Sprintf("kind(%d)", int(k))
 }
@@ -99,7 +107,7 @@ func (k Kind) allowed(cfg config.Config) bool {
 		return true
 	case ReadWritesLocally:
 		return cfg.LocalDir != ""
-	case Write, WriteForGood:
+	case Write, WriteForGood, Adding:
 		return !cfg.ReadOnly
 	case Send:
 		return cfg.EnableSend && !cfg.ReadOnly
@@ -124,9 +132,10 @@ func (k Kind) annotations() *mcp.ToolAnnotations {
 	switch k {
 	case Read:
 		return &mcp.ToolAnnotations{ReadOnlyHint: true, IdempotentHint: true, OpenWorldHint: no}
-	case ReadWritesLocally:
-		// Not read-only: it creates a file. Not destructive: it never
-		// overwrites one.
+	case ReadWritesLocally, Adding:
+		// Not read-only: each creates something, a file, a draft or a
+		// label. Not destructive: a download never overwrites a file, and
+		// a new draft or label changes nothing already there.
 		return &mcp.ToolAnnotations{DestructiveHint: no, OpenWorldHint: no}
 	case Send, AutoReply:
 		// Mail that has left cannot be recalled.
@@ -135,7 +144,8 @@ func (k Kind) annotations() *mcp.ToolAnnotations {
 		// Deleting what is already gone changes nothing more.
 		return &mcp.ToolAnnotations{DestructiveHint: yes, IdempotentHint: true, OpenWorldHint: no}
 	default:
-		return &mcp.ToolAnnotations{DestructiveHint: no, OpenWorldHint: no}
+		// Write: it changes or removes what is there.
+		return &mcp.ToolAnnotations{DestructiveHint: yes, OpenWorldHint: no}
 	}
 }
 
@@ -188,6 +198,9 @@ func register[In any, Out Renderer](s *mcp.Server, d Deps, sp Spec, h Handler[In
 	}
 	if hint := sp.Kind.annotations().DestructiveHint; confirms && (hint == nil || !*hint) {
 		panic("tools: " + sp.Name + " takes confirm, and its kind " + sp.Kind.String() + " is not annotated destructive")
+	}
+	if confirms && sp.Kind == Write {
+		panic("tools: " + sp.Name + " takes confirm, and a Write is undone by another write, so it takes none")
 	}
 	if d.registered != nil {
 		*d.registered = append(*d.registered, sp.Name)
