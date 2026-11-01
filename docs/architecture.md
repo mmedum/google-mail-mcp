@@ -1,6 +1,10 @@
 # Architecture — google-mail-mcp
 
-**Status: 4.0.0 is cut, 2026-11-01: the module path is `/v4`.** A message's `date` and a thread row's `latest` are left
+**Status: 4.0.0 is released, 2026-11-01, from `main`, and verified from
+outside: checksums, the cosign signature and the provenance
+attestation, each also against a tampered copy, the version in all
+five places, the registry entry, and the Go proxy resolving v4.0.0.**
+The module path is `/v4`. A message's `date` and a thread row's `latest` are left
 out of the structured result when unknown, rather than sent as
 `0001-01-01T00:00:00Z`; an `internalDate` of zero reads as no date. Write
 is annotated destructive and the new Adding kind, for `create_draft` and
