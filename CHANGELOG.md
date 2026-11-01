@@ -15,6 +15,8 @@ lifted verbatim.
 
 ## [Unreleased]
 
+## [4.0.0] - 2026-11-01
+
 ### Changed
 
 - **Breaking:** the Go module path is `/v4`. Install with `go install github.com/mmedum/google-mail-mcp/v4/cmd/google-mail-mcp@latest`; the `/v3` path stays at 3.3.0. The release archives and the Claude Desktop bundle are unchanged.
@@ -285,7 +287,8 @@ lifted verbatim.
 - Repository gates run by `make check` and CI: leaks, pins, error classes, API coverage, schema diff, smoke, staleness and more.
 - Signed release archives for six platforms with SBOMs, build provenance, a Claude Desktop bundle and an MCP registry entry.
 
-[Unreleased]: https://github.com/mmedum/google-mail-mcp/compare/v3.3.0...HEAD
+[Unreleased]: https://github.com/mmedum/google-mail-mcp/compare/v4.0.0...HEAD
+[4.0.0]: https://github.com/mmedum/google-mail-mcp/compare/v3.3.0...v4.0.0
 [3.3.0]: https://github.com/mmedum/google-mail-mcp/compare/v3.2.0...v3.3.0
 [3.2.0]: https://github.com/mmedum/google-mail-mcp/compare/v3.1.2...v3.2.0
 [3.1.2]: https://github.com/mmedum/google-mail-mcp/compare/v3.1.1...v3.1.2
