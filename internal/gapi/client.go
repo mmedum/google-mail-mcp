@@ -33,7 +33,7 @@ import (
 	"golang.org/x/oauth2"
 	"golang.org/x/time/rate"
 
-	"github.com/mmedum/google-mail-mcp/v3/internal/redact"
+	"github.com/mmedum/google-mail-mcp/v4/internal/redact"
 )
 
 // Defaults for Options.

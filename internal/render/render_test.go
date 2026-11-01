@@ -8,9 +8,9 @@ import (
 	"time"
 	"unicode/utf8"
 
-	"github.com/mmedum/google-mail-mcp/v3/internal/gmail"
-	"github.com/mmedum/google-mail-mcp/v3/internal/mime"
-	"github.com/mmedum/google-mail-mcp/v3/internal/model"
+	"github.com/mmedum/google-mail-mcp/v4/internal/gmail"
+	"github.com/mmedum/google-mail-mcp/v4/internal/mime"
+	"github.com/mmedum/google-mail-mcp/v4/internal/model"
 )
 
 func seq(tokens ...string) TokenSource {

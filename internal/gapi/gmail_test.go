@@ -13,10 +13,10 @@ import (
 
 	"golang.org/x/oauth2"
 
-	"github.com/mmedum/google-mail-mcp/v3/internal/gapi"
-	"github.com/mmedum/google-mail-mcp/v3/internal/gapi/gmailtest"
-	"github.com/mmedum/google-mail-mcp/v3/internal/gmail"
-	"github.com/mmedum/google-mail-mcp/v3/internal/mime"
+	"github.com/mmedum/google-mail-mcp/v4/internal/gapi"
+	"github.com/mmedum/google-mail-mcp/v4/internal/gapi/gmailtest"
+	"github.com/mmedum/google-mail-mcp/v4/internal/gmail"
+	"github.com/mmedum/google-mail-mcp/v4/internal/mime"
 )
 
 func fakeClient(t *testing.T) (*gapi.Client, *gmailtest.Server) {

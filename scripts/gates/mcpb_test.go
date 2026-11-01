@@ -12,7 +12,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/mmedum/google-mail-mcp/v3/internal/config"
+	"github.com/mmedum/google-mail-mcp/v4/internal/config"
 )
 
 // mcpbFixture decodes the committed manifest as a document, so the

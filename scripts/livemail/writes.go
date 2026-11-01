@@ -12,8 +12,8 @@ import (
 	"slices"
 	"strings"
 
-	"github.com/mmedum/google-mail-mcp/v3/internal/gapi/gmailtest"
-	"github.com/mmedum/google-mail-mcp/v3/internal/mime"
+	"github.com/mmedum/google-mail-mcp/v4/internal/gapi/gmailtest"
+	"github.com/mmedum/google-mail-mcp/v4/internal/mime"
 )
 
 // The write steps. Everything they touch is the run's own: the messages

@@ -8,9 +8,9 @@ import (
 
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 
-	"github.com/mmedum/google-mail-mcp/v3/internal/gapi"
-	"github.com/mmedum/google-mail-mcp/v3/internal/render"
-	"github.com/mmedum/google-mail-mcp/v3/internal/service"
+	"github.com/mmedum/google-mail-mcp/v4/internal/gapi"
+	"github.com/mmedum/google-mail-mcp/v4/internal/render"
+	"github.com/mmedum/google-mail-mcp/v4/internal/service"
 )
 
 // Resource URIs (§8). A thread or message resource carries the same
