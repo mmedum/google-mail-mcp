@@ -59,7 +59,7 @@ type MessageMeta struct {
 	ID                       string            `json:"id"`
 	ThreadID                 string            `json:"thread_id"`
 	UntrustedRFC822MessageID model.Untrusted   `json:"untrusted_rfc822_message_id,omitempty"`
-	Date                     time.Time         `json:"date"`
+	Date                     *time.Time        `json:"date,omitempty" jsonschema:"when the message arrived; absent when neither Gmail nor the Date header says"`
 	Labels                   []LabelRef        `json:"labels"`
 	UntrustedFrom            []model.Untrusted `json:"untrusted_from"`
 	UntrustedTo              []model.Untrusted `json:"untrusted_to,omitempty"`
@@ -142,7 +142,7 @@ func labelRefs(ls []model.LabelRef) []LabelRef {
 
 func messageMeta(m model.Message) MessageMeta {
 	meta := MessageMeta{
-		ID: m.ID, ThreadID: m.ThreadID, UntrustedRFC822MessageID: m.RFC822MessageID, Date: m.Date,
+		ID: m.ID, ThreadID: m.ThreadID, UntrustedRFC822MessageID: m.RFC822MessageID, Date: timePtr(m.Date),
 		Labels: labelRefs(m.Labels), UntrustedFrom: model.UntrustedAddresses(m.From), UntrustedTo: model.UntrustedAddresses(m.To),
 		UntrustedCc: model.UntrustedAddresses(m.Cc), UntrustedSubject: m.Subject, UntrustedSnippet: m.Snippet,
 		HasAttachments:     m.HasAttachments,

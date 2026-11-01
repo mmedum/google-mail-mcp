@@ -122,7 +122,7 @@ type ThreadSummary struct {
 	MessageCount          int               `json:"message_count"`
 	Unread                int               `json:"unread"`
 	Drafts                int               `json:"drafts" jsonschema:"how many of the messages are drafts"`
-	Latest                time.Time         `json:"latest" jsonschema:"when the newest message that is not a draft or in the trash arrived; the snippet is that message's"`
+	Latest                *time.Time        `json:"latest,omitempty" jsonschema:"when the newest message that is not a draft or in the trash arrived, absent when its date is unknown; the snippet is that message's"`
 	LatestFromMe          bool              `json:"latest_from_me" jsonschema:"true when this account sent that newest message"`
 	Labels                []LabelRef        `json:"labels"`
 	HasAttachments        bool              `json:"has_attachments"`
@@ -375,7 +375,7 @@ func threadSummary(t model.Thread) ThreadSummary {
 	latest := t.Latest()
 	return ThreadSummary{
 		ID: t.ID, MessageCount: len(t.Messages), Unread: t.Unread(), Drafts: t.Drafts(),
-		Latest: latest.Date, LatestFromMe: t.LatestSent(),
+		Latest: timePtr(latest.Date), LatestFromMe: t.LatestSent(),
 		Labels: labelRefs(t.Labels()), HasAttachments: t.HasAttachments(), UntrustedSubject: t.Subject(),
 		UntrustedParticipants: model.UntrustedAddresses(t.Participants()), UntrustedSnippet: latest.Snippet,
 	}

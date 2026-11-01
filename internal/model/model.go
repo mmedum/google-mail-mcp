@@ -303,7 +303,10 @@ func gmailFields(g *gmail.Message, labels LabelIndex) Message {
 	}
 	snippet, hidden := mime.StripInvisible(html.UnescapeString(g.Snippet))
 	m.Snippet, m.SnippetHidden = Untrusted(snippet), hidden
-	if ms, ok := g.InternalDateMillis(); ok {
+	// Zero is the Unix epoch, which is how Google writes a time it does
+	// not have: read as no date, so the Date header stands in, and no
+	// message is shown as sent in 1970.
+	if ms, ok := g.InternalDateMillis(); ok && ms != 0 {
 		m.Date = time.UnixMilli(ms).UTC()
 	}
 	return m

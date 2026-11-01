@@ -179,9 +179,10 @@ func TestSearchThreadsRowPassesOverDraftsAndTrash(t *testing.T) {
 
 	// Dmitri wrote last; the account's draft reply came a minute later.
 	got, text := row("subject:long notes", backed)
-	want := tools.ThreadSummary{MessageCount: 3, Drafts: 1, Latest: time.Date(2026, 3, 4, 5, 2, 0, 0, time.UTC),
+	latest := time.Date(2026, 3, 4, 5, 2, 0, 0, time.UTC)
+	want := tools.ThreadSummary{MessageCount: 3, Drafts: 1, Latest: &latest,
 		LatestFromMe: false, UntrustedSnippet: "Backed body 2."}
-	if got.MessageCount != want.MessageCount || got.Drafts != want.Drafts || !got.Latest.Equal(want.Latest) ||
+	if got.MessageCount != want.MessageCount || got.Drafts != want.Drafts || got.Latest == nil || !got.Latest.Equal(*want.Latest) ||
 		got.LatestFromMe != want.LatestFromMe || got.UntrustedSnippet != want.UntrustedSnippet {
 		t.Errorf("row = %+v, want %+v", got, want)
 	}
@@ -199,7 +200,7 @@ func TestSearchThreadsRowPassesOverDraftsAndTrash(t *testing.T) {
 
 	// Bruno's answer is in the trash, so the account's reply is the latest.
 	got, text = row("subject:offsite venue", plain.ThreadID)
-	if !got.Latest.Equal(time.Date(2026, 3, 2, 12, 0, 0, 0, time.UTC)) || !got.LatestFromMe || got.Drafts != 0 ||
+	if got.Latest == nil || !got.Latest.Equal(time.Date(2026, 3, 2, 12, 0, 0, 0, time.UTC)) || !got.LatestFromMe || got.Drafts != 0 ||
 		!strings.HasPrefix(string(got.UntrustedSnippet), "The old mill works for me.") {
 		t.Errorf("row = %+v", got)
 	}

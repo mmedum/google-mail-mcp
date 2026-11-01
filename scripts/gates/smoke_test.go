@@ -70,13 +70,13 @@ func TestSmokeFailsEachWay(t *testing.T) {
 		"exit1":               "must be exit 0",
 		"noclass":             "want an [auth] tool error",
 		"downgrade":           "the server negotiated",
-		"leaky-readonly":      "read-only mode registers create_draft, a write tool it must not",
+		"leaky-readonly":      "read-only mode registers create_draft, an adding tool it must not",
 		"leaky-send":          "default mode registers send_draft, a send tool it must not",
-		"no-meta":             "tools/list shows delete_message as a write-for-good tool, --dump-schemas as a destructive tool",
+		"no-meta":             "tools/list shows delete_message as a destructive, unmarked tool, --dump-schemas as a destructive tool",
 		"missing-destructive": "destructive mode lacks delete_message",
 		"undumped":            "which --dump-schemas does not",
 		"leaky-settings":      "default mode registers create_filter, a settings tool it must not",
-		"vacation-as-write":   "set_vacation is a settings tool annotated as a send tool",
+		"vacation-as-write":   "set_vacation is a settings tool annotated as a destructive, open-world tool",
 	}
 	for mode, want := range cases {
 		t.Run(mode, func(t *testing.T) {
@@ -169,16 +169,17 @@ func TestSmokeFailsAServerWithoutServerDiscover(t *testing.T) {
 	}
 }
 
-// Every kind combination register.go writes reads back as its kind, and
-// one it never writes is refused.
-func TestSmokeKindFollowsRegister(t *testing.T) {
+// Every combination register.go writes reads back as its shape, and one
+// it never writes is refused.
+func TestSmokeShapeFollowsRegister(t *testing.T) {
 	for _, tc := range []struct{ annotations, meta, want string }{
-		{`{"readOnlyHint":true,"idempotentHint":true,"openWorldHint":false}`, ``, smokeKindRead},
-		{`{"destructiveHint":false,"openWorldHint":false}`, ``, smokeKindWrite},
-		{`{"destructiveHint":true,"openWorldHint":true}`, ``, smokeKindSend},
+		{`{"readOnlyHint":true,"idempotentHint":true,"openWorldHint":false}`, ``, smokeShapeReadOnly},
+		{`{"destructiveHint":false,"openWorldHint":false}`, ``, smokeShapeAdditive},
+		{`{"destructiveHint":true,"openWorldHint":true}`, ``, smokeShapeOpenWorld},
 		{`{"destructiveHint":true,"idempotentHint":true,"openWorldHint":false}`,
-			`{"anthropic/requiresUserInteraction":true}`, smokeKindDestructive},
-		{`{"destructiveHint":true,"idempotentHint":true,"openWorldHint":false}`, ``, smokeKindWriteForGood},
+			`{"anthropic/requiresUserInteraction":true}`, smokeShapeMarked},
+		{`{"destructiveHint":true,"idempotentHint":true,"openWorldHint":false}`, ``, smokeShapeDestructive},
+		{`{"destructiveHint":true,"openWorldHint":false}`, ``, smokeShapeDestructive},
 		// A send no client prompts for by annotation, and a marked send.
 		{`{"destructiveHint":false,"openWorldHint":true}`, ``, ""},
 		{`{"destructiveHint":true,"openWorldHint":true}`, `{"anthropic/requiresUserInteraction":true}`, ""},
@@ -188,9 +189,9 @@ func TestSmokeKindFollowsRegister(t *testing.T) {
 		{`{"destructiveHint":true}`, ``, ""},
 		{`{"readOnlyHint":true}`, `{"anthropic/requiresUserInteraction":true}`, ""},
 	} {
-		got, err := smokeKind("t", json.RawMessage(tc.annotations), json.RawMessage(tc.meta))
+		got, err := smokeShape("t", json.RawMessage(tc.annotations), json.RawMessage(tc.meta))
 		if got != tc.want || (tc.want == "") != (err != nil) {
-			t.Errorf("smokeKind(%s, %s) = %q, %v; want %q", tc.annotations, tc.meta, got, err, tc.want)
+			t.Errorf("smokeShape(%s, %s) = %q, %v; want %q", tc.annotations, tc.meta, got, err, tc.want)
 		}
 	}
 }

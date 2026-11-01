@@ -246,7 +246,7 @@ func (o LabelWriteOut) Render() string { return o.text }
 func registerWrite(s *mcp.Server, d Deps) {
 	svc := service.New(d.Client)
 
-	register(s, d, Spec{Name: "create_draft", Kind: Write, Description: "Save a new draft, a reply to a message, or a " +
+	register(s, d, Spec{Name: "create_draft", Kind: Adding, Description: "Save a new draft, a reply to a message, or a " +
 		"forward. Nothing is sent: the draft waits in Gmail. For a reply, give reply_to (a message id) or reply_to_thread (a " +
 		"thread id); the server writes the recipients, the subject and the threading headers from the parent, and says " +
 		"whether Gmail filed the draft in the parent's thread. reply_all adds the parent's other recipients, and quote " +
@@ -332,7 +332,7 @@ func registerWrite(s *mcp.Server, d Deps) {
 			return itemsOut(iw), nil
 		})
 
-	register(s, d, Spec{Name: "create_label", Kind: Write, Description: "Create a user label. Gmail refuses a name " +
+	register(s, d, Spec{Name: "create_label", Kind: Adding, Description: "Create a user label. Gmail refuses a name " +
 		"another label has in any case, and a system label's name; the server checks first and says which. " +
 		"6 units." + dryRunNote},
 		func(ctx context.Context, in CreateLabelIn) (LabelWriteOut, error) {

@@ -5,6 +5,7 @@ import (
 	"slices"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/mmedum/google-mail-mcp/v4/internal/gapi/gmailtest"
 	"github.com/mmedum/google-mail-mcp/v4/internal/gmail"
@@ -346,5 +347,20 @@ func TestSettingTextIsSetWhenItHoldsSomething(t *testing.T) {
 		if tc.got.Text != tc.text || tc.got.Set != tc.set {
 			t.Errorf("%s: text %q, set %t; want %q, %t", tc.name, tc.got.Text, tc.got.Set, tc.text, tc.set)
 		}
+	}
+}
+
+// Gmail's internalDate of zero is the Unix epoch, Google's way of writing
+// a time it does not have: the Date header stands in, and with none the
+// date is unknown rather than 1970.
+func TestAnInternalDateOfZeroIsNoDate(t *testing.T) {
+	x := model.NewLabelIndex(nil)
+	dated := gmail.Message{InternalDate: "0", Payload: &gmail.MessagePart{Headers: []gmail.MessagePartHeader{{Name: "Date", Value: "Tue, 3 Mar 2026 09:00:00 +0000"}}}}
+	if m, _ := model.NewMessage(&dated, x, nil); !m.Date.Equal(time.Date(2026, 3, 3, 9, 0, 0, 0, time.UTC)) {
+		t.Errorf("with a Date header, date = %v", m.Date)
+	}
+	undated := gmail.Message{InternalDate: "0", Payload: &gmail.MessagePart{}}
+	if m, _ := model.NewMessage(&undated, x, nil); !m.Date.IsZero() {
+		t.Errorf("with no Date header, date = %v, want none", m.Date)
 	}
 }

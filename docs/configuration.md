@@ -88,13 +88,12 @@ wider scope until you `logout` and `login`.
 Your MCP client approves each call; the server does not ask you itself.
 What the client prompts for depends on the tool's annotations and on
 your settings. claude.ai and Codex prompt for the tools annotated
-destructive: `delete_draft`, `send_draft`, `set_vacation`,
-`update_signature`, every filter write and every delete. VS Code prompts
-for every tool that is not read-only. Claude Code prompts on every call
-of `delete_permanently` and `delete_label`, whatever your rules say, and
-for the rest follows your `permissions.allow` and `permissions.ask`
-rules; the README gives `ask` rules for the writes that send, change a
-setting or delete.
+destructive: every tool that changes the mailbox but `create_draft` and
+`create_label`, which only add. VS Code prompts for every tool that is not
+read-only. Claude Code prompts on every call of `delete_permanently` and
+`delete_label`, whatever your rules say, and for the rest follows your
+`permissions.allow` and `permissions.ask` rules; the README gives `ask`
+rules for every tool annotated destructive.
 
 What holds whatever the client does is in the server: a tool behind a
 setting does not exist until you turn the setting on; `confirm: true`

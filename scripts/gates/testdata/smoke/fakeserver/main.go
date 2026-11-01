@@ -15,7 +15,7 @@ import (
 var (
 	readTool = map[string]any{"name": "get_profile", "inputSchema": map[string]any{"type": "object"},
 		"annotations": map[string]any{"readOnlyHint": true, "idempotentHint": true, "openWorldHint": false}}
-	writeTool = map[string]any{"name": "create_draft", "inputSchema": map[string]any{"type": "object"},
+	addingTool = map[string]any{"name": "create_draft", "inputSchema": map[string]any{"type": "object"},
 		"annotations": map[string]any{"destructiveHint": false, "openWorldHint": false}}
 	sendTool = map[string]any{"name": "send_draft", "inputSchema": map[string]any{"type": "object"},
 		"annotations": map[string]any{"destructiveHint": true, "openWorldHint": true}}
@@ -31,7 +31,7 @@ var (
 )
 
 // kinds is the dump's kind of each tool, as internal/tools names them.
-var kinds = map[string]string{"get_profile": "read", "create_draft": "write", "send_draft": "send",
+var kinds = map[string]string{"get_profile": "read", "create_draft": "adding", "send_draft": "send",
 	"delete_message": "destructive", "create_filter": "settings", "delete_filter": "settings-for-good",
 	"set_vacation": "auto-reply"}
 
@@ -44,7 +44,7 @@ func registered(mode string) []any {
 	settings := os.Getenv("GMAIL_ENABLE_SETTINGS") == "true"
 	tools := []any{readTool}
 	if !readOnly || mode == "leaky-readonly" {
-		tools = append(tools, writeTool)
+		tools = append(tools, addingTool)
 	}
 	if (send && !readOnly) || mode == "leaky-send" {
 		tools = append(tools, sendTool)
@@ -82,7 +82,7 @@ func main() {
 			k["set_vacation"] = "settings"
 		}
 		out(map[string]any{"server": "fake", "sdk_version": "v0",
-			"tools":     []any{readTool, writeTool, sendTool, destructiveTool, settingsTool, settingsForGoodTool, autoReplyTool},
+			"tools":     []any{readTool, addingTool, sendTool, destructiveTool, settingsTool, settingsForGoodTool, autoReplyTool},
 			"resources": []any{}, "resource_templates": []any{}, "kinds": k})
 		return
 	}
