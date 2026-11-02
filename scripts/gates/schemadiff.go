@@ -198,8 +198,10 @@ func schemaDiffDecode(b []byte, source string) (*schemaDiffSurface, error) {
 
 // A change is one difference between two dumps: the item it is to, which
 // is what a footer or a **Breaking:** entry names, and how the report
-// says it. field is, on the break of a tool still there, the field it
-// breaks, such as "input id".
+// says it. field is what a break is matched by across two comparisons:
+// on a tool still there the field it breaks, such as "input id", and on
+// a removed item its whole label, list included, so a removed prompt and
+// a tool of one name differ.
 type change struct {
 	item, text, field string
 }
@@ -228,7 +230,7 @@ func schemaDiffCompare(old, now *schemaDiffSurface) surfaceChanges {
 		is, inNow := now.items[label]
 		switch {
 		case !inNow:
-			c.breaking = append(c.breaking, change{item: was.name, text: label + " removed"})
+			c.breaking = append(c.breaking, change{item: was.name, text: label + " removed", field: label})
 		case !inOld:
 			c.added = append(c.added, change{item: is.name, text: label})
 		default:

@@ -3417,6 +3417,17 @@ what fixed them.
    Gmail's web composer wrapping such a draft when a person sends it
    (§18 row 73), and `update_draft` keeps a draft's shape unless told
    otherwise, so a draft made plain stays plain.
+10. **Tool descriptions that depend on the settings.** Four tools read
+    differently by configuration: `get_settings` and `list_filters` by
+    whether the server is read-only and which settings writes are on,
+    `create_filter` by whether `create_trash_filter` is, and
+    `create_draft` by `GMAIL_DRAFT_SIGNATURE`. `--dump-schemas` prints one
+    wording of each, the one a server built from the default settings
+    with every tool registered gives, so a change to another wording
+    passes `schema-ack` unseen. Dumping each wording would mean a server
+    per combination, or the descriptions built by a function the dump
+    can call for each. **Decided 2026-11-01 by the maintainer: noted, to
+    be done later.**
 
 ### 17a. Deferred cleanups
 
@@ -3587,3 +3598,4 @@ live** — §15 exists to settle these, and they are marked.
 | 103 | An unknown date can go out as Go's zero time | Read 2026-10-31: a message with neither an `internalDate` nor a Date header went out as `"date": "0001-01-01T00:00:00Z"` in the structured half while the text said "unknown date", and a thread row's `latest` the same | **Refuted.** Both are left out when unknown, as the settings and search times already were: a breaking change, so 4.0.0, with the module path at `/v4` |
 | 104 | A scope must be on the consent screen to be granted | Google's configure-oauth-consent guide (updated 2026-09-03): "you only need to list scopes for apps used by people outside your Google Workspace organization", and for internal apps "scopes aren't listed on the consent screen". Confirmed live 2026-10-31 on an Internal app, whose token held scopes its Data Access page does not list | **Refined.** The setup page asks for the scope list on External apps only |
 | 105 | A commit footer's token is matched exactly, so `SCHEMA-CHANGE:` must be written in capitals | Read 2026-11-01: Conventional Commits 1.0.0, item 15, "The units of information that make up Conventional Commits MUST NOT be treated as case-sensitive by implementors, with the exception of BREAKING CHANGE which MUST be uppercase"; item 16, "BREAKING-CHANGE MUST be synonymous with BREAKING CHANGE" | **Refuted.** `schema-ack` reads `SCHEMA-CHANGE:` in any case, and `BREAKING CHANGE:` and `BREAKING-CHANGE:` only in capitals |
+| 106 | A commit footer's value is one line, and a paragraph holding a line that is not `Token: value` is not a footer block | Read 2026-11-02: Conventional Commits 1.0.0, item 8, "Each footer MUST consist of a word token, followed by either a `:<space>` or `<space>#` separator"; item 10, "A footer's value MAY contain spaces and newlines, and parsing MUST terminate when the next valid footer token/separator pair is observed" | **Refuted.** `schema-ack` reads a footer paragraph as one whose first line starts a footer, with either separator. Inside it, a line that starts a footer ends the value before it, and any other line continues that value, so a wrapped value and a `Closes #12` footer count. A wrapped line that itself reads `word: ` starts a new footer, as item 10 says |
