@@ -12,7 +12,7 @@ func SignatureWrite(sw model.SignatureWrite, o Options) Result {
 		} else {
 			w.say("set the signature of %s.", setting(sw.Address))
 		}
-		w.say("Gmail adds it to new emails written in Gmail; a draft this server writes carries it only with signature: true.")
+		w.say("Gmail adds it to new emails written in Gmail; a draft this server writes carries it as the draft tools' descriptions say.")
 		w.signature("signature before", sw.Before)
 		w.signature("signature after", sw.After)
 		return Result{Budget: o.budget()}

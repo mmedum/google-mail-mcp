@@ -34,6 +34,8 @@ const (
 	// mode. Annotated destructive, the MCP schema's default, because the
 	// schema reads destructiveHint false as "the tool performs only
 	// additive updates". It takes no confirm: another write undoes it.
+	// The README's Claude Code example lets it run unasked, which the
+	// staleness gate holds (stalenessMustAsk).
 	Write
 	// WriteForGood is a Write that cannot be undone: delete_draft, since
 	// Gmail deletes a draft rather than trashing it. Registered as Write

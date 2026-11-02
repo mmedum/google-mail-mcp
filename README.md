@@ -220,15 +220,16 @@ For clients that attach rather than call, `gmail://threads/{id}`,
   your rules say, since mail deleted for good skips the trash and a
   label comes off every message. For the rest, list the calls you want
   to approve one by one under `permissions.ask` in your settings, with
-  the name you gave the server in place of `google-mail`. For example,
-  the tools marked destructive:
+  the name you gave the server in place of `google-mail`. The example
+  allows the server's tools and asks for every call that sends, changes
+  a setting or deletes for good. An ask rule wins over an allow rule.
+  The everyday writes to drafts, labels and the trash run unasked:
 
   ```json
   {
     "permissions": {
+      "allow": ["mcp__google-mail__*"],
       "ask": [
-        "mcp__google-mail__update_draft", "mcp__google-mail__modify_labels",
-        "mcp__google-mail__trash", "mcp__google-mail__restore", "mcp__google-mail__update_label",
         "mcp__google-mail__send_draft", "mcp__google-mail__set_vacation",
         "mcp__google-mail__update_signature", "mcp__google-mail__create_filter",
         "mcp__google-mail__create_trash_filter", "mcp__google-mail__delete_filter",

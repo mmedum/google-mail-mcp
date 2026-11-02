@@ -1,6 +1,11 @@
 # Architecture — google-mail-mcp
 
-**Status: 4.0.0 is released, 2026-11-01, from `main`, and verified from
+**Status: 4.0.1 is cut, 2026-11-02.** The README's Claude Code example
+asks only for the calls that send, change a setting or delete for good
+(§18 row 107), and `update_signature` no longer says a draft is signed
+only when asked. Unproven again since 4.0.0: nothing on the wire. The
+changes are a README example, two strings, `--dump-schemas` and the
+gates. Reviewed by `/simplify` and `/code-review medium`. 4.0.0 is released, 2026-11-01, from `main`, and verified from
 outside: checksums, the cosign signature and the provenance
 attestation, each also against a tampered copy, the version in all
 five places, the registry entry, and the Go proxy resolving v4.0.0.**
@@ -639,8 +644,10 @@ What stays is what holds on every client:
    standard marks, and a delete done many times in a row, as
    `delete_draft` is, would bring back a prompt on every call. For every
    other tool the operator decides in Claude Code with
-   `permissions.allow` and `ask`; the README gives `ask` rules for every
-   tool annotated destructive.
+   `permissions.allow` and `ask`; the README's example allows the
+   server's tools and asks for every one that sends, changes a setting
+   or deletes for good, leaving the everyday writes of the Write kind to
+   run unasked (§18 row 107).
 6. **What a client's prompt shows.** A client's prompt shows the call's
    arguments. Where the question used to say what an argument means,
    the argument now carries it: `confirm_recipients` names every
@@ -1346,7 +1353,8 @@ after that read.
   it (§7.4) and line breaks become `<br>`, so no markup a caller passes
   is applied. Empty clears it. Gmail adds the
   signature to new emails written in Gmail (§18 row 88); a draft this
-  server writes carries it only when asked (§7.4). It patches the signature and nothing
+  server writes carries it as §7.4 says: with `signature: true`, or for
+  a new draft unasked when `GMAIL_DRAFT_SIGNATURE` is set. It patches the signature and nothing
   else. A signature of images or hidden text alone, before or after, is
   reported as set with no text, never as none.
 - `create_filter` takes Gmail's criteria and actions as labels added or
@@ -3599,3 +3607,4 @@ live** — §15 exists to settle these, and they are marked.
 | 104 | A scope must be on the consent screen to be granted | Google's configure-oauth-consent guide (updated 2026-09-03): "you only need to list scopes for apps used by people outside your Google Workspace organization", and for internal apps "scopes aren't listed on the consent screen". Confirmed live 2026-10-31 on an Internal app, whose token held scopes its Data Access page does not list | **Refined.** The setup page asks for the scope list on External apps only |
 | 105 | A commit footer's token is matched exactly, so `SCHEMA-CHANGE:` must be written in capitals | Read 2026-11-01: Conventional Commits 1.0.0, item 15, "The units of information that make up Conventional Commits MUST NOT be treated as case-sensitive by implementors, with the exception of BREAKING CHANGE which MUST be uppercase"; item 16, "BREAKING-CHANGE MUST be synonymous with BREAKING CHANGE" | **Refuted.** `schema-ack` reads `SCHEMA-CHANGE:` in any case, and `BREAKING CHANGE:` and `BREAKING-CHANGE:` only in capitals |
 | 106 | A commit footer's value is one line, and a paragraph holding a line that is not `Token: value` is not a footer block | Read 2026-11-02: Conventional Commits 1.0.0, item 8, "Each footer MUST consist of a word token, followed by either a `:<space>` or `<space>#` separator"; item 10, "A footer's value MAY contain spaces and newlines, and parsing MUST terminate when the next valid footer token/separator pair is observed" | **Refuted.** `schema-ack` reads a footer paragraph as one whose first line starts a footer, with either separator. Inside it, a line that starts a footer ends the value before it, and any other line continues that value, so a wrapped value counts, and a `Closes #12` footer beside it does not drop it. A `Token #value` footer counts toward the block but acknowledges nothing: item 12 writes `BREAKING CHANGE` with a colon and a space. A wrapped line that itself reads `word: ` starts a new footer, as item 10 says |
+| 107 | The README's `permissions.ask` example names every tool annotated destructive (row 101) | The maintainer asked, 2026-11-02, that a Claude Code session work through the mailbox without a prompt per everyday write. Claude Code's permissions page, read 2026-11-02: "Rules are evaluated in order: deny, then ask, then allow", and `mcp__<server>__*` matches every tool of a server | **Superseded.** The example allows the server's tools and asks for every one that sends, changes a setting or deletes for good. `update_draft`, `modify_labels`, `trash`, `restore` and `update_label`, the Write kind, stay annotated destructive and run unasked under it. `staleness` holds the example to every tool annotated destructive and not of the Write kind. |
