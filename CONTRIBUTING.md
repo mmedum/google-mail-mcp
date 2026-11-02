@@ -58,10 +58,12 @@ after it describes the change and names nothing. Name a tool by its
 name, a resource or template by its URI, a prompt by its name, and the
 instructions as `instructions`. Put a name with a comma in it in
 backticks, and keep the list on one line: a wrapped line that starts
-`word: ` begins a new footer, as Conventional Commits reads it. If the
-change breaks something a release shipped, name that item in a
-`BREAKING CHANGE:` footer instead. When it fails, it prints the footer
-to add, in an empty commit, never an amend.
+`word: ` begins a new footer, as Conventional Commits reads it. Names
+are separated by commas, and a `Token #value` footer such as
+`Closes #12` acknowledges nothing. If the change breaks something a
+release shipped, name that item in a `BREAKING CHANGE:` footer
+instead. When it fails, it prints the footer to add, in an empty
+commit, never an amend.
 
 ## Adding an API call
 

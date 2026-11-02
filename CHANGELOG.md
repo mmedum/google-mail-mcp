@@ -18,7 +18,7 @@ lifted verbatim.
 ### Changed
 
 - `--dump-schemas` also prints the instructions the server gives the model, as a default, a read-only and a full server give them, and lists prompts. It no longer depends on the settings it runs with: a draft signature, for one, no longer changes it.
-- For contributors: CI fails a pull request that changes the tool surface until a commit footer names each item that changed. `SCHEMA-CHANGE:` names a change and `BREAKING CHANGE:` a break of the newest release. Only the names before the first colon followed by white space in a footer's value count. A footer's value may run on over several lines, and a footer beside it, such as `Closes #12`, does not drop it. `make schema-diff` now also reports a changed instruction or prompt.
+- For contributors: CI fails a pull request that changes the tool surface until a commit footer names each item that changed. `SCHEMA-CHANGE:` names a change and `BREAKING CHANGE:` a break of the newest release. Only the names before the first colon followed by white space in a footer's value count, separated by commas. A footer's value may run on over several lines, and a footer beside it, such as `Closes #12`, does not drop it; a `Token #value` footer acknowledges nothing. `make schema-diff` now also reports a changed instruction or prompt.
 
 ## [4.0.0] - 2026-11-01
 
