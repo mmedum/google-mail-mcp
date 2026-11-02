@@ -1,6 +1,10 @@
 # Architecture — google-mail-mcp
 
-**Status: 4.0.1 is cut, 2026-11-02.** The README's Claude Code example
+**Status: 4.0.1 is released, 2026-11-02, from `main`, and verified from
+outside: checksums, the cosign signature and the provenance
+attestation, each also against a tampered copy, the version in all
+five places, the registry entry, and the Go proxy resolving v4.0.1.**
+The README's Claude Code example
 asks only for the calls that send, change a setting or delete for good
 (§18 row 107), and `update_signature` no longer says a draft is signed
 only when asked. Unproven again since 4.0.0: nothing on the wire. The
