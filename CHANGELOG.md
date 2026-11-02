@@ -15,6 +15,8 @@ lifted verbatim.
 
 ## [Unreleased]
 
+## [4.0.1] - 2026-11-02
+
 ### Changed
 
 - The README's Claude Code example allows the server's tools and asks for every call that sends, changes a setting or deletes for good, so a session can work through the mailbox without a prompt per everyday write: `update_draft`, `modify_labels`, `trash`, `restore` and `update_label`. They stay annotated destructive, so claude.ai and Codex still prompt for them.
@@ -298,7 +300,8 @@ lifted verbatim.
 - Repository gates run by `make check` and CI: leaks, pins, error classes, API coverage, schema diff, smoke, staleness and more.
 - Signed release archives for six platforms with SBOMs, build provenance, a Claude Desktop bundle and an MCP registry entry.
 
-[Unreleased]: https://github.com/mmedum/google-mail-mcp/compare/v4.0.0...HEAD
+[Unreleased]: https://github.com/mmedum/google-mail-mcp/compare/v4.0.1...HEAD
+[4.0.1]: https://github.com/mmedum/google-mail-mcp/compare/v4.0.0...v4.0.1
 [4.0.0]: https://github.com/mmedum/google-mail-mcp/compare/v3.3.0...v4.0.0
 [3.3.0]: https://github.com/mmedum/google-mail-mcp/compare/v3.2.0...v3.3.0
 [3.2.0]: https://github.com/mmedum/google-mail-mcp/compare/v3.1.2...v3.2.0
