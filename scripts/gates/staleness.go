@@ -59,10 +59,10 @@ type stalenessInputs struct {
 	// built is whether any non-test Go file exists under internal/.
 	built bool
 	// tools are the dumped tool names; nil when the binary was not
-	// available, which is itself a problem. destructive are the ones a
-	// client reads as destructive.
-	tools, destructive []string
-	toolsErr           error
+	// available, which is itself a problem. mustAsk are the ones the
+	// README's permissions.ask example must name (stalenessMustAsk).
+	tools, mustAsk []string
+	toolsErr       error
 	// modes renders the scope block; nil when internal/scopes is not
 	// wired.
 	modes []stalenessMode
@@ -123,7 +123,7 @@ func stalenessCheck(in stalenessInputs) stalenessReport {
 	n, p = stalenessToolCounts(arch, in.tools, in.toolsErr)
 	r.add(fmt.Sprintf("tool counts: %d table rows", n), p)
 
-	n, p = stalenessReadmeTools(in.docs["README.md"], in.tools, in.destructive)
+	n, p = stalenessReadmeTools(in.docs["README.md"], in.tools, in.mustAsk)
 	r.add(fmt.Sprintf("README tool table: %d rows", n), p)
 
 	n, p = stalenessVerdictCounts(in.docs, in.verdicts, in.surface)
@@ -218,10 +218,8 @@ func stalenessGather(root string, args []string) (stalenessInputs, error) {
 		} else {
 			for _, t := range d.Tools {
 				in.tools = append(in.tools, t.Name)
-				if dumpDestructive(t) {
-					in.destructive = append(in.destructive, t.Name)
-				}
 			}
+			in.mustAsk = stalenessMustAsk(d)
 		}
 	}
 	return in, nil
@@ -620,10 +618,10 @@ var stalenessReadmeTool = regexp.MustCompile("(?m)^\\| `([a-z_]+)` \\|")
 // built binary registers, both ways: the README is where a person learns
 // what the server does, so a tool it omits does not exist for them, and
 // one it lists that the binary lacks is a promise nothing keeps. The
-// README's permissions.ask rules name registered tools, and every tool
-// annotated destructive, every write but the ones that only add, which a
-// new one must not join unasked.
-func stalenessReadmeTools(readme string, tools, destructive []string) (int, []string) {
+// README's permissions.ask rules name registered tools, and give a rule
+// for every tool in mustAsk (stalenessMustAsk), which a new one must not
+// join unasked.
+func stalenessReadmeTools(readme string, tools, mustAsk []string) (int, []string) {
 	rows := stalenessReadmeTool.FindAllStringSubmatch(markdownSection(readme, "## Tools"), -1)
 	listed := make([]string, 0, len(rows))
 	for _, r := range rows {
@@ -666,15 +664,29 @@ func stalenessReadmeTools(readme string, tools, destructive []string) (int, []st
 			asked[m[1]] = true
 		}
 	}
-	if len(destructive) == 0 {
-		problems = append(problems, "the binary registers no tool annotated destructive; the permission rules are held to nothing")
+	if len(mustAsk) == 0 {
+		problems = append(problems, "the binary registers no tool the README must ask about; the permission rules are held to nothing")
 	}
-	for _, t := range destructive {
+	for _, t := range mustAsk {
 		if !asked[t] {
-			problems = append(problems, "README.md's permissions.ask block has no rule for "+t+", which is annotated destructive")
+			problems = append(problems, "README.md's permissions.ask block has no rule for "+t+
+				", which sends, changes a setting or deletes for good")
 		}
 	}
 	return len(listed), problems
+}
+
+// stalenessMustAsk is every tool the README's permissions.ask example
+// must name: annotated destructive and not of the Write kind (§18 row
+// 107). A tool with no kind is held to the rule.
+func stalenessMustAsk(d *schemaDump) []string {
+	var out []string
+	for _, t := range d.Tools {
+		if dumpDestructive(t) && d.Kinds[t.Name] != smokeKindWrite {
+			out = append(out, t.Name)
+		}
+	}
+	return out
 }
 
 // dumpDestructive reports whether a client reads a dumped tool as

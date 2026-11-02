@@ -109,7 +109,7 @@ func TestUpdateSignature(t *testing.T) {
 		t.Fatalf("stored %q", got)
 	}
 	if !strings.Contains(string(out.UntrustedAfter), "<b>Operations</b> & more") ||
-		!strings.Contains(text, "a draft this server writes carries it only with signature: true") {
+		!strings.Contains(text, "a draft this server writes carries it as the draft tools' descriptions say") {
 		t.Errorf("after %q\n%s", out.UntrustedAfter, text)
 	}
 

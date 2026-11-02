@@ -92,8 +92,9 @@ destructive: every tool that changes the mailbox but `create_draft` and
 `create_label`, which only add. VS Code prompts for every tool that is not
 read-only. Claude Code prompts on every call of `delete_permanently` and
 `delete_label`, whatever your rules say, and for the rest follows your
-`permissions.allow` and `permissions.ask` rules; the README gives `ask`
-rules for every tool annotated destructive.
+`permissions.allow` and `permissions.ask` rules; the README's example
+allows the server's tools and asks for every one that sends, changes a
+setting or deletes for good.
 
 What holds whatever the client does is in the server: a tool behind a
 setting does not exist until you turn the setting on; `confirm: true`

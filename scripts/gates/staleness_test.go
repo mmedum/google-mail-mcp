@@ -292,7 +292,7 @@ func TestStalenessReadmeToolsBothWays(t *testing.T) {
 
 // A Claude Code permission rule in the README names a tool the binary
 // registers, or it asks nobody; the README gives at least one; and every
-// tool annotated destructive has one, or a client runs it unasked.
+// tool the README must ask about has one, or a client runs it unasked.
 func TestStalenessReadmePermissionRules(t *testing.T) {
 	table := "# x\n\n## Tools\n\n| Tool | What |\n|---|---|\n| `get_profile` | a |\n| `send_draft` | b |\n"
 	tools := []string{"get_profile", "send_draft"}
@@ -302,12 +302,12 @@ func TestStalenessReadmePermissionRules(t *testing.T) {
 		t.Errorf("a rule for no tool: %q", p)
 	}
 	_, p = stalenessReadmeTools(table+"\n{\"ask\": [\"mcp__google-mail__get_profile\"]}\n", tools, []string{"send_draft"})
-	if len(p) != 1 || p[0] != "README.md's permissions.ask block has no rule for send_draft, which is annotated destructive" {
-		t.Errorf("a destructive tool left out: %q", p)
+	if len(p) != 1 || p[0] != "README.md's permissions.ask block has no rule for send_draft, which sends, changes a setting or deletes for good" {
+		t.Errorf("a must-ask tool left out: %q", p)
 	}
 	_, p = stalenessReadmeTools(table+"\n{\"allow\": [\"mcp__google-mail__send_draft\"]}\n", tools, []string{"send_draft"})
-	if len(p) != 1 || p[0] != "README.md's permissions.ask block has no rule for send_draft, which is annotated destructive" {
-		t.Errorf("a destructive tool allowed rather than asked: %q", p)
+	if len(p) != 1 || p[0] != "README.md's permissions.ask block has no rule for send_draft, which sends, changes a setting or deletes for good" {
+		t.Errorf("a must-ask tool allowed rather than asked: %q", p)
 	}
 	_, p = stalenessReadmeTools(table+"\n{\"ask\": [\n  \"mcp__google-mail__get_profile\",\n  \"mcp__google-mail__send_draft\"\n]}\n",
 		tools, []string{"send_draft"})
@@ -315,7 +315,7 @@ func TestStalenessReadmePermissionRules(t *testing.T) {
 		t.Errorf("an ask list over lines: %q", p)
 	}
 	_, p = stalenessReadmeTools(table+"\n\"mcp__google-mail__send_draft\"\n", tools, nil)
-	stalenessHas(t, p, "registers no tool annotated destructive")
+	stalenessHas(t, p, "registers no tool the README must ask about")
 	_, p = stalenessReadmeTools(table, tools, []string{"send_draft"})
 	stalenessHas(t, p, "README.md gives no Claude Code permission rule")
 }
@@ -334,5 +334,31 @@ func TestDumpDestructive(t *testing.T) {
 		if got := dumpDestructive(dumpTool{Name: "x", Annotations: json.RawMessage(annotations)}); got != want {
 			t.Errorf("%s: %v, want %v", annotations, got, want)
 		}
+	}
+}
+
+// The README must ask about every tool annotated destructive but the
+// Write kind. A tool with no kind is held to the rule.
+func TestStalenessMustAsk(t *testing.T) {
+	destructive, notDestructive := json.RawMessage(`{"destructiveHint":true}`), json.RawMessage(`{"destructiveHint":false}`)
+	d := schemaDump{
+		Tools: []dumpTool{
+			{Name: "trash", Annotations: destructive},
+			{Name: "send_draft", Annotations: destructive},
+			{Name: "update_signature", Annotations: destructive},
+			{Name: "delete_permanently", Annotations: destructive},
+			{Name: "delete_draft", Annotations: destructive},
+			{Name: "set_vacation", Annotations: destructive},
+			{Name: "create_label", Annotations: notDestructive},
+			{Name: "get_profile", Annotations: json.RawMessage(`{"readOnlyHint":true}`)},
+			{Name: "unkinded", Annotations: destructive},
+		},
+		Kinds: map[string]string{"trash": "write", "send_draft": "send", "update_signature": "settings",
+			"delete_permanently": "destructive", "delete_draft": "write-for-good", "set_vacation": "auto-reply",
+			"create_label": "adding", "get_profile": "read"},
+	}
+	want := []string{"send_draft", "update_signature", "delete_permanently", "delete_draft", "set_vacation", "unkinded"}
+	if got := stalenessMustAsk(&d); !slices.Equal(got, want) {
+		t.Errorf("stalenessMustAsk = %v, want %v", got, want)
 	}
 }
