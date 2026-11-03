@@ -146,6 +146,11 @@ func TestHTMLLinks(t *testing.T) {
 		{"country code", `<a href="https://a.example.com">shop.example.de</a>`, "shop.example.de", true},
 		{"second host in text", `<a href="https://example.com/r">example.com or evil.example.org</a>`, "evil.example.org", true},
 		{"second address in text", `<a href="mailto:a@example.com">a@example.com, b@evil.example.org</a>`, "evil.example.org", true},
+		// Go's \b is ASCII-only, so a host ending in a non-Latin
+		// top-level domain needs a boundary of its own.
+		{"non-latin host in text", `<a href="https://login.attacker.invalid/x">пример.рф</a>`, "xn--e1afmkfd.xn--p1ai", true},
+		{"non-latin host before a full stop", `<a href="https://login.attacker.invalid/x">Visit пример.рф.</a>`, "xn--e1afmkfd.xn--p1ai", true},
+		{"host followed by a digit is not a host", `<a href="https://a.example.com">example.com2</a>`, "", false},
 	}
 	for _, c := range cases {
 		t.Run(c.name, func(t *testing.T) {

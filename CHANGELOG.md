@@ -15,6 +15,10 @@ lifted verbatim.
 
 ## [Unreleased]
 
+### Fixed
+
+- A link whose text names a host with a non-Latin top-level domain, such as `.рф`, is flagged when it points elsewhere.
+
 ## [4.0.1] - 2026-11-02
 
 ### Changed

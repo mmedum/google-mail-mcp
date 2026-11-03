@@ -436,7 +436,10 @@ func hostShaped(h string) bool {
 }
 
 var (
-	hostInText  = regexp.MustCompile(`(?i)(?:https?://)?(?:[\p{L}\p{N}](?:[\p{L}\p{N}-]*[\p{L}\p{N}])?\.)+[\p{L}]{2,63}\b`)
+	// The host is group 1. It ends where no letter, digit or underscore
+	// follows, spelled out because Go's \b is ASCII-only and never ends
+	// a host whose top-level domain is not Latin.
+	hostInText  = regexp.MustCompile(`(?i)((?:https?://)?(?:[\p{L}\p{N}](?:[\p{L}\p{N}-]*[\p{L}\p{N}])?\.)+[\p{L}]{2,63})(?:[^\p{L}\p{N}_]|$)`)
 	emailInText = regexp.MustCompile(`(?i)[^\s<>@]+@((?:[\p{L}\p{N}-]+\.)+[\p{L}]{2,63})`)
 )
 
@@ -469,8 +472,8 @@ func textHosts(text string) []string {
 		add(m[1])
 	}
 	masked := emailInText.ReplaceAllString(text, " ")
-	for _, m := range hostInText.FindAllString(masked, -1) {
-		lower := strings.ToLower(m)
+	for _, m := range hostInText.FindAllStringSubmatch(masked, -1) {
+		lower := strings.ToLower(m[1])
 		h := strings.TrimPrefix(strings.TrimPrefix(lower, "https://"), "http://")
 		explicit := h != lower || strings.HasPrefix(h, "www.")
 		tld := h[strings.LastIndexByte(h, '.')+1:]
