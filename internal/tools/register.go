@@ -17,7 +17,7 @@ import (
 
 // Kind is what a tool does to the world. One field decides a tool's
 // annotations, whether it is registered under the configuration, its
-// _meta, and nothing else may decide those (CLAUDE.md rule 11).
+// _meta, and nothing else may decide those (D-63).
 type Kind int
 
 // Tool kinds.
@@ -39,34 +39,34 @@ const (
 	Write
 	// WriteForGood is a Write that cannot be undone: delete_draft, since
 	// Gmail deletes a draft rather than trashing it. Registered as Write
-	// is (§17.1, §17b), and its call takes confirm: true.
+	// is, and its call takes confirm: true.
 	WriteForGood
 	// Send delivers mail to other people. Registered only with
-	// GMAIL_ENABLE_SEND (§4.2), and annotated destructive: a send cannot
-	// be recalled.
+	// GMAIL_ENABLE_SEND, and annotated destructive: a send cannot be
+	// recalled.
 	Send
 	// Destructive is a delete that cannot be undone and reaches past one
 	// item: delete_permanently, which skips the trash Gmail offers, and
 	// delete_label, whose label comes off every message. Registered only
-	// with GMAIL_ENABLE_DESTRUCTIVE (§4.6); each call takes confirm: true,
-	// and the tool carries Claude Code's requiresUserInteraction (§4.13).
+	// with GMAIL_ENABLE_DESTRUCTIVE; each call takes confirm: true, and
+	// the tool carries Claude Code's requiresUserInteraction.
 	Destructive
 	// Settings changes how the account behaves from now on — a
 	// signature, a filter — and reaches nobody else. Registered only
-	// with GMAIL_ENABLE_SETTINGS (§7.9), which also requests the one
-	// scope these methods accept. Annotated destructive: a signature
-	// overwritten is not put back by this server.
+	// with GMAIL_ENABLE_SETTINGS, which also requests the one scope these
+	// methods accept. Annotated destructive: a signature overwritten is
+	// not put back by this server.
 	Settings
 	// SettingsForGood is a Settings write that cannot be undone or that
 	// removes mail: delete_filter, and create_trash_filter, whose filter
 	// moves matching mail to the trash unseen. Registered only with both
-	// GMAIL_ENABLE_SETTINGS and GMAIL_ENABLE_DESTRUCTIVE (§7.9); each call
-	// takes confirm: true.
+	// GMAIL_ENABLE_SETTINGS and GMAIL_ENABLE_DESTRUCTIVE; each call takes
+	// confirm: true.
 	SettingsForGood
 	// AutoReply answers other people's mail automatically: the vacation
 	// reply. It is sending by another name, so it needs both
-	// GMAIL_ENABLE_SETTINGS and GMAIL_ENABLE_SEND (§17.4), and carries a
-	// send's annotations.
+	// GMAIL_ENABLE_SETTINGS and GMAIL_ENABLE_SEND, and carries a send's
+	// annotations.
 	AutoReply
 	// Adding creates something new and changes nothing already there: a
 	// new draft, a new label. Registered as Write is, and the one write
@@ -127,8 +127,8 @@ func (k Kind) allowed(cfg config.Config) bool {
 
 // annotations says what a client shows for this kind, and so whether it
 // prompts: claude.ai and Codex prompt by destructiveHint, and VS Code on
-// every tool without readOnlyHint (§4.13). openWorldHint is true only
-// for Send and AutoReply: the kinds whose effect reaches another person.
+// every tool without readOnlyHint (D-67). openWorldHint is true only for
+// Send and AutoReply: the kinds whose effect reaches another person.
 func (k Kind) annotations() *mcp.ToolAnnotations {
 	no, yes := ptr(false), ptr(true)
 	switch k {
@@ -152,7 +152,7 @@ func (k Kind) annotations() *mcp.ToolAnnotations {
 }
 
 // requiresUserInteraction marks the kinds whose permission prompt is
-// itself the point (§4.13): Claude Code prompts on every call of such a
+// itself the point (D-68): Claude Code prompts on every call of such a
 // tool, whatever the operator's rules say, and refuses it where no
 // prompt can be drawn. A signal, not a control: no other client reads
 // it, which is why Destructive is unregistered by default rather than
@@ -169,7 +169,7 @@ func (k Kind) confirmsEveryCall() bool {
 // Renderer is the readable half of a reply. Every output type has one,
 // so a tool cannot be added without it: a client may show only content
 // or only structuredContent, and both must carry the substance, never
-// as the same bytes (CLAUDE.md rule 12).
+// as the same bytes (D-82).
 type Renderer interface {
 	Render() string
 }
@@ -274,7 +274,7 @@ func wrap[In any, Out Renderer](h Handler[In, Out], dryRun int) mcp.ToolHandlerF
 	}
 }
 
-// fail turns an error into the "[class] message" tool error of §6.5.
+// fail turns an error into the "[class] message" tool error (D-77).
 // An unclassified error is a bug in this server; it still arrives with
 // a class, so the vocabulary stays closed from the caller's side.
 func fail(err error) error {
@@ -287,7 +287,7 @@ func fail(err error) error {
 
 // takesConfirm reports whether In has confirm: the argument by which the
 // caller says it meant a write that cannot be undone. It is a witness,
-// never approval: the model sets it (§4.13).
+// never approval: the model sets it.
 func takesConfirm[In any]() bool {
 	t := reflect.TypeFor[In]()
 	if t.Kind() != reflect.Struct {

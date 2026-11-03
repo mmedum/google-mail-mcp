@@ -462,8 +462,8 @@ func TestASendOutsideTheDraftsThreadIsNoted(t *testing.T) {
 	}
 }
 
-// §17a: a message whose headers alone exceed the budget still reads
-// within it, with its body's share, and says what it cut.
+// A message whose headers alone exceed the budget still reads within
+// it, with its body's share, and says what it cut.
 func TestAHeaderBlockLargerThanTheBudgetIsCut(t *testing.T) {
 	m := plainMessage(strings.Repeat("Body paragraph. ", 200))
 	for i := range 2000 {

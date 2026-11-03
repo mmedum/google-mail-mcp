@@ -118,8 +118,8 @@ func Line(s string) string {
 func Text(s string) string { return ClientID(Path(Accounts(s))) }
 
 // ID truncates an identifier to a correlation key that cannot be looked
-// up or pasted into a URL: its first six characters. The logging rule
-// (§9.2) allows that much and no more.
+// up or pasted into a URL: its first six characters. A log may carry
+// that much of an id and no more.
 func ID(id string) string {
 	r := []rune(id)
 	if len(r) <= 6 {

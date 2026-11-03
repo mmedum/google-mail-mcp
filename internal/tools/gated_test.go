@@ -22,8 +22,8 @@ var (
 )
 
 // The gated tools exist only under their flag, and read-only mode wins
-// over both (§9.4). Each is annotated destructive, so a client that
-// prompts by annotation prompts for it (§4.13).
+// over both. Each is annotated destructive, so a client that prompts by
+// annotation prompts for it.
 func TestGatedToolsRegisterOnlyWithTheirFlag(t *testing.T) {
 	for _, tc := range []struct {
 		name string
@@ -63,10 +63,9 @@ func TestGatedToolsRegisterOnlyWithTheirFlag(t *testing.T) {
 	}
 }
 
-// The mark goes only where §3 of the shared standard puts it: a delete
-// that bypasses a trash Gmail offers, and one of something every item
-// depends on (§4.13). Every other tool, sending included, is left to
-// the client's own rules.
+// The mark goes only on a delete that bypasses a trash Gmail offers, and
+// on one of something every item depends on. Every other tool, sending
+// included, is left to the client's own rules.
 func TestOnlyTheWidestDeletesCarryTheMark(t *testing.T) {
 	h, _ := connectFake(t, tools.FullSurface(config.Config{LocalDir: t.TempDir()}))
 	surface := h.Tools(t)
@@ -99,7 +98,7 @@ func replyArgs(sc gmailtest.Scenario) map[string]any {
 
 // A reply to a thread reaches its participants only once each is
 // written out in confirm_recipients, so the call shows everyone the
-// send reaches (§4.2).
+// send reaches.
 func TestSendDraftReply(t *testing.T) {
 	h, fake := connectFake(t, sendOn)
 	sc := fake.Scenario(gmailtest.ScenarioDraftReply)
@@ -144,8 +143,8 @@ func TestSendDraftReply(t *testing.T) {
 
 // A send carries the draft's subject and the first line of its body, so
 // a client's prompt shows what goes. Either one not the draft's is
-// refused as stale, on a dry run too, and the refusal repeats neither
-// (§4.13). Spaces around them are not read.
+// refused as stale, on a dry run too, and the refusal repeats neither.
+// Spaces around them are not read.
 func TestSendDraftNeedsItsSubjectAndFirstLine(t *testing.T) {
 	h, fake := connectFake(t, sendOn)
 	sc := fake.Scenario(gmailtest.ScenarioDraftReply)
@@ -212,8 +211,8 @@ func TestSendDraftReadsTheFirstLineWhole(t *testing.T) {
 // A correspondent cannot make an address look like a participant: the
 // Cc and Reply-To a received message carries were written by its
 // sender. The From of a received message and the To and Cc of the
-// account's own sent one make one (§17.8). Every recipient is confirmed
-// either way.
+// account's own sent one make one. Every recipient is confirmed either
+// way.
 func TestSendDraftCountsOnlyWhatTheAccountChose(t *testing.T) {
 	h, fake := connectFake(t, sendOn)
 	_, parent := fake.AddWidenedThread()
@@ -243,7 +242,7 @@ func TestSendDraftCountsOnlyWhatTheAccountChose(t *testing.T) {
 	}
 }
 
-// A new conversation reaches nobody the caller did not write out (§4.2).
+// A new conversation reaches nobody the caller did not write out.
 func TestSendDraftRecipientGuard(t *testing.T) {
 	h, fake := connectFake(t, sendOn)
 	var d tools.DraftWriteOut
@@ -306,7 +305,7 @@ func TestSendDraftRefusesWhatCannotGo(t *testing.T) {
 }
 
 // A send Gmail does not confirm is never repeated, and the reads after
-// it say what happened (§4.3).
+// it say what happened.
 func TestSendDraftAmbiguousOutcome(t *testing.T) {
 	for _, tc := range []struct {
 		name     string
@@ -421,8 +420,8 @@ func TestDeletePermanently(t *testing.T) {
 	}
 }
 
-// Without https://mail.google.com/, Gmail refuses; each item says to
-// log in again (spike G).
+// Without https://mail.google.com/, Gmail refuses a permanent delete;
+// each item says to log in again.
 func TestDeletePermanentlyNeedsTheFullScope(t *testing.T) {
 	h, fake := connectFake(t, destructiveOn)
 	plain := fake.Scenario(gmailtest.ScenarioPlainThread)

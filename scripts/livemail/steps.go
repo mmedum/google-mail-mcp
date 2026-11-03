@@ -280,7 +280,7 @@ var steps = []step{
 		}},
 
 	// The third message carries an attached message. If Gmail serves it
-	// as its own parts, the part fails as [unsupported] (§18 row 83).
+	// as its own parts, the part fails as [unsupported].
 	{name: "save the attached message by its part id", tool: "download_attachments",
 		args: func(e *env) map[string]any {
 			return map[string]any{"message_id": e.seed.messages[2], "part_ids": []any{"1"}}
@@ -311,7 +311,7 @@ var steps = []step{
 		}},
 
 	// If Gmail serves the attached message as its own parts, the read is
-	// refused as [unsupported] (§18 row 83).
+	// refused as [unsupported].
 	{name: "read the attached message", tool: "read_attachment",
 		args: func(e *env) map[string]any {
 			return map[string]any{"message_id": e.seed.messages[2], "part_id": "1", "show_quoted": true}
@@ -379,8 +379,9 @@ type env struct {
 	// signatureSet is whether that signature is in place.
 	signedDraft, signedMessage string
 	signatureSet               bool
-	// spikeE is the draft side of spike E, from reading a draft back.
-	spikeE string
+	// fourScriptsDraft is the draft side of the spike "four scripts sent
+	// and read back", from reading a draft back.
+	fourScriptsDraft string
 	// sendTo is -send-to, the one address a step may send to; full is
 	// whether the profile holds https://mail.google.com/.
 	sendTo string
@@ -394,7 +395,7 @@ type env struct {
 	// by id: the witness delete_filter takes.
 	filterCriteria map[string]any
 	// archiveFilter is the archiving filter a step made, which a later
-	// step looks for SPAM on (§18 row 56).
+	// step looks for SPAM on: Gmail can add SPAM to such a filter later.
 	archiveFilter string
 	// structured is the last step's structuredContent, for a check that
 	// needs a row the text may have left out.
@@ -406,13 +407,14 @@ type env struct {
 	signatureAddress string
 	// signatureSkip is why the signature steps may not run, or "".
 	signatureSkip string
-	// sent is what the send step read, for spikes B and C.
+	// sent is what the send step read, for the spikes that read what
+	// drafts.send left.
 	sent sentDraft
 	// predicted is each item's labels after, as the last dry run said,
-	// for the write that follows to match (§18 row 70).
+	// for the write that follows to match.
 	predicted map[string][]string
 	// asked counts the questions the server put to the person, which it
-	// never does (§4.13).
+	// never does.
 	asked int
 }
 
@@ -440,7 +442,7 @@ func (e *env) unsubscribeIs(id, url, mailto string) error {
 // get_message to want, field by field, and its units to a read with the
 // part inline (21) or one fetched apart (41). It prints the units: the
 // result's text does not carry them, and they say where Gmail kept the
-// part (§18 row 81).
+// part.
 func (e *env) invitationIs(partID string, want map[string]any) error {
 	u := e.structured["units"]
 	e.tr.Sayf("report: the read spent %v units; 21 means Gmail kept the calendar part inline, 41 that it stored it apart", u)
@@ -543,9 +545,9 @@ func (e *env) ownsAll(re *regexp.Regexp, text string, n int) error {
 // errUnscoped is the guard refusing a read outside the run's own mail.
 var errUnscoped = errors.New("refused: the live driver reads only what it inserted")
 
-// guard holds a step's call to §9.1 before it is sent: a search must
-// carry the run's label, a draft listing the run's name, and a read by id
-// must name an id the run made.
+// guard holds a step's call to the run's own mail before it is sent
+// (D-87): a search must carry the run's label, a draft listing the run's
+// name, and a read by id must name an id the run made.
 func (e *env) guard(s step, args map[string]any) error {
 	tool := s.tool
 	q, _ := args["q"].(string)
@@ -626,8 +628,8 @@ func (e *env) runStep(s step) error {
 	return s.check(e, text)
 }
 
-// spike is one question the documentation does not answer (§15). Each
-// states its question and its verdict separately.
+// spike is one question Google's documentation does not answer. Each
+// states its question and what it observed separately.
 type spike struct {
 	name     string
 	question string
@@ -642,26 +644,28 @@ type spikeRun struct {
 	s       *seeded
 	sendTo  string
 	account string
-	// draftSide is what the write steps found for spike E without sending.
+	// draftSide is what the write steps found for the spike "four scripts
+	// sent and read back" without sending.
 	draftSide string
 	// full is whether the profile holds https://mail.google.com/, under
-	// which spike G's question cannot be asked.
+	// which the spike "messages.delete under gmail.modify" does not run.
 	full bool
-	// sent is the draft a step sent, for spikes B and C.
+	// sent is the draft a step sent, for the spikes that read what
+	// drafts.send left.
 	sent sentDraft
-	// spikeH floods the run's own message with reads for spike H, only
-	// when -spike-h is given.
-	spikeH bool
-	// spikeL sends filter writes at once for spike L, only when -spike-l
-	// is given.
-	spikeL bool
-	// spikesDE lets spikes D and E send again.
-	spikesDE bool
+	// rateLimit floods the run's own message with reads until Gmail rate
+	// limits them, only when -rate-limit is given.
+	rateLimit bool
+	// filtersAtOnce sends filter writes at once, only when
+	// -filters-at-once is given.
+	filtersAtOnce bool
+	// sendingSpikes lets the two spikes that send mail run.
+	sendingSpikes bool
 }
 
 // spikes run after the steps, against the run's own mail only.
 var spikes = []spike{
-	{name: "F (dates)", question: "Which date does messages.insert record with internalDateSource=receivedTime: " +
+	{name: "the date messages.insert records", question: "Which date does messages.insert record with internalDateSource=receivedTime: " +
 		"the insert's own time, or the message's Date header?",
 		ask: func(ctx context.Context, x spikeRun) string {
 			ms, err := x.box.InternalDate(ctx, x.s.messages[0])
@@ -678,13 +682,13 @@ var spikes = []spike{
 			}
 			return fmt.Sprintf("internalDate is %s, neither the Date header nor the insert's time", got.Format(time.RFC3339))
 		}},
-	{name: "K", question: "Is a history cursor far in the past answered 404, as the sync guide says, and in what body?",
+	{name: "history.list from a cursor far in the past", question: "Is a history cursor far in the past answered 404, as the sync guide says, and in what body?",
 		ask: func(ctx context.Context, x spikeRun) string {
 			r := x.box.Probe(ctx, http.MethodGet, "history", url.Values{"startHistoryId": {"1"}}, nil)
 			return fmt.Sprintf("history.list with startHistoryId=1 answered HTTP %d, reason %q, message %q (the guide says 404)",
 				r.status, r.reason, r.message)
 		}},
-	{name: "I", question: "Can two labels differ only in case, and what does creating a label named like a system label return?",
+	{name: "labels named in another case or like a system label", question: "Can two labels differ only in case, and what does creating a label named like a system label return?",
 		ask: func(ctx context.Context, x spikeRun) string {
 			box, s := x.box, x.s
 			names := []string{s.label.name + "-Case", s.label.name + "-case", "INBOX", "Inbox"}
@@ -705,12 +709,12 @@ var spikes = []spike{
 			}
 			return strings.Join(out, "; ")
 		}},
-	{name: "G (positive half)", question: "Does Gmail refuse messages.delete under gmail.modify, " +
+	{name: "messages.delete under gmail.modify", question: "Does Gmail refuse messages.delete under gmail.modify, " +
 		"so only https://mail.google.com/ can delete permanently?",
 		ask: func(ctx context.Context, x spikeRun) string {
 			if x.full {
 				return "not run: the profile holds https://mail.google.com/, which the destructive steps need, " +
-					"so a delete would succeed. Asked under gmail.modify on 2026-09-26 (§15)"
+					"so a delete would succeed; ask it with a profile granted gmail.modify alone"
 			}
 			s := x.s
 			last := s.messages[len(s.messages)-1]
@@ -720,7 +724,8 @@ var spikes = []spike{
 				// message; cleanup must not trash it again.
 				s.messages = s.messages[:len(s.messages)-1]
 				return fmt.Sprintf("messages.delete on a run message answered HTTP %d: DELETED. "+
-					"The token carries a scope that deletes; check the profile's scopes before trusting §4.6", status)
+					"The token carries a scope that deletes; check the profile's scopes before trusting that only "+
+					"https://mail.google.com/ deletes permanently", status)
 			}
 			return fmt.Sprintf("messages.delete on a run message answered HTTP %d (expected 403)", status)
 		}},

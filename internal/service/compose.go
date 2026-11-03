@@ -18,13 +18,13 @@ import (
 	"github.com/mmedum/google-mail-mcp/v4/internal/model"
 )
 
-// Compose is what create_draft was asked for (§7.4).
+// Compose is what create_draft was asked for.
 type Compose struct {
 	To, Cc, Bcc []string
 	Subject     string
 	// Body is the plain text; HTML, when set, goes beside it. Without
 	// HTML, the version made from the text goes beside it, unless
-	// PlainOnly keeps the text alone (§7.4).
+	// PlainOnly keeps the text alone.
 	Body, HTML string
 	PlainOnly  bool
 	// Attachments are file names inside LocalDir.
@@ -32,17 +32,20 @@ type Compose struct {
 	// From is one of the account's send-as addresses; "" is its default.
 	From string
 	// ReplyTo is a message id, or rfc822:<Message-ID>; ReplyToThread is
-	// a thread id, whose newest message is answered. At most one.
+	// a thread id, whose newest message is answered. At most one. They are
+	// two fields because a new thread's id is its first message's id, so
+	// one string can name both; Google does not document that.
+	// Checked by the live step "a new thread's id and its first message's id".
 	ReplyTo, ReplyToThread string
 	ReplyAll               bool
-	// Quote puts a reply's parent's text below the body (§7.4).
+	// Quote puts a reply's parent's text below the body.
 	Quote bool
 	// Forward is a message id, or rfc822:<Message-ID>, to attach as it
-	// is but for its Bcc (§7.4). Not with a reply.
+	// is but for its Bcc. Not with a reply.
 	Forward string
 	// Signature puts the From address's send-as signature below the
 	// body, above a quote (true), or leaves it out (false); nil leaves it
-	// to SignByDefault (§7.4).
+	// to SignByDefault.
 	Signature *bool
 	// SignByDefault is the operator's GMAIL_DRAFT_SIGNATURE: a new draft,
 	// not a reply or a forward, is signed when Signature is nil.
@@ -54,9 +57,9 @@ type Compose struct {
 // first ids and its last. A hostile parent cannot make a reply huge.
 const maxReferences = 40
 
-// CreateDraft builds a new draft, a reply constructed from its parent
-// (§4.5) or a forward carrying its original (§7.4), and saves it. On a
-// dry run it builds everything and saves nothing.
+// CreateDraft builds a new draft, a reply constructed from its parent or
+// a forward carrying its original, and saves it. On a dry run it builds
+// everything and saves nothing.
 func (s *Service) CreateDraft(ctx context.Context, in Compose) (model.DraftWrite, error) {
 	out := model.DraftWrite{Op: "create", DryRun: gapi.WritesForbidden(ctx)}
 	callers, err := in.check()
@@ -88,7 +91,7 @@ func (s *Service) CreateDraft(ctx context.Context, in Compose) (model.DraftWrite
 		quote, quoted = quoteText(parent)
 	}
 	// Without an HTML part, Gmail's web composer wraps the text when the
-	// person sends the draft (§7.4), so one is made, a quote in it too.
+	// person sends the draft, so one is made, a quote in it too.
 	body, err := mime.Bodies(in.Body, given, sig, quote)
 	if err != nil {
 		return out, editError(err)
@@ -130,8 +133,12 @@ func (s *Service) CreateDraft(ctx context.Context, in Compose) (model.DraftWrite
 	if err := checkSize(len(raw)); err != nil {
 		return out, err
 	}
-	// The Message-ID written is not reported: Gmail replaces it on
-	// drafts.create (§15, spike B), so it would state what was not kept.
+	// The Message-ID written is not reported, since it is not kept:
+	// drafts.create, drafts.send and messages.send each replace a
+	// client's Message-ID with one of Gmail's own. The reference does not
+	// mention Message-ID.
+	// Checked by the live step "the Message-ID drafts.send sends".
+	// https://developers.google.com/workspace/gmail/api/reference/rest/v1/users.drafts/create
 	out.From, out.Subject = &from, model.Untrusted(o.Subject)
 	out.Files = filesOf(o.Attachments)
 	out.Bytes, out.Upload = len(raw), gapi.Uploads(len(raw))
@@ -184,7 +191,7 @@ func (s *Service) composeReads(ctx context.Context, in Compose) ([]gmail.SendAs,
 	return senders.SendAs, src, serr
 }
 
-// asForward makes o a forward of f (§7.4): the original attached first,
+// asForward makes o a forward of f: the original attached first,
 // and the subject "Fwd: " and the original's unless the caller gave one.
 // It returns the thread the draft is filed in, the original's.
 func asForward(o *mime.Outgoing, out *model.DraftWrite, f original) string {
@@ -324,7 +331,7 @@ func pickFrom(senders []gmail.SendAs, want string) (gmail.SendAs, error) {
 
 // signatureFor is the signature a new draft carries, and the result
 // that says so: the one the call asks for, or the server's default for a
-// new message when the call leaves signature out (§7.4).
+// new message when the call leaves signature out.
 func (in Compose) signatureFor(sender gmail.SendAs, given *string) (string, *model.DraftSignature) {
 	switch {
 	case in.Signature != nil && *in.Signature:
@@ -365,7 +372,7 @@ func defaultSignature(sender gmail.SendAs, text string, h *string, plainOnly boo
 
 // signatureOf is the signature Gmail holds for a send-as address as a
 // draft carries it: "" when it has none, or only markup an emptied
-// editor leaves (§7.7).
+// editor leaves.
 func signatureOf(s gmail.SendAs) string {
 	if !model.SettingFromHTML(s.Signature).Set {
 		return ""
@@ -475,11 +482,12 @@ func (s *Service) wholeText(ctx context.Context, g *gmail.Message, m model.Messa
 	return msgs[0], len(text), nil
 }
 
-// quoteText is a reply's quote of its parent (§7.4): "On <Date>, <From>
+// quoteText is a reply's quote of its parent: "On <Date>, <From>
 // wrote:", and each line of the parent's text after "> ", an empty one as
 // ">". The Date header is shown as the sender wrote it. It returns the
 // characters of the parent's text quoted; a parent with no text gives
-// no quote.
+// no quote. Gmail keeps the quote as written.
+// Checked by the live step "read the quoted reply back".
 func quoteText(p model.Message) (string, int) {
 	text := p.Body.Text
 	if strings.TrimSpace(text) == "" {
@@ -556,7 +564,7 @@ func unrepliable(m model.Message) string {
 	return ""
 }
 
-// replyRecipients builds a reply's recipients (§4.5): the parent's
+// replyRecipients builds a reply's recipients: the parent's
 // Reply-To or sender, or when the parent is the account's own, its To;
 // with reply_all, the parent's other recipients too. The account's own
 // addresses are left out, each address appears once, and the caller's
@@ -623,11 +631,19 @@ func replySubject(s string) string {
 	return strings.TrimSpace("Re: " + s)
 }
 
-// threading is a reply's In-Reply-To and References (§4.5): the
-// parent's Message-ID, and the parent's References with it appended —
-// or, when the parent has no References, its single In-Reply-To (RFC
-// 5322 §3.6.4). An id that is not <local@domain> is left out; a parent
-// with no usable Message-ID gives neither header.
+// threading is a reply's In-Reply-To and References, built from its
+// parent (D-39): the parent's Message-ID, and the parent's References
+// with it appended — or, when the parent has no References, its single
+// In-Reply-To (RFC 5322 §3.6.4). An id that is not <local@domain> is left
+// out; a parent with no usable Message-ID gives neither header. The
+// headers carry Message-IDs, never the API's message ids.
+//
+// Google's threads guide asks for threadId, these headers and a matching
+// Subject. The sender's Gmail files a reply by threadId alone; a
+// receiving Gmail keeps a reply without the headers, or with another
+// subject, out of the thread. So a reply carries all three.
+// Checked by the live step "what threads a sent reply".
+// https://developers.google.com/workspace/gmail/api/guides/threads
 func threading(p model.Message) (string, []string) {
 	id := string(p.RFC822MessageID)
 	if !mime.ValidMessageID(id) {
@@ -649,7 +665,7 @@ func threading(p model.Message) (string, []string) {
 	return id, append(refs, id)
 }
 
-// readLocalFiles reads attachments from dir by base name only (§7.4):
+// readLocalFiles reads attachments from dir by base name only:
 // a path, a "..", or a link out of the directory is refused, and the
 // total is checked against Gmail's limit before anything is read.
 func readLocalFiles(dir string, names []string) ([]mime.OutAttachment, error) {
@@ -718,6 +734,10 @@ func readLocalFiles(dir string, names []string) ([]mime.OutAttachment, error) {
 }
 
 // checkSize refuses a message over Gmail's 35 MB, before it is sent.
+// Discovery caps a media upload to drafts.create, drafts.update and
+// messages.send at 36,700,160 bytes, and names no cap for raw in a JSON
+// body; the server holds both paths to the one cap.
+// https://developers.google.com/workspace/gmail/api/reference/rest/v1/users.drafts/create
 func checkSize(n int) error {
 	if n > mime.MaxRawBytes {
 		return gapi.Errf(gapi.ClassInvalid, "the draft would be %.1f MB, over the 35 MB Gmail accepts", float64(n)/(1<<20))
@@ -733,7 +753,7 @@ func filesOf(as []mime.OutAttachment) []model.File {
 	return out
 }
 
-// Revise is what update_draft was asked for (§4.4). A nil list or
+// Revise is what update_draft was asked for. A nil list or
 // pointer leaves that field as it is; an empty list clears it.
 type Revise struct {
 	DraftID string
@@ -744,11 +764,11 @@ type Revise struct {
 	Subject     *string
 	Body, HTML  *string
 	// PlainOnly, with Body, drops (true) or adds (false) the HTML version
-	// made from the text; nil keeps the draft's shape (§7.4).
+	// made from the text; nil keeps the draft's shape.
 	PlainOnly *bool
 	// Signature, with Body, puts the From address's send-as signature
 	// below it (true) or leaves the draft's out (false); nil keeps the one
-	// the draft carries (§7.4).
+	// the draft carries.
 	Signature *bool
 	// Attach adds files from LocalDir; Remove drops attachments by part id.
 	Attach, Remove []string
@@ -756,8 +776,8 @@ type Revise struct {
 }
 
 // draftMoved refuses a write to a draft that holds another message than
-// the witness the caller read (§4.4); then is what to do after reading
-// it again.
+// the witness the caller read (D-42); then is what to do after reading it
+// again.
 func draftMoved(draftID, held, witness, then string) error {
 	if held == witness {
 		return nil
@@ -767,7 +787,7 @@ func draftMoved(draftID, held, witness, then string) error {
 }
 
 // UpdateDraft re-reads a draft, checks the witness, applies only what
-// was given, and saves it (§4.4). Everything not named is carried over
+// was given, and saves it. Everything not named is carried over
 // from what Gmail stored, byte for byte. The window between the re-read
 // and the save is not closed; Gmail offers nothing that would close it.
 func (s *Service) UpdateDraft(ctx context.Context, in Revise) (model.DraftWrite, error) {
@@ -1081,10 +1101,10 @@ func dedupe(ids []string) []string {
 }
 
 // DeleteDraft deletes a draft, which Gmail does permanently: a draft
-// never goes to the trash. confirm must be set (§17.1), and witness is
-// the message the caller read the draft holding, as for an update
-// (§4.4): a draft changed since is refused [stale], so what is deleted
-// is what was read. A dry run reads the draft and deletes nothing.
+// never goes to the trash. confirm must be set, and witness is the
+// message the caller read the draft holding, as for an update (D-53): a
+// draft changed since is refused [stale], so what is deleted is what was
+// read. A dry run reads the draft and deletes nothing.
 func (s *Service) DeleteDraft(ctx context.Context, id, witness string, confirm bool) (model.DraftWrite, error) {
 	out := model.DraftWrite{Op: "delete", DryRun: gapi.WritesForbidden(ctx), DraftID: id}
 	witness = strings.TrimSpace(witness)

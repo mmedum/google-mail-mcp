@@ -185,7 +185,7 @@ func (sd *seeder) plainThread() {
 	s.relabel(m1.id, []string{"STARRED"}, nil)
 }
 
-// newsletterHTML carries every hiding trick §4.1 counts, a link whose
+// newsletterHTML carries every hiding trick the server counts, a link whose
 // text names another host, and an instruction aimed at an agent — the
 // payload a renderer must show as data and flag.
 const newsletterHTML = `<!DOCTYPE html>
@@ -460,8 +460,7 @@ func (s *Server) AddPartsMessage(parts ...*Part) string {
 // AddWidenedThread adds a thread in which a correspondent widened the
 // conversation: the reader wrote to Freya with Bruno in Cc, and Freya
 // answered with Ada added to Cc and Reply-To set to Chiara. It returns
-// the thread id and Freya's message id. The recipient guard tests use
-// it (§17.8).
+// the thread id and Freya's message id. The recipient guard tests use it.
 func (s *Server) AddWidenedThread() (threadID, messageID string) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
@@ -494,7 +493,7 @@ func (s *Server) AddSentWithBcc() string {
 // whose Message-ID, In-Reply-To and References are exactly the values
 // given; "" leaves a header out. It returns the message id, which is
 // also the thread id. Tests use it for reply parents the generated
-// mailbox does not hold (§4.5).
+// mailbox does not hold.
 func (s *Server) AddThreadingParent(messageID, inReplyTo, references string) string {
 	s.mu.Lock()
 	defer s.mu.Unlock()
@@ -514,7 +513,7 @@ func (s *Server) AddThreadingParent(messageID, inReplyTo, references string) str
 
 // AddBackedThread adds a thread of two messages between Dmitri and the
 // reader, and a draft reply in it, each with a plain-text body Gmail
-// keeps behind an attachment id, as it does a large body part (§3.7).
+// keeps behind an attachment id, as it does a large body part.
 // The bodies are "Backed body 1.", "Backed body 2." and "Backed draft
 // body.". It returns the thread id and the draft id.
 func (s *Server) AddBackedThread() (threadID, draftID string) {

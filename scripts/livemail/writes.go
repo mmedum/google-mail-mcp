@@ -28,8 +28,8 @@ var (
 )
 
 // fourScripts is text in Latin with diacritics, Cyrillic, Greek and Han,
-// for spike E's question on the draft side: does what internal/mime
-// builds come back from Gmail as it went in?
+// for the draft side of the spike "four scripts sent and read back": does
+// what internal/mime builds come back from Gmail as it went in?
 const fourScripts = "Grüße · Отчёт · Καλημέρα · 会議の案内"
 
 // The files the write steps attach, written into the run's own
@@ -138,11 +138,11 @@ var writeSteps = []step{
 			for _, s := range []string{e.seed.label.name + " " + fourScripts, "Body: " + fourScripts, attachName(e.seed.label),
 				"Synthetic Reader", "Synthetic Blind"} {
 				if err := want(text, s); err != nil {
-					e.spikeE = "the composed draft did not read back whole: " + err.Error()
+					e.fourScriptsDraft = "the composed draft did not read back whole: " + err.Error()
 					return err
 				}
 			}
-			e.spikeE = "a draft built by internal/mime read back from Gmail with its subject, body, display names and attachment name in four scripts intact"
+			e.fourScriptsDraft = "a draft built by internal/mime read back from Gmail with its subject, body, display names and attachment name in four scripts intact"
 			return nil
 		}},
 
@@ -197,7 +197,7 @@ var writeSteps = []step{
 		check: plainUpdated},
 
 	// Dropping the HTML version needs EditRaw to find the one Gmail
-	// stored, link included, to be the one made from the text (§7.4).
+	// stored, link included, to be the one made from the text.
 	{name: "make the draft plain again", tool: "update_draft",
 		args: func(e *env) map[string]any {
 			return map[string]any{"draft_id": e.plainDraft, "message_id": e.plainMessage,
@@ -254,8 +254,8 @@ var writeSteps = []step{
 		}},
 
 	// The original's body is 8-bit, so it goes attached as 8bit, and the
-	// draft carries no threading headers, only the original's thread:
-	// whether Gmail files it there and keeps the part is §18 row 85.
+	// draft carries no threading headers, only the original's thread.
+	// Gmail files it there by the thread id alone, and keeps the part.
 	{name: "forward an inserted message", tool: "create_draft",
 		args: func(e *env) map[string]any {
 			return map[string]any{"forward": e.seed.messages[1], "to": []any{rcptTo}, "body": "A synthetic forward."}
@@ -284,7 +284,7 @@ var writeSteps = []step{
 		}},
 
 	// If Gmail serves the attached original as its own parts, the read is
-	// refused as [unsupported] (§18 row 83).
+	// refused as [unsupported].
 	{name: "read the forwarded original in the draft", tool: "read_attachment",
 		args: func(e *env) map[string]any { return map[string]any{"message_id": e.forwardMessage, "part_id": "1"} },
 		check: func(e *env, text string) error {
@@ -298,7 +298,7 @@ var writeSteps = []step{
 	deleteStepDraft("delete the forward", func(e *env) (string, string) { return e.forwardDraft, e.forwardMessage }),
 
 	// The parent is the run's 8-bit message, so the quote carries text in
-	// four scripts (§18 row 86).
+	// four scripts.
 	{name: "reply with a quote to an inserted message", tool: "create_draft",
 		args: func(e *env) map[string]any {
 			return map[string]any{"reply_to": e.seed.messages[1], "quote": true, "body": "A synthetic quoted reply."}
@@ -351,7 +351,7 @@ var writeSteps = []step{
 		check: func(_ *env, text string) error { return want(text, "would delete draft") }},
 
 	// The witness is another of the run's drafts' messages: the draft
-	// holds its own, so the delete is refused and the draft stays (§4.4).
+	// holds its own, so the delete is refused and the draft stays.
 	{name: "a delete against another message id is refused", tool: "delete_draft", refuses: "stale",
 		args: func(e *env) map[string]any {
 			return map[string]any{"draft_id": e.replyDraft, "message_id": e.draftMessage, "confirm": true}
@@ -597,10 +597,11 @@ func reservedAddress(entry string) bool {
 	return true
 }
 
-// writeSpikes are phase 2's questions (§15). A writes only a draft of the
-// run's own. D and E send, and only to -send-to.
+// writeSpikes ask about drafts and threading. The draft-id spike writes
+// only a draft of the run's own; the two that send mail send only to
+// -send-to.
 var writeSpikes = []spike{
-	{name: "thread ids", question: "Is a new thread's id its first message's id? If so, one reply field cannot take both (§4.5).",
+	{name: "a new thread's id and its first message's id", question: "Is a new thread's id its first message's id? If so, one reply field cannot take both.",
 		ask: func(_ context.Context, x spikeRun) string {
 			same := 0
 			for i := range x.s.threads {
@@ -611,7 +612,7 @@ var writeSpikes = []spike{
 			return fmt.Sprintf("%d of %d inserted messages, each starting its own thread, carry their own id as the thread id",
 				same, len(x.s.threads))
 		}},
-	{name: "A", question: "Does drafts.update give the draft a new message id each time, and does drafts.get then name it?",
+	{name: "the message id drafts.update gives", question: "Does drafts.update give the draft a new message id each time, and does drafts.get then name it?",
 		ask: func(ctx context.Context, x spikeRun) string {
 			raw := syntheticDraft(x.s.label, 9)
 			id, err := x.box.CreateDraft(ctx, raw)
@@ -639,22 +640,22 @@ var writeSpikes = []spike{
 			return fmt.Sprintf("the draft held %d distinct message ids across a create and two updates of the same bytes "+
 				"(3 means each save gives a new id, so the message id is a witness)", len(distinct))
 		}},
-	{name: "D", question: "Which of threadId, In-Reply-To/References and a matching subject does Gmail need to thread a reply, " +
+	{name: "what threads a sent reply", question: "Which of threadId, In-Reply-To/References and a matching subject does Gmail need to thread a reply, " +
 		"for the sender?",
-		ask: spikeD},
-	{name: "E", question: "Do a subject, display names, a body and an attachment name in four scripts, built by internal/mime, " +
+		ask: whatThreadsASentReply},
+	{name: "four scripts sent and read back", question: "Do a subject, display names, a body and an attachment name in four scripts, built by internal/mime, " +
 		"come back from Gmail as they went in?",
-		ask: spikeE},
-	{name: "M (stored)", question: "Does Gmail keep a plain-text line past 78 characters whole in a draft, with no HTML part " +
+		ask: fourScriptsSentAndReadBack},
+	{name: "a long line in a saved draft", question: "Does Gmail keep a plain-text line past 78 characters whole in a draft, with no HTML part " +
 		"and with the one made from its text, and keep that HTML as it was?",
-		ask: spikeMStored},
+		ask: longLineInASavedDraft},
 }
 
 // sendable reports why a sending spike cannot run, or "".
 func (x spikeRun) sendable() string {
 	switch {
-	case !x.spikesDE:
-		return "not run: answered 2026-09-26 (§15); -spikes-de sends it again"
+	case !x.sendingSpikes:
+		return "not run: its answer is settled; -sending-spikes sends it again"
 	case x.sendTo == "":
 		return "not run: it sends mail, and -send-to was not given"
 	case x.account == "":
@@ -675,16 +676,17 @@ func (x spikeRun) send(ctx context.Context, o mime.Outgoing, threadID string) (i
 	return id, thread, x.box.Label(ctx, id, x.s.labelID)
 }
 
-// spikeD sends an original and four replies to it: one with all three of
-// §2.5's conditions, and one without each. Which replies Gmail files in
-// the original's thread is the sender's half of the answer; the second
-// mailbox, read by the maintainer, is the receiver's.
-func spikeD(ctx context.Context, x spikeRun) string {
+// whatThreadsASentReply sends an original and four replies to it: one
+// with all three things a reply threads by (threadId, In-Reply-To and
+// References, and the subject), and one without each. Which replies
+// Gmail files in the original's thread is the sender's half of the
+// answer; the second mailbox, read by the maintainer, is the receiver's.
+func whatThreadsASentReply(ctx context.Context, x spikeRun) string {
 	if why := x.sendable(); why != "" {
 		return why
 	}
-	subject := x.s.label.name + " spike D"
-	orig := mime.Outgoing{To: []mime.Address{{Name: "Spike D"}}, Subject: subject, Text: "The original.\n",
+	subject := x.s.label.name + " threading"
+	orig := mime.Outgoing{To: []mime.Address{{Name: "Threading"}}, Subject: subject, Text: "The original.\n",
 		MessageID: mime.NewMessageID(x.account)}
 	origID, origThread, err := x.send(ctx, orig, "")
 	if err != nil {
@@ -703,7 +705,7 @@ func spikeD(ctx context.Context, x spikeRun) string {
 		{"all three", ""}, {"without threadId", "thread"}, {"without In-Reply-To and References", "headers"},
 		{"with another subject", "subject"},
 	} {
-		r := mime.Outgoing{To: []mime.Address{{Name: "Spike D"}}, Subject: "Re: " + subject, Text: "Reply " + v.name + ".\n",
+		r := mime.Outgoing{To: []mime.Address{{Name: "Threading"}}, Subject: "Re: " + subject, Text: "Reply " + v.name + ".\n",
 			MessageID: mime.NewMessageID(x.account), InReplyTo: sentID, References: []string{sentID}}
 		thread := origThread
 		switch v.drop {
@@ -712,7 +714,7 @@ func spikeD(ctx context.Context, x spikeRun) string {
 		case "headers":
 			r.InReplyTo, r.References = "", nil
 		case "subject":
-			r.Subject = x.s.label.name + " spike D, another subject"
+			r.Subject = x.s.label.name + " threading, another subject"
 		}
 		_, got, err := x.send(ctx, r, thread)
 		switch {
@@ -729,10 +731,10 @@ func spikeD(ctx context.Context, x spikeRun) string {
 		subject + "\"."
 }
 
-// spikeE sends one message whose subject, recipient name, body and
-// attachment name are in four scripts, reads back the sent copy's bytes
-// and parses them.
-func spikeE(ctx context.Context, x spikeRun) string {
+// fourScriptsSentAndReadBack sends one message whose subject, recipient
+// name, body and attachment name are in four scripts, reads back the
+// sent copy's bytes and parses them.
+func fourScriptsSentAndReadBack(ctx context.Context, x spikeRun) string {
 	draft := x.draftSide
 	if draft == "" {
 		draft = "the draft steps did not run"
@@ -741,7 +743,7 @@ func spikeE(ctx context.Context, x spikeRun) string {
 		return "draft side: " + draft + ". Send side " + why
 	}
 	o := mime.Outgoing{To: []mime.Address{{Name: "Zoë Ångström · Иван · Ελένη · 山田 花子"}},
-		Subject: x.s.label.name + " spike E " + fourScripts, Text: "Body: " + fourScripts + "\n",
+		Subject: x.s.label.name + " four scripts " + fourScripts, Text: "Body: " + fourScripts + "\n",
 		MessageID:   mime.NewMessageID(x.account),
 		Attachments: []mime.OutAttachment{{Filename: "Отчёт-報告-Καλημέρα-Grüße.txt", MediaType: "text/plain", Content: []byte(fourScripts)}}}
 	id, _, err := x.send(ctx, o, "")
@@ -771,26 +773,25 @@ func spikeE(ctx context.Context, x spikeRun) string {
 		verdict = "changed: " + strings.Join(bad, ", ")
 	}
 	return "draft side: " + draft + ". Send side, one message sent to -send-to and its sent copy read back: " + verdict +
-		". How a non-Gmail receiver shows it is in the second mailbox, under \"" + x.s.label.name + " spike E\"."
+		". How a non-Gmail receiver shows it is in the second mailbox, under \"" + x.s.label.name + " four scripts\"."
 }
 
 // longParagraph is one paragraph on one line, past the 78 characters
-// beyond which Gmail's web composer wraps a draft that has no HTML part
-// (§18 row 73).
+// beyond which Gmail's web composer wraps a draft that has no HTML part.
 const longParagraph = "This paragraph is a single line of plain words, written by the live driver to see whether Gmail " +
 	"keeps a line this long whole when it stores a draft and when it sends one, rather than wrapping it at seventy columns."
 
-// spikeMStored saves two drafts and reads their bytes back: one with no
-// HTML part, as this server wrote every draft until it made HTML from the
-// text, and one with the HTML version made from its text. Whether Gmail's web composer
-// wraps a draft when a person sends it cannot be driven from here (§15).
-func spikeMStored(ctx context.Context, x spikeRun) string {
+// longLineInASavedDraft saves two drafts and reads their bytes back: one
+// with no HTML part, and one with the HTML version made from its text. Whether
+// Gmail's web composer wraps a draft when a person sends it cannot be
+// driven from here.
+func longLineInASavedDraft(ctx context.Context, x spikeRun) string {
 	text := longParagraph + "\n"
 	var out []string
 	for _, v := range []struct{ name, html string }{
 		{"with no HTML part", ""}, {"with the HTML made from its text", mime.HTMLFromText(text)},
 	} {
-		o := mime.Outgoing{Subject: x.s.label.name + " spike M", Text: text, HTML: v.html, MessageID: mime.NewMessageID(x.account)}
+		o := mime.Outgoing{Subject: x.s.label.name + " long line", Text: text, HTML: v.html, MessageID: mime.NewMessageID(x.account)}
 		raw, err := mime.Build(o)
 		if err != nil {
 			return "not built: " + err.Error()

@@ -18,13 +18,13 @@ import (
 	"github.com/mmedum/google-mail-mcp/v4/internal/gmail"
 )
 
-// The write handlers model what the server's logic depends on (§13):
-// threading by thread id on a draft's create, as Gmail did live, and by
-// the three conditions of §2.5 on its update, a draft's message replaced
-// with a new id on every update (spike A), SENT and DRAFT refused by
-// hand, labels that differ only in case refused (spike I), permanent
-// deletion refused without https://mail.google.com/ (spike G), and
-// every change recorded in history. They run with s.mu held.
+// The write handlers model what the server's logic depends on:
+// threading by thread id on a draft's create, as Gmail does, and by all
+// three threading conditions on its update, a draft's message replaced
+// with a new id on every update, SENT and DRAFT refused by hand, labels
+// that differ only in case refused, permanent deletion refused without
+// https://mail.google.com/, and every change recorded in history. They
+// run with s.mu held.
 
 // readDraft reads a drafts.create or drafts.update body: JSON with the
 // message's raw bytes, or a multipart upload with JSON metadata and the
@@ -98,7 +98,7 @@ func sameSubject(a, b string) bool {
 }
 
 // threadFor decides which thread a draft joins. With byID it joins the
-// thread named. Otherwise it joins only when all three of §2.5's
+// thread named. Otherwise it joins only when all three threading
 // conditions hold: the thread is named, the draft's In-Reply-To or
 // References names a message in it, and the subjects match. Else it
 // starts its own thread.
@@ -153,8 +153,8 @@ func (s *Server) storeParsed(raw []byte, p parsedRaw, id, thread string, labels 
 	return m
 }
 
-// replaceMessageID puts Gmail's own Message-ID on a created draft, as a
-// live run found it does (§15, spike B): the client's is not kept.
+// replaceMessageID puts Gmail's own Message-ID on a created draft, as
+// Gmail does: the client's is not kept.
 func replaceMessageID(raw []byte, id string) []byte {
 	end := bytes.Index(raw, []byte("\r\n\r\n"))
 	if end < 0 {
@@ -249,7 +249,7 @@ func (s *Server) deleteDraft(w http.ResponseWriter, _ *http.Request, args []stri
 }
 
 // modifyBody reads addLabelIds and removeLabelIds and checks them the way
-// Gmail refuses: an unknown label, or SENT or DRAFT by hand (§2.12).
+// Gmail refuses: an unknown label, or SENT or DRAFT by hand.
 func (s *Server) modifyBody(w http.ResponseWriter, r *http.Request) (add, remove []string, ok bool) {
 	var req gmail.ModifyMessageRequest
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
@@ -312,7 +312,7 @@ func (s *Server) modifyThread(w http.ResponseWriter, r *http.Request, args []str
 }
 
 // Trash takes mail out of the inbox and restore does not put it back, as
-// Gmail does (§18 row 70).
+// Gmail does.
 func (s *Server) trashMessage(w http.ResponseWriter, _ *http.Request, args []string) {
 	s.moveMessage(w, args[0], []string{"TRASH"}, []string{"INBOX"})
 }
@@ -351,7 +351,7 @@ func (s *Server) moveThread(w http.ResponseWriter, id string, add, remove []stri
 	s.threadOut(w, id)
 }
 
-// labelClash answers a name Gmail refuses (spike I): a system label's
+// labelClash answers a name Gmail refuses: a system label's
 // name in any case is invalid, and a user label's in any case is taken.
 func (s *Server) labelClash(w http.ResponseWriter, name, except string) bool {
 	for _, l := range s.labels {
@@ -461,7 +461,7 @@ func (s *Server) patchLabel(w http.ResponseWriter, r *http.Request, args []strin
 	writeJSON(w, l)
 }
 
-// sendDraft sends a draft as Gmail does (spikes B and C): the draft is
+// sendDraft sends a draft as Gmail does: the draft is
 // gone, and its message is filed in SENT in the draft's thread, under a
 // new id and a new Message-ID. A draft with no recipient is refused, as
 // Gmail refuses it.
@@ -477,7 +477,7 @@ func (s *Server) sendDraft(w http.ResponseWriter, r *http.Request, _ []string) {
 		return
 	}
 	old := s.messages[mid]
-	// Gmail replaces the draft's Message-ID on the sent copy (spike B).
+	// Gmail replaces the draft's Message-ID on the sent copy.
 	raw := replaceMessageID(old.raw, "<sent."+strconv.FormatUint(s.counter+1, 16)+"@mail.example.com>")
 	p, err := parseRaw(raw)
 	if err != nil || strings.TrimSpace(headerValue(p.headers, "To")+headerValue(p.headers, "Cc")+headerValue(p.headers, "Bcc")) == "" {
@@ -491,8 +491,7 @@ func (s *Server) sendDraft(w http.ResponseWriter, r *http.Request, _ []string) {
 }
 
 // needsFull refuses a permanent delete when the fake's token does not
-// hold https://mail.google.com/, as Gmail answers under gmail.modify
-// (spike G).
+// hold https://mail.google.com/, as Gmail answers under gmail.modify.
 func (s *Server) needsFull(w http.ResponseWriter) bool { return needsScope(w, s.FullScope) }
 
 // needsScope refuses a call 403 when the token lacks the scope it needs,

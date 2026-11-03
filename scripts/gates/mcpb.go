@@ -162,7 +162,7 @@ func mcpbCheck(out io.Writer, root string) error {
 // matches a key to a field whatever its case, while the schema
 // validator, the packer's stamp and the host each keep the last and
 // read a key only as spelled, so every other check would read a
-// document that is not the one shipped (§18 row 96).
+// document that is not the one shipped.
 func mcpbCommittedManifest(root string) (raw []byte, m mcpbManifest, problems []string, err error) {
 	raw, m, err = mcpbReadManifest(root)
 	if err != nil {
@@ -331,7 +331,7 @@ func mcpbDocumentProblems(m mcpbManifest, raw []byte) []string {
 }
 
 // mcpbIdentityProblems holds what the manifest says it is: the server's
-// own name, a binary, the family's Claude Desktop floor, a privacy
+// own name, a binary, the Claude Desktop floor mcpbMinDesktop, a privacy
 // policy, and exactly the platforms the staged table has an entry point
 // for, so dropping one platform and its override together is refused.
 // The manifest specification requires privacy_policies of a server that
@@ -409,7 +409,8 @@ func mcpbValidate(m mcpbManifest, files []mcpbStaged, launcher []string) []strin
 		}
 		// ${__dirname} is the one path the specification fixes to the
 		// bundle; what a relative command is resolved against, no source
-		// says (§18 row 95).
+		// says.
+		// https://github.com/anthropics/mcpb/blob/v2.1.2/MANIFEST.md
 		if !strings.HasPrefix(commands[platform], "${__dirname}/") {
 			problems = append(problems, fmt.Sprintf("%s is %q; a command starts with ${__dirname}/, the one "+
 				"path the specification fixes to the bundle", where, commands[platform]))
@@ -481,8 +482,9 @@ func mcpbValidate(m mcpbManifest, files []mcpbStaged, launcher []string) []strin
 // mcpbReferenceProblems holds every ${user_config.x} mcp_config.env
 // spends to a key user_config declares, and that a host substitutes:
 // the reference host leaves a reference as written when its key is
-// optional with no default, or takes multiple values (§18 row 91). An
-// override's env is refused outright, so it is not read here.
+// optional with no default, or takes multiple values. An override's env
+// is refused outright, so it is not read here.
+// https://github.com/anthropics/mcpb/blob/v2.1.2/src/shared/config.ts
 func mcpbReferenceProblems(m mcpbManifest) []string {
 	var problems []string
 	for key, value := range m.Server.MCPConfig.Env {
@@ -619,8 +621,8 @@ func mcpbAskedFrom(vars []config.Var, leftOut map[string]string) (asked []config
 const mcpbProfileVar = config.EnvPrefix + "PROFILE"
 
 // mcpbKey is the user_config key a setting is asked under: its name
-// without the prefix, lowercased, which gives the family's bundles the
-// same keys.
+// without the prefix, lowercased, so a setting the sibling Google
+// Workspace servers share has the same key in each bundle.
 func mcpbKey(name string) string {
 	return strings.ToLower(strings.TrimPrefix(name, config.EnvPrefix))
 }
@@ -634,9 +636,10 @@ func mcpbKey(name string) string {
 // Claude Desktop shows it as one. Settings pass by mcp_config.env alone:
 // the base args stays [], and a platform override carries neither args
 // nor env, an empty one included, because the host takes an override's
-// in place of the base's (§18 row 94). An argument such as
-// --enable-send=true, or an override env, would configure the server
-// past every check here, which reads mcp_config.env alone.
+// in place of the base's. An argument such as --enable-send=true, or an
+// override env, would configure the server past every check here, which
+// reads mcp_config.env alone.
+// https://github.com/anthropics/mcpb/blob/v2.1.2/src/shared/config.ts
 func mcpbSettingProblems(m mcpbManifest, vars []config.Var, leftOut map[string]string) []string {
 	asked, problems := mcpbAskedFrom(vars, leftOut)
 
@@ -720,9 +723,9 @@ func mcpbSettingProblems(m mcpbManifest, vars []config.Var, leftOut map[string]s
 // person supplies it, and it is theirs either way. One with a default
 // is not. The host checks a required key against the person's values
 // alone, but Claude Desktop's form may fill it in from the default, and
-// a person may accept it unread (§18 row 94). A default that is a list
-// or an object is not guessed at: its variable is left out, and its key
-// is in unreadable with what it is.
+// a person may accept it unread. A default that is a list or an object
+// is not guessed at: its variable is left out, and its key is in
+// unreadable with what it is.
 func mcpbHostEnv(m mcpbManifest, on ...string) (env, unreadable map[string]string) {
 	env, unreadable = map[string]string{}, map[string]string{}
 	for name, value := range m.Server.MCPConfig.Env {
@@ -787,9 +790,10 @@ func mcpbStartDefaults(m mcpbManifest) mcpbDefaults {
 // server otherwise than no environment does, naming the fields that
 // differ: a bundle install may turn on nothing an unconfigured server
 // leaves off, because in Claude Desktop the only other guard is its
-// approval of each tool, which a person can set to always allow (§18
-// row 92). A list or object default is reported, every one in key
-// order, and the comparison still runs over the rest.
+// approval of each tool, which a person can set to always allow. A list
+// or object default is reported, every one in key order, and the
+// comparison still runs over the rest.
+// https://claude.com/docs/connectors/getting-started
 func mcpbDefaultsProblems(d mcpbDefaults) []string {
 	var problems []string
 	for _, key := range slices.Sorted(maps.Keys(d.unreadable)) {

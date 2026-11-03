@@ -7,7 +7,7 @@ import (
 )
 
 // The results of writes. Each says the state the write produced, read
-// from Gmail's answer rather than assumed from the request (§4.12), and
+// from Gmail's answer rather than assumed from the request, and
 // a dry run says what would have been done.
 
 // Origin is where a draft's recipient came from.
@@ -44,7 +44,7 @@ type File struct {
 	PartID string
 }
 
-// Reply is how a draft answers another message (§4.5).
+// Reply is how a draft answers another message.
 type Reply struct {
 	ParentID       string
 	ParentThreadID string
@@ -64,7 +64,7 @@ type Reply struct {
 	// cannot be written into a header: not ASCII local@domain.
 	Unwritable int
 	// Quote is set when the caller asked for the parent's text below the
-	// body (§7.4). QuotedChars counts the characters of it quoted, 0 when
+	// body. QuotedChars counts the characters of it quoted, 0 when
 	// the parent has none; QuoteFromHTML is set when some of it was
 	// converted from HTML; QuoteFetched counts the parts of it read apart.
 	Quote         bool
@@ -73,7 +73,7 @@ type Reply struct {
 	QuoteFetched  int
 }
 
-// Forward is the message a draft carries attached (§7.4).
+// Forward is the message a draft carries attached.
 type Forward struct {
 	MessageID, ThreadID string
 	// Bytes is the size of the attached copy.
@@ -110,13 +110,13 @@ const (
 	SkippedInHTML    = "in_body_html"
 )
 
-// DraftSignature is the send-as signature below a draft's body (§7.4):
+// DraftSignature is the send-as signature below a draft's body:
 // what the write did with it, and what it shows. The signature itself
 // is never part of a result.
 type DraftSignature struct {
 	Outcome SignatureOutcome
 	// ByDefault is set when the server's setting, not the call, asked
-	// for the signature (§7.4).
+	// for the signature.
 	ByDefault bool
 	// Reason is why a default signature was skipped.
 	Reason string
@@ -151,7 +151,11 @@ type DraftWrite struct {
 	DraftID string
 	// MessageID is the id of the message inside the draft now: after a
 	// create or update, the witness the next update_draft needs. For a
-	// delete, the message that was deleted.
+	// delete, the message that was deleted. drafts.update gives the draft
+	// a new message id every time, the same bytes included, which the
+	// reference does not say, so the id names one version of the draft.
+	// Checked by the live step "the message id drafts.update gives".
+	// https://developers.google.com/workspace/gmail/api/reference/rest/v1/users.drafts/update
 	MessageID string
 	// PreviousMessageID is the witness an update was checked against.
 	PreviousMessageID string
@@ -173,11 +177,11 @@ type DraftWrite struct {
 	// Signature is set when the write asked for, kept or removed one.
 	Signature *DraftSignature
 	// Bytes is the size of the message sent to Gmail, and Upload whether
-	// it went as a media upload (§7.4).
+	// it went as a media upload.
 	Bytes  int
 	Upload bool
 	// ThreadingAtRisk is set when an update changed the subject of a
-	// reply, one of the three things Gmail threads by (§2.5).
+	// reply, one of the three things Gmail threads by.
 	ThreadingAtRisk bool
 	// Gone is set when Gmail answered a delete with 404 after the draft
 	// had been read: it was deleted, by this call's earlier attempt or
@@ -194,7 +198,7 @@ const (
 	KindThread  ItemKind = "thread"
 )
 
-// Outcome is what a write did to one item (§4.7).
+// Outcome is what a write did to one item.
 type Outcome string
 
 // Outcomes.
@@ -210,7 +214,7 @@ type Item struct {
 	ID      string
 	Kind    ItemKind
 	Outcome Outcome
-	// Class and Error say why it failed: a class of §6.5 and the
+	// Class and Error say why it failed: an error class and the
 	// server's message, which carries no mail content.
 	Class, Error string
 	// Before and After are its labels; for a thread, the union over its
@@ -280,7 +284,7 @@ func (l Label) InLabelList() string {
 	return ""
 }
 
-// Verb is what a label change amounts to in Gmail's own words (§7.5):
+// Verb is what a label change amounts to in Gmail's own words:
 // adding or removing Label is Name.
 type Verb struct {
 	Label string
@@ -305,7 +309,7 @@ var (
 )
 
 // SendRecipient is one address a draft is sent to, and how the recipient
-// guard of §4.2 judged it.
+// guard judged it.
 type SendRecipient struct {
 	Address mime.Address
 	// Field is "to", "cc" or "bcc", and Position its place there from 0:
@@ -314,14 +318,14 @@ type SendRecipient struct {
 	Position int
 	// Participant is set when the address sent a message of the thread
 	// the draft answers, or the account sent one to it. It is shown, and
-	// clears nothing: every recipient is confirmed (§4.2).
+	// clears nothing: every recipient is confirmed.
 	Participant bool
 	// Confirmed is set when confirm_recipients names it, which the guard
 	// requires of every recipient.
 	Confirmed bool
 }
 
-// SendWrite is a sent draft, or what a dry run would send (§4.2).
+// SendWrite is a sent draft, or what a dry run would send.
 type SendWrite struct {
 	DryRun  bool
 	DraftID string
@@ -356,7 +360,7 @@ func (s SendWrite) Unconfirmed() int {
 	return n
 }
 
-// Settled is what the reads after an ambiguous send found (§4.3).
+// Settled is what the reads after an ambiguous send found.
 type Settled string
 
 // Verdicts.

@@ -446,7 +446,7 @@ func TestCheckLinesRefusesOverlongLines(t *testing.T) {
 	}
 }
 
-// FuzzBuildRoundTrip holds §4.10's property: what Build writes, the
+// FuzzBuildRoundTrip holds the round trip: what Build writes, the
 // parser reads back to the same fields, whatever the text and names.
 func FuzzBuildRoundTrip(f *testing.F) {
 	f.Add("Réunion 会議", "Zoë Ångström", "body\r\nline two  \n\n-- \nsig", "<p>x</p>", "Отчёт.pdf", []byte{0, 1, 2})
@@ -769,10 +769,11 @@ func FuzzForwardCopyLeavesOutBcc(f *testing.F) {
 	})
 }
 
-// FuzzAttachedMessageRoundTrip holds §4.10 for an attached message: Build
-// refuses exactly the messages RFC 2046 §5.2.1 gives no 7bit or 8bit
-// form, declares 8bit exactly when an octet is not ASCII, and the parser
-// reads back the message as given with its line endings made CRLF.
+// FuzzAttachedMessageRoundTrip holds the round trip for an attached
+// message: Build refuses exactly the messages RFC 2046 §5.2.1 gives no
+// 7bit or 8bit form, declares 8bit exactly when an octet is not ASCII,
+// and the parser reads back the message as given with its line endings
+// made CRLF.
 func FuzzAttachedMessageRoundTrip(f *testing.F) {
 	f.Add([]byte("From: ada@example.com\r\nSubject: Plan\r\n\r\nBody\r\n"), "Plan.eml")
 	f.Add([]byte("Subject: Grüße\n\nZoë\rÅngström\n--=_x\n"), "Grüße.eml")

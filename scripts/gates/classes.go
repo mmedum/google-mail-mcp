@@ -8,22 +8,20 @@ import (
 	"io"
 	"io/fs"
 	"maps"
-	"os"
 	"path/filepath"
 	"slices"
 	"strings"
 )
 
-// classes holds the error vocabulary closed from every side: the Class
-// constants in internal/gapi/errors.go, the Classes list beside them,
-// §6.5's table, and the classes the code actually emits. All four are
-// read from source, so the gate works while the package does not build.
+// classes holds the error vocabulary closed from every side (D-77): the
+// Class constants in internal/gapi/errors.go, the Classes list beside
+// them, and the classes the code emits. All three are read from source,
+// so the gate works while the package does not build.
 
 const (
 	classesErrorsFile = "internal/gapi/errors.go"
-	classesDocFile    = "docs/architecture.md"
-	classesDocHeading = "### 6.5 Error classes"
-	// classesMinDeclared is §6.5's count.
+	// classesMinDeclared is the fewest classes errors.go may declare
+	// before this gate is not reading the vocabulary.
 	classesMinDeclared = 12
 	// classesMinFiles is how few Go files the emitted side may read
 	// before it is not looking at the server.
@@ -56,10 +54,6 @@ func classesCheck(root string, planned map[string]classesPlan, floor classesLimi
 	if err != nil {
 		return err
 	}
-	documented, err := classesDocumented(filepath.Join(root, filepath.FromSlash(classesDocFile)))
-	if err != nil {
-		return err
-	}
 	emitted, files, err := classesEmitted(root, declared)
 	if err != nil {
 		return err
@@ -82,14 +76,10 @@ func classesCheck(root string, planned map[string]classesPlan, floor classesLimi
 		listedValues[v]++
 	}
 	problems = append(problems, classesDuplicates("Classes", listedValues)...)
-	problems = append(problems, classesDuplicates("§6.5", documented)...)
 
 	for _, v := range slices.Sorted(maps.Keys(values)) {
 		if listedValues[v] == 0 {
 			problems = append(problems, fmt.Sprintf("%q is declared and Classes does not list it", v))
-		}
-		if documented[v] == 0 {
-			problems = append(problems, fmt.Sprintf("%q is declared and §6.5 does not tabulate it", v))
 		}
 		_, isPlanned := planned[v]
 		_, isEmitted := emitted[v]
@@ -104,11 +94,6 @@ func classesCheck(root string, planned map[string]classesPlan, floor classesLimi
 	for _, v := range slices.Sorted(maps.Keys(emitted)) {
 		if values[v] == 0 {
 			problems = append(problems, fmt.Sprintf("%s emits %q, which is not a declared class", emitted[v], v))
-		}
-	}
-	for _, v := range slices.Sorted(maps.Keys(documented)) {
-		if values[v] == 0 {
-			problems = append(problems, fmt.Sprintf("§6.5 tabulates %q and the code declares no such class", v))
 		}
 	}
 	for _, v := range slices.Sorted(maps.Keys(planned)) {
@@ -196,26 +181,6 @@ func classesDeclared(path string) (map[string]string, []string, error) {
 		return nil, nil, fmt.Errorf("%s has no `var Classes`; has the vocabulary moved?", classesErrorsFile)
 	}
 	return declared, listed, nil
-}
-
-// classesDocumented counts the class names in §6.5's table.
-func classesDocumented(path string) (map[string]int, error) {
-	doc, err := os.ReadFile(path) //nolint:gosec // a path this repository owns
-	if err != nil {
-		return nil, err
-	}
-	counts := map[string]int{}
-	for line := range strings.Lines(markdownSection(string(doc), classesDocHeading)) {
-		if !strings.HasPrefix(line, "| `") {
-			continue
-		}
-		cell := strings.Split(line, "|")[1]
-		counts[strings.Trim(strings.TrimSpace(cell), "`")]++
-	}
-	if len(counts) == 0 {
-		return nil, fmt.Errorf("found no class rows under %q in %s", classesDocHeading, classesDocFile)
-	}
-	return counts, nil
 }
 
 // classesEmitted finds each class the code emits, with the first file

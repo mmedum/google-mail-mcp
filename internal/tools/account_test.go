@@ -415,7 +415,7 @@ func TestReadAttachmentContinuesWithOffset(t *testing.T) {
 // A body or an attachment with thousands of links whose text names
 // another site still reads within its budget: the note counts every
 // link, the block pairs the first that fit an eighth of the budget, and
-// the rest are counted after it (§4.8).
+// the rest are counted after it.
 func TestManyMisleadingLinksStayWithinTheBudget(t *testing.T) {
 	h, fake := connectFake(t, config.Config{ReadOnly: true})
 	var page strings.Builder

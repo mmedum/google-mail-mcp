@@ -12,6 +12,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"regexp"
 	"runtime"
 	"slices"
 	"strings"
@@ -31,7 +32,13 @@ const (
 	// registry entry carries. A real version in the tree is a stale
 	// version waiting to be published.
 	placeholderVersion = "0.0.0-dev"
+	// architectureDoc is the design document: the decisions and the
+	// codemap.
+	architectureDoc = "docs/architecture.md"
 )
+
+// codeSpan is a Markdown code span on one line, its text captured.
+var codeSpan = regexp.MustCompile("`([^`\n]+)`")
 
 // gitFiles lists the files git would put in a commit from root: tracked
 // files and untracked files that are not ignored, relative to root and

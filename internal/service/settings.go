@@ -8,8 +8,7 @@ import (
 )
 
 // Settings reads the account's settings: seven one-unit reads, made at
-// once (§7.7). Nothing here changes a setting; changing forwarding is
-// written off (§4.1).
+// once. Nothing here changes a setting, and no tool changes forwarding.
 func (s *Service) Settings(ctx context.Context) (model.Settings, error) {
 	var (
 		v    *gmail.VacationSettings

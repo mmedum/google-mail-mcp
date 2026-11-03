@@ -12,7 +12,7 @@ import (
 // senders in a block. When even the first message does not fit, its
 // body is cut and the result says where to continue. The thread's
 // drafts follow the conversation in a section of their own, on the
-// first read only, and the cursor counts only what was said (§17.2).
+// first read only, and the cursor counts only what was said.
 func Thread(t model.Thread, o Options) Result {
 	said, drafts := t.SplitDrafts()
 	if o.Cursor > 0 {
@@ -228,8 +228,7 @@ type DraftList struct {
 	ResultSizeEstimate int
 }
 
-// Drafts renders a draft listing. Both ids are named on every row
-// (§6.1).
+// Drafts renders a draft listing. Both ids are named on every row.
 func Drafts(l DraftList, o Options) Result {
 	return listing(o, l.Drafts, l.NextPageToken, "draft", "drafts",
 		func(d model.Draft) string { return d.ID },
@@ -337,9 +336,9 @@ func (w *writer) rowsOmitted(n int, one, many phrase, ids []string) {
 
 // listingHead states what the page holds and whether the listing is
 // complete — including the page Google returns empty with a token,
-// which is not the end (§7.1). Gmail's resultSizeEstimate is not stated:
-// a live run saw it answer 201 for a search that matched 3 (§18 row 33),
-// and a model reads "about 201" as a count.
+// which is not the end. Gmail's resultSizeEstimate is not stated: it
+// can answer 201 for a search that matches 3, and a model reads "about
+// 201" as a count.
 func (w *writer) listingHead(n int, one, many phrase, token string) {
 	w.say("%s on this page", plural(n, one, many))
 	switch {

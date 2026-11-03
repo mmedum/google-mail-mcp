@@ -260,12 +260,12 @@ func footerNames(text string) []string {
 		}
 	}
 	var out []string
-	for _, m := range stalenessCodeSpan.FindAllStringSubmatch(list, -1) {
+	for _, m := range codeSpan.FindAllStringSubmatch(list, -1) {
 		out = append(out, m[1])
 	}
 	// The rest is split on commas alone, so prose is one item that names
 	// nothing rather than words that each might.
-	for _, n := range strings.Split(stalenessCodeSpan.ReplaceAllString(list, ""), ",") {
+	for _, n := range strings.Split(codeSpan.ReplaceAllString(list, ""), ",") {
 		n = strings.TrimRight(strings.Trim(n, " \t\n;()'\""), ":.")
 		if n != "" {
 			out = append(out, n)

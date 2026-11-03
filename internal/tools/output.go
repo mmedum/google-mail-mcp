@@ -8,10 +8,10 @@ import (
 )
 
 // Every field whose value came from mail rather than from Gmail's own
-// bookkeeping is a model.Untrusted named untrusted_* (architecture
-// §4.1): a client that shows only the structured half still sees which
-// strings a stranger wrote. TestUntrustedFieldsAreNamed holds the pair
-// both ways over every tool's output.
+// bookkeeping is a model.Untrusted named untrusted_*: a client that
+// shows only the structured half still sees which strings a stranger
+// wrote. TestUntrustedFieldsAreNamed holds the pair both ways over every
+// tool's output.
 
 // LabelRef is a label on a message, by id and name.
 type LabelRef struct {
@@ -69,7 +69,7 @@ type MessageMeta struct {
 	HasAttachments           bool              `json:"has_attachments"`
 	Attachments              []Attachment      `json:"attachments,omitempty"`
 	// HiddenCharsRemoved counts text a reader of the mail would not have
-	// seen, removed before it reached you (§4.1).
+	// seen, removed before it reached you.
 	HiddenCharsRemoved int `json:"hidden_chars_removed,omitempty"`
 	// LinkMismatches counts links whose visible text names a different
 	// host from the one they point to.
@@ -106,8 +106,10 @@ func (r Rendered) Render() string { return string(r.UntrustedText) }
 // Page is a listing's continuation.
 type Page struct {
 	NextPageToken string `json:"next_page_token,omitempty"`
-	// ResultSizeEstimate is Gmail's own estimate, passed on as-is. A live
-	// run saw 201 for a search that matched 3 (§18 row 33): never a count.
+	// ResultSizeEstimate is Gmail's own estimate, passed on as-is and
+	// never as a count. The reference calls it an estimate; Gmail answers
+	// 201 for a search that matches 3.
+	// https://developers.google.com/workspace/gmail/api/reference/rest/v1/users.messages/list
 	ResultSizeEstimate int `json:"result_size_estimate" jsonschema:"Gmail's estimate of the total, often far off; not a count"`
 	// Complete is false while a next page exists, even when this page
 	// came back empty: Gmail can return an empty page with more behind it.
@@ -121,7 +123,7 @@ type Searched struct {
 	Before *time.Time `json:"before,omitempty"`
 }
 
-// Cost is the quota a call spent (§4.9).
+// Cost is the quota a call spent.
 type Cost struct {
 	Units int `json:"units"`
 }

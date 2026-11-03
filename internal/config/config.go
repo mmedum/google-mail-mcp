@@ -102,17 +102,17 @@ type Config struct {
 	ClientSecretPath string
 	// ReadOnly registers the Read kinds only and requests gmail.readonly.
 	ReadOnly bool
-	// EnableSend registers send_draft. It changes no scope (§9.4).
+	// EnableSend registers send_draft. It changes no scope.
 	EnableSend bool
 	// EnableDestructive registers the permanent deletes and requests
 	// https://mail.google.com/.
 	EnableDestructive bool
 	// EnableSettings registers the settings writes — signatures and
 	// filters, and the vacation reply with EnableSend too — and requests
-	// gmail.settings.basic, which no other scope covers (§9.4).
+	// gmail.settings.basic, which no other scope covers.
 	EnableSettings bool
 	// DraftSignature puts the From address's send-as signature below a
-	// new draft's body when create_draft leaves signature out (§7.4). It
+	// new draft's body when create_draft leaves signature out. It
 	// is the operator's choice, never the caller's, and changes no scope.
 	DraftSignature bool
 	// LocalDir is the one directory attachments are written to. Empty
@@ -162,12 +162,11 @@ type Var struct {
 	Switch bool
 }
 
-// removedRequirePrompt is the setting that refused, while the server
-// asked the person, the writes that asked when the client could not.
-// The server asks nobody now (§4.13). Off, its old default, is still
+// removedRequirePrompt names a removed setting that made the server ask
+// the person; the server asks nobody. Off, its old default, is
 // accepted. On, or a value that is not a boolean, is refused at start:
-// ignored, it would quietly allow what its owner set it to stop. Its
-// flag is gone, so --require-prompt fails to parse.
+// ignored, it would quietly allow what its owner set it to stop (D-74).
+// Its flag is gone, so --require-prompt fails to parse.
 const removedRequirePrompt = "REQUIRE_PROMPT"
 
 // Define registers one flag per setting on fs, each defaulting to its

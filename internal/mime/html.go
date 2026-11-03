@@ -17,7 +17,7 @@ import (
 	"golang.org/x/net/idna"
 )
 
-// Reasons text was hidden from a reader and dropped (§4.1.2).
+// Reasons text was hidden from a reader and dropped.
 const (
 	HiddenDisplayNone = "display:none"
 	HiddenVisibility  = "visibility:hidden"
@@ -436,14 +436,18 @@ func hostShaped(h string) bool {
 }
 
 var (
-	hostInText  = regexp.MustCompile(`(?i)(?:https?://)?(?:[\p{L}\p{N}](?:[\p{L}\p{N}-]*[\p{L}\p{N}])?\.)+[\p{L}]{2,63}\b`)
-	emailInText = regexp.MustCompile(`(?i)[^\s<>@]+@((?:[\p{L}\p{N}-]+\.)+[\p{L}]{2,63})`)
+	// A name takes combining marks (\p{M}) after its first letter, which
+	// Indic and Thai names need. The host is group 1. It ends where no
+	// letter, mark, digit or underscore follows, since Go's \b is ASCII-only.
+	hostInText  = regexp.MustCompile(`(?i)((?:https?://)?(?:[\p{L}\p{N}](?:[\p{L}\p{M}\p{N}-]*[\p{L}\p{M}\p{N}])?\.)+\p{L}[\p{L}\p{M}]{1,62})(?:[^\p{L}\p{M}\p{N}_]|$)`)
+	emailInText = regexp.MustCompile(`(?i)[^\s<>@]+@((?:[\p{L}\p{M}\p{N}-]+\.)+\p{L}[\p{L}\p{M}]{1,62})`)
 )
 
 // commonTLDs is where a bare word.word in link text is taken to name a
-// host. A two-letter country code also counts. A scheme or "www."
-// makes any suffix count. This keeps "report.pdf" from reading as a
-// host.
+// host. A two-letter country code also counts, and so does a suffix
+// with any letter beyond ASCII, since file extensions are ASCII. A
+// scheme or "www." makes any suffix count. This keeps "report.pdf" from
+// reading as a host.
 var commonTLDs = map[string]bool{
 	"com": true, "org": true, "net": true, "edu": true, "gov": true, "mil": true,
 	"int": true, "info": true, "biz": true, "app": true, "dev": true, "io": true,
@@ -469,25 +473,27 @@ func textHosts(text string) []string {
 		add(m[1])
 	}
 	masked := emailInText.ReplaceAllString(text, " ")
-	for _, m := range hostInText.FindAllString(masked, -1) {
-		lower := strings.ToLower(m)
+	for _, m := range hostInText.FindAllStringSubmatch(masked, -1) {
+		lower := strings.ToLower(m[1])
 		h := strings.TrimPrefix(strings.TrimPrefix(lower, "https://"), "http://")
 		explicit := h != lower || strings.HasPrefix(h, "www.")
 		tld := h[strings.LastIndexByte(h, '.')+1:]
-		if explicit || commonTLDs[tld] || utf8.RuneCountInString(tld) == 2 && isLetters(tld) {
+		// Past beyondASCII, the suffix is ASCII letters, so len counts them.
+		if explicit || commonTLDs[tld] || beyondASCII(tld) || len(tld) == 2 {
 			add(h)
 		}
 	}
 	return out
 }
 
-func isLetters(s string) bool {
-	for _, r := range s {
-		if !unicode.IsLetter(r) {
-			return false
+// beyondASCII reports whether s has any byte outside ASCII.
+func beyondASCII(s string) bool {
+	for i := 0; i < len(s); i++ {
+		if s[i] >= utf8.RuneSelf {
+			return true
 		}
 	}
-	return true
+	return false
 }
 
 // sameSite reports whether a and b are the same host, ignoring "www.",

@@ -29,10 +29,10 @@ type Call struct {
 	Body any
 	// Media, when set, is an RFC 822 message sent as a multipart upload
 	// to the upload endpoint, with Body as its JSON metadata. Google
-	// recommends it over the JSON raw field above 5 MB (§7.4).
+	// recommends it over the JSON raw field above 5 MB.
 	Media []byte
 	// Units are not set here: the client charges each call its cost from
-	// the quota table keyed by ID (docs/architecture.md §4.9).
+	// the quota table keyed by ID.
 	//
 	// Repeatable is the reason a POST may be sent twice without applying
 	// twice. Empty means the method decides: GET, PUT, PATCH and DELETE

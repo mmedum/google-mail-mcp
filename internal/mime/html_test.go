@@ -146,6 +146,19 @@ func TestHTMLLinks(t *testing.T) {
 		{"country code", `<a href="https://a.example.com">shop.example.de</a>`, "shop.example.de", true},
 		{"second host in text", `<a href="https://example.com/r">example.com or evil.example.org</a>`, "evil.example.org", true},
 		{"second address in text", `<a href="mailto:a@example.com">a@example.com, b@evil.example.org</a>`, "evil.example.org", true},
+		// Go's \b is ASCII-only, so a host ending in a non-Latin
+		// top-level domain needs a boundary of its own.
+		{"non-latin host in text", `<a href="https://login.attacker.invalid/x">пример.рф</a>`, "xn--e1afmkfd.xn--p1ai", true},
+		{"non-latin host before a full stop", `<a href="https://login.attacker.invalid/x">Visit пример.рф.</a>`, "xn--e1afmkfd.xn--p1ai", true},
+		{"host followed by a digit is not a host", `<a href="https://a.example.com">example.com2</a>`, "", false},
+		// Indic and Thai names carry combining marks, and a file extension
+		// is ASCII, so any top-level domain with another letter counts.
+		{"devanagari host in text", `<a href="https://login.attacker.invalid/x">उदाहरण.भारत</a>`, "xn--p1b6ci4b4b3a.xn--h2brj9c", true},
+		{"thai host in text", `<a href="https://login.attacker.invalid/x">ตัวอย่าง.ไทย</a>`, "xn--72c1a1bt4awk9o.xn--o3cw4h", true},
+		{"cyrillic host with a long top-level domain", `<a href="https://login.attacker.invalid/x">пример.онлайн</a>`, "xn--e1afmkfd.xn--80asehdb", true},
+		{"host with marks followed by a digit is not a host", `<a href="https://a.example.com">उदाहरण.हिंदी2</a>`, "", false},
+		{"accented file name is not a host", `<a href="https://files.example.com/r">résumé.docx</a>`, "", false},
+		{"address with a devanagari domain", `<a href="mailto:x@evil.invalid">help@उदाहरण.foo</a>`, "xn--p1b6ci4b4b3a.foo", true},
 	}
 	for _, c := range cases {
 		t.Run(c.name, func(t *testing.T) {

@@ -15,6 +15,17 @@ lifted verbatim.
 
 ## [Unreleased]
 
+### Changed
+
+- Refusal messages state their reason instead of pointing at a section of the design document.
+- For contributors: `make check` runs a docs gate. Decisions carry IDs in `docs/architecture.md`, and every citation must resolve.
+- For contributors: what was verified about Gmail lives in the comment at the code that depends on it, naming the live step that checks it.
+- For contributors: `google.golang.org/api` cannot be imported; the lint fails on it.
+
+### Fixed
+
+- A link whose text names a non-Latin host, such as `пример.онлайн`, `उदाहरण.भारत` or `ตัวอย่าง.ไทย`, is flagged when it points elsewhere.
+
 ## [4.0.1] - 2026-11-02
 
 ### Changed

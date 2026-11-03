@@ -24,7 +24,8 @@ strictest class. What that means for you depends on the account:
 - **Otherwise**, choose **External**, leave the app in **Testing**, and
   add yourself as a test user. In Testing, Google issues refresh tokens
   that **expire after seven days**, so you will run `login` again weekly.
-  `docs/runbook.md` has the symptom. Publishing a personal app with
+  [`docs/troubleshooting.md`](troubleshooting.md) has the symptom.
+  Publishing a personal app with
   restricted scopes needs Google's verification and a security
   assessment, which this server does not ask you to do.
 

@@ -2,15 +2,18 @@
 // server requests in each mode, and for which granted scope covers
 // which.
 //
-// Every scope that reads mail content is restricted (§2.11), and none
-// can separate drafting from sending (§2.10). So the set is chosen by
-// what the configuration registers: read-only asks for gmail.readonly,
-// the default for gmail.modify, and only the destructive flag asks for
-// https://mail.google.com/, the one scope permanent deletion accepts.
-// The settings flag adds gmail.settings.basic, which the settings writes
-// accept and https://mail.google.com/ does not cover.
-// The send flag changes nothing here: gmail.modify can already send,
-// which is why registration, not scope, is the control (§4.2).
+// Every scope that reads mail content is restricted, and none can
+// separate drafting from sending: gmail.compose ("Manage drafts and send
+// emails") and gmail.modify both grant messages.send and drafts.send.
+// So the set is chosen by what the configuration registers: read-only
+// asks for gmail.readonly, the default for gmail.modify, and only the
+// destructive flag asks for https://mail.google.com/, the one scope
+// permanent deletion accepts. The settings flag adds
+// gmail.settings.basic, which the settings writes accept and
+// https://mail.google.com/ does not cover. The send flag changes nothing
+// here: gmail.modify can already send, which is why registration, not
+// scope, is the control.
+// https://developers.google.com/workspace/gmail/api/auth/scopes
 //
 // docs/gcp-setup.md's scope block is generated from Modes and compared
 // exactly by the staleness gate.
@@ -24,12 +27,17 @@ import (
 // Gmail scopes.
 const (
 	// Full is https://mail.google.com/, the only scope that permanent
-	// deletion accepts.
+	// deletion accepts: under gmail.modify, messages.delete answers 403.
+	// Checked by the live step "messages.delete under gmail.modify".
+	// https://developers.google.com/workspace/gmail/api/reference/rest/v1/users.messages/delete
 	Full = "https://mail.google.com/"
 	// Modify reads, drafts, labels, trashes and sends. It cannot delete
 	// permanently.
 	Modify = "https://www.googleapis.com/auth/gmail.modify"
-	// Readonly reads messages, threads, labels and settings.
+	// Readonly reads messages, threads, labels and settings. Read-only
+	// mode asks for it rather than gmail.metadata, under which
+	// messages.list refuses q.
+	// https://developers.google.com/workspace/gmail/api/reference/rest/v1/users.messages/list
 	Readonly = "https://www.googleapis.com/auth/gmail.readonly"
 	// Compose manages drafts and sends. Never requested; it appears in
 	// the implication table because a token may carry it.

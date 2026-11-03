@@ -9,8 +9,8 @@
 // addresses, message, thread and draft ids, and OAuth tokens and client
 // ids. What it cannot hide: subjects, bodies, snippets, attachment names
 // and label names. Nothing tells those from prose. The live driver reads
-// only messages it wrote itself (docs/architecture.md §9.1), which is
-// what keeps them harmless, and Summary says so on every run.
+// only messages it wrote itself, which is what keeps them harmless, and
+// Summary says so on every run.
 package redact
 
 import (
@@ -81,9 +81,9 @@ var filterPositions = []*regexp.Regexp{
 // historyPositions are where a history id appears. It is a plain decimal
 // counter, too short for NUMBER and shaped like any other number, so it
 // is found by what stands before it: list_changes's "history N",
-// "history from N" and "history_id=N", an argument echo's "history_id":"N", and a request's
-// startHistoryId=N. A live transcript carried the account's real ones
-// before these existed.
+// "history from N" and "history_id=N", an argument echo's
+// "history_id":"N", and a request's startHistoryId=N. Without these, a
+// live transcript carries the account's real history ids.
 var historyPositions = []*regexp.Regexp{
 	regexp.MustCompile(`\bhistory (?:from )?(\d+)\b`),
 	regexp.MustCompile(`\bhistory_id=(\d+)\b`),

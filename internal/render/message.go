@@ -226,7 +226,7 @@ func invitationLine(inv mime.Invitation, before []mime.Attachment, partIDs bool)
 
 // capHeaders keeps a header block to at most limit characters, cut at a
 // line, and returns how many characters it left out. A message can carry
-// headers larger than any budget (§17a); the body still gets its share.
+// headers larger than any budget; the body still gets its share.
 func capHeaders(text string, limit int) (string, int) {
 	total := utf8.RuneCountInString(text)
 	if total <= limit {
@@ -371,7 +371,7 @@ func (w *writer) charsetNote(b mime.Body, one, many phrase, origin, id string, r
 
 // noteShare bounds one list in the notes to 1/noteShare of a read's
 // budget. A list's entries are the sender's, as many and as long as they
-// like; what does not fit is counted, not listed (§4.8).
+// like; what does not fit is counted, not listed.
 const noteShare = 8
 
 // noteRoom is the characters one list in the notes may take.
@@ -510,7 +510,7 @@ func Message(m model.Message, o Options) Result {
 
 // Draft renders one draft: both ids, then the message as get_message
 // renders it. A draft's text is treated as untrusted too: it may have
-// been shaped by someone other than the person reading it (§4.2).
+// been shaped by someone other than the person reading it.
 func Draft(d model.Draft, o Options) Result {
 	m := d.Message
 	return single(o, m, func(w *writer) {
@@ -530,7 +530,7 @@ func single(o Options, m model.Message, head func(w *writer)) Result {
 	})
 }
 
-// AttachmentRead is an attachment read as text (§7.3).
+// AttachmentRead is an attachment read as text.
 type AttachmentRead struct {
 	MessageID string
 	// From is the sender of the message the attachment is in, whose

@@ -148,7 +148,7 @@ var toolName = regexp.MustCompile(`^[a-z][a-z0-9_]{0,63}$`)
 // ended, and nothing it carried: method, tool, outcome, duration, and
 // for a tool call the requests and quota units it spent. Arguments and
 // results are mail, and a log a person is asked to attach to a bug
-// report must be safe by construction (§9.2).
+// report must be safe by construction (D-03).
 func logCalls(lg *slog.Logger) mcp.Middleware {
 	return func(next mcp.MethodHandler) mcp.MethodHandler {
 		return func(ctx context.Context, method string, req mcp.Request) (mcp.Result, error) {
@@ -183,7 +183,7 @@ func logCalls(lg *slog.Logger) mcp.Middleware {
 
 // resourceKinds are the resources this server serves, by URI prefix.
 // A URI is logged as its kind only: the id in it may be logged cut to
-// six characters (§9.2), and the kind is all a log reader needs.
+// six characters, and the kind is all a log reader needs.
 var resourceKinds = []struct{ prefix, kind string }{
 	{strings.TrimSuffix(tools.ThreadResource, "{id}"), "thread"},
 	{strings.TrimSuffix(tools.MessageResource, "{id}"), "message"},
@@ -207,7 +207,7 @@ func resourceKind(r *mcp.ReadResourceRequest) string {
 var classPrefix = regexp.MustCompile(`^\[([a-z_]+)\]`)
 
 // outcome is "ok", "error" for a protocol error, or the class of a tool
-// error, which comes from the closed vocabulary of §6.5.
+// error, which comes from the closed vocabulary in internal/gapi.
 func outcome(res mcp.Result, err error) string {
 	if err != nil {
 		return "error"

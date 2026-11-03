@@ -87,7 +87,7 @@ func init() {
 		"coverage": {run: coverage, maxArgs: 1, args: "[PROFILE]", runsIn: inCheck,
 			doc: "statement coverage per package, scored on its own files"},
 		"classes": {run: classes, runsIn: inCheck,
-			doc: "the error vocabulary the code emits is the one §6.5 declares, both ways"},
+			doc: "the Class constants, the Classes list and the classes the code emits are one set"},
 		"outcomes": {run: outcomes, runsIn: inCheck,
 			doc: "every write's result states its outcome on every branch"},
 
@@ -118,6 +118,8 @@ func init() {
 		// Documents.
 		"staleness": {run: staleness, maxArgs: 1, args: "[BINARY]", runsIn: inCheck,
 			doc: "the docs held to what the code defines"},
+		"docs": {run: docs, runsIn: inCheck,
+			doc: "every decision ID, citation, link, codemap entry, path and live step the docs and code name resolves"},
 		"checklist": {run: checklist, runsIn: inCheck,
 			doc: "CLAUDE.md's definition of done against the Makefile's check: prerequisites"},
 		"changelog": {run: changelog, minArgs: 2, maxArgs: 2, args: "BASE HEAD", runsIn: inCI,

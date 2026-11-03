@@ -10,7 +10,7 @@ import (
 	"github.com/mmedum/google-mail-mcp/v4/internal/mime"
 )
 
-// Settings are the account's settings, read-only (§7.7). The addresses
+// Settings are the account's settings, read-only. The addresses
 // and names in them are the account's own configuration. The vacation
 // reply and the signatures are free text that goes out as mail, so they
 // are kept as Untrusted like mail: whoever set them, the model reads
@@ -61,7 +61,11 @@ type SendAs struct {
 	Alias              bool
 	VerificationStatus string
 	// Signature is the one Gmail adds to new emails written in Gmail, the
-	// only one its API holds (§18 row 88).
+	// only one its API holds. The reference names no other: a signature
+	// chosen only for replies and forwards is not in the API, so an
+	// address with one reads as unsigned.
+	// Checked by the live step "settings".
+	// https://developers.google.com/workspace/gmail/api/reference/rest/v1/users.settings.sendAs#SendAs
 	Signature SettingText
 }
 
@@ -172,7 +176,7 @@ func millis(s string) time.Time {
 	return time.UnixMilli(ms).UTC()
 }
 
-// Filter is a mail filter, its labels named (§7.7).
+// Filter is a mail filter, its labels named.
 type Filter struct {
 	ID       string
 	Criteria gmail.FilterCriteria
@@ -190,8 +194,8 @@ func (f Filter) Trashes() bool {
 }
 
 // NeverSpam reports whether the filter keeps matching mail out of spam:
-// Gmail's "Never send it to Spam", which it stores as removing SPAM
-// (§18 row 56).
+// Gmail's "Never send it to Spam", which it stores as removing SPAM.
+// Gmail can add that to an archiving filter on its own, after the create.
 func (f Filter) NeverSpam() bool {
 	return slices.ContainsFunc(f.Remove, func(l LabelRef) bool { return l.ID == "SPAM" })
 }

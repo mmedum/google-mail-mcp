@@ -1,5 +1,6 @@
 // Package gmail holds the Gmail v1 wire types this server reads and
-// writes, written by hand from the discovery document (§4.11).
+// writes, written by hand from the discovery document rather than
+// imported from a client library (D-06).
 //
 // Field names and JSON tags are the discovery document's. A field the
 // document types as a string with format int64 or uint64 (historyId,
@@ -7,7 +8,7 @@
 // wire, so it is a Go string here, with a helper that parses it where a
 // caller needs the number. int32 and uint32 fields are JSON numbers.
 //
-// Only the fields a tool uses are modeled; docs/architecture.md §8b
+// Only the fields a tool uses are modeled; testdata/api-fields.tsv
 // records a verdict for every field the document publishes, and
 // `scripts/gates api-fields` holds the two together.
 package gmail
@@ -32,7 +33,7 @@ type Message struct {
 	// a draft or send writes.
 	Raw string `json:"raw,omitempty"`
 	// ClassificationLabelValues is Workspace classification: read and
-	// shown, never written (§8b).
+	// shown, never written.
 	ClassificationLabelValues []ClassificationLabelValue `json:"classificationLabelValues,omitempty"`
 }
 
@@ -202,30 +203,31 @@ type HistoryLabelRemoved struct {
 	LabelIDs []string `json:"labelIds,omitempty"`
 }
 
-// ModifyMessageRequest is messages.modify's body. modify_labels (phase 2).
-// The classification fields are left out: changing classification is an
-// administrator's decision (§8b).
+// ModifyMessageRequest is messages.modify's body, which modify_labels
+// sends. The classification fields are left out: changing classification
+// is an administrator's decision.
 type ModifyMessageRequest struct {
 	AddLabelIDs    []string `json:"addLabelIds,omitempty"`
 	RemoveLabelIDs []string `json:"removeLabelIds,omitempty"`
 }
 
 // ModifyThreadRequest is threads.modify's body. modify_labels on a
-// thread id (phase 2).
+// thread id.
 type ModifyThreadRequest struct {
 	AddLabelIDs    []string `json:"addLabelIds,omitempty"`
 	RemoveLabelIDs []string `json:"removeLabelIds,omitempty"`
 }
 
-// BatchModifyMessagesRequest is messages.batchModify's body.
-// modify_labels on many message ids (phase 2). At most 100 ids (§4.7).
+// BatchModifyMessagesRequest is messages.batchModify's body. Nothing
+// calls batchModify: its empty answer cannot say which message changed,
+// so modify_labels writes one message at a time.
 type BatchModifyMessagesRequest struct {
 	IDs            []string `json:"ids,omitempty"`
 	AddLabelIDs    []string `json:"addLabelIds,omitempty"`
 	RemoveLabelIDs []string `json:"removeLabelIds,omitempty"`
 }
 
-// VacationSettings is the vacation responder. get_settings (phase 1).
+// VacationSettings is the vacation responder, as get_settings reads it.
 type VacationSettings struct {
 	EnableAutoReply       bool   `json:"enableAutoReply,omitempty"`
 	ResponseSubject       string `json:"responseSubject,omitempty"`
@@ -238,7 +240,7 @@ type VacationSettings struct {
 }
 
 // AutoForwarding is the account's automatic forwarding. get_settings
-// shows it; changing it is written off (§4.1).
+// shows it; nothing changes it.
 type AutoForwarding struct {
 	Enabled      bool   `json:"enabled,omitempty"`
 	EmailAddress string `json:"emailAddress,omitempty"`
@@ -277,7 +279,7 @@ type LanguageSettings struct {
 }
 
 // SendAs is an address the account may send as. get_settings, and the
-// account's own addresses a reply-all drops (§4.5). smtpMsa is left
+// account's own addresses a reply-all drops. smtpMsa is left
 // out: it carries a password field and nothing here needs it.
 type SendAs struct {
 	SendAsEmail        string `json:"sendAsEmail,omitempty"`
@@ -295,7 +297,7 @@ type ListSendAsResponse struct {
 	SendAs []SendAs `json:"sendAs,omitempty"`
 }
 
-// Filter is a mail filter. list_filters (phase 1) shows it and flags a
+// Filter is a mail filter. list_filters shows it and flags a
 // forward action.
 type Filter struct {
 	ID       string          `json:"id,omitempty"`
@@ -317,7 +319,7 @@ type FilterCriteria struct {
 }
 
 // FilterAction is what a filter does. Forward is read and flagged,
-// never written (§8b).
+// never written.
 type FilterAction struct {
 	AddLabelIDs    []string `json:"addLabelIds,omitempty"`
 	RemoveLabelIDs []string `json:"removeLabelIds,omitempty"`
@@ -326,7 +328,7 @@ type FilterAction struct {
 
 // FilterWrite is a filter as create_filter writes it. Its action has no
 // forward field, so a forward cannot be sent however the tool is called
-// (§4.1, §17.5).
+// (D-56).
 //
 // Schema: Filter
 type FilterWrite struct {
@@ -354,8 +356,10 @@ type SignaturePatch struct {
 // VacationWrite is the vacation responder as updateVacation replaces it.
 // Every flag, the subject and the plain body are written, empty
 // included, so a PUT leaves none to Gmail's default. The HTML body is
-// written only when it holds something: Gmail answers with no body at
-// all when it is sent empty beside a plain one (§18 row 52).
+// written only when it holds something: sent empty beside a plain one,
+// it leaves the reply with no body at all, which the reference does not
+// say. Checked by the live step "turn the vacation reply on, months ahead".
+// https://developers.google.com/workspace/gmail/api/reference/rest/v1/users.settings/updateVacation
 //
 // Schema: VacationSettings
 type VacationWrite struct {

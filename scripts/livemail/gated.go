@@ -13,12 +13,12 @@ import (
 	"time"
 )
 
-// The gated tools' steps and phase 3's spikes. The server runs with
-// sending and permanent deletion registered. Every send_draft step but
-// one works on a draft addressed to reserved domains and is refused or a
-// dry run; the one that sends needs -send-to, and its draft goes to that
-// address alone. The delete steps touch only the run's own messages and
-// labels, and a permanent delete needs a login that granted
+// The gated tools' steps and the spikes that follow a send. The server
+// runs with sending and permanent deletion registered. Every send_draft
+// step but one works on a draft addressed to reserved domains and is
+// refused or a dry run; the one that sends needs -send-to, and its draft
+// goes to that address alone. The delete steps touch only the run's own
+// messages and labels, and a permanent delete needs a login that granted
 // https://mail.google.com/.
 
 var (
@@ -67,7 +67,7 @@ var gatedSteps = []step{
 		}},
 
 	// The parent was received: its sender is in the thread, and the To
-	// its sender wrote is not (§17.8). Both still need confirming (§4.2).
+	// its sender wrote is not. Both still need confirming.
 	{name: "a reply-all names the sender a participant, dry run", tool: "send_draft",
 		args: func(e *env) map[string]any {
 			return map[string]any{"draft_id": e.replyAll, "message_id": e.replyAllMessage, "subject": e.subjects[e.replyAll],
@@ -129,7 +129,7 @@ var gatedSteps = []step{
 		}},
 
 	// A new body alone must find the HTML version Gmail stored to be the
-	// one made from the old body, and replace it (§7.4, spike M).
+	// one made from the old body, and replace it.
 	{name: "give the draft to -send-to a long paragraph", tool: "update_draft", needs: needSendTo,
 		args: func(e *env) map[string]any {
 			return map[string]any{"draft_id": e.sent.draftID, "message_id": e.sent.draftMessage,
@@ -169,7 +169,7 @@ var gatedSteps = []step{
 
 	// A reply to the sent message goes to -send-to, whom the account sent
 	// to in the thread: a participant, which the guard still stops until
-	// confirm_recipients names it (§4.2). The reply is deleted, never sent.
+	// confirm_recipients names it. The reply is deleted, never sent.
 	{name: "reply to the sent message", tool: "create_draft", needs: needSendTo,
 		args: func(e *env) map[string]any {
 			return map[string]any{"reply_to": e.sent.sentMessage, "body": neverSentLine}
@@ -249,10 +249,10 @@ var gatedSteps = []step{
 		}},
 }
 
-// sendSpikes are phase 3's questions (§15). B and C read what the send
-// step left; H reads the run's own message until Gmail pushes back.
+// sendSpikes run after the send step. Three read what it left; the
+// rate-limit spike reads the run's own message until Gmail pushes back.
 var sendSpikes = []spike{
-	{name: "C", question: "What does drafts.send leave behind: does the sent message keep the draft's message id, " +
+	{name: "what drafts.send leaves behind", question: "What does drafts.send leave behind: does the sent message keep the draft's message id, " +
 		"and does drafts.get answer 404 afterwards?",
 		ask: func(ctx context.Context, x spikeRun) string {
 			if x.sent.sentMessage == "" {
@@ -266,8 +266,8 @@ var sendSpikes = []spike{
 			return fmt.Sprintf("the sent message has %s; drafts.get on the sent draft answered HTTP %d, reason %q",
 				same, r.status, r.reason)
 		}},
-	{name: "B (drafts.send)", question: "Does drafts.send keep the Message-ID the draft carried, which §4.3 searches SENT " +
-		"for after an ambiguous send?",
+	{name: "the Message-ID drafts.send sends", question: "Does drafts.send keep the Message-ID the draft carried, so that SENT could be searched " +
+		"for it after an ambiguous send?",
 		ask: func(ctx context.Context, x spikeRun) string {
 			switch {
 			case x.sent.sentMessage == "":
@@ -286,22 +286,22 @@ var sendSpikes = []spike{
 			return "drafts.send " + kept + " the draft's Message-ID on the sent message. The received copy is in the " +
 				"second mailbox, under \"" + x.s.label.name + " send_draft\"."
 		}},
-	{name: "M (sent)", question: "Does the copy send_draft sends keep a plain-text line past 78 characters whole, beside " +
+	{name: "a long line in a sent draft", question: "Does the copy send_draft sends keep a plain-text line past 78 characters whole, beside " +
 		"the HTML version made from the body?",
-		ask: spikeMSent},
-	{name: "H", question: "What does a per-user rate limit look like: its status, its reason, and whether Retry-After " +
+		ask: longLineInASentDraft},
+	{name: "the per-user rate limit", question: "What does a per-user rate limit look like: its status, its reason, and whether Retry-After " +
 		"comes with it?",
-		ask: spikeH},
+		ask: perUserRateLimit},
 }
 
-// spikeH reads the run's first message from several workers until Gmail
-// answers anything but success, or a bound is reached, and records that
-// answer whole. Reads of the run's own message spend quota and change
-// nothing. The driver's own calls wait out the refusal, so the cleanup
-// after it still runs.
-func spikeH(ctx context.Context, x spikeRun) string {
-	if !x.spikeH {
-		return "not run: it spends a minute's quota, and -spike-h was not given"
+// perUserRateLimit reads the run's first message from several workers
+// until Gmail answers anything but success, or a bound is reached, and
+// records that answer whole. Reads of the run's own message spend quota
+// and change nothing. The driver's own calls wait out the refusal, so
+// the cleanup after it still runs.
+func perUserRateLimit(ctx context.Context, x spikeRun) string {
+	if !x.rateLimit {
+		return "not run: it spends a minute's quota, and -rate-limit was not given"
 	}
 	const workers, bound = 32, 2000
 	path, q := "messages/"+url.PathEscape(x.s.messages[0]), url.Values{"format": {"minimal"}}
@@ -347,8 +347,8 @@ func spikeH(ctx context.Context, x spikeRun) string {
 		calls, calls*20, hit.status, hit.reason, hit.message, retry)
 }
 
-// spikeMSent reads the copy the send step sent.
-func spikeMSent(ctx context.Context, x spikeRun) string {
+// longLineInASentDraft reads the copy the send step sent.
+func longLineInASentDraft(ctx context.Context, x spikeRun) string {
 	if x.sent.sentMessage == "" {
 		return "not run: the send step did not send (it needs -send-to)"
 	}

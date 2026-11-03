@@ -73,8 +73,12 @@ func (sp LabelSpec) wire() (gmail.Label, []string, error) {
 	return l, changed, nil
 }
 
-// nameTaken refuses a name Gmail would refuse (spike I, §6.2): a system
-// label's in any case, or another user label's in any case.
+// nameTaken refuses a name Gmail would refuse: a system label's in any
+// case, or another user label's in any case. Gmail answers 409 for a user
+// label's name in another case and 400 for INBOX or Inbox; the reference
+// states neither rule.
+// Checked by the live step "a name taken in another case is refused".
+// https://developers.google.com/workspace/gmail/api/reference/rest/v1/users.labels/create
 func nameTaken(all []gmail.Label, name, except string) error {
 	for _, l := range all {
 		if l.ID == except || !strings.EqualFold(l.Name, name) {
@@ -122,7 +126,7 @@ func (s *Service) CreateLabel(ctx context.Context, sp LabelSpec) (model.LabelWri
 }
 
 // UpdateLabel patches a user label's name, visibility or color; what is
-// not given is not sent, so nothing else about the label changes (§4.4).
+// not given is not sent, so nothing else about the label changes.
 func (s *Service) UpdateLabel(ctx context.Context, label string, sp LabelSpec) (model.LabelWrite, error) {
 	out := model.LabelWrite{Op: "update", DryRun: gapi.WritesForbidden(ctx)}
 	patch, changed, err := sp.wire()

@@ -263,7 +263,7 @@ func (s *Session) OnCall(f func(tool string, args map[string]any)) { s.onCall = 
 // OnElicit makes the session a client that can ask the person: it
 // declares form elicitation at Initialize, so it is set before. Each
 // question the server puts is declined unread, since it could quote the
-// mailbox, and f is told of it: these servers ask nobody (§4.13).
+// mailbox, and f is told of it: these servers ask nobody.
 func (s *Session) OnElicit(f func()) { s.onElicit = f }
 
 // Options is the tool surface the server published at initialize: each

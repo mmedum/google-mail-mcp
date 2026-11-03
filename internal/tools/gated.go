@@ -10,20 +10,20 @@ import (
 	"github.com/mmedum/google-mail-mcp/v4/internal/service"
 )
 
-// The tools behind a flag: send_draft behind GMAIL_ENABLE_SEND (§4.2),
-// delete_permanently and delete_label behind GMAIL_ENABLE_DESTRUCTIVE
-// (§4.6). Kind is what keeps them unregistered otherwise.
+// The tools behind a flag: send_draft behind GMAIL_ENABLE_SEND,
+// delete_permanently and delete_label behind GMAIL_ENABLE_DESTRUCTIVE.
+// Kind is what keeps them unregistered otherwise.
 
 // SendDraftIn sends a draft.
 type SendDraftIn struct {
 	DraftID string `json:"draft_id" jsonschema:"the draft to send"`
-	// MessageID is the witness of §4.4, held for a send as for an update.
+	// MessageID is the draft's witness, held for a send as for an update.
 	MessageID string `json:"message_id" jsonschema:"the message_id get_draft, create_draft or update_draft returned; the send is refused as stale if the draft changed since"`
 	// Subject and FirstLine put what is sent into the call, where a
-	// client's prompt shows it (§4.13).
+	// client's prompt shows it.
 	Subject   string `json:"subject" jsonschema:"the draft's subject, as get_draft shows it; checked, never changed: the send is refused as stale if it is not the draft's"`
 	FirstLine string `json:"first_line" jsonschema:"the first line of the draft's body, as get_draft shows it, or empty for a body with no text; checked like subject"`
-	// ConfirmRecipients is the guard of §4.2.
+	// ConfirmRecipients is the recipient guard.
 	ConfirmRecipients []string `json:"confirm_recipients,omitempty" jsonschema:"every recipient of the draft, To, Cc and Bcc, the thread's own participants included, each address written out, as ada@example.com"`
 	DryRun            bool     `json:"dry_run,omitempty" jsonschema:"read the draft and report who it would reach and whom to confirm, without sending"`
 }

@@ -1,3614 +1,2756 @@
-# Architecture — google-mail-mcp
+# Architecture
 
-**Status: 4.0.1 is released, 2026-11-02, from `main`, and verified from
-outside: checksums, the cosign signature and the provenance
-attestation, each also against a tampered copy, the version in all
-five places, the registry entry, and the Go proxy resolving v4.0.1.**
-The README's Claude Code example
-asks only for the calls that send, change a setting or delete for good
-(§18 row 107), and `update_signature` no longer says a draft is signed
-only when asked. Unproven again since 4.0.0: nothing on the wire. The
-changes are a README example, two strings, `--dump-schemas` and the
-gates. Reviewed by `/simplify` and `/code-review medium`. 4.0.0 is released, 2026-11-01, from `main`, and verified from
-outside: checksums, the cosign signature and the provenance
-attestation, each also against a tampered copy, the version in all
-five places, the registry entry, and the Go proxy resolving v4.0.0.**
-The module path is `/v4`. A message's `date` and a thread row's `latest` are left
-out of the structured result when unknown, rather than sent as
-`0001-01-01T00:00:00Z`; an `internalDate` of zero reads as no date. Write
-is annotated destructive and the new Adding kind, for `create_draft` and
-`create_label`, is the one write that is not (§18 rows 101 to 103).
-Unproven again since 3.3.0: those annotations and the two dates. Reviewed
-by `/simplify`, `/code-review medium` and a security review (§16a). A
-live run of 96 calls passed, its transcript read, the seven sending
-steps left unarmed and the eight signature steps stopped by the
-driver's own guard. 3.3.0 is released, 2026-10-30, from `main`, and verified from
-outside: checksums, the cosign signature and the provenance
-attestation, each also against a tampered copy, the version in all
-five places, the registry entry, and the Go proxy resolving v3.3.0.
-`GMAIL_DRAFT_SIGNATURE=true`, off
-by default, signs a new draft when `create_draft` leaves `signature`
-out, and `update_draft` refuses new `body_html` that would drop a
-signature the draft holds, unless `signature` says what to do (§7.4).
-Reviewed by `/simplify`, `/code-review high` and `/security-review`
-(§16a). A live run of 96 steps passed, its transcript read, the seven
-sending steps left unarmed and the eight signature steps stopped by the
-driver's own guard; the default and the refusal were checked live by
-hand against the account's own signature, the setting on, every test
-draft deleted. 3.2.0 is released, 2026-10-30, from `main`, and verified from
-outside: checksums, the cosign signature and the provenance
-attestation, each also against a tampered copy, the version in all
-five places, the registry entry, and the Go proxy resolving v3.2.0.
-`create_draft` and `update_draft`
-take `signature` (issue #39), which puts the signature Gmail holds for
-the From address below the body as Gmail's composer writes one, its
-images as inline parts, and a new body keeps it. Reviewed by
-`/simplify`, two rounds of `/code-review high` and `/security-review`
-(§16a). A live run of 96 steps passed, its transcript read, the seven
-sending steps left unarmed and the eight signature steps stopped by the
-driver's own guard; the signature was checked by hand against the
-account's own, through drafts sent from the composer and by
-`send_draft`, which found Gmail rewriting a draft whose signature
-carries its image inside the HTML (§16, §18 rows 97 and 99). 3.1.2 is cut, 2026-10-24: the family sweep (§16a). A variable of
-spaces alone is unset and the spaces around a value dropped, the
-refresh token included, every reader through `config.Lookup`; the
-bundle gate holds the identity, refuses a repeated key and validates
-the stamped manifest, and names the fields the defaults change. Reviewed
-by `/simplify`, `/code-review medium` and `/security-review`; a live run
-of 99 steps passed, its transcript read, the seven sending steps left
-unarmed. 3.1.1 was cut, 2026-10-24: 3.1.0's bundle work, reviewed after
-its release by `/simplify`, five `/code-review high` rounds and
-`/security-review` (§16a). The bundle gate now derives what it asks
-for from the server's settings and starts the server from the
-bundle's defaults; the Profile field states the name rule, which a
-refusal states too; and a profile name is lowered A to Z alone. No
-send path, MIME building or response shape changed, so no live run
-was owed. 3.1.0 was cut, 2026-10-24: the Claude Desktop bundle has the
-family's shape (`~/.claude/mcp-server-standard.md` §10b). Its OAuth
-client file and attachment folder default to empty, so a field left
-blank no longer reaches the server as `${user_config.x}`, and its fields
-say which settings read-only excludes. The server is unchanged, so no
-live run was owed. 3.0.0 was cut, 2026-10-23, after a live run of 99 steps with
-none failed, its transcript read, and the code and security reviews
-(§16a). The run had no `-send-to`, so its seven steps that send were
-skipped: `send_draft`'s refusals and dry runs ran, a send did not.
-Per-call approval is the client's (§4.13). The server asks nobody, and a set
-`GMAIL_REQUIRE_PROMPT` refuses to start; a filter that trashes is its
-own tool, `create_trash_filter`, and it and `delete_filter` need the
-destructive flag too; `send_draft` names every recipient, participants
-included, and the draft's subject and first line; `delete_filter` takes
-the filter's criteria; `delete_draft` takes the draft's `message_id`; only
-`delete_permanently` and `delete_label` carry the mark; the module path
-is `/v3`; it is built with Go 1.27.3, which fixes GO-2026-6809 in
-`crypto/x509`. 2.3.0 is released, 2026-10-13, from `main`, after a live run
-of 95 steps with none failed, and verified from outside: checksums, the
-cosign signature and the provenance attestation, each also against a
-tampered copy, the version in all five places, the registry entry, and
-the Go proxy resolving v2.3.0. `get_settings` says when an address has no name
-or signature, a signature or vacation reply of images or hidden text
-alone is set, and their hidden text is counted (issue #29). 2.2.0 was
-released 2026-10-09, after a live run
-of 95 steps with none failed, and verified from outside: checksums, the
-cosign signature and the provenance attestation, each also against a
-tampered copy, the version in the binary, the publish to the registry,
-and the README's `go install …@latest` resolving v2.2.0. 2.1.0 was
-released 2026-10-06 and verified from
-outside: checksums, the cosign signature and the provenance attestation,
-each also against a tampered copy, the version in all five places, the
-registry entry, and the Go proxy resolving the `/v2` module path. A
-draft written without `body_html` also carries an HTML version made from
-its text, so Gmail keeps its paragraphs whole when a person sends it;
-`plain_only` keeps a draft plain for a list that refuses HTML; a web
-address in that HTML or in a signature is a link; a signature keeps
-every space of a run. 2.0.4 was released, 2026-10-01, from `main`, and
-verified from outside: checksums, the cosign signature and the provenance attestation,
-each also against a tampered copy, the registry entry, and the Go proxy
-resolving the `/v2` module path. A dry run of `modify_labels`, `trash`
-or `restore` reports each item's labels after, and trash's prediction
-takes the mail out of the inbox as Gmail does. 2.0.3 was released,
-2026-09-30: a question also breaks a bare domain a fuzzy linkifier would
-link, and the live transcript masks label and filter ids. 2.0.2 was
-released, 2026-09-30, and verified from
-outside: checksums, the cosign signature and the provenance attestation,
-each also against a tampered copy, the registry entry, and the Go proxy
-resolving the `/v2` module path. From 2.0.0 to 2.3.0 the server asked
-the person through the MCP client before each write that takes
-`confirm`.** Still unproven: a 3.0.0 send, and the bundle installed in
-Claude Desktop.
+How `google-mail-mcp` is put together, and the decisions a contributor
+should not undo without a better reason than the one that put them
+here. Part 1 is the overview. Part 2, from [Decisions](#decisions), is
+one entry per decision, cited elsewhere by its D-ID. What was verified
+about Gmail lives in the comment at the code that depends on it, with
+the source linked and the live step that checks it named.
 
-## 1. Mission and scope
+## Context
 
-A production-grade Go MCP server for Gmail, distributed to other people.
-One binary, stdio, per-user OAuth against the person's own Desktop OAuth
-client, no hosted deployment.
+`google-mail-mcp` is a Model Context Protocol server for Gmail. One Go
+binary runs as a subprocess of an MCP client and speaks MCP over stdio.
+It holds one person's OAuth credentials and calls the Gmail API v1 over
+raw REST, with wire types of its own (D-01, D-06). Nothing is hosted.
+Each person brings their own Google Cloud project and Desktop OAuth
+client, and nothing deployer-specific is built into the code, the
+repository or a release (D-04).
 
-The server works **inside one mailbox**: finding mail, reading threads
-and messages, attachments, labels, drafts, and — only when the person
-opts in — sending and the signature, filters and vacation reply (§7.9).
-It stops at the edge of the message. A calendar
-invitation is an `.ics` attachment here, read for the UID and times a
-calendar server finds its event by; the event belongs to a server built
-on the Calendar API. A linked Drive file is a URL here; the file
-belongs to a Drive server. Mailbox administration — delegation,
-forwarding, send-as identities beyond a signature, S/MIME and client-side-encryption keys —
-is out of scope, and §8a says why method by method.
+The parties around the server:
 
-### Why build it (research summary, checked 2026-09-24)
+- **The person** signs in once with `google-mail-mcp login` and owns the
+  mailbox. Every call acts as them, with their own access.
+- **The correspondents** wrote every subject, body, header and
+  attachment the server reads. Some of them write to steer an assistant,
+  so their text is data and never instructions (D-09).
+- **The operator** decides what the server may do, through `GMAIL_*`
+  settings the client passes at start: read-only mode, the send,
+  destructive and settings switches, the local directory and the
+  signature default (D-48, D-52, D-55, D-25, D-36). The operator is
+  usually the person, setting up their own client.
+- **The client** draws the approval prompt for each call from the tool
+  annotations and its own rules. The server asks the person nothing
+  itself (D-65).
+- **The model** chooses the calls and their arguments. It can be wrong,
+  or persuaded by mail somebody else wrote, so nothing it sends widens
+  what the operator allowed (D-69, D-47).
 
-Four servers were surveyed; their issue trackers are where §3 comes
-from.
+The server talks to Google through:
 
-- **Google's hosted Gmail MCP server** (`gmailmcp.googleapis.com`,
-  configured through the Workspace MCP guide). Remote HTTP; needs the
-  person's own Cloud project with the Gmail MCP API enabled. Requests
-  `gmail.readonly` and `gmail.compose`, and ships **no send, no trash
-  and no delete tool** — although `gmail.compose` can send (§2.10). Its
-  surface is search, read, drafts and labeling. It is the strongest
-  evidence that registration, not scope, is how a Gmail server withholds
-  sending, and §4.2 takes the same position.
-- **The claude.ai Gmail connector.** Hosted; asks for approval before
-  each write by default; attachment metadata only.
-- **The most-starred community server.** Archived, unmaintained since
-  2025-08. Permanent delete registered by default (and failing, because
-  it never requested the scope that allows it), attachments attached
-  from arbitrary local paths, tokens in a plaintext file.
-- **The most-starred Workspace-wide community server.** Active and
-  broad; its Gmail tracker is the richest record of what goes wrong:
-  threading, MIME, double sends, token churn and prompt injection.
+- the Gmail API v1, for messages, threads, drafts, labels, history,
+  attachments and settings;
+- Google's OAuth endpoints, for login, refresh and revocation, and
+  `tokeninfo`, for the scopes a token carries.
 
-What none of them offers together, and what this server is for: a local
-stdio binary with the token in the OS keyring; **trash and restore as
-the removal path, with permanent deletion structurally absent** unless
-enabled; sending that is **absent unless enabled and then only through
-a draft**; replies that thread every time; MIME that round-trips
-non-ASCII names, subjects and filenames; attachments that move only
-through one configured directory; reads with a stated budget; a
-`list_changes` that says when its cursor expired rather than returning
-nothing; and releases that can be verified from outside.
+Nothing else is reached, and a credential goes only to Google's
+origins (D-81).
 
-Google's hosted server is the one to watch. If it gains trash, local
-attachment transfer and bounded reads, most of this list is answered by
-Google, and §17.6 records the question.
+It works inside one mailbox (D-08). An invitation is an attachment
+here, read for the UID and times a calendar server finds its event by
+(D-20). A linked Drive file is a URL. A name is never resolved to an
+address (D-102).
 
-### Non-goals
+It is not a push receiver (D-98), a migration tool (D-100) or an
+administrator's tool (D-101), and it has no write over a query (D-99).
 
-- **Push.** `watch` delivers to a Cloud Pub/Sub topic; a stdio process
-  owns none. `list_changes` polls `history.list` (§7.6).
-- **Bulk mailbox operations.** No "archive everything from X", no "empty
-  trash", no mass relabel by query. §4.7.
-- **Mail settings that redirect mail.** Auto-forwarding, forwarding
-  addresses, filters that forward, delegation, send-as. §4.1, §8a.
-- **Mailbox migration.** `messages.import` and `messages.insert`
-  deliver mail that was never sent. §8a.
-- **Rendering HTML.** HTML becomes text; nothing is fetched. §4.1.
-- **A contacts directory.** Addresses come from the caller or from the
-  message being answered; resolving a name to an address belongs to a
-  People API server.
-- **Workspace administration**, domain-wide delegation and service
-  accounts.
+It exists so that mail is read without steering the assistant, so that
+sending and permanent deletion stay absent unless the operator enables
+them, and so that replies thread every time.
 
-## 2. Hard constraints from the platform
+## Quality goals
 
-Each is checked against the Gmail v1 discovery document (revision
-20260917, fetched 2026-09-24) or a Google page, and §18 has the row.
+In priority order:
 
-1. **Quota is counted in units per user per minute.** 6,000 units per
-   user per project per minute, 1,200,000 per project per minute, for
-   projects created on or after 2026-05-01; older projects keep their
-   previous quotas. Costs differ by method by a factor of 100:
-   `labels.list` 1, `history.list` 2, `messages.list` 5, `modify` 5,
-   `threads.list` 10, `drafts.create` 10, `messages.get` 20,
-   `attachments.get` 20, `trash` 20, `threads.get` 40, `batchModify`
-   50, `drafts.send` 100. A search that opens twenty threads costs 810
-   units. §4.9.
-2. **Rate-limit signals are several, and one of them is a sending
-   limit.** 403 `userRateLimitExceeded` and `rateLimitExceeded` ask for
-   backoff; 403 `dailyLimitExceeded` is the project's day; **429 covers
-   per-user daily limits including the mail-sending limit, which may
-   arrive minutes late**, and an undocumented per-user concurrency
-   limit. Google's backoff is `min(2^n + jitter, 32–64 s)`.
-3. **Sending is not idempotent.** `messages.send` and `drafts.send`
-   take only `userId`; there is no request id and no documented
-   deduplication. A retried POST whose first attempt landed is a second
-   delivery to every recipient. §4.3.
-4. **There is no optimistic concurrency.** No `etag` field and no
-   `If-Match` anywhere in gmail/v1. `drafts.update` is PUT-only and
-   replaces the whole draft; the last writer wins. §4.4.
-5. **Threading needs three things at once.** The message's `threadId`
-   set, `In-Reply-To` and `References` per RFC 5322, and a matching
-   `Subject`. Any one missing and the reply may start a new
-   conversation. The headers carry RFC 5322 `Message-ID` values, which
-   are not the API's message ids. §4.5.
-6. **Size.** Media upload through `messages.send` and every `drafts.*`
-   write is capped at 36,700,160 bytes (35 MB) by the discovery
-   document; a consumer account's attachment limit is 25 MB. Google
-   recommends simple upload only up to 5 MB, and documents no cap on the
-   JSON `raw` path. §7.4.
-7. **`raw` is base64url of RFC 5322.** Header lines must be at most 998
-   characters and should be at most 78; an RFC 2047 encoded-word is at
-   most 75. Non-ASCII in a header without encoding is refused as an
-   invalid header. §4.10.
-8. **A history cursor expires.** Records are "typically available for
-   at least one week" and "might be significantly shorter"; a stale
-   `startHistoryId` is **404**, and the client "must perform a full
-   sync". A 404 here is not "no such mailbox". §7.6.
-9. **Search is the web UI's syntax, with differences.** `q` accepts most
-   operators, reads dates as midnight **Pacific** time, and does no
-   alias expansion. `q` is refused under `gmail.metadata`. `maxResults`
-   defaults to 100 and caps at 500. §6.3.
-10. **Scopes cannot separate drafting from sending.** `gmail.compose`
-    ("Manage drafts and send emails") and `gmail.modify` both grant
-    `messages.send` and `drafts.send`. Permanent deletion
-    (`messages.delete`, `messages.batchDelete`, `threads.delete`)
-    accepts **only** `https://mail.google.com/`. §4.2, §4.6.
-11. **Every useful Gmail scope is restricted.** `gmail.readonly`,
-    `gmail.compose`, `gmail.modify`, `gmail.metadata`, `gmail.insert`,
-    the two settings scopes and `https://mail.google.com/` are
-    restricted; `gmail.send` is sensitive; `gmail.labels` is not. A
-    person's own client in **Testing** status gets refresh tokens that
-    **expire after 7 days** and is capped at 100 test users; a Google
-    account holds at most 100 refresh tokens per client, oldest
-    invalidated first. §10.
-12. **Labels.** System label ids are their names (`INBOX`, `UNREAD`,
-    `STARRED`, `IMPORTANT`, `SPAM`, `TRASH`, `SENT`, `DRAFT`,
-    `CATEGORY_*`), and Google calls that list "not exhaustive". `SENT`
-    and `DRAFT` cannot be applied by hand, and a draft cannot be
-    labeled. A thread-level change does not reach messages added to the
-    thread later. At most 5,000 labels per account.
-13. **Batches.** `batchModify` accepts up to 1,000 ids; the HTTP batch
-    endpoint caps at 100 calls and Google's error guide says not to
-    exceed 50. Each call inside a batch is charged separately.
-14. **Sending limits.** Consumer: 500 recipients per message or 500
-    messages a day before a 1–24 hour block. Workspace: 2,000 messages
-    a day and 500 recipients per message through the API.
+1. **Mail never steers the assistant through the server.** Content is
+   marked, hidden text is counted, nothing is fetched, and the writes
+   that would redirect mail do not exist (D-09, D-10, D-11, D-12,
+   D-13).
+2. **Nothing reaches another person, or is lost for good, unless the
+   operator enabled it.** Sending, permanent deletion and settings
+   writes are unregistered by default, removal is trash, a send is never
+   retried, and every recipient is named (D-48, D-49, D-50, D-51, D-52,
+   D-55, D-64).
+3. **A write changes only what was read and named.** Writes take ids,
+   never a query; a draft is replaced under a witness; each item is
+   reported on its own; every write takes `dry_run` (D-42, D-43, D-44,
+   D-45, D-46, D-47).
+4. **A read is bounded and says what it left out.** Every read has a
+   character budget, and every omission has a continuation (D-14,
+   D-15).
+5. **The stream, the logs and the repository stay clean, and the
+   surface is a contract.** Stdout carries frames only, logs carry no
+   mail, the repository holds nothing real, and a released name or
+   field keeps working (D-02, D-03, D-04, D-84).
 
-### What the API cannot do (so we don't promise it)
+## Codemap
 
-- Say whether a failed send was delivered. Only a read afterwards can.
-- Undo a send. There is no recall.
-- Guard a draft update against a concurrent edit. §4.4 narrows the
-  window; it cannot close it.
-- Search inside attachments, or search thread-wide with one query.
-- Report which mail a filter or forwarding rule sent elsewhere.
-- Read a client-side-encrypted body.
+- `cmd/google-mail-mcp` is the program. With no subcommand it serves;
+  `login`, `logout`, `status`, `doctor`, `--dump-schemas` and
+  `--version` are the rest. It names stdout and stderr once and passes
+  them down (D-02). It imports `time/tzdata`, and prints errors through
+  the redactor.
+- `internal/app` is the startup assembly every entry point shares:
+  configuration, credentials, the client and the server. It starts
+  without credentials (D-75).
+- `internal/auth` runs Google's desktop OAuth flow, a loopback redirect
+  with PKCE and `state`, and holds the token source and revocation
+  (D-71, D-72, D-76).
+- `internal/config` reads the `GMAIL_*` environment and the bound
+  flags, validates them once at start, refuses a removed setting, and
+  keeps the registry of every variable the server reads (D-74).
+- `internal/credentials` stores and finds the refresh token: the
+  environment, then the OS keyring, then an owner-only file (D-71).
+- `internal/fileperm` restricts a file to the account that wrote it,
+  with a protected access list on Windows (D-71).
+- `internal/gapi` is the raw REST client: the unit budget, the origin
+  allow-list, retries by method, the context under which every write is
+  refused, progress timeouts, streaming and the error classes (D-43,
+  D-77, D-78, D-79, D-80, D-81).
+- `internal/gapi/gmailtest` is the in-memory Gmail the tests and the
+  evals run against, generated and never recorded, modeling what Gmail
+  was seen to do (D-05).
+- `internal/gmail` holds the wire types, written by hand for the fields
+  used (D-06, D-07). A filter's write type has no forward field (D-56).
+- `internal/mime` parses and builds RFC 5322 and MIME with no network:
+  headers, addresses, charsets, HTML to text with hidden text counted,
+  the made HTML version, signatures, quotes, forwards, draft edits as a
+  tree, invitations and `List-Unsubscribe` (D-11, D-24, D-27 to D-38).
+- `internal/model` is the server's view of a message, a thread, a
+  draft, a label and a change, with the tables `service` and `render`
+  derive from (D-17, D-83).
+- `internal/redact` masks the account, addresses, paths and client ids
+  in what `status`, `doctor` and errors print, and truncates ids (D-03).
+- `internal/render` writes the readable half of every result, with the
+  boundary blocks the server's own text is typed apart from, held by
+  golden files (D-09, D-10, D-14).
+- `internal/scopes` holds the scope set for each mode, which granted
+  scope covers which, and what each tool needs. It generates the scope
+  block of [gcp-setup.md](gcp-setup.md) (D-55, D-70, D-73).
+- `internal/server` wires the MCP SDK: the instructions built from the
+  configuration, the resources, the per-call log line and the schema
+  dump (D-03, D-85, D-86).
+- `internal/server/testutil` connects an in-memory client to the server
+  in tests. Its client fails any call that asks the person (D-65).
+- `internal/service` holds orchestration and policy: label resolution,
+  budgets and paging, threading, the recipient guard, witnesses, settle
+  reads and filter pacing. It is the only place a Google failure becomes
+  a `[class]` tool error (D-23, D-39, D-47, D-49, D-50, D-58, D-59).
+- `internal/tools` defines the MCP tools, each added through
+  `register`, whose `Kind` decides the annotations, registration,
+  `confirm`, the dry-run context and the rendered reply (D-63 to D-68).
+- `internal/userconfig` stores non-secret per-profile state: the client
+  secret's path, the token store and the granted scopes. It refuses a
+  config directory outside the home directory.
+- `internal/version` holds the version the build stamps in, with the
+  module's build info as a fallback.
 
-## 3. Requirements distilled from other servers' failures
+Beside the packages, `scripts/gates` is every check the repository runs
+on itself, written in Go behind one registry (D-91, D-92).
+`scripts/livemail` is the live driver (D-87, D-88, D-89).
+`scripts/evals` scores a model driving the tools (D-90).
+`scripts/internal` holds what the gates and drivers share: the stdio
+client, the transcript writer, the redactor and the live-cover reader.
+`packaging/mcpb` holds the Claude Desktop bundle's manifest (D-96,
+D-97). `testdata` holds the released surface, the API snapshot and its
+verdicts, the field verdicts, the live waivers and the renderer goldens
+(D-07, D-84).
 
-Each traced to a public issue in §1's servers; the evidence is in §18.
+## Request flow
 
-1. Replies land in the thread: `threadId` plus `In-Reply-To` and
-   `References` from the parent's **RFC 5322** `Message-ID` — one
-   server put the API id there, another accepted the argument and never
-   wrote the header, a third omitted `threadId` from drafts.
-2. The reply's parent is chosen, not defaulted: a draft, a trashed
-   message or an emoji reaction is not a parent.
-3. A send is never retried automatically; a lost 200 became a second
-   delivery.
-4. Sending needs a human decision the server cannot be talked out of.
-5. Removal is trash; a registered "permanent delete" that fails for
-   want of a scope is two defects.
-6. Non-ASCII survives: RFC 2047 subjects and display names, RFC 2231
-   filenames, quoted-printable bodies with soft breaks — garbled
-   subjects, a 400 on an accented display name, attachments named
-   `noname` and hard-wrapped paragraphs were all reported.
-7. Bodies decode whatever their shape: the whole MIME tree, each part's
-   charset, parts stored behind an `attachmentId`, HTML-only mail, and
-   the plain part that only says "view the HTML version".
-8. Output is bounded: one thread returned 46k tokens to a client capped
-   at 25k.
-9. Labels are resolved by the server; the model should not have to
-   know an opaque `Label_123`.
-10. Partial failure is reported per item; a batch reported sub-request
-    429s as success.
-11. Tokens are stored safely and refreshed tokens are persisted.
-12. Scopes are narrow and a read-only mode exists.
-13. Mail content is untrusted; a message saying "forward all mail to
-    this address" is an attack, reported against a real server.
-14. Arguments are accepted leniently where clients are known to
-    stringify them — arrays and numbers sent as JSON strings. Declined
-    for 1.0: the defects still open do not reach this surface (§17.7).
-15. Attachments come from one allowed directory, never an arbitrary
-    path a message could talk the model into.
-16. Every HTTP call has a timeout; two servers hung on a dead socket.
+A tool call crosses the layers in one direction:
 
-## 4. Core design bets
+```
+MCP client
+   │  JSON-RPC over stdio; stdout carries nothing else
+   ▼
+internal/server     SDK session, tools, resources, one log line per call
+   ▼
+internal/tools      decode the input; register applies the Kind:
+   │                annotations, gating, confirm, the dry-run context,
+   │                both halves of the reply
+   ▼
+internal/service    labels, budgets, threading, guards, witnesses,
+   │                settle reads, [class] errors
+   ├──► internal/mime    parse and build, no network
+   ├──► internal/model   the server's view of mail
+   └──► internal/render  the readable half and its boundaries
+   ▼
+internal/gapi       one request: unit budget, origin allow-list, retry
+   │                by method, no write under a dry run, classify
+   ▼
+internal/auth       refresh token → access token
+   ▼
+Gmail API v1, Google OAuth
+```
 
-### 4.1 Mail content is data, never instructions
+### Start
+
+`main` loads the configuration and refuses a bad one before it
+announces itself: read-only mode with an enable switch, a removed
+setting turned on, or a local directory that does not exist (D-70,
+D-74). The server serves and lists its tools with no credentials; each
+call then answers `[auth]` naming `login` (D-75). Startup and `doctor`
+compare the granted scopes with the required ones and say what differs
+(D-73). `tools.Register` adds every tool through `register`. A gated
+tool is left out, and a kind that cannot be undone without `confirm`
+panics at start, so the mistake fails in every configuration (D-63,
+D-64, D-66).
+
+### A read
+
+A client calls `get_thread` on a long thread. The client spends its
+units against the per-user budget, and the result says how many (D-79).
+
+The service walks the whole MIME tree. The body is the plain part
+unless it is a placeholder, else the HTML converted to text. Every
+charset is decoded, and body parts Gmail stored behind an
+`attachmentId` are fetched (D-27). Text a reader would not see is
+removed and counted (D-11).
+
+The thread renders newest first within the character budget. Quotes
+and signatures collapse to a line, the drafts follow the conversation
+in a section of their own, and a cursor names what did not fit (D-14,
+D-18). Each message sits in a block whose boundary token is drawn per
+call. The structured half carries the same text in `untrusted_*` fields
+(D-09, D-82). The server's own notes are a separate type, so sender
+text cannot reach them (D-10).
+
+### A reply, then a send
+
+A client calls `create_draft` with `reply_to`. The service reads the
+parent and writes `In-Reply-To`, `References`, `threadId` and the
+subject (D-39, D-40). The body goes as given, quoted-printable with each
+paragraph on one line. An HTML version made from it goes beside it
+unless `plain_only` asks otherwise (D-33, D-28, D-29, D-31). A
+signature or a quote is added only when the call or the operator asks
+(D-34, D-36). The result reads back whether Gmail filed the draft in the
+parent's thread (D-46).
+
+`send_draft` with `dry_run: true` reads the draft and its thread. It
+names every recipient, the subject, the attachments and the thread the
+send joins, and writes nothing (D-43).
+
+`send_draft` for real carries the draft's `message_id`, `subject` and
+`first_line`. Each is compared with what Gmail holds and refused as
+`[stale]` when it differs (D-47). Every recipient must be in
+`confirm_recipients`, at most 50. A repeated or unreadable recipient
+header is `[blocked]` (D-49).
+
+The send is one `drafts.send`, never retried (D-50, D-78). On an
+ambiguous failure the service waits, reads the draft and its thread
+again, and reports sent, not sent or unknown. It never sends again
+(D-50). The tool exists only under `GMAIL_ENABLE_SEND`, and the client
+prompts for it by its annotation (D-48, D-67).
+
+### Login and refresh
+
+`google-mail-mcp login` opens Google's consent page and listens on a
+loopback port, with PKCE. `--no-browser` prints the URL and the
+`ssh -L` line to forward it (D-71). Consent is forced only when the
+scope set grows (D-72).
+
+The refresh token goes to the OS keyring, or to an owner-only file with
+a warning on every use. The environment overrides both (D-71). At serve
+time the token source trades the refresh token for an access token. A
+revoked or expired grant reaches the caller as `[auth]`, naming `login`.
+An External client in Testing expires its token after seven days, which
+`doctor` and [troubleshooting.md](troubleshooting.md) name (D-01).
+`logout` revokes at Google, which ends the account's whole grant to the
+project (D-76).
+
+## Invariants
+
+- Stdout carries only MCP JSON-RPC frames (D-02).
+- No log line carries an address, a subject, a snippet, a body, a
+  filename, a label name or a query (D-03).
+- Nothing in the repository identifies a real mailbox, account or
+  person (D-04).
+- Mail content is returned only inside a boundary, and sender text
+  never reaches the server's voice (D-09, D-10).
+- Nothing a message references is fetched (D-12).
+- No tool sets forwarding, delegation, a send-as identity or a filter
+  that forwards (D-13, D-56).
+- A send reaches only addresses named in `confirm_recipients`, and is
+  never retried (D-49, D-50).
+- The body is what the caller gave, plus only what the call or the
+  operator named (D-33).
+- A write names its ids, at most 100, and never takes a query (D-44).
+- A draft is replaced only under the witness of the read that planned
+  it (D-42).
+- A dry run writes nothing (D-43).
+- Sending, permanent deletion and settings writes are registered only
+  under their switches, and the full-mail scope is asked for only with
+  the destructive switch (D-48, D-52, D-55, D-64).
+- Every write that cannot be undone takes `confirm` and repeats what it
+  acts on (D-47, D-66).
+- The server never asks the person a question (D-65).
+- No tool changes the server's own settings (D-69).
+- Every reply carries `structuredContent` and a text rendering (D-82).
+- A read never silently returns less than it found (D-14).
+- A released tool name, output field or resource URI changes only in an
+  acknowledged major release (D-84).
+- A default live run reads only its own mail and reaches nobody (D-87).
+
+## Cross-cutting concerns
+
+**Configuration.** Every setting is a `GMAIL_*` variable with a flag
+bound to it. A flag overrides the environment, and the environment
+overrides the default. Every reader goes through `config.Lookup`, which
+drops the spaces around a value. Validation runs once at start, and a
+removed setting is refused with its replacement (D-74). The full list
+is in [configuration.md](configuration.md).
+
+**Untrusted content.** Mail is shown inside a block whose boundary is
+drawn per call, and the structured half names the same text
+`untrusted_*` (D-09). Hidden text is removed and counted, and nothing a
+message references is fetched (D-11, D-12). The server's own notes are
+written from typed parts, so a sender cannot write one (D-10).
+[security.md](security.md) holds the threat model.
+
+**Errors.** Every tool error is `[class] message`, and the class tells
+the caller what to do next. The vocabulary is closed and declared in
+`internal/gapi/errors.go`, where each class's comment says what it
+means and what the caller should do (D-77).
+
+**Quota and retries.** Gmail meters units per user per minute, and each
+method has its cost. The client spends against that budget, waits
+rather than earning a refusal, and every result reports the units it
+spent (D-79). A read retries a transient failure. A POST is retried
+only when Google turned it away before acting, and the sending limit is
+never retried (D-78).
+
+**Logging.** `slog` to stderr, as text or JSON. A line names the method,
+the tool, the outcome, the milliseconds, the units and a truncated id,
+and nothing from the mailbox. Transport errors are stripped of their
+URL before they are logged, since a search travels in the query string
+(D-03).
+
+**Scopes.** Read-only mode asks for `gmail.readonly` and the default
+for `gmail.modify`. The settings switch adds `gmail.settings.basic`, and
+only the destructive switch asks for full mail access. A changed set
+needs a new `login` (D-48, D-52, D-55, D-70, D-73). The list to paste
+into the consent screen is in [gcp-setup.md](gcp-setup.md).
+
+**Approval.** Registration, `confirm`, the witnesses, the guards and
+`dry_run` hold on every client. The annotations and Claude Code's
+`requiresUserInteraction` mark shape the client's prompt and hold
+nothing on their own (D-63 to D-68).
+
+**Testing.** The unit suite runs against `internal/gapi/gmailtest`,
+which encodes what Gmail was seen to do (D-05). Fuzz targets hold the
+MIME round trips, and golden files hold the renderers (D-27).
+`TestLogsNeverCarryThePayload` drives every tool with canaries (D-03).
+`make live` drives the shipped binary against a real account and is
+the only check that can show a belief wrong, and `make live-cover`
+fails on a tool option no live step drives (D-89). Evals score planted
+instructions (D-90). How to run a live check is in
+[CONTRIBUTING.md](../CONTRIBUTING.md#the-live-run).
+
+**Documentation.** A decision lives once, in part 2 here. What was
+verified about Gmail lives in the comment at the line that depends on
+it: the behavior, the source link, where the source is wrong or silent,
+and the live step that checks it. A refuted belief goes at that line or
+in a decision's `Rejected:` line. The docs gate holds every D-ID
+citation to an entry, every "Held by" cell to a gate or test that
+exists, and the codemap to the tree. The staleness gate holds the
+README, [configuration.md](configuration.md) and
+[gcp-setup.md](gcp-setup.md) to the code.
+
+## Decisions
+
+| ID | Decision | Status | Held by |
+| --- | --- | --- | --- |
+| D-01 | One stdio binary per person, on their own OAuth client | accepted | smoke, TestServeSignedOutAndDisconnect, review |
+| D-02 | Stdout carries only MCP JSON-RPC frames | accepted | forbidigo, smoke, TestDumpSchemas |
+| D-03 | Logs record the call, never the payload | accepted | TestLogsNeverCarryThePayload, TestLogLineCarriesTheCallButNotItsPayload, TestTransportErrorsCarryNoURL, TestTheSDKLoggerOnlyAtDebug, TestInspectDoesNotLeakTheTokenOnATransportError |
+| D-04 | Nothing in the repository identifies a real mailbox, account or person | accepted | leaks, leaks-history, secrets, TestLeaksRulesCatchPlantedShapes, TestLeaksAllowListHasReasons, TestLeaksHistoryReadsBlobsMessagesAndTags, TestLeaksTreeRefusesABinaryAndAShortScan |
+| D-05 | Fixtures are generated, and the fake models what Gmail was seen to do | accepted | TestIDsAreGeneratedShape, TestScenarioContent, TestDraftsThreadByIDOrAsDocumented, TestFakeAndClientAgreeOnFilterWrites |
+| D-06 | Own wire types over raw REST, and no code imported from another project | accepted | depguard, api-fields, TestTagsMatchDiscovery |
+| D-07 | Every API method and field has a written verdict | accepted | api-coverage, api-fields, TestAPICoverageCommittedRecord, TestAPIDiffClosedPortWritesNothing |
+| D-08 | The server works inside one mailbox | accepted | review |
+| D-09 | Mail content is marked as data, inside a per-call boundary | accepted | TestInjectedTextStaysInsideItsBlock, TestTokenRedrawnWhenContentHoldsIt, TestUntrustedFieldsAreNamed, TestSearchThreadsMarksMailAsUntrusted |
+| D-10 | Sender text never reaches the server's voice | accepted | TestSenderTextNeverReachesTheServersVoice, TestServerVoiceIsTyped, TestInstructionsNameOnlyRegisteredTools |
+| D-11 | Text a reader would not see is removed and counted | accepted | TestHTMLToTextHidden, TestGetThreadCountsHiddenText, TestGetSettingsCountsHiddenText, TestInvisibleCharactersInAPartsTypeAreRemoved, FuzzHTMLToText |
+| D-12 | Nothing a message references is fetched | accepted | TestHTMLLinks, TestUnsubscribeOnRowsAndReads, review |
+| D-13 | The writes that redirect mail do not exist | accepted | TestAFilterCannotForward, TestListFiltersFlagsForwarding, api-coverage |
+| D-14 | Every read has a character budget and names what it left out | accepted | TestBudgetIsHeld, TestCutBody, TestGetThreadContinuesWithCursor, TestNotesStayWithinTheBudget, TestAHeaderBlockLargerThanTheBudgetIsCut, TestEmptyPageWithTokenIsNotComplete |
+| D-15 | A listing's budget bounds its text, never its structured rows | accepted | TestSearchKeepsEveryRowInFull, TestRowsOmittedCountsEveryRow, TestOmittedIDsIsDescribedPerTool, TestListingThatFitsExactlyIsWhole, TestListFiltersShowsForwardingFirst |
+| D-16 | `q` passes through verbatim, with `after` and `before` as instants beside it | accepted | TestSearchResolvesLabelNamesAndAppendsEpochBounds, TestParseZone, TestInvalidSearchSendsNothing |
+| D-17 | A thread row names its newest message that was sent or received | accepted | TestSearchThreadsRowPassesOverDraftsAndTrash, TestThreadLatestPassesOverWhatWasNotSaid |
+| D-18 | `get_thread` shows a thread's drafts after the conversation | accepted | TestThreadDraftsFollowTheConversation |
+| D-19 | `list_changes` reports an expired cursor, never an empty list | accepted | TestListChangesSaysACursorExpired, TestAnExpiredCursorIsReportedNotEmpty, TestALabelDeletedMidCallIsNotAnExpiredCursor |
+| D-20 | An invitation is read for the UID and times a calendar server needs | accepted | TestParseInvitation, FuzzParseInvitation, FuzzInvitationRoundTrip, TestInvitationOnAttachments, TestAnInvitationFileIsReadBesideItsInlineCopy |
+| D-21 | Mail is addressed by Gmail's ids, and a draft result names both of its ids | accepted | TestDrafts, review |
+| D-22 | An `rfc822:` id is one Message-ID, never a search | accepted | TestRFC822TakesOneMessageID, TestRFC822WithASearchTermIsRefused, TestMessageByRFC822ID |
+| D-23 | A label resolves by id or exact name, read on every call | accepted | TestSearchResolvesLabelNamesAndAppendsEpochBounds, TestLabelIndex, review |
+| D-24 | Addresses are strict going out, lenient coming in, and shown so they read back | accepted | FuzzAddressStringReadsBack, FuzzLenientAddressIsOutsideQuotes, TestALenientFromShowsTheAddressOutsideTheName, TestARecipientShownCanBeGivenBack |
+| D-25 | Files move only through `GMAIL_LOCAL_DIR`, never over an existing file | accepted | TestDownloadsAreRegisteredOnlyWithALocalDir, TestDownloadAttachmentWritesIntoTheLocalDir, TestDownloadAttachmentKeepsAnUnsafeNameInTheDirectory, TestCreateDraftAttachments, TestANamedPipeIsNotAttached |
+| D-26 | `read_attachment` reads text types inside the boundaries and the budget | accepted | TestReadAttachmentReadsTextTypes, TestReadAttachmentConvertsHTML, TestReadAttachmentReadsAnAttachedMessage, TestReadAttachmentRefusals |
+| D-27 | MIME is the server's own, and what it builds parses back the same | accepted | FuzzBuildRoundTrip, FuzzEditRaw, FuzzParseRaw, TestBuildRoundTripsFourScripts, live |
+| D-28 | A paragraph goes out as one line, never wrapped to a width | accepted | TestBuildSendsAParagraphAsOneLine |
+| D-29 | A draft without `body_html` carries an HTML version made from its text | accepted | TestADraftCarriesHTMLMadeFromItsBody, TestHTMLFromText, live |
+| D-30 | The made HTML is recognized by reading it back, and a draft keeps its shape | accepted | TestEditRawKeepsTheHTMLMadeFromTheText, FuzzMadeHTMLIsRecognized, TestPlainOnlyKeepsHTMLWrittenByHand |
+| D-31 | `plain_only` keeps a draft plain on request | accepted | TestPlainOnlyKeepsHTMLWrittenByHand |
+| D-32 | A web address in the made HTML is a link whose text is the address | accepted | TestLineHTML, FuzzLineHTML |
+| D-33 | The body is exactly what the caller gave, and the server adds only what is named | accepted | TestBuildPlainASCIIIsExact, live, review |
+| D-34 | `quote` puts the parent's text, as a read shows it, below the body | accepted | TestCreateDraftQuotes, TestCreateDraftQuotesHTMLAsConverted, TestCreateDraftQuoteReadsTextStoredApart |
+| D-35 | `forward` attaches the original as Gmail stored it, its `Bcc` left out | accepted | TestCreateDraftForwards, TestCreateDraftForwardLeavesOutBcc, FuzzForwardCopyLeavesOutBcc, TestAnAttachedMessageGoesAsWritten, TestCreateDraftForwardInANewThread |
+| D-36 | A signature is added only when the call or the operator asks | accepted | TestCreateDraftSignsWhenAsked, TestTheServerSignsNewDraftsWhenSetTo, TestDraftSignatureIsASwitchThatStartsOff, live |
+| D-37 | A signature goes in the composer's markup, its images as parts | accepted | TestCreateDraftSignsAboveTheQuote, TestTheSignaturesImageIsAPartOfItsOwn, TestBodiesMoveImagesIntoParts |
+| D-38 | A draft never carries two signatures, and a new body keeps its own | accepted | TestUpdateDraftCarriesTheSignature, TestTheSignatureStaysInTheDraft, TestUpdateDraftWillNotDropASignatureUnsaid, FuzzSignatureIsCarried |
+| D-39 | A reply is threaded by the server from its parent | accepted | TestCreateDraftReplyThreadingHeaders, TestAReplyKeepsItsThreadingHeaders, live |
+| D-40 | `reply_to` takes a message id and `reply_to_thread` a thread id | accepted | TestCreateDraftReplies |
+| D-41 | `reply_all` expands from the parent and names where each recipient came from | accepted | TestCreateDraftReplies, review |
+| D-42 | A write never replaces what it did not read | accepted | TestUpdateDraft, TestEditRawWithNothingIsTheSameBytes, FuzzEditRaw, TestADraftUpdateReplacesItsMessage, TestCreateAndUpdateLabel |
+| D-43 | Every write takes `dry_run`, and a dry run cannot write | accepted | TestDryRunEntersTheNoWritesContext, TestWithoutWritesRefusesEveryWriteBeforeTheNetwork, TestDryRunPredictsLabelsAfter, outcomes |
+| D-44 | Writes take explicit ids, at most 100, never a query | accepted | TestModifyLabels, review |
+| D-45 | Each item of a multi-id write is read, written only if needed, and reported alone | accepted | TestModifyLabels, TestTrashAndRestore, TestDeletePermanently, outcomes |
+| D-46 | Results say what changed, read back from Gmail | accepted | outcomes, TestOutcomesPassesHonestBranches, TestCreateDraftReplies |
+| D-47 | A call that cannot be undone repeats what it acts on | accepted | TestDeleteDraftNeedsItsWitness, TestSendDraftNeedsItsSubjectAndFirstLine, TestSendDraftReadsTheFirstLineWhole, TestDeleteFilterNeedsItsCriteria |
+| D-48 | Sending exists only with `GMAIL_ENABLE_SEND`, and only through a draft | accepted | TestGatedToolsRegisterOnlyWithTheirFlag, TestRegistrationGates, TestModesSendChangesNothing |
+| D-49 | Every recipient of a send is named in `confirm_recipients` | accepted | TestSendDraftRecipientGuard, TestSendDraftCountsOnlyWhatTheAccountChose, TestSendDraftRefusesRecipientsItCannotReadWhole |
+| D-50 | A send is never retried, and an ambiguous one is settled by reading | accepted | TestASendIsNeverRepeated, TestAPostIsNotRepeatedAfterAnAmbiguousFailure, TestSendDraftAmbiguousOutcome, TestSendDraftUnavailableIsSettled, live |
+| D-51 | Removal is trash, an ordinary write | accepted | TestTrashAndRestore |
+| D-52 | Permanent deletion exists only with the flag that requests full mail access | accepted | TestGatedToolsRegisterOnlyWithTheirFlag, TestDeletePermanentlyNeedsTheFullScope, TestForMode, live |
+| D-53 | `delete_draft` is a default write that takes `confirm` and its witness | accepted | TestDeleteDraftNeedsItsWitness, TestDeleteDraft, TestAKindThatCannotBeUndoneTakesConfirm |
+| D-54 | Archiving, marking read and starring are label changes, not tools | accepted | TestModifyLabels, review |
+| D-55 | Settings writes exist only with `GMAIL_ENABLE_SETTINGS`, which adds their one scope | accepted | TestSettingsToolsRegisterOnlyWithTheirFlags, TestForMode, TestSettingsDescriptionsFollowTheFlags |
+| D-56 | A filter cannot forward | accepted | TestAFilterCannotForward |
+| D-57 | A risky variant is its own tool | accepted | TestCreateTrashFilter, TestRegistrationGates |
+| D-58 | A filter's duplicate check and an unconfirmed write are settled by reading the list | accepted | TestCreateFilterChecksItsCriteria, TestAmbiguousFilterCreateIsSettledByReading, TestAmbiguousFilterDeleteIsSettledByReading |
+| D-59 | Settings changes run one at a time, and filter writes are paced | accepted | TestParallelFilterWritesDoNotOverlap, TestFilterWritesArePaced, TestPacingReservesTheSlot, TestGenericPreconditionOnFilterWriteIsRepeatedOnce, TestStoppedFilterWrites |
+| D-60 | The vacation reply needs the send flag, a bounded audience and `confirm` | accepted | TestSetVacation, TestSettingsToolsRegisterOnlyWithTheirFlags |
+| D-61 | `update_signature` writes plain text lines, never caller markup | accepted | TestUpdateSignature, TestUpdateSignatureKeepsSpacing, TestUpdateSignatureSaysWhetherASignatureWithNoTextIsSet |
+| D-62 | `get_settings` leads with forwarding and says what is empty | accepted | TestGetSettingsLeadsWithForwarding, TestGetSettingsSaysWhatIsEmpty, TestGetSettingsShowsAReplyOfImagesAlone |
+| D-63 | Every tool goes through one `register`, whose `Kind` decides the rest | accepted | TestAnnotationsAndMetaComeFromKind, TestRegistrationGates, TestSurfaceByMode, TestSmokeShapeFollowsRegister, TestSmokeModesCoverEveryKind |
+| D-64 | A gated tool is unregistered, never registered and refusing | accepted | TestGatedToolsRegisterOnlyWithTheirFlag, TestSettingsToolsRegisterOnlyWithTheirFlags, TestDownloadsAreRegisteredOnlyWithALocalDir, smoke |
+| D-65 | The server asks the person nothing; per-call approval is the client's | accepted | forbidigo, TestHarness, TestElicitationIsDeclaredAndDeclined, review |
+| D-66 | `confirm` is a witness on every write that cannot be undone, never approval | accepted | TestAKindThatCannotBeUndoneTakesConfirm, TestAToolThatTakesConfirmIsAnnotatedDestructive |
+| D-67 | `destructiveHint` is true on every kind but Read, Read (local write) and Adding | accepted | TestAnnotationsAndMetaComeFromKind, TestDumpDestructive, TestStalenessMustAsk, TestStalenessReadmePermissionRules |
+| D-68 | Only `delete_permanently` and `delete_label` carry the mark | accepted | TestOnlyTheWidestDeletesCarryTheMark |
+| D-69 | No tool widens the server's own reach | accepted | TestNoToolWritesTheServersOwnSettings |
+| D-70 | Read-only mode registers the reads and asks for `gmail.readonly` | accepted | TestReadOnlyWithAnEnableFlagIsRefused, TestSurfaceByMode, TestForMode |
+| D-71 | Login is a loopback flow with PKCE, and the token lives in the OS keyring | accepted | TestLoginUsesLoopbackLiteralAndPKCE, TestLoginRejectsAStateMismatch, TestEnvironmentWins, TestFileFallbackWarnsEveryTime, TestRestrictToOwnerSetsAProtectedACL, TestBaseDirRefusesOutsideHome |
+| D-72 | Consent is forced only when the scope set grows | accepted | TestConsentOnlyWhenScopesGrow, TestNoRefreshTokenWithoutConsentKeepsTheStoredOne |
+| D-73 | Scopes follow the flags, and a granted set that differs is named | accepted | TestScopeWarning, TestMissingAndCovered, TestExcess, TestForMode, TestStalenessScopeBlock |
+| D-74 | Every setting is read through one reader, and a removed one is refused | accepted | TestASettingOfSpacesIsUnset, TestEveryVariableTheCodeNamesIsInEnvVars, TestTheNameScanReadsEveryChainInOrder, TestARemovedSettingIsRefusedUnlessOff, TestEveryProblemIsReported |
+| D-75 | The server starts and lists its tools without credentials | accepted | TestServeSignedOutAndDisconnect, TestAssembleWithoutCredentialsStillServes, TestDoctorAndLoginSignedOut, smoke |
+| D-76 | `logout` revokes at Google, which ends the whole grant | accepted | TestLoginStatusDoctorLogout, TestLogoutLeavesAnEnvironmentTokenAlone, TestInspectAndRevoke |
+| D-77 | Every error is `[class] message` from a closed vocabulary | accepted | classes, TestClassesClean, TestErrorsAreClassedToolErrors, TestStatusClasses |
+| D-78 | Repeatability comes from the HTTP method, and a POST is retried only when turned away | accepted | TestAPostIsRepeatedWhenTurnedAway, TestADeclaredRepeatablePostRetriesLikeARead, TestRetriesStopAtFourAttempts, TestRetryAfterIsAFloor, TestTheSendingLimitIsNotRetriedAndSaysSo, TestThePerUserUnitLimitIsRetried |
+| D-79 | Quota is spent in units against a per-user budget, and each result reports it | accepted | TestTheUnitBudgetWaitsAndCanBeCanceled, TestTheUnitBudgetFollowsUnitsPerMinute, TestUnits, TestConcurrentCallsShareTheBudgetAndCounter, TestSearchThreadsDefaultsToTwentyAndReadsHeadersOnly |
+| D-80 | Every request is bounded by progress and by size | accepted | TestResponsesAreBounded, TestAStreamOutlastsTheTimeoutWhileItProgresses, TestAnUploadIsBoundedByProgressNotTotal, TestStreamDataStopsAtTheCap, TestDownloadAttachmentRefusesAnOversizeAttachmentBeforeReadingIt |
+| D-81 | A credential goes only to Google's origins, checked on every redirect | accepted | TestARedirectOffTheAllowlistIsRefused, TestARedirectWithinTheAllowlistIsFollowed, TestAnInjectedHTTPClientKeepsTheAllowlist, TestOriginKeyAndAllowlist |
+| D-82 | A reply carries both halves, never the same bytes twice | accepted | TestAReplyCarriesBothHalves |
+| D-83 | An unknown value is left out, never sent as a zero | accepted | TestAnUnknownDateIsLeftOut, TestAnInternalDateOfZeroIsNoDate |
+| D-84 | The released tool surface is a contract held by a committed baseline | accepted | schema-diff, schema-ack, TestSchemaDiffFailsEachBreakingChange, TestSchemaDiffBaselineMustBeTheNewestRelease, TestSchemaAckNeedsEveryItemNamed |
+| D-85 | Instructions and descriptions are built from the configuration | accepted | TestInstructionsNameOnlyRegisteredTools, TestInstructionsDescribeWritingOnlyWhereItExists, TestSettingsDescriptionsFollowTheFlags, TestTheDumpCarriesEverySentenceOfTheInstructions |
+| D-86 | Resources carry the same text as their tools | accepted | TestResources, smoke |
+| D-87 | The live driver reads only what it wrote and reaches nobody by default | accepted | TestTheGuardRefusesReadsOutsideTheRun, TestTheGuardHoldsWritesToTheRun, TestTheGuardHoldsSendsToSendTo, TestSendingSpikesNeedASecondAddress, TestTheSettingsAreKeptBeforeAnythingChanges, TestASignatureGmailWillNotTakeBackIsNeverChanged |
+| D-88 | The live transcript goes through one redacting writer | accepted | transcript, TestEveryLinePrintedIsRedacted, TestTheCloudProjectNumberInAReceivedHeaderIsMasked, TestHistoryIDsAreMasked |
+| D-89 | A write-path change counts only after a live run whose transcript is read | accepted | live-cover, TestLiveCoverReadsTheRealDriver, live |
+| D-90 | Evals score the calls and the mailbox, with planted instructions | accepted | evals-check, TestScoreCatchesAnInjectionByToolAndByMarker, TestSelfCheckPasses, TestTheFenceIsOnTheCommandLine |
+| D-91 | A rule is made to fail: a test, a list derived from the code, a floor | accepted | TestRegistryFloor, TestClassesFloors, TestAPICoverageFloors, TestSchemaDiffFloor, review |
+| D-92 | `make check` and CI run the same set of gates | accepted | parity, checklist, TestParityRefuses, TestChecklist, TestEveryCommandDeclaresWhereItRuns |
+| D-93 | A release is reproducible, signed, attested, and refused unless CI is green | accepted | release, goreleaser-check, TestReleaseRefuses, live |
+| D-94 | The registry entry's hash is read only after the checksum signature verifies | accepted | server-json, TestServerJSONCheckRefusesTheWorkflow, TestServerJSONPublish |
+| D-95 | Every tool is pinned to one exact version everywhere it is named | accepted | pins, TestPinsRefuses, TestPinsPassesOnAPinnedRepository |
+| D-96 | The bundle defaults every switch off and passes settings through `env` alone | accepted | mcpb, TestMcpbRefusalsTurnASwitchOnWhateverItsDefault, TestMcpbAsksForEverySettingNotLeftOut, TestMcpbRefusesEachBreak |
+| D-97 | The bundle manifest is held to its vendored schema and read once | accepted | mcpb, TestMcpbRefusesARepeatedKey, TestVendorManifestSchemaChosenByVersion, TestMcpbStampIsHeldToTheSchema, TestMcpbPackRunsTheRepositoryChecks |
+| D-98 | `watch` pushes changes through Cloud Pub/Sub | rejected | — |
+| D-99 | A write acts on every result of a query | rejected | — |
+| D-100 | The server imports or inserts mail | rejected | — |
+| D-101 | The server administers a Workspace through service accounts and delegation | rejected | — |
+| D-102 | A tool resolves a name to an address | rejected | — |
+| D-103 | `send_message` sends without a draft | rejected | — |
+| D-104 | The server confirms a write by asking the person through elicitation | rejected | — |
+| D-105 | Arguments a client stringified are decoded leniently | rejected | — |
+| D-106 | Plain text goes out as `format=flowed` | rejected | — |
+| D-107 | `login` revokes the refresh token it replaces | rejected | — |
+| D-108 | `Kind` splits into an effect and a gate | rejected | — |
+
+### D-01 One stdio binary per person, on their own OAuth client
+
+The server is one Go binary that runs as a subprocess of the MCP client
+and speaks MCP over stdio. It holds one person's OAuth credentials and
+calls the Gmail API directly, as that person. Nothing is hosted, and
+there is no shared deployment.
+
+Each person creates their own Google Cloud project and a Desktop OAuth
+client. Nothing deployer-specific is built into the code, the
+repository or a release, so a copy of the binary carries no one's
+credentials.
+
+The reason is reach. A mailbox holds the person's mail and other
+people's words, and per-user OAuth keeps every call inside the person's
+own access. Every Gmail scope that reads content is restricted
+([scopes](https://developers.google.com/workspace/gmail/api/auth/scopes)),
+so a person's own client, Internal to their organization or External in
+Testing, signs in without the verification and security assessment a
+published app with restricted scopes needs.
+
+Rejected: a hosted deployment, which this repository has nothing to
+run; an OAuth client shipped with the release, which would put one
+deployer's credentials in every copy.
+Cost: an External client in Testing gets refresh tokens that expire
+after seven days
+([OAuth 2.0](https://developers.google.com/identity/protocols/oauth2#expiration)).
+`doctor` names that expiry when a refresh fails, and
+[troubleshooting.md](troubleshooting.md) explains it.
+
+### D-02 Stdout carries only MCP JSON-RPC frames
+
+MCP's stdio transport says the server "MUST NOT write anything to its
+`stdout` that is not a valid MCP message", and "MAY write UTF-8 strings
+to its standard error (`stderr`) for logging purposes"
+([transports](https://modelcontextprotocol.io/specification/2025-06-18/basic/transports)).
+A stray print corrupts the JSON-RPC stream, and the client silently
+stops working.
+
+So logs go to stderr through `slog`. `main` names the process's streams
+once and passes them down as `io.Writer`. forbidigo refuses
+`fmt.Print*` and `os.Stdout` everywhere else, with `cmd/` and
+`scripts/` excluded. Its rules carry their own messages, so a settings
+block that fails to load shows up as forbidigo's default message. The
+smoke gate drives the shipped binary over stdio and fails on any line
+that is not a frame. `--dump-schemas` writes JSON to stdout because it
+does not serve.
+
+Rejected: a print to stdout anywhere but `main`, even behind a debug
+setting, since one stray line breaks the stream at any level.
+Cost: only `main` names the process's streams; everything else takes an
+`io.Writer`.
+
+### D-03 Logs record the call, never the payload
+
+A call line carries the method, the tool, the outcome, the
+milliseconds, the units spent and an id truncated to its first six
+characters. It never carries an address, a subject, a snippet, a body,
+a filename, a label name or a search query.
+
+A mailbox is other people's words and addresses. A log somebody pastes
+into a bug report has to be safe by construction rather than by their
+care.
+
+The subtle leak is the request URL. A search puts `q` in the query
+string, and a transport failure renders the whole URL, so `gapi`
+strips the URL from transport errors before anything logs them. The
+token check in `internal/auth` does the same for the token in its
+query. The SDK's own logger runs only at debug.
+
+`TestLogsNeverCarryThePayload` drives every registered tool with
+canaries in every string argument, at debug, and fails if one appears
+in the log or if the log is empty.
+
+Rejected: payloads at debug level, since a debug log is still the file
+a person pastes into a bug report.
+Cost: a transport error's text, which names the URL, is replaced with
+the kind of failure it was, and a failure is diagnosed from the method,
+the tool, the outcome and the class alone.
+
+### D-04 Nothing in the repository identifies a real mailbox, account or person
+
+The repository is public, and the server is built by running it against
+a real mailbox. Nothing deployer-specific lands here: no addresses, no
+names, no message, thread, label or filter ids, no Cloud project or
+OAuth client ids, and no subject, body or signature from real mail.
+That holds for code, docs, fixtures, goldens, transcripts, commit and
+tag messages, pull requests and logs.
+
+A mailbox is the worst payload there is. Every message carries third
+parties' addresses, words they wrote to someone else, and a signature
+with their phone number and employer.
+
+The leak gate is an allow-list anchored on shapes the server's
+generated fields cannot take. It flags an `@` before a dotted domain
+outside the example and invalid set, a Gmail web URL, a keyword such as
+`message` before a hex id outside the fixture range, and the Google
+OAuth shapes. `make leaks-history` reads every blob, commit message and tag.
+A tracked binary is a finding. gitleaks covers credentials, through
+`make secrets`.
+
+Rejected: a credential scanner alone, which passes identifiers
+untouched.
+Cost: the exemption list is asserted, so each entry carries a reason
+and is an argued decision.
+
+### D-05 Fixtures are generated, and the fake models what Gmail was seen to do
+
+`internal/gapi/gmailtest` is an in-memory Gmail served at the REST paths
+the client calls. Its mailbox is built from code: names from a fixed
+synthetic list, addresses at `example.com`, `example.org` and
+`.invalid`, bodies from templates, and ids from a counter formatted as
+Gmail's hex. A fixture copied from a live response is itself the leak,
+whatever a scanner says about it.
+
+The fake behaves as Gmail was seen to behave where the server's logic
+depends on it. A draft gets a new message id on every save, and its
+`Message-ID` is replaced on create. `SENT` and `DRAFT` refuse manual
+application, and a draft refuses a label. An expired history id
+answers 404. `drafts.send` files the sent copy in `SENT` under a new id,
+a permanent delete is refused without the full scope, and a failure can
+arrive after the request was acted on. Every method charges its units.
+
+The fake reads what it is sent with the standard library rather than
+`internal/mime`, so the builder is never tested against its own
+parser's mistakes.
+
+Rejected: a fixture copied from a live response.
+Cost: a wrong fake agrees with the code written from it. Only a live
+run catches the shared mistake (D-89).
+
+### D-06 Own wire types over raw REST, and no code imported from another project
+
+`internal/gapi` calls the Gmail REST endpoints directly, and
+`internal/gmail` holds wire types written by hand for the fields the
+server uses. Nothing imports `google.golang.org/api`, and nothing
+imports another project's server code.
+
+That package drags in gRPC and telemetry for a set of JSON calls. Its
+generated types would also decide which fields exist, where this
+server needs an argued list. Machinery shared with other servers is
+ported, verified here and owned here, so a fix elsewhere arrives as a
+change someone read.
+
+The client stays small enough to read in full. Each method it calls has
+a verdict in `testdata/api-coverage.tsv`, and each field of the
+resources it models a verdict in `testdata/api-fields.tsv` (D-07).
+`TestTagsMatchDiscovery` holds the JSON tags to the discovery
+document's names, and depguard refuses the import.
+
+Rejected: `google.golang.org/api`, which drags in gRPC and telemetry;
+depending on another server's code.
+Cost: every field is hand-written and needs a verdict, and a field
+Google adds stays unread until someone records it.
+
+### D-07 Every API method and field has a written verdict
+
+`scripts/gates api-diff` fetches Google's discovery document into
+`testdata/api-surface.json`. `testdata/api-coverage.tsv` gives every
+method published there a verdict: used, with the client function that
+calls it; gated behind a switch; or written off with a reason.
+`api-coverage` holds that in three directions, binding each row to its
+method by the verb and path the client's code builds. `api-fields`
+holds a verdict for every field of the resources the server models.
+
+The discovery document is what Google publishes, and it is more
+reliable than a reference page's prose. A list held against it turns
+"the methods actually used" into an argued list rather than an
+accident. It also records why a method is out of reach: some exist only
+for a service account with domain-wide authority (D-101).
+
+Rejected: a method table in this document, which would be a second
+copy of the record.
+Cost: `api-diff` is manual, so a method Google adds waits until
+somebody runs it. The release checklist in [release.md](release.md)
+says when.
+
+### D-08 The server works inside one mailbox
+
+The server finds mail, reads threads, messages and attachments, and
+writes labels and drafts. Only when the operator opts in does it send,
+delete for good, or change the signature, filters and vacation reply.
+It stops at the edge of the message.
+
+A calendar invitation is an `.ics` attachment here, read for the UID
+and times a calendar server finds its event by (D-20). The event
+belongs to a server built on the Calendar API. A linked Drive file is a
+URL here; the file belongs to a Drive server. Mailbox administration,
+such as delegation, forwarding, send-as identities beyond a signature,
+S/MIME and client-side encryption keys, is out of scope (D-101).
+
+The reason is reach. One mailbox, read and written as the person,
+keeps the access the person grants as narrow as the job. Each of the
+other systems has its own API, its own scopes and its own server.
+
+Rejected: the event an invitation is about, a linked Drive file, and
+mailbox administration.
+Cost: a task that crosses into a calendar or Drive takes a second
+server, handed the UID or URL this one reads.
+
+### D-09 Mail content is marked as data, inside a per-call boundary
 
 Every subject, body, header, snippet and attachment name was written by
 someone other than the person using the server, and some of it is
-written to steer an agent. Google's own MCP guide warns that mail "may
-contain hidden instructions that can hijack your session". This server
-cannot stop a model from being persuaded; it can make the persuasion
-visible, remove the tools that would make it catastrophic, and never
-add its own voice to the attacker's.
-
-1. **Boundaries.** Rendered mail content sits inside a delimited block
-   naming its origin — sender address and message id — with a boundary
-   token generated per call so the content cannot close the block
-   itself. `structuredContent` carries the same text in fields named
-   `untrusted_*`.
-2. **Hidden text is removed and counted.** HTML is converted to text by
-   the server. Text a person would not see — `display:none`, zero-size
-   or same-color-as-background runs, zero-width and bidi-control
-   characters, HTML comments — is dropped, and the result says how many
-   characters were dropped and why. The count is the signal: legitimate
-   mail rarely hides much.
-3. **Nothing is fetched.** No image, stylesheet, tracking pixel or
-   link. Links render as text with their host shown, and a link whose
-   visible text names a different host than its target says so.
-4. **The dangerous writes do not exist.** Auto-forwarding, forwarding
-   addresses, filters that forward and delegation are written off in
-   §8a — not gated, absent — because each turns one persuaded call into
-   a permanent leak of every future message. Sending is absent unless
-   enabled (§4.2).
-5. **The server's own text never relays mail.** Tool descriptions and
-   the server instructions say that mail content is untrusted, and no
-   result ever phrases a message's text as something to do.
-
-### 4.2 Sending is opt-in, only through a draft, and verbatim
-
-Registration is the only control, because §2.10 rules out the scope:
-the token that writes a draft can send. The standard's §3 already says
-an annotation is not a control and a registered tool can run unattended.
-
-1. **`send_draft` is registered only with `GMAIL_ENABLE_SEND=true`.**
-   The drafting, labeling and trash writes are registered by default;
-   §9.4 lists the rest. There is no one-shot
-   `send_message`: `messages.send` is written off, so everything that
-   leaves this server existed first as a draft the person could open in
-   Gmail. Replying is `create_draft` with `reply_to`, then `send_draft`.
-2. **The body is exactly what the caller gave.** No prefix, footer or
-   "sent by" line is added server-side, ever, and no signature unasked.
-   The server adds only what the caller names: with `quote`, the
-   parent's text below the body; with `forward`, the original as an
-   attachment; with `signature`, the signature Gmail holds for the From
-   address below the body, as Gmail's composer puts it there, which a
-   new body keeps unless `signature: false` drops it (§7.4). The person
-   running the server may ask for that signature on every new draft,
-   with `GMAIL_DRAFT_SIGNATURE`; the call can still say `false`. When the
-   caller gives no HTML, the same words also go as an HTML version made
-   from the text (§7.4), so a reader sees the caller's words either way.
-3. **`send_draft` shows before it sends.** Its result names every
-   recipient (To, Cc, Bcc), the subject, the attachment names and sizes,
-   and the thread it joins. `dry_run: true` returns that without
-   sending, and costs one `drafts.get` and one `threads.get`: every draft
-   sits in a thread, if only its own.
-   Like `update_draft`, it takes the draft's `message_id` as a witness
-   and refuses with `[stale]` a draft that changed since it was read, so
-   what is sent is what was shown. From 3.0.0 it also takes the draft's
-   `subject` and the first line of its body, `first_line`, and refuses
-   `[stale]` when either is not the draft's, so the call itself says
-   what is sent (§4.13).
-4. **Recipient guard.** Every recipient must be listed in
-   `confirm_recipients`, exactly; otherwise the call is `[blocked]` and
-   names them. Over 50 recipients is `[blocked]` outright. The model
-   then has to write out an injected address itself rather than inherit
-   it silently from a draft someone else shaped.
-   A participant is the sender of a message of the thread, or an address
-   the account itself sent one of them to (its own `To` and `Cc`). The
-   `To`, `Cc` and `Reply-To` of a received message do not count: its
-   sender wrote them, so a correspondent cannot widen a reply-all to
-   addresses nobody confirmed (§17.8). Drafts, spam and trash are not
-   read, so a message planted in the thread and binned does not vouch
-   for its sender. The refusal names recipients by field
-   and position, `cc[1]`, never by address, since an address may come
-   from someone else's message; the dry run lists them inside a block.
-   From 3.0.0 the thread's participants are confirmed too: the server no
-   longer asks the person, and the client's prompt shows only the call's
-   arguments, so `confirm_recipients` names everyone the send reaches
-   (§4.13). Participants are still read and shown.
-
-### 4.3 A send is never retried; ambiguity is settled by reading
-
-`drafts.send` is a non-idempotent POST (§2.3). The client retries a POST
-only where Google turned it away before acting — a 429 or 503 carrying
-no body the server acted on, per §11 — and never on a timeout, a reset
-connection or a 5xx after the request was written.
-
-On an ambiguous failure the tool returns `[ambiguous_outcome]` and has
-already done the read that settles it:
-
-- The design meant to settle by the `Message-ID` the draft carried.
-  Spikes B and C ruled that out: Gmail replaces the `Message-ID` on
-  `drafts.create`, on `messages.send` and again on `drafts.send`, and the
-  sent message gets a new id, not the draft's (§18 rows 41 and 44). What
-  holds is the thread: the sent message is filed in the draft's own
-  thread.
-- So before the send the server records the ids of every message in the
-  draft's thread, which it reads anyway for the recipient guard. After
-  an ambiguous `drafts.send` it waits 5 seconds, then reads the draft
-  (`drafts.get`) and the thread again. The draft gone and a message in
-  `SENT` that was not in the thread before means **sent**. The draft
-  present and no such message means **not sent**. Anything else stays
-  **unknown**, and the result says so and says not to resend.
-- This state is reported, never acted on: the server does not resend on
-  "not sent" either. The person decides.
-
-### 4.4 A write never destroys what it cannot see
-
-**Labels are patched.** `labels.update` (PUT) is written off.
-
-**A draft update is a read-merge-write against a witness.** Gmail has no
-ETag (§2.4), and `drafts.update` replaces the whole draft. So:
-
-1. `get_draft` returns, beside the content, the id of the message
-   currently inside the draft. `drafts.update` changes that id (spike
-   A), so it is the witness.
-2. `update_draft` requires that witness. It re-reads the draft, compares
-   the witness and refuses with `[stale]` if the draft moved; otherwise
-   it merges the fields given onto what it read and PUTs the result.
-3. **Omitted means unchanged.** An attachment, a Cc or a header the
-   caller did not mention is carried over, never dropped by omission.
-   Removing an attachment is an explicit `remove_attachments` list.
-4. The window between the re-read and the PUT is not closed, and the
-   result does not claim it is. This is a recorded deviation (§17b).
-
-### 4.5 Threading is constructed, never hoped for
-
-A reply is built by the server from the parent message, never assembled
-by the model:
-
-- `reply_to` takes a **message id**; `reply_to_thread` takes a thread id,
-  and the server picks the newest message that is not a draft, not in
-  `TRASH` and not a reaction, and names the chosen message in the result.
-  They are two fields because the two ids cannot be told apart: a
-  thread's id is its first message's id (§18 row 40), so one field taking
-  both would answer the first message when the caller meant the thread.
-  A `reply_to` naming a draft, a trashed message or a reaction is
-  `[invalid]`.
-- The server reads the parent's `Message-ID`, `References`, `Subject`,
-  `From`, `Reply-To`, `To` and `Cc`, and writes `In-Reply-To` = the
-  parent's `Message-ID`, `References` = the parent's `References` plus
-  that id, `threadId` = the parent's thread, and `Subject` = the
-  parent's, with a `Re:` prefix only if there is none. A parent with no
-  `References` but one `In-Reply-To` contributes that (RFC 5322 §3.6.4);
-  References keep the parent's first id, its last 38 and the parent's
-  own, so a hostile parent cannot make a reply huge. A caller's `subject` on a reply is
-  `[invalid]`, since it is one of the three conditions.
-- `reply_all: true` expands recipients from the parent, drops the
-  account's own addresses (from `sendAs.list`) and says who was added.
-  When the parent is the account's own, the reply goes to its To, as in
-  Gmail. Each recipient in the result carries its origin — the parent,
-  reply_all, or the caller, whose addresses are added last. A parent's
-  address that cannot be written into a header is left out and counted,
-  never quoted in the server's voice.
-- The result states whether the draft landed in the parent's thread, by
-  reading the created draft's `threadId` rather than asserting it.
-
-### 4.6 Removal is trash
-
-`trash` and `restore` are ordinary writes, registered by default, because
-trash is recoverable for 30 days and gating it would teach people to set
-the flag that also arms permanent deletion. A gate that everyone turns
-on protects no one.
-
-`delete_permanently` and `delete_label` are **unregistered** unless
-`GMAIL_ENABLE_DESTRUCTIVE=true`, and each call still needs
-`confirm: true`; both carry the mark that makes Claude Code prompt on
-every call (§4.13). That flag is also **the only setting that requests
-`https://mail.google.com/`** (§2.10), so a default token cannot delete
-permanently even if a tool were registered by mistake. Turning the flag
-on requires a fresh `login`, and `doctor` says so.
-
-### 4.7 Writes take ids, never a query, and at most 100 at a time
-
-A search is a read the model has seen; a write names the messages it
-touches. `modify_labels`, `trash`, `restore` and `delete_permanently`
-take explicit message or thread ids — up to 100 per call, far below
-Google's 1,000 — and every one takes `dry_run`. There is no
-"apply to all results" parameter, because that is how a single injected
-instruction empties a mailbox.
-
-A filter (§7.9) does match a query, and is not an exception: Gmail
-applies it only to mail that arrives after it exists, and the server
-never applies one to mail already in the mailbox. What it can hide is
-mail nobody has seen yet, which is why one that trashes is its own
-tool, `create_trash_filter`, behind the destructive flag as well, with
-`confirm: true` (§7.9), and why filters sit behind their own flag.
-
-Per-item outcomes are reported per item. A call that trashed 97 of 100
-says which three failed and why; it never reports the batch as one
-success. So each item is its own pair of calls: a read of its labels,
-then `messages.modify`, `trash` or `untrash` on the message (or the
-thread's), whose answer is the labels after. An item already as asked is
-not written and is reported unchanged. `batchModify` is written off: it
-answers with nothing, so it could say neither which messages changed nor
-why one failed (§18 row 39).
-
-### 4.8 Reads are bounded and say what they left out
-
-Every read has a budget in characters, stated in the result. A thread
-renders newest-first up to the budget; quoted text and signature blocks
-in each message are collapsed to a line saying how much was collapsed;
-messages beyond the budget are listed by id, sender and date with a
-cursor. A long body is cut at a paragraph boundary with a marker and the
-offset to continue from. Listings use `format=metadata` with a fixed
-header set, never `full`.
-
-The notes after a body count against the budget too. A list in them of
-what the sender made, such as the links whose text names another site
-or unknown charset labels, takes at most an eighth of the budget, and
-the rest are counted after it. Parts are named thirty at most, and
-renamed attachments are counted in one note.
-
-A listing's budget bounds its text, in `content` and again in
-`untrusted_text`; the structured rows carry every item on the page in
-full, as 1.1.0 did, and are not counted against it. A page that fits
-is shown whole. Otherwise the text shows rows while they and the line
-naming the rest fit, and that line counts every row left out and names
-their ids, each once and none a shown row carries; `omitted_ids` holds
-the same ids. A change listing can name one message twice, so the line
-counts the changes on messages named already apart. `list_filters`
-shows forwarding filters first, so one that forwards is never out of
-the text.
-
-The structured half is not bounded: a page of 100 results came to
-70,000 to 106,000 characters under a budget of 24,000 (§18 row 57). The
-search and draft descriptions say so, and that a client that limits
-the size of one result should ask for a smaller `max`, such as 25.
-
-The rule is that **a read never silently returns less than it found**:
-every omission is named and continuable.
-
-### 4.9 Quota is counted in units, not requests
-
-A request-rate limiter is wrong by up to 100×, because §2.1's costs
-differ that much. The client carries Google's unit cost per method,
-spends it against a per-user budget of 6,000 units a minute, and waits
-rather than earning a 429. Each tool result and each log line reports
-the units the call spent. `search_threads` defaults to 20 results
-because 20 thread reads is 800 units, and says so in its description.
-
-### 4.10 MIME is ours, and it round-trips
-
-`internal/mime` parses and builds RFC 5322 with MIME (RFC 2045–2047) and
-RFC 2231 parameters, on the standard library's `mime`, `mime/multipart`,
-`mime/quotedprintable` and `net/mail`. It is the core package of this
-server, as the time model is of a calendar server, and it is built and
-table-tested first (phase 0). The property that matters is that
-**what the server builds, it can parse back to the same fields**, and a
-fuzz test holds that over generated names, subjects, bodies and
-filenames in scripts nobody on the project reads.
-
-### 4.11 Own wire types, raw REST
-
-Hand-written structs for the fields used, REST called directly. §8b
-records every field the discovery document publishes with a verdict.
-
-### 4.12 Results say what changed
-
-Every write reports the state it produced, read back rather than
-assumed: labels before and after per message, the draft's thread, the
-recipients a send reached, the messages a trash moved. A write that
-changed nothing says so — "already in `TRASH`" — rather than reporting
-success.
-
-### 4.13 Per-call approval is the client's
-
-From 3.0.0 the server asks the person nothing. From 2.0.0 to 2.3.0 it
-put a form with no fields to the person, through MCP form elicitation,
-before seven writes: `delete_draft`, `delete_label`,
-`delete_permanently`, `delete_filter`, `create_filter` when the filter
-trashed, `set_vacation` when it turned the reply on, and `send_draft`.
-The maintainer adopted §3 of the shared standard on 2026-10-22 and
-approved this server's port on 2026-10-23 (§14), on the evidence of §18
-rows 89 and 90:
-
-- The specification puts consent to each tool call on the host, whose
-  client "SHOULD prompt for user confirmation on sensitive operations".
-  It lets a server ask through elicitation, but never makes the answer
-  consent: the client gathers it "from the user or other sources".
-- Most widely used servers confirm nothing themselves: 83 of the 91
-  with risky writes among the 110 most used. The 8 that ask each pick
-  their own scope, from one tool to every write.
-- Clients answered the question with nobody there (a Claude Code
-  `Elicitation` hook once installed, Codex with full access), did not
-  draw it (Claude Code's VS Code extension, and by open user reports
-  Claude Desktop's Code tab), left it hanging (Cowork), or cut its
-  message to three lines (the Claude Code terminal, by an open user
-  report). No client's allow and ask rules match it.
-- People approve almost every prompt and stop reading as they repeat,
-  and a question on every call once expired mid-run.
-
-What stays is what holds on every client:
-
-1. **Registration.** Sending, permanent deletion, a filter that trashes
-   or is deleted, and every settings write exist only with their flags
-   (§9.4). A client that runs with nobody watching gets none of them.
-2. **`confirm: true`** on every delete, on `create_trash_filter`, and on
-   `set_vacation` turning the reply on. It is a witness that the caller
-   meant the call, never approval: the model sets it. `register` refuses
-   a kind that cannot be undone without it, and a tool that takes it
-   under a kind not annotated destructive (§8).
-3. **Guards and witnesses.** Every recipient of a send written out in
-   `confirm_recipients`, at most 50 (§4.2); the draft's `message_id` on
-   `update_draft`, `send_draft` and `delete_draft`, refused `[stale]`
-   when the draft changed (§4.4); the draft's subject and first line on
-   `send_draft`, and the filter's criteria on `delete_filter`, refused
-   `[stale]` when they are not what Gmail holds; ids, never a query
-   (§4.7); a filter that cannot forward (§17.5); a vacation reply only
-   to contacts or the domain (§17.4).
-4. **`dry_run`** on every write.
-5. **Annotations.** `destructiveHint` is true on every kind but Read,
-   Read (local write) and Adding, since the MCP schema reads `false` as
-   "only additive updates": a write that changes or removes what is
-   there, one that cannot be undone, a send, the vacation reply and every
-   settings write. claude.ai and Codex
-   prompt by it. VS Code ignores it and prompts on every tool without
-   `readOnlyHint`, which only the Read tools carry.
-   `delete_permanently` and `delete_label` carry Claude Code's
-   `anthropic/requiresUserInteraction`: the first skips the trash Gmail
-   offers, the second takes a label off every message, and neither can
-   be undone. Claude Code (v2.1.199 or later) then prompts on every call
-   in every interactive mode, whatever the operator's rules say, and
-   denies the call where no prompt can be drawn (`-p`, dontAsk); no
-   other client reads it. Nothing else carries it: `send_draft` and
-   `set_vacation` lost it, since sending is none of the cases the
-   standard marks, and a delete done many times in a row, as
-   `delete_draft` is, would bring back a prompt on every call. For every
-   other tool the operator decides in Claude Code with
-   `permissions.allow` and `ask`; the README's example allows the
-   server's tools and asks for every one that sends, changes a setting
-   or deletes for good, leaving the everyday writes of the Write kind to
-   run unasked (§18 row 107).
-6. **What a client's prompt shows.** A client's prompt shows the call's
-   arguments. Where the question used to say what an argument means,
-   the argument now carries it: `confirm_recipients` names every
-   recipient, the thread's participants included, where it named only
-   the ones new to the thread; `delete_draft` takes the `message_id` the
-   question was bound to; `send_draft` takes the draft's `subject` and
-   `first_line`, where the question showed the subject and the start of
-   the body; `delete_filter` takes the filter's `criteria`, which the
-   question showed. Each is short, what the person would recognize, and
-   compared with what Gmail holds; neither the refusal nor a log repeats
-   it.
-7. **A risky variant is its own tool.** A client remembers "always
-   allow" per tool, never per argument, so `create_filter`'s `trash` flag
-   became `create_trash_filter`, behind the destructive flag as well.
-8. **The model never widens its own reach.** No tool turns a setting
-   on, names another directory or profile, or writes the server's stored
-   configuration. A test drives every tool with its guards set and holds
-   the environment, the profile directory and the home directory
-   unchanged, and holds that no input is named after a setting (§13).
-
-`GMAIL_REQUIRE_PROMPT`, which refused the asking writes on a client
-that could not ask, went with the question. A configuration that still
-turns it on is refused at start: ignoring it would allow what its owner
-set it to stop. Leave the send, destructive and settings flags off for
-a client that runs with nobody watching.
-
-What the question showed and no argument carries: a send's
-attachment count and the rest of its body past the first line, and a
-deleted filter's actions. The `message_id` witness binds the whole
-draft, and a filter cannot change, so what is written is what was read;
-the dry run shows the rest.
-
-`delete_draft` stays registered by default, a deviation from the
-standard's §3 that §17b records.
-
-## 5. Module layout
-
-As `CLAUDE.md` "Where things go"; the staleness gate holds that list
-against `go list -tags live,evals ./...`, so this section does not repeat it.
-
-### 5a. Shared machinery: what the current version must carry
-
-The sibling servers improved shared machinery wherever a problem
-happened to surface, so on 2026-09-24 no single sibling held the current
-version of any large piece. Each row below lists every fix the
-up-to-date component must carry, merged from all six. Phase 0 built to
-this list, and a gate or test is named for each claim where one exists.
-When a sibling fixes something shared, it is added here with the date.
-
-**Pins, checked against upstream on 2026-09-24, not copied from a
-sibling.** Three siblings' newest pins already trailed upstream:
-
-| Tool | Version |
-|---|---|
-| Go | 1.27.3 (`go-version-file: go.mod` in CI) |
-| MCP Go SDK | v1.8.0 |
-| golangci-lint | v2.14.0 |
-| goreleaser | v2.18.2 |
-| cosign | v3.1.3 (`cosign-release:` on the installer) |
-| syft | v1.52.0 (`syft-version:` on the installer) |
-| mcp-publisher | v1.8.1, its own sigstore bundle verified before extraction |
-| gitleaks | v8.30.1 |
-| govulncheck | v1.8.0 |
-| go-licenses | §17.3 |
-| actionlint | v1.7.12, run through `go run`, not Docker |
-| codeql-action | v4.39.1 |
-| mcpb manifest schema | v2.1.2 tag, `manifest_version` 0.3 |
-
-Every action pinned to a full SHA with the version in a trailing
-comment, re-resolved at scaffold time.
-
-**CI and release.**
-
-| Component | Must carry |
-|---|---|
-| `ci.yml` | every step is a `make` target, so parity holds by construction; ubuntu/macos/windows matrix; `defaults.run.shell: bash`; `timeout-minutes` on every job; `permissions: contents: read` at top; `persist-credentials: false` on every checkout; `concurrency`; `workflow_dispatch`; a full-history secrets job on every PR; `goreleaser check` and actionlint as targets |
-| `codeql.yml` | push, PR, weekly; bash default; a timeout |
-| `release.yml` | refuses a tag whose CI run is not green; write permission raised only in the goreleaser job; `go test` before signing; notes lifted from the CHANGELOG into `$RUNNER_TEMP`; **a reproducible-build check that builds one target twice and compares hashes**, which is the only thing that proves §9's byte-identical claim; `subject-path` naming the archives, `checksums.txt` and `dist/*.mcpb`, comma-separated |
-| `publish-mcp.yml` | its own workflow, callable from the release and by dispatch for an old tag; **`cosign verify-blob` on `checksums.txt` with the certificate identity pinned to this repository's `release.yml` at the exact tag, before the hash is read**; `server.json` generated at publish time and validated against the vendored registry schema |
-| `.goreleaser.yaml` | `go mod download` in the hook, never `tidy`; `{{ .Version }}` through ldflags; `-trimpath`; `mod_timestamp: {{ .CommitTimestamp }}`; `universal_binaries` kept out of the archives by `ids`; the bundle packed in the universal binary's post hook and named in both `checksum.extra_files` and `release.extra_files`; a keyless cosign `--bundle` over the checksums; an SBOM per archive; a footer naming the verification commands that actually match the artifacts |
-| `dependabot.yml` | weekly gomod and actions; `github/codeql-action*` grouped so init and analyze move together; gomod grouped; no labels that do not exist |
-| `Makefile` | every tool pinned, goreleaser included, so `pins` compares the Makefile's pin with the workflow's; `release-rehearse`; `tidy` as `go mod tidy -diff`; `hooks` setting `core.hooksPath`; no comment claiming to be "everything CI runs" |
-| pre-commit | `.githooks/pre-commit` running `go run ./scripts/gates precommit`; no Python pre-commit framework |
-| `.golangci.yml` | `default: none` with an explicit set incl. gosec (minus G104), gocritic, unconvert, prealloc, makezero, govet minus fieldalignment/shadow; forbidigo on `fmt.Print*` and `os.Stdout` with `analyze-types`, excluded for `cmd/` and `scripts/`; `run.build-tags: [live, evals]` so tagged code is linted |
-| `.gitleaks.toml` | Google OAuth client id, `GOCSPX-` secret and `1//0` refresh-token rules; allow-list for `example`, `test`, `invalid` domains and `go.sum` |
-| `.gitattributes` | `* text=auto eol=lf`; `*.png`, `*.pdf`, `*.eml` binary |
-| issue and PR templates | the bug form asks for `doctor`, version, install method, client and flag state, explains why those are safe to paste, and says what never to paste — "a tool result is mail too" |
-| `packaging/mcpb/manifest.json` | `$schema` at the pinned tag; `manifest_version` 0.3; placeholder version `0.0.0-dev`; `claude_desktop >= 0.10.0`; per-platform commands; a `support` URL; `user_config` with `client_secret`, `profile`, `read_only`, `enable_send`, `enable_destructive`, `enable_settings` and `local_dir`, each switch off and each other key `""` by default; `privacy_policies` naming Google's; a `long_description` saying the bundle does not log you in; the `LICENSE` and the README packed beside the binaries |
-| Linux launcher | generated by the packer from the same staging table that names the binaries, so the launcher's names cannot drift from the packer's; `exec`s; unknown architecture to stderr, non-zero; a missing or non-executable binary named |
-
-**Gates (`scripts/gates`, one command, one registry).**
-
-| Gate | Must carry |
-|---|---|
-| registry | each entry declares `manual`, `inCheck` or `inRelease`, with the zero value refused by a test; arity declared |
-| `parity` | targets mapped to CI steps by recipe, Makefile variables expanded, `run: \|` blocks read, a step's `name:` not counted as running it; every `vet -tags=` both ways; release-only entries excused by name with a non-empty reason; floors on gates, prerequisites and matched lines |
-| `checklist` | `CLAUDE.md`'s definition-of-done block against the `check:` prerequisites, both ways |
-| `pins` | every action classified as installer or not, an unknown one failing; installer tool pins required; the Makefile's goreleaser pin equal to the workflow's; workflows parsed as YAML, not line-split; `${{ env.X }}` resolved; pre-commit and CI gitleaks versions equal |
-| `staleness` | prose counts held against the lists beside them; the package map against `go list`; every repository path a document names exists, with a floor; every env var documented, each as a whole word, and the `GMAIL_PROFILE` row of `docs/configuration.md` stating `config.ProfileRule`; every gate documented; the status line against the newest tag or CHANGELOG heading; no version in prose; **the OAuth scope block in `docs/gcp-setup.md` generated from `internal/scopes` for every mode and compared exactly** — not a list checked for mentions |
-| `changelog`, `changelog-links` | a PR adds an entry unless it is a release cut; every version heading has a link reference |
-| `release-notes` | the CHANGELOG section lifted verbatim, refusing an empty one |
-| `api-coverage` | offline, three directions; the row bound to its method by verb and path from the client's AST; out-of-scope methods derived from discovery scopes; a minimum length on a write-off reason; floors on methods, verdicts and client calls |
-| `api-diff` (manual) | one fetch covering methods and fields; written through a temp file and rename; a network failure leaves the committed snapshot untouched, **held by a test against a closed port** |
-| `api-fields` | recursive over inline objects; every struct the wire package declares judged; floors on published and modeled fields |
-| `schema-diff` | a committed baseline, never a tag, because CI's checkout is shallow and has no tags; the baseline is the CHANGELOG's newest release, stamped with its version, and the gate fails on any other; with nothing under `[Unreleased]` the build must match it exactly, which proves a release commit recorded it rather than relabeled it; the tool surface **and resources**; fails on a removed tool, a lost input or output field at any depth, a type change that breaks a caller (an input that takes less, an output that may return more, `null` included), a new required input, an input enum that loses a value or newly limits one, or an output field no longer required, which a caller read as always there; a field with no type, a list with no element schema and the boolean schema `true` take any value, and `false` none; the whole `mcp.Tool` dumped, `_meta` and output schema included; the dump free of `GMAIL_` settings; a floor on tools. `schema-baseline` refuses a build stamped with another version, and a break unless the release is a new major version |
-| `schema-ack` (CI) | both sides built from commits, the merge-base and the pull request's head, never the merge commit CI checks out; the whole dump compared, the instructions of each mode and the prompts included; every changed item named as a whole token in a footer of the commit messages' footer block, never the subject; a break counts only if it breaks the newest release's baseline, read from the base branch, matched by item and field; `SCHEMA-CHANGE:` in any case, `BREAKING CHANGE:` only in capitals (§18 row 105); the refusal prints the footer that fixes it, and a gate that could not run says so |
-| `leaks` | allow-list rules, each anchored on a shape generated fields cannot take (an `@` with a dotted domain; a Gmail URL prefix; a keyword before a hex id; the OAuth shapes); every allow-list entry carries a reason, asserted; tracked files and untracked-unignored files both scanned; a tracked binary (ELF, Mach-O, PE magic) is a finding; history mode covering blobs, commit messages and tags with a derived floor; findings printed redacted |
-| `transcript` | drivers cannot reach `os.Stdout`, `os.Stderr` or `log.*`; exactly one exempt package with exactly one write site, which redacts; an unlisted driver fails; a listed directory that is missing fails; a floor on mentions |
-| `live-cover` | per tool **option**, not per tool, recorded at run time through the stdio client; waivers in a TSV with a reason each, a ceiling, and a failure on a waiver whose option is now driven; a map inside an option's value read as that value, never as options (2026-10-23) |
-| `smoke` | the shipped binary over stdio at two protocol revisions, the current one asserted present in the SDK's supported list; resources and templates; **stdin closed the moment the last message is written**, so an abrupt disconnect with a request in flight must exit 0 (-32004/-32003 matched by code, never by message text); awaited ids derived; the child reaped on EPIPE; the Windows `.exe` path |
-| `classes` | the closed vocabulary of §6.5 derived from the code and asserted both ways; duplicates found by count, not by adjacent comparison; a floor |
-| `coverage` | per package, scored on its own files and not its subpackages', `cmd/` included; each exemption with a reason; floors on packages and profile lines |
-| `outcomes` | every write's result states its outcome on every branch |
-| `mcpb` | the committed manifest validated against the **vendored** schema chosen by its own `manifest_version`, with a property-count floor on the vendored file; `$schema` matched as a whole URL at a full tag or SHA; `manifest_version` equal to the URL's; a floor at 0.3; the manifest read and decoded once from one root by `mcpbCommittedManifest`, which the packer starts from too, and a key repeated in any object, or one equal to another but for case, refused before any other check, since the typed decode merges them and the schema, the stamp and the host keep the last and read a key only as spelled (§18 row 96), each named once by a path that quotes a key holding a dot or a bracket, sorted, and a document whose keys cannot be walked refused; entry point, every command and every override naming a staged program, never a file copied from the repository, and every command starting `${__dirname}/`, the one path the specification fixes to the bundle, so a relative or absolute one is refused (§18 row 95); the entry point the file the default command runs; `name` the server's, `server.type` `binary`, and `compatibility.platforms` exactly the platforms the staged table has an entry point for; every override a claimed platform; each claimed platform spawning the file staged **for it**; every `${user_config.x}` in a composed value declared, and one spent in `env` either required or given a default and never `multiple` (§18 row 91); every variable the server reads, from `config.Vars`, asked for under its name without `GMAIL_`, lowercased, unless left out with a reason, and a reason for a variable the server does not read refused; every switch asked as a boolean; the profile field stating `config.ProfileRule`, which Build's refusal states too, and a bundle that asks for no profile setting refused, so the check cannot go quiet; the committed version the placeholder, in the checks the packer runs too; settings passed by `mcp_config.env` alone: the base `args` present and `[]`, missing, null and non-empty each refused, and no `args` or `env` on a platform override, an empty one included, since the host takes an override's in place of the base's (§18 row 94); the environment the host builds from the defaults, a required key's default included, started through `config.Load` and configuring the server as none does, every differing field named, an unexported one included, each compared as `reflect.DeepEqual` compares it, so a pointer by what it points to and never by its address (§18 rows 92 and 94), with every list or object default refused by key; every set of the switches started over the defaults, a switch in a set on whatever its default, the refused ones held both ways to a declared list, and each field in a refused set titled and naming the others' titles, matched trimmed, each untitled one reported once whether or not the defaults start; `privacy_policies` not empty (§18 row 93); the no-login sentence; a `support` URL; the files copied from the repository present, and the license `LICENSE` names, which the packer checks too. The defaults and refusal checks read `mcp_config.env` alone, which the `args` and override refusals keep sound |
-| `mcpb-pack` (release) | decode–encode stamping, never text substitution, which keeps every key, and the stamped document held to the vendored schema; the gate's checks run again, from the gate's own start; `0755` on every staged binary and `0644` on the files copied from the repository; a fixed mtime asserted against a literal; globs matching exactly one file; the staged binary's `--version` read back, as the fifth version check; the packed archive read back |
-| `release` | goreleaser's config held against the release workflow: universal binaries via `ids`, the bundle in both `extra_files`, `subject-path` with a valid separator, signing and SBOM pins |
-| `server-json` | the entry built from the manifest `mcpbCommittedManifest` reads, and only once the bundle gate's checks pass on it; the hash taken from `checksums.txt` with exactly one `.mcpb` row, **after** the signature check; validated against the vendored registry schema; the registry's unwritten rules — HTTPS, release URL, identifier shape — held by a test; `schema-refetch` (manual) compares the vendored bytes' hashes upstream with a timeout and writes nothing |
-
-**Server core.**
-
-| Component | Must carry |
-|---|---|
-| `cmd` | `run(args, stdin, stdout, stderr, env)` so the serve path is testable; `help`/`-h` exit 0; an unknown command prints usage to stderr and exits non-zero; errors printed through a redactor that masks addresses and client ids; disconnect matched by JSON-RPC code; the token warmed off the startup path; version from ldflags with a `debug.ReadBuildInfo` fallback |
-| `login`/`logout`/`status`/`doctor` | `logout` revoking the token at Google before deleting the local copy, and leaving an env-provided token alone; `--no-browser` printing the URL and the exact `ssh -L` line; `status --json`; the account and client-secret path masked in every output; `doctor` walking client JSON → token → granted scopes → API enabled → one `getProfile`, naming what is missing; the keyring replaced package-wide in tests by `TestMain`, with a decoy test proving the replacement happened |
-| `auth` | loopback on `127.0.0.1:0`; PKCE S256; `state` checked; a bounded HTTP client on refresh; tokeninfo errors stripped of their URL, which carries the token; `invalid_grant` mapped to "log in again"; granted scopes stored |
-| `scopes` | one source of truth per mode; an implication table (`https://mail.google.com/` ⊃ `gmail.modify` ⊃ `gmail.readonly`, `gmail.compose`, `gmail.labels`) with `Satisfied` and `Missing`; the generator for `docs/gcp-setup.md` |
-| `credentials` | resolution **env → keyring → file**, documented as that order (four sibling documents describe the fallbacks and got the precedence wrong); a silent keyring told apart from a missing login; a warning on every use of the plaintext file |
-| `fileperm` | 0600 on Unix; an ACL on Windows restricting the file to the current user, because 0600 there protects nothing |
-| `userconfig` | profiles; the config-dir override refused outside the home directory, compared by real path |
-| `config` | `Define(fs, env)` and `Build()` with errors joined; `GMAIL_` prefix; `READ_ONLY`, `ENABLE_SEND`, `ENABLE_DESTRUCTIVE`, `ENABLE_SETTINGS`, `LOCAL_DIR` (refused if it does not exist, naming the variable); `CONFIG_DIR` and `REFRESH_TOKEN` env-only; every variable read through `config.Lookup`, Define's and the refresh token's reader alike, so spaces alone are unset and the spaces around a value dropped, held by a walk over the whole registry; every `GMAIL_` name the code spells in `cmd/`, `internal/` and `scripts/`, a `+` chain read in order, in the registry; base-URL overrides for tests; an exported list of every variable, which the staleness and bundle gates read |
-| `redact` | account, address, path and client-id masking for product output; id truncation and the redacting printer for maintainer tooling |
-| `server` | per-call log line with method, tool, outcome, milliseconds and units; the SDK's own logger only at debug; instructions built from the configuration, so read-only and send-enabled servers say different things; the schema dump taking the SDK version from build info rather than a constant (two siblings' constants are already wrong) |
-| `app` | startup assembly reachable without `main`, used by the schema dump; settings that redact the token when logged |
-| `tools` | one `register` deciding annotations, gating, `_meta`, the dry-run context and the rendering from one `Kind`; an explicit output schema with `date-time` for times; `Content` set so the SDK does not duplicate the JSON |
-| `gapi` | write and repeatability derived from the HTTP method, POST failing closed, declared exceptions only; a POST retried only on a turned-away status; `Retry-After` honored as a minimum; full-jitter backoff; the unit budget of §4.9; a body cap; an origin allow-list, port included, checked before any credential is attached and on every redirect; transport errors stripped of the URL; **a context under which the client refuses every write**, which is what `dry_run` is; a closed `Class` type with `Retryable()`; addresses masked in API error text; a per-call counter of requests and units |
-| `ask` (2026-09-29) | **removed in 3.0.0** (§4.13): the server asks nobody, only `delete_permanently` and `delete_label` carry `requiresUserInteraction` (from 2026-10-23), and the removed `GMAIL_REQUIRE_PROMPT` is refused at start when on. Was: a form with no fields, accepting it the confirmation; `requestState` signed, single-use and bound to the tool, the arguments and the question; every quoted value a code span (§18 rows 58–69, 77) |
-| logging test | every registered tool driven with canary values at debug; asserts the logs are non-empty and contain no canary |
-
-## 6. Addressing
-
-### 6.1 Messages, threads and drafts
-
-By the ids Gmail gives them, which are stable and opaque, and which the
-standard's §2 allows ("a stable id the platform gives you"). The model
-never sees an index or a position. A result that lists messages gives
-each id beside it. A draft has two ids — the draft's and the message
-inside it — and every draft result names both, labeled, because
-confusing them is how a reply lands on the wrong message.
-
-RFC 5322 `Message-ID` values are shown as `untrusted_rfc822_message_id` and
-accepted wherever a message id is, prefixed with `rfc822:`; the server
-resolves them through `rfc822msgid:` search and refuses `[ambiguous]` if
-two messages carry one (mailing lists do that). `rfc822:` takes exactly
-one, written `<local@domain>` with no space, quote, parenthesis, brace
-or colon; anything else is `[invalid]` before any search, since text
-after it would be read as more search terms (§18 row 87).
-
-### 6.2 Labels
-
-By id or by exact name. System labels by their id in any case (`inbox`
-is `INBOX`). A user label's name resolves through `labels.list`, which
-is cached per call, not per process, because a label renamed in the web
-UI between two calls must not resolve to the old one. An exact name
-wins; otherwise a name matches case-insensitively. Spike I found that
-Gmail refuses a second user label differing only in case (409), and
-refuses `INBOX` and `Inbox` as user label names (400), so a
-case-insensitive match finds at most one label Gmail created. The
-`[ambiguous]` answer with both ids stays for a label list that says
-otherwise, since nothing documents the rule.
-
-### 6.3 Time and search
-
-`q` passes through verbatim: it is the person's own search language,
-and rewriting it would make the server's results differ from the web
-UI's for the same text. Two parameters sit beside it because §2.9 makes
-dates in `q` read as Pacific midnight: `after` and `before` accept
-RFC 3339 instants or dates plus a `time_zone`, and the server appends
-them to `q` as `after:<epoch>` / `before:<epoch>`, stating the instants
-it used. A date written inside `q` is left alone and the description
-warns about the Pacific reading.
-
-A zone name is read from the system's zone files, and from a copy of
-the zone database built into the binary when the system has none. On
-Windows Go finds zone files only in a Go installation, so the copy is
-what lets a person without Go name a zone there, in `time_zone` or an
-invitation's `TZID`. It adds about 400 KB (§18 row 82).
-
-### 6.4 Addresses
-
-Parsed with `net/mail`. A display name with non-ASCII is RFC 2047
-encoded when building and decoded when reading. An address the parser
-refuses is `[invalid]` naming which argument, never passed through.
-
-A header in mail that `net/mail` refuses is read leniently, and the
-result says so. An address written inside a quoted name or a comment is
-never taken, since a sender writes one there to pass it off as the
-sender: the one angle address outside them is, else the one bare
-address. With none, or more than one, the text is kept as a name with
-no address. A fuzz test holds that a shown address lies outside every
-quoted string and comment.
-
-A result shows an address as `Name <address>`, with the name quoted
-unless it is plain words, as the header writer quotes it, but never
-encoded. So every address a result shows reads back with `net/mail` as
-the same mailbox, and can be given back as one recipient: a name with a
-comma does not split in two, and a name holding `<x@y>` stays a name.
-A fuzz test holds the round trip.
-
-### 6.5 Error classes
-
-Closed vocabulary, derived from the code by `scripts/gates classes` and
-asserted in both directions. The standard's six, plus six this API
-forces:
-
-| Class | Means | Caller should |
-|---|---|---|
-| `invalid` | malformed or under-specified arguments, or too large (§2.6) | fix the arguments |
-| `not_found` | no such message, thread, draft or label | check the id |
-| `auth` | not signed in, token revoked or expired (§2.11), or scope missing | run `login` |
-| `forbidden` | signed in, but the organization or account refuses this | ask an administrator |
-| `conflict` | the state refuses it: label name taken, `SENT` applied by hand | read and reconsider |
-| `stale` | the draft moved since the witness was read (§4.4), or a witness the call carries is not what Gmail holds (§4.13) | re-read and retry |
-| `ambiguous` | a label name or `rfc822:` id matched more than one | pass an id |
-| `blocked` | a guard refused what the API would have allowed (§4.2, §4.7), or a write that cannot be undone came without `confirm: true` (§4.13) | pass the override, or don't; `confirm` only when the person asked for that write |
-| `rate_limited` | §2.2's per-user, project or sending limits | wait; the message says how long |
-| `unavailable` | a transient upstream failure | retry |
-| `unsupported` | the API cannot do this (§2, "cannot do") | see §2 |
-| `ambiguous_outcome` | a send, a filter create or a filter delete may or may not have happened (§4.3, §7.9) | read the result's verdict; never resend blind |
-
-`rate_limited` distinguishes the sending limit from request-rate limits
-in its message, because "wait a minute" and "wait up to a day" are
-different advice. `stale` and `conflict` stay apart for the reason a
-sibling's log gives: they ask the caller to do different things.
-
-## 7. Reading and writing
-
-### 7.1 Finding mail
-
-`search_threads` (the default choice; threads are what a person reads)
-and `search_messages` (when a single message's labels or attachments are
-the point) take `q`, `after`/`before`, `labels`, `include_spam_trash`,
-`max` (default 20, at most 100) and `page_token`. Each result is an id,
-the participants, the subject, the date, labels by name, the message
-count, whether it has attachments, and Gmail's snippet — the snippet
-inside an untrusted boundary (§4.1). Every listing says whether it is
-complete, per the sibling lesson that an empty page with a token is not
-the end.
-
-A thread's date and snippet are its newest message's that is not a
-draft, not in the trash and not an emoji reaction, as a reply's parent
-is chosen (§4.5). A draft after it is the account's own unsent text, so
-showing it would credit the account with the thread's last word. The row
-also says whether the account sent that message (`latest_from_me`, from
-its `SENT` label) and how many drafts the thread holds. A thread of
-nothing else shows its newest message. A row cannot pass over a reaction:
-a reaction is told by its part, and the row's read carries headers only
-(§18 row 78).
+written to steer an agent. Google's Workspace MCP guide warns that mail
+"may contain hidden instructions that can hijack your session".
+
+So rendered mail sits inside a delimited block naming its origin, the
+sender's address and the message id. The block's boundary token is
+drawn per call, and drawn again if the content holds it, so the content
+cannot close the block itself. `structuredContent` carries the same
+text in fields named `untrusted_*`. The tool descriptions and the server
+instructions say mail content is untrusted, and no result phrases a
+message's text as something to do.
+
+A property test plants a marker in every sender-controlled field of
+hostile mail and holds each one inside its block, across every
+renderer.
+
+Rejected: showing mail to the model as plain text.
+Cost: the server cannot stop a model from being persuaded. It can only
+make the persuasion visible, remove the tools that would make it
+catastrophic (D-13), and never add its own voice to it (D-10).
+
+### D-10 Sender text never reaches the server's voice
+
+`internal/render` writes the server's own text, its notes and labels,
+only from typed parts. Sender text reaches a result only through a
+block (D-09), so it cannot write a line that reads as the server's.
+
+The reason is that a rule kept by care breaks at the next field. A
+part's `charset` parameter, which RFC 2231 lets a sender percent-encode
+with newlines, can carry a fake server note. An attachment name or a
+link's host can do the same. A type closes the whole class at once.
+
+So a charset label is shown only when it has the IANA shape. An
+attachment note does not name the file. A link-mismatch note names a
+host only when it is host-shaped. Invisible characters in an address are
+stripped and counted (D-11). The server instructions name only the tools
+actually registered (D-85). `TestSenderTextNeverReachesTheServersVoice`
+drives hostile raw mail through parse, model and render.
+
+Rejected: a rule kept by care rather than a type.
+Cost: a charset label is shown only in the IANA shape, and an
+attachment note does not name the file.
+
+### D-11 Text a reader would not see is removed and counted
+
+The server converts HTML to text itself. Text a person would not see is
+dropped: `display:none`, zero-size or same-color-as-background runs,
+zero-width and bidi-control characters, and HTML comments. The result
+says how many characters were dropped and why.
+
+The count is the signal. Legitimate mail rarely hides much, and an
+instruction written for an assistant often hides in exactly these
+places. The same removal runs over headers, addresses, a part's type
+and method, an attachment's text (D-26), and the signature and vacation
+reply `get_settings` shows (D-62). A fuzz target holds the HTML
+converter.
+
+Rejected: passing hidden text through for the model to judge, which
+hands it instructions the person never saw.
+Cost: Gmail keeps hidden text in a signature or a vacation reply, so
+the note there says the text holds it rather than that it was removed.
+
+### D-12 Nothing a message references is fetched
+
+No image, stylesheet, tracking pixel or link is fetched. Links render as
+text with their host shown, and a link whose visible text names a
+different host than its target says so.
+
+A fetch tells the sender the mail was read, and sends a request where
+the mail pointed. The server's job is to show mail as text, so it has no
+reason to make either.
 
 A message's row and its read say how the sender offers to unsubscribe.
-`List-Unsubscribe` is read as RFC 2369 §2 tells a client to: URIs in
-angle brackets, with comments and whitespace between them ignored. The
-first thing that is neither a bracketed URI nor a comma after one ends
-the reading. `unsubscribe` lists the http and https addresses and the
-mailto ones, each in the header's order, which RFC 2369 makes the
-sender's order of preference. `one_click` is true when one of them is
-https and the one `List-Unsubscribe-Post` header reads exactly
-`List-Unsubscribe=One-Click` (RFC 8058 §3.1). It is the sender's claim:
-RFC 8058 §4 asks a receiver to check a DKIM signature over both
-headers, and this server does not. The server never visits or writes to
-any of these addresses (§4.1.3). Both headers are in the listing's
-header set, at no cost (§18 row 80).
+`List-Unsubscribe` is read as
+[RFC 2369 §2](https://www.rfc-editor.org/rfc/rfc2369#section-2) tells a
+client to: bracketed URIs in the header's order, which is the sender's
+order of preference. `one_click` is true when one is https and
+`List-Unsubscribe-Post` reads exactly `List-Unsubscribe=One-Click`
+([RFC 8058 §3.1](https://www.rfc-editor.org/rfc/rfc8058#section-3.1)).
+The server never visits or writes to any of these addresses.
 
-### 7.2 Reading a thread or a message
+Rejected: rendering HTML.
+Cost: `one_click` is the sender's claim. RFC 8058 §4 asks a receiver to
+check a DKIM signature over both headers, and this server does not.
 
-`get_thread` and `get_message` walk the whole MIME tree (§3.7): the
-preferred body is `text/plain` unless it is a placeholder or absent,
-then HTML converted to text (§4.1.2); every part's charset decoded;
-parts stored behind an `attachmentId` fetched when they are body parts
-and listed when they are attachments. Headers shown are From, To, Cc,
-Reply-To, Date, Subject, `Message-ID`, and `List-Unsubscribe` when
-present, and the message's line says how it offers to unsubscribe
-(§7.1); `all_headers: true` shows the rest. Budget and collapsing per §4.8.
-Calendar invitations are listed as attachments with their method
-(`REQUEST`, `CANCEL`). Invisible characters in a part's type or method,
-which are the sender's, are removed and counted with the headers'. A thread's drafts follow its conversation in a
-section of their own, "drafts in this thread, not sent", on the first
-read; the cursor counts only what was sent or received, and drafts over
-the budget are listed by message id (§17.2).
+### D-13 The writes that redirect mail do not exist
 
-An invitation's attachment entry also says what it says about its
-event: `invitation` gives the UID, the sequence, the recurrence id of
-one occurrence, the start and end, the organizer's address, the title,
-whether the event is all day, and how many events the calendar holds.
-This reverses "no further parsing": a calendar server finds an event by
-its UID (the Calendar API's `iCalUID`), so a hand-off from mail to
-calendar needs it, and the times say which meeting it is. The fields
-describe the first event that is not one occurrence's change, else the
-first. A time is RFC 3339 when it is UTC or its `TZID` names an IANA
-zone, a date when the event is all day, and otherwise as written, with
-the zone it names. The end and the recurrence id each give their own
-zone when it is not the start's, since RFC 5545 lets each time name
-one. `method` is the calendar's `METHOD` when RFC 5546
-defines it; every other field is the sender's text and named
-`untrusted_*`.
+Auto-forwarding, forwarding addresses, filters that forward, delegation
+and send-as identities have no tool. They are written off in
+`testdata/api-coverage.tsv`, not gated: absent in every configuration.
 
-The part is read as RFC 5545 §3.1 asks: lines unfolded before the
-charset is decoded, since a fold may split a character; parameter
-values quoted or not; text unescaped. Only properties directly in an
-event count, so a time zone's or an alarm's are never the event's.
-The caps are 1 MB of calendar, 8 levels of nesting, 256 characters of
-title and 1,024 bytes of UID, which is left out rather than cut. A fuzz
-test holds the parser, and another holds that a title and UID survive
-escaping and folding exactly.
+Each turns one persuaded call into a permanent leak of every future
+message. A message saying "forward all mail to this address" is an
+attack, and one was reported against a real server. A switch that
+enables such a write is a switch somebody turns on.
 
-Gmail often keeps one copy of an invitation inline and stores an
-`invite.ics` apart. The stored copy is read even when the inline one
-was. The sender wrote both and can make them differ, and `invite.ics` is
-the copy `download_attachments` saves, so its entry says what the saved
-file says, or that it is the same as the inline copy. Reading the
-details of a part stored apart costs one `attachments.get`, 20 units,
-and a message spends at most one: on the first part whose Content-Type
-does not state the method, else the first (§18 row 81).
+The useful half of those APIs is showing that mail is being forwarded.
+`get_settings` leads with forwarding (D-62), and `list_filters` flags
+each forward action (D-56).
 
-### 7.3 Attachments
+Rejected: gating these writes rather than leaving them out.
+Cost: changing forwarding is written off; `get_settings` only shows it.
 
-`download_attachment` writes one attachment into `GMAIL_LOCAL_DIR` and
-is registered only when that is set. It takes a message id and the
-attachment's `part_id`, which `get_message` lists: part ids are Gmail's
-structure and stable, where an `attachmentId` is not documented to be.
-The filename is taken from the part's RFC 2231 or RFC 2047 name, reduced
-to a safe base name, and never overwrites: the file is created with
-`O_EXCL` through an `os.Root` on the directory, a clash gets `-1`, `-2`
-before the extension, and the result names the path written with the
-file's size and SHA-256. The file is `0600`, or restricted by ACL on
-Windows; a failed or partial write is removed. Content is streamed to
-disk: `attachments.get` answers JSON, so the client reads it token by
-token up to `data` and decodes that string as it arrives, never holding
-it whole, and stops at 64 MB; an attachment declared larger is refused
-before it is read. A stream is bounded by `GMAIL_HTTP_TIMEOUT` without
-progress rather than in total, so a large file on a slow link finishes
-and a stalled one does not hang. A body cut anywhere is a failed read and
-retried; a retried read starts the file over.
+### D-14 Every read has a character budget and names what it left out
 
-`download_attachments` writes several attachments of one message the
-same way, one at a time, for one read of the message and one
-`attachments.get` per part Gmail stored apart. `part_ids` names them,
-at most 100. Left out, it takes every attachment but three kinds, each
-listed in `skipped` with its reason: an inline part, such as an image
-the body shows, unless `include_inline`; an emoji reaction, which is
-not a file; and an invitation's calendar version of the body when the
-message also carries the invitation as a file, as Gmail's invitations
-carry `invite.ics` beside the same calendar in `multipart/alternative`.
-Past 100 parts the rest are skipped as over the limit. Each part is
-written or fails on its own: a failure is listed in `failed` as
-`[class] message` and leaves no file, and the files written before it
-stay.
+Every read has a budget in characters, stated in the result. A thread
+renders newest first up to the budget. Quoted text and signature blocks
+collapse to a line saying how much was collapsed. Messages past the
+budget are listed by id, sender and date with a cursor. A long body is
+cut at a paragraph boundary, with a marker and the offset to continue
+from.
 
-A part whose content Gmail gives neither inline nor behind an
-`attachmentId`, though it has a size or parts of its own, is refused as
-`[unsupported]` by both tools rather than written as an empty file. An
-attached message (`message/rfc822`) served as its own parts would read
-this way, but Gmail served attached messages whole when tested live, so
-this guards a shape not seen (§18 row 83).
-An empty attachment has neither and no size, and is written empty.
+The rule is that a read never silently returns less than it found:
+every omission is named and continuable. One thread from another server
+returned 46k tokens to a client capped at 25k.
+
+The parts around a body count too. A read's header block takes at most
+half the budget and says where it was cut. Each list in the notes, such
+as the links whose text names another site, takes at most an eighth,
+and the rest are counted. Listings use `format=metadata` with a fixed
+header set, never `full`. A page with a token is incomplete even when
+it holds no rows.
+
+Rejected: an unbounded read.
+Cost: a long thread takes several calls, each continuing from the
+cursor the last one gave.
+
+### D-15 A listing's budget bounds its text, never its structured rows
+
+`budget_chars` bounds a listing's text, in `content` and again in
+`untrusted_text`. The structured rows carry every item on the page in
+full and are not counted against it.
+
+A page that fits is shown whole. Otherwise the text shows rows while
+they and the line naming the rest fit. That line counts every row left
+out and names their ids, each once, and `omitted_ids` holds the same
+ids. `list_filters` shows forwarding filters first, so one that
+forwards is never out of the text.
+
+The rows are a released field, and emptying or dropping one changes
+what it holds, which is a breaking change (D-84). A row dropped past the
+budget is also unreachable, since the next page starts after it.
+
+Rejected: bounding the structured rows, by dropping rows or emptying
+their content.
+Cost: a page of 100 came to 70,000 to 106,000 characters under a budget
+of 24,000. The search and draft descriptions say so, and advise a
+smaller `max`, such as 25, to a client that limits the size of one
+result.
+
+### D-16 `q` passes through verbatim, with `after` and `before` as instants beside it
+
+`q` passes through verbatim. It is the person's own search language,
+and rewriting it would make the server's results differ from the web
+UI's for the same text.
+
+Two parameters sit beside it, because Gmail reads a date in `q` as
+midnight Pacific time
+([filtering](https://developers.google.com/workspace/gmail/api/guides/filtering)).
+`after` and `before` take RFC 3339 instants, or dates with a
+`time_zone`. The server appends them to `q` as `after:<epoch>` and
+`before:<epoch>`, and the result states the instants it used. Label
+names in `labels` are resolved first (D-23). A query that cannot be
+built sends nothing.
+
+A zone name is read from the system's zone files, else from the copy of
+the zone database built into the binary. Windows has zone files only
+inside a Go installation, so the copy is what lets a person without Go
+name a zone there.
+
+Rejected: rewriting `q`, which would make results differ from the web
+UI's.
+Cost: a date written inside `q` is read as Pacific midnight, which the
+description warns about, and the built-in zone database adds about
+400 KB to the binary.
+
+### D-17 A thread row names its newest message that was sent or received
+
+A thread row's date and snippet are those of its newest message that is
+not a draft, not in the trash and not an emoji reaction, chosen as a
+reply's parent is chosen (D-40). A thread of nothing else shows its
+newest message.
+
+A draft after that message is the account's own unsent text. Showing it
+would credit the account with the thread's last word. The row also says
+whether the account sent that message, as `latest_from_me` from its
+`SENT` label, and how many drafts the thread holds.
+
+Rejected: a full read per thread to tell a reaction, which would
+multiply a listing's cost.
+Cost: a row may still name a reaction as the latest. A reaction is told
+by its part, and the row's read carries headers only.
+
+### D-18 `get_thread` shows a thread's drafts after the conversation
+
+`get_thread` shows a thread's drafts after its conversation, in a
+section of their own: "drafts in this thread, not sent". The cursor
+counts only what was sent or received. Drafts past the budget are
+listed by message id, a few of them, and the rest are counted.
+
+Showing them lets a model see what is pending in a thread. A section of
+their own keeps what was said apart from what might be. The service
+returns Gmail's order, and `get_thread` and the renderer split the
+drafts off, so what "latest" means stays the same for every other
+caller.
+
+Rejected: hiding a thread's drafts; folding them into the conversation
+by date, where a draft reads as the last word.
+Cost: a thread's drafts spend part of the read's budget.
+
+### D-19 `list_changes` reports an expired cursor, never an empty list
+
+`list_changes` takes a `history_id`, from `get_profile` or a previous
+call, and returns the messages added, deleted and relabeled since, with
+the next `history_id`.
+
+Gmail keeps history records "typically" for "at least one week", and
+an older `startHistoryId` answers 404, after which a client "must
+perform a full sync"
+([sync](https://developers.google.com/workspace/gmail/api/guides/sync)).
+So a 404 here is reported as "cursor expired — history before this
+point is gone", with the current `history_id` to restart from and a
+note that the changes in between cannot be recovered. It never returns
+an empty list for an expired cursor.
+
+With a `label`, a 404 can also mean the label was deleted after it was
+resolved. The label list is read again first, and a missing label is
+`[not_found]`, never an expiry that moves the caller's cursor past
+changes it can still read. Pages continue from the same `history_id`,
+and the returned one is used only once the listing is complete.
+
+Rejected: a 404 read as no such mailbox.
+Cost: any 404 from `history.list` reads as expiry, since Google's body
+says only "Requested entity was not found.", and the changes in between
+cannot be recovered.
+
+### D-20 An invitation is read for the UID and times a calendar server needs
+
+An invitation's attachment entry says what it says about its event:
+the UID, the sequence, one occurrence's recurrence id, the start and
+end, the organizer's address, the title, whether it is all day, and
+how many events the calendar holds.
+
+A calendar server finds an event by its UID, the Calendar API's
+`iCalUID`, so a hand-off from mail to calendar needs it. The times say
+which meeting it is. Each time is RFC 3339 when it is UTC or names an
+IANA zone, a date when all day, else as written with its zone.
+
+The part is read as
+[RFC 5545 §3.1](https://www.rfc-editor.org/rfc/rfc5545#section-3.1)
+asks: lines unfolded before the charset is decoded, and text unescaped.
+Only an event's own properties count. The caps are 1 MB of calendar,
+eight levels of nesting, 256 characters of title and 1,024 bytes of
+UID. `method` is reported only when RFC 5546 defines it, and every
+other field is named `untrusted_*`. The stored `invite.ics` is read
+beside an inline copy, since the sender can make them differ and the
+stored one is the file a download saves.
+
+Rejected: no parsing of a calendar part beyond its method.
+Cost: reading a part stored apart costs one `attachments.get`, 20
+units, at most one per message.
+
+### D-21 Mail is addressed by Gmail's ids, and a draft result names both of its ids
+
+Messages, threads and drafts are addressed by the ids Gmail gives them,
+which are stable and opaque. The model never sees an index or a
+position, and every result that lists mail gives each id beside it.
+
+A draft has two ids: the draft's, and the id of the message inside it.
+Every draft result names both, labeled. Confusing them is how a reply
+lands on the wrong message, and the message id is also the witness a
+draft write carries (D-42).
+
+Rejected: an index or a position, which names a different message once
+the mailbox changes between two calls.
+Cost: a caller holds a draft's two ids apart, passing `draft_id` to the
+draft tools and `message_id` as their witness.
+
+### D-22 An `rfc822:` id is one Message-ID, never a search
+
+RFC 5322 `Message-ID` values are shown as `untrusted_rfc822_message_id`,
+and accepted wherever a message id is, prefixed with `rfc822:`. The
+server resolves one through an `rfc822msgid:` search, and refuses
+`[ambiguous]` when two messages carry it, as mailing lists make happen.
+
+`rfc822:` takes exactly one id, written `<local@domain>` with no space,
+quote, parenthesis, brace or colon. Anything else is `[invalid]` before
+any search. Text after the id would be read as more search terms, which
+could pick a message the caller never saw.
+
+Rejected: passing the `rfc822:` text into a search.
+Cost: obsolete forms and domain literals are refused, and such a message
+is reached by its Gmail id.
+
+### D-23 A label resolves by id or exact name, read on every call
+
+A label is named by its id or by its exact name. A system label is
+named by its id in any case, so `inbox` is `INBOX`. A user label's name
+resolves through `labels.list`, read on every call that names a label.
+An exact name wins; otherwise a name matches without regard to case.
+
+A label renamed in the web UI between two calls must not resolve to its
+old name, so nothing caches the list across calls. Google calls its
+list of system labels "not exhaustive"
+([labels](https://developers.google.com/workspace/gmail/api/guides/labels)),
+so none is hard-coded beyond aliases for the common ones.
+
+Gmail refuses a second user label that differs only in case, and
+refuses `INBOX` and `Inbox` as user label names. A match without regard
+to case therefore finds at most one label Gmail made. The `[ambiguous]`
+answer with both ids stays for a list that says otherwise, since
+nothing documents the rule.
+
+Rejected: a per-process cache; a hard-coded list of system labels.
+Cost: the label list is read on each call that names a label.
+
+### D-24 Addresses are strict going out, lenient coming in, and shown so they read back
+
+Going out, an address is parsed with `net/mail`. A display name with
+non-ASCII is encoded per RFC 2047, and an address the parser refuses is
+`[invalid]`, naming the argument, never passed through.
+
+Coming in, a header `net/mail` refuses is read leniently, and the result
+says so. An address written inside a quoted name or a comment is never
+taken, since a sender writes one there to pass it off as the sender.
+The one angle address outside them is taken, else the one bare address.
+
+Shown, an address is `Name <address>`, the name quoted unless it is
+plain words and never encoded. So every address a result shows reads
+back with `net/mail` as the same mailbox, and can be given back as one
+recipient. A name with a comma does not split in two, and a name
+holding `<x@y>` stays a name. Fuzz targets hold both directions.
+
+Rejected: an address written inside a quoted name or a comment.
+Cost: with none, or more than one, the text is kept as a name with no
+address.
+
+### D-25 Files move only through `GMAIL_LOCAL_DIR`, never over an existing file
+
+Files move between the mailbox and the disk only through the one
+directory `GMAIL_LOCAL_DIR` names. `download_attachment` and
+`download_attachments` are registered only when it is set.
+`create_draft` attaches base names inside it alone. A path, a `..` or a
+symlink out of it is `[invalid]`, and with the directory unset an
+attachment is `[blocked]`.
+
+A message could talk the model into reading any path it names, or
+writing over one. One directory the person chose bounds both.
+
+A file is created with `O_EXCL` through an `os.Root` on the directory,
+so it never replaces another; a clash gets `-1`, `-2` before the
+extension. It is readable by its owner alone, and a failed or partial
+write is removed. A file to attach must be a regular file, so a named
+pipe cannot hang the call. The result names the path written, the size
+and the SHA-256.
+
+Rejected: any path the caller names.
+Cost: with `GMAIL_LOCAL_DIR` set, read-only mode still registers the
+two download tools, since read-only is about the mailbox.
+
+### D-26 `read_attachment` reads text types inside the boundaries and the budget
 
 `read_attachment` reads one attachment into the result as text, and is
-registered in every mode. It reads plain text, CSV, Markdown and JSON
-as written, HTML converted as a body is, a calendar file as written,
-and an attached message (`message/rfc822`) parsed and rendered as
-`get_message` renders one, in a `message` field. The text is decoded
-from its charset and has what a reader would not see removed and
-counted, as a body has (§4.1). It sits inside the same boundaries, its
-fields are named `untrusted_*`, and it takes a body's budget, `offset`
-and `show_quoted`. Quotes and signatures collapse only in plain text,
-HTML and an attached message, where they mean what they mean in a body;
-a Markdown quote stays. Any other type is `[unsupported]` and points to
-`download_attachment`. A part declared over 5 MB is refused before it
-is read, and so is one that turns out larger. A part with no content
-of its own is refused as the download tools refuse it (§18 row 83).
-An attached message is not in the mailbox: it has no id, thread or
-labels, its date is its own `Date` header, and its own attachments are
-listed with no `part_id`, since none names them in the mailbox. A read
-costs one `messages.get`, and one `attachments.get` when Gmail stored
-the part apart.
+registered in every mode. It reads plain text, CSV, Markdown and JSON as
+written, HTML converted as a body is, and a calendar file as written.
+An attached message is parsed and rendered as `get_message` renders
+one.
 
-**Reversed 2026-10-09.** This section said "Attachments are never
-inlined into a tool result", with no reason recorded. For reading them:
-a person asks about an attached file as often as about a body, and the
-only path was to save it into `GMAIL_LOCAL_DIR` and open it outside the
-server, where nothing marks it as mail or removes what a reader would
-not see. A forwarded message often arrives as an attached `.eml`, which
-could not be read at all. Against: an attachment is a large place to
-hide instructions, and one a person rarely reads before an assistant
-does; and a result can carry up to 5 MB more mail. The owner decided on
-2026-10-09 to read attachments, registered by default, for the text
-types above only, inside the boundaries and under the budget a body
-gets (§14, §18 row 84).
+A person asks about an attached file as often as about a body. Without
+this tool the only path is to save the file and open it outside the
+server, where nothing marks it as mail. A forwarded message often
+arrives as an attached `.eml`.
 
-### 7.4 Drafts and replies
+So the text gets what a body gets: hidden text removed and counted
+(D-11), the same boundaries and `untrusted_*` fields (D-09), and a
+body's budget, `offset` and `show_quoted` (D-14). Any other type is
+`[unsupported]` and points to `download_attachment`. A part declared
+over 5 MB is refused before it is read.
 
-`create_draft` takes `to`, `cc`, `bcc` (one address per entry, ASCII
-local@domain; a refusal names the entry by position, not by what it
-says), `subject`, `body` (plain text; `body_html` optional and sent as
-`multipart/alternative` with the plain part kept, and refused without
-`body`), `attachments` (base names inside `GMAIL_LOCAL_DIR` only; a
-path, a `..` or a symlink out of it is `[invalid]`, and with the
-directory unset `[blocked]`), `from` (one of `sendAs.list`, which is read
-on every call for the default sender and the account's own addresses)
-and `reply_to`/`reply_to_thread`/`reply_all` (§4.5). The server writes a
-`Message-ID` at the sender's domain, and Gmail replaces it (§4.3), so
-`create_draft` reports none; `get_draft` shows the one Gmail kept. Up to
-5 MB it uses the JSON `raw` path; above it, multipart media upload;
-above 35 MB it refuses before sending (§2.6).
+Rejected: never inlining an attachment.
+Cost: an attachment is a large place to hide instructions, and one a
+person rarely reads before an assistant does. A result can carry up to
+5 MB more mail.
 
-The plain text goes out as given (§4.2), as quoted-printable UTF-8,
-whose soft breaks keep every encoded line within 76 characters and
-vanish on decoding (RFC 2045 §6.7), so a paragraph is one line however
-long (§18 row 71). Without `body_html`, the draft also carries an HTML
-version made from that text: the same words, escaped, a `<p>` per block
-of lines and a `<br>` per line break inside one, runs of spaces kept, and
-each `http` or `https` address a link whose text is the address itself
-(§18 row 75), after the plain part in `multipart/alternative`. Gmail's web composer opens a draft with no HTML
-part as plain text and, when the person sends it, wraps every line over
-78 characters at 70 and sends nothing else (§18 row 73). With the HTML
-part it sends both, as it does any mail written in it: the HTML is what
-readers show, and the plain part Gmail delivers is wrapped at 75, as in
-any mail Gmail sends.
+### D-27 MIME is the server's own, and what it builds parses back the same
+
+`internal/mime` parses and builds RFC 5322 with MIME (RFC 2045 to 2047)
+and RFC 2231 parameters, on the standard library's `mime`,
+`mime/multipart`, `mime/quotedprintable` and `net/mail`. The property
+that matters is that what the server builds, it parses back to the same
+fields.
+
+Other servers garbled subjects, failed on an accented display name,
+named attachments `noname` and hard-wrapped paragraphs. So a read walks
+the whole tree: each part's charset, parts stored behind an
+`attachmentId`, HTML-only mail, and a plain part that only points at
+the HTML. A build writes RFC 2047 encoded-words, RFC 2231 filenames and
+quoted-printable text. `EditRaw` edits a draft's own bytes as a tree and
+leaves every part it does not touch as Gmail stored it.
+
+Fuzz targets hold that built messages parse back the same, over names,
+subjects, bodies and filenames in scripts nobody on the project reads,
+and that an edit never breaks a parse. The fake reads with the standard
+library, not this package (D-05). A live run round-trips four scripts
+through Gmail.
+
+Rejected: testing the builder against its own parser.
+Cost: `EditRaw` does not hold the 998-character line limit `Build`
+does, since a stored draft may already carry longer lines.
+
+### D-28 A paragraph goes out as one line, never wrapped to a width
+
+A paragraph goes out as one line, as quoted-printable UTF-8. Soft line
+breaks keep every encoded line within 76 characters and vanish on
+decoding
+([RFC 2045 §6.7](https://www.rfc-editor.org/rfc/rfc2045#section-6.7)).
+
+RFC 5322's lines "MUST be no more than 998 characters, and SHOULD be no
+more than 78" are the encoded message's lines. It also makes it
+"incumbent upon implementations that display messages to handle an
+arbitrarily large number of characters in a line"
+([RFC 5322 §2.1.1](https://www.rfc-editor.org/rfc/rfc5322#section-2.1.1)).
+Text cut to a width is
+[RFC 3676 §3.2](https://www.rfc-editor.org/rfc/rfc3676#section-3.2)'s
+embarrassing line wrap, shown on a screen narrower than the cut. A
+build test sends a paragraph of over 2,000 characters in lines of at
+most 76, and reads it back as one line.
+
+Rejected: wrapping to 78 or 72 columns.
+Cost: RFC 3676 §3.1 calls long paragraph text an error, because some
+readers scrolled a long line rather than wrapping it.
+
+### D-29 A draft without `body_html` carries an HTML version made from its text
+
+A draft written without `body_html` also carries an HTML version made
+from its text. It holds the same words, escaped: a `<p>` per block of
+lines, a `<br>` per line break inside one, runs of spaces kept, and each
+web address a link (D-32). It goes after the plain part, in
+`multipart/alternative`.
+
+Gmail's web composer opens a draft with no HTML part as plain text.
+When the person sends it, Gmail wraps every line over 78 characters at
+70 and sends nothing else. With an HTML part it sends both, as it does
+any mail written in it, and readers show the HTML. So a paragraph
+written on one line reaches its reader whole, whoever presses send.
+
+The `body` descriptions ask for a paragraph per line and a blank line
+between paragraphs, which is what the HTML version is made from.
+
+Rejected: plain text alone, which Gmail's web composer wraps at 70;
+`white-space` styling, which classic Outlook ignores.
+Cost: a mailing list that refuses HTML needs `plain_only` (D-31).
+
+### D-30 The made HTML is recognized by reading it back, and a draft keeps its shape
+
+`update_draft` given `body` alone keeps the draft's shape. Plain text
+alone stays alone. An HTML version made from the old body is made again
+from the new one, and goes with the text when the body is emptied. A
+draft with no text yet has no shape, and takes the HTML version.
+
+The made version is recognized by reading it back, not by remaking it.
+HTML holding only paragraphs, line breaks and links whose text is their
+target, which reads back as the stored text, says nothing the text does
+not, whatever rules made it. A change to the line rules therefore
+strands no draft made before it. `mime.EditRaw` decides whether the HTML
+moves with the parts it replaces in hand, so the decision and the edit
+are one step on one parse. A fuzz target holds that every version the
+server makes reads back as made.
+
+Rejected: recognizing the made version by remaking it.
+Cost: HTML written another way needs `body_html` beside `body`, and
+`plain_only: true` will not delete it.
+
+### D-31 `plain_only` keeps a draft plain on request
+
+`plain_only: true` on `create_draft` keeps the text alone, with no HTML
+version. On `update_draft` it changes the shape: `true` drops the made
+version, and `false` adds one.
+
+Some mailing lists refuse HTML. The kernel's etiquette says "almost all
+kernel mailing lists will reject HTML email", and git's contributor
+guide says "the Git list rejects HTML email". A draft for such a list
+needs the plain part alone. `signature` with `plain_only` is
+`[invalid]`, since plain text has nowhere for a signature's links and
+images.
+
+Rejected: an enum for `update_draft`'s `plain_only`. The flag keeps
+`create_draft`'s name and sense, and the default keeps a draft made
+plain on purpose plain.
+Cost: Gmail's web composer wraps such a draft at 70 when a person sends
+it (D-29); `send_draft` sends it as built.
+
+### D-32 A web address in the made HTML is a link whose text is the address
+
+Each `http` or `https` address in the made HTML, and in a signature
+`update_signature` writes, is a link whose text is the address itself.
+
+No reader is documented to link a bare address in HTML. Outlook's help
+describes its composer, not its reader. A link whose text equals its
+target cannot trip a spam filter's mismatch rule, which flags text that
+names another domain. Only `http` and `https` are linked, as OWASP's
+XSS cheat sheet advises: "Allow-list http and HTTPS URLs only".
+
+Where an address starts and ends follows GitHub's autolinks: after a
+space or an opening bracket or quote, never inside a word, with
+trailing punctuation left out. It also stops at quotes, angle brackets
+and any character a reader cannot see. A fuzz target holds that a line
+adds no other markup and reads back as written.
+
+Rejected: leaving links to the reader; a scheme other than `http` and
+`https`.
+Cost: a line holding a bidi control gets no link at all, since an
+override earlier on the line can draw a link's text as another address.
+
+### D-33 The body is exactly what the caller gave, and the server adds only what is named
+
+The body is exactly what the caller gave. No prefix, footer or "sent
+by" line is added server-side, ever.
+
+The server adds only what the call or the operator names: the parent's
+text with `quote` (D-34), the original as an attachment with `forward`
+(D-35), and the signature with `signature` or the operator's default
+(D-36). Without `body_html`, the same words also go as an HTML version
+made from the text (D-29), so a reader sees the caller's words either
+way.
+
+Everything that leaves this server is words the person can read in the
+draft before it goes. A sent copy read in a second mailbox shows the
+subject and body exactly as the draft held them, with nothing added. A build test holds that plain ASCII goes out byte for byte.
+
+Rejected: a prefix, a footer or a "sent by" line.
+Cost: a draft carries nothing that says an assistant wrote it. What it
+says is the person's decision.
+
+### D-34 `quote` puts the parent's text, as a read shows it, below the body
 
 `quote: true` on a reply puts the parent's text below the body: the
 body as given, a blank line, `On <Date>, <From> wrote:`, then each line
-of the parent's text after `> `, an empty one as `>`. The `Date` header
-is shown as the sender wrote it, and `From` as a result shows an
-address (§6.4). The text is the parent's as `get_message` reads it: a
-plain part as written, with what a reader would not see removed; an
-HTML-only parent, or one whose plain part only points at its HTML,
-converted, so each link keeps only its host, and the result says
-`quote_from_html`. The parts of that text Gmail stored apart are read
-for it, 20 units each, and the result says how many; an invitation's
-calendar part is not. `quoted_chars` counts the characters quoted. The
-HTML version is made from the whole text, quote included, so it says
-what the plain text says and `update_draft` still recognizes it as
-made; `quote` with `body_html` is `[invalid]`, and without a reply
-target too. A later `update_draft` with `body` replaces the quote with
-the rest of the text, which its description says (§18 row 86).
+of the parent's text after `> `.
+
+The text is the parent's as `get_message` reads it, so the quote shows
+what the person saw. A plain part goes as written, with what a reader
+would not see removed. An HTML-only parent, or one whose plain part only
+points at its HTML, is converted, and the result says
+`quote_from_html`. The parts Gmail stored apart are read for it, 20
+units each, and the result says how many. The HTML version is made from
+the whole text, quote included, so `update_draft` still recognizes it as
+made (D-30).
+
+Rejected: "no suffix" without exception, which left a reply with no way
+to quote what it answers.
+Cost: a later `update_draft` with `body` replaces the quote, and
+`quote` with `body_html`, or without a reply target, is `[invalid]`.
+
+### D-35 `forward` attaches the original as Gmail stored it, its `Bcc` left out
 
 `forward` on `create_draft` takes a message id, or `rfc822:` and its
-`Message-ID`, and attaches that message to the draft, read with one
-`messages.get` in `format=raw`, as `<subject>.eml`. A slash or backslash
-in the subject is written as `_`. The subject is `Fwd: ` and the
-original's unless `subject` is given. The copy goes as Gmail stored it,
-with two changes. Its line endings are written as CRLF. Its `Bcc` and
-`Resent-Bcc` headers are left out, since the sender's own copy of a sent
-message keeps its `Bcc` and a forward would show the blind recipients to
-everyone it reaches (RFC 5322 §3.6.3); the result's `bcc_removed` says
-so. The header block is split as a read splits it, before any line
-ending is rewritten, so a bare CR cannot turn into an empty line that
-moves a `Bcc` into the body; a CR inside a header line is written as a
-space. RFC 2046 §5.2.1 permits only `7bit`, `8bit` or `binary` for an
-attached message, never base64, so the part is declared `7bit` when it
-is ASCII and `8bit` when it is not. A message with a line over 998
-octets or a NUL is refused as `[unsupported]`: only `binary` carries one
-(RFC 2045 §2.7, §2.8), and SMTP carries binary only between servers that
-both offer it (RFC 3030). The part goes as written, so a boundary is
-drawn again when the message holds it. A message whose raw form is over
-about 24 MB is refused as `[invalid]` before anything is written: the
-read carries it as base64url, a third larger, and the client reads at
-most 32 MB of one answer. The server asks Gmail to file the draft in
-the original's thread, with no `In-Reply-To` or `References`, since it
-is not a reply. Gmail did when tested live, against the discovery
-document's conditions, and the result says each time whether it did
-(§18 row 85). `forward` with `reply_to`,
-`reply_to_thread` or `reply_all` is `[invalid]`, and a draft, a trashed
-message and a reaction are refused as a reply's parent is (§4.5).
+`Message-ID`, and attaches that message to the draft as
+`<subject>.eml`, read with one `messages.get` in `format=raw`.
 
-`plain_only: true` on `create_draft` keeps the text alone, for a mailing
-list that refuses HTML (§17.9). `update_draft` given `body` alone keeps
-the draft's shape: plain text alone stays alone, and an HTML version
-made from the old body is made again, or goes with the text when the
-body is emptied; a draft with no text yet has no shape and takes the
-HTML version. `plain_only` on `update_draft` changes the shape: `true`
-drops the made version, `false` adds one. The made version is
-recognized by reading it back: HTML holding only paragraphs, line
-breaks and links whose text is their target, which reads as the stored
-text, says nothing the text does not, whatever rules made it. HTML
-written another way still needs `body_html` beside `body`, and
-`plain_only: true` will not delete it. `update_signature` writes each
-line of a signature as the HTML version does.
+The copy goes as Gmail stored it, with two changes. Its line endings
+are written as CRLF. Its `Bcc` and `Resent-Bcc` headers are left out,
+since the sender's own copy of a sent message keeps its `Bcc`, and a
+forward would show the blind recipients to everyone it reaches
+([RFC 5322 §3.6.3](https://www.rfc-editor.org/rfc/rfc5322#section-3.6.3)).
+The result's `bcc_removed` says so. The header block is split before
+any line ending is rewritten, so a bare CR cannot move a `Bcc` into the
+body.
+
+RFC 2046 §5.2.1 permits only `7bit`, `8bit` or `binary` for an attached
+message, so the part is declared `7bit` or `8bit`. The draft is asked to
+join the original's thread, with no `In-Reply-To`, and the result says
+whether Gmail filed it there.
+
+Rejected: an inline forward, which rewrites the original rather than
+carrying it as stored.
+Cost: a message with a line over 998 octets or a NUL is `[unsupported]`,
+since only `binary` carries one and SMTP carries binary only between
+servers that both offer it (RFC 3030). One over about 24 MB is
+`[invalid]`.
+
+### D-36 A signature is added only when the call or the operator asks
 
 `signature: true` on `create_draft` puts the signature Gmail holds for
 the From address below the body, as Gmail's web composer puts one in a
-new email. The composer adds none to a draft it opens, and
-`drafts.send` adds none (§18 row 97), so a draft carries one only when
-the server puts it there. It comes from the `sendAs.list` the call
-reads anyway, at no further cost. The HTML version carries it as Gmail
-holds it, links and images included, in the composer's own markup
-(§18 row 98). Ending the message, it follows
-`<div><br clear="all"></div><div><br></div><span class="gmail_signature_prefix">-- </span><br>`
-inside `<div dir="ltr" class="gmail_signature" data-smartmail="gmail_signature">`.
-Above a `quote`, it sits in `<div><br clear="all"></div><div>…</div>`
-with no `-- `. The plain text carries it as `get_settings` reads it,
-after a blank line and, ending the message, the delimiter line `-- `
-(RFC 3676 §4.3). Above a quote there is none, as Gmail writes it there,
-so a reader that drops a signature keeps the quote. With `body_html`
-the block goes before its closing `</body>`. A draft never carries two:
-when a signature would go below the body, on either tool, `body_html`
-that holds a block marked `data-smartmail="gmail_signature"`, as the
-composer marks the person's own, is `[invalid]`, and so is a `body`
-that holds the signature's text as whole lines anywhere, a quote kept
-in it included. A signature of one line, such as a name a body signs
-off with, is not looked for. A signature quoted from someone
-else's mail carries the class alone and is no reason to refuse. An
-image the signature carries inside its HTML, as a base64 `data:` URL,
-goes as a part of its own beside the HTML in `multipart/related` (RFC
-2387), its `src` a `cid:`, and its Content-ID made from the image, so
-one image is one part. Gmail moves such an image out on save itself,
-and drops the plain version as it does (§18 row 99). An address with no signature, or only the markup an
-emptied editor leaves, gets none, and the result says `none_set`
-rather than failing. `signature` with `plain_only` is `[invalid]`:
-plain text alone has nowhere for its links and images. The API holds
-one signature per address, the one for new emails (§18 row 88), so a
-reply gets that one too. The result says what the signature shows,
-its lines, images and hidden characters, and never its text.
+new email. `GMAIL_DRAFT_SIGNATURE=true`, off by default, signs a new
+draft when the call leaves `signature` out, and the result says
+`by_default`.
+
+Gmail's composer adds no signature to a draft it opens, and
+`drafts.send` adds none, so a draft carries one only when the server
+puts it there. Who asks matters. The call asks for one draft; the
+operator, outside the conversation, asks for every new one; the model
+never decides it alone. The default never refuses. A body that already
+holds the signature, or plain text alone, goes without it, and the
+result says `skipped` and why. `update_draft` ignores the setting.
+
+The signature comes from the `sendAs.list` the call reads anyway. The
+result says what the signature shows, its lines, images and hidden
+characters, and never its text.
+
+Rejected: signing every draft by default for everyone.
+Cost: a reply or a forward is signed only with `signature: true`,
+since the API holds only the signature for new emails
+([SendAs](https://developers.google.com/workspace/gmail/api/reference/rest/v1/users.settings.sendAs#SendAs)).
+
+### D-37 A signature goes in the composer's markup, its images as parts
+
+The HTML version carries the signature as Gmail holds it, links and
+images included, in the composer's own markup. Ending the message, it
+sits inside
+`<div dir="ltr" class="gmail_signature" data-smartmail="gmail_signature">`,
+after
+`<div><br clear="all"></div><div><br></div><span class="gmail_signature_prefix">-- </span><br>`.
+Above a quote there is no `-- `, as Gmail writes it there. The plain
+text carries it after a blank line and, ending the message, the
+delimiter line `-- `
+([RFC 3676 §4.3](https://www.rfc-editor.org/rfc/rfc3676#section-4.3)),
+so a reader that drops a signature keeps the quote below it.
+
+An image the signature holds as a base64 `data:` URL goes as a part of
+its own beside the HTML, in `multipart/related`
+([RFC 2387](https://www.rfc-editor.org/rfc/rfc2387)). Its `src` is a
+`cid:`, and its Content-ID is made from the image, so one image is one
+part. Gmail moves such an image out on save itself, and drops the plain
+version as it does.
+
+Rejected: a `data:` image left inside the HTML, which Gmail rewrites and
+stores without the plain part.
+Cost: the markup is the composer's, copied rather than documented, so
+only a live run shows Gmail still reads it as a signature.
+
+### D-38 A draft never carries two signatures, and a new body keeps its own
+
+A draft never carries two signatures. When a signature would go below
+the body, `body_html` that holds the composer's block is `[invalid]`, and
+so is a `body` that holds the signature's text as whole lines.
 
 `update_draft` given `body` keeps the signature the draft carries below
-the new body, and `body_html` given beside it gets the block. It is
-found by its markup in the HTML version, running to the body's end when
-it ends the message, and by its text, read from that HTML again, at the
-last place it stands as whole lines in the plain part; a quote below
-that repeats it has it after `> `. It is the draft's own only when the
-HTML, the block aside, is the version made from the text, so a block in
-someone else's mail, quoted or forwarded in HTML the composer wrote, is
-never carried into a new body; a draft whose HTML was written another
-way takes its signature again with `signature: true`. A new body keeps
-the image parts the signature shows; a signature dropped or replaced
-takes the parts only it showed, and one set again adds none twice.
-Whenever the HTML is replaced, an inline part of a `multipart/related`
-that the new HTML no longer shows goes, in Gmail's own layout too,
-since Gmail shows such a part as an attachment, and the result names
-`attachments` changed for any besides a signature's; a part declared
-an attachment stays, and one the HTML shows, through `cid:` in an
-attribute or a CSS `url()`, percent-decoded (RFC 2392), stays. The same signature set again with `signature: true`
-reads as `kept`, its images and line endings aside. A new body replaces
-a quote too, so a signature that sat above one ends the message
-afterwards, with its delimiter. `signature: false` leaves it out, and
-`signature: true` puts the one Gmail holds for the draft's From address
-there, replacing the draft's, for one more `sendAs.list`, 1 unit, read
-beside `drafts.get`. The result says `kept` when that is the one the
-draft carried, and says the draft's was removed when Gmail now holds
-none. Either needs `body`. A plain-text-only draft takes one only with
-`plain_only: false`, and `plain_only: true` drops it with the HTML
-version. A draft whose signature is not found, because the composer
-rewrote its HTML or the signature's text left the plain part, is one
-whose HTML was written another way, and needs `body_html` beside
-`body`. New `body_html` on a draft whose HTML holds a signature block
-that is not carried — the composer's, or one in quoted mail — is
-refused `[conflict]` unless `signature` says what to do: `false` writes
-it without one, `true` puts Gmail's below it, and the result names the
-block as removed, replaced or kept, though it is never carried itself.
-Replacing it silently would destroy what the caller cannot see (the
-shared standard's §3); new HTML that keeps a block of its own is taken
-as given.
+the new body. It is found by its markup in the HTML and by its text in
+the plain part. It counts as the draft's own only when the rest of the
+HTML is the version made from the text. A block inside someone else's
+mail, quoted or forwarded, is therefore never carried, so a sender's
+tracking image or hidden text cannot go out from the account.
 
-`GMAIL_DRAFT_SIGNATURE=true` is the operator's default for the same
-signature: a new draft whose `create_draft` call leaves `signature` out
-is signed, as Gmail's composer signs a new email, and the result says
-`by_default`. It is the person running the server who asks, outside the
-conversation, never the model (the standard's §3), so `signature` is
-`true`, `false` or left out. A reply or a forward is signed only with
-`signature: true`: the API holds only the signature for new emails, and
-the reply/forward choice, often none, is not in it (§18 row 88). The
-default never refuses: a body that already holds the signature's text,
-`body_html` that already holds the composer's block, or `plain_only`
-goes without it, and the result says `skipped` and why. `create_draft`'s
-description says whether the server signs, so the model leaves the
-signature out of `body`. `update_draft` ignores the setting. Off by
-default, as every switch is (the standard's §10b), so a server that does
-not set it behaves as 3.2.0 did. Other servers sign for everyone by
-default; this one asks the operator (§18 row 100).
+New `body_html` on a draft whose HTML holds a block that is not carried
+is `[conflict]` unless `signature` says what to do. Replacing it
+silently would destroy what the caller cannot see. `false` writes the
+draft without one, and `true` puts Gmail's below it. Fuzz targets hold
+that a signature written below any body is found and carried below a
+new one.
 
-`update_draft` per §4.4, as a tree edit of the draft's own bytes:
-headers the call names are replaced, parts it names are rebuilt or
-removed, and every other header and part is written back byte for byte.
-`to`, `cc` and `bcc` replace their header, and `[]` clears it.
-Attachments are removed by the `part_id` `get_draft` lists. A draft that
-has both a plain and an HTML body takes `body` and `body_html` together,
-so the two cannot disagree. A subject changed on a reply is saved and
-flagged, since it may take the draft out of its thread. `delete_draft`
-with `confirm: true` (§17.1) and the draft's `message_id`, refused
-`[stale]` when the draft holds another (§4.4); a draft deleted between
-the read and the delete is reported gone. `list_drafts`, `get_draft`.
+Rejected: replacing a signature silently on new `body_html`; carrying
+the last signature-shaped block in the HTML.
+Cost: a draft whose HTML was written another way needs `body_html`
+beside `body`, and takes its signature again with `signature: true`.
 
-### 7.5 Organizing
+### D-39 A reply is threaded by the server from its parent
 
-`modify_labels` adds and removes labels on up to 100 message or thread
-ids. Archiving is removing `INBOX`, marking read is removing `UNREAD`,
-starring is adding `STARRED`; the description says so rather than
-growing a tool per verb, and the result names the verb it amounted to.
-`SENT` and `DRAFT` are `[conflict]` before anything is sent; `TRASH` is
-`[invalid]`, pointing to `trash` and `restore`. A draft's message is
-`[unsupported]` for that item, since Gmail does not label drafts (§2.12).
-`trash`, `restore` (§4.6); trashing a draft is refused for that item and
-points to `delete_draft`. `create_label`, `update_label` (patch: name,
-color, visibility), with a name checked against the label list first,
-so a dry run answers as Gmail would (§6.2). Visibility is written in the
-tools' own words — `show`, `show_if_unread`, `hide` — in and out.
-`delete_label` gated.
+A reply is built by the server from its parent, never assembled by the
+model. Gmail threads a message on three things: its `threadId`,
+`In-Reply-To` and `References` headers, and a matching subject
+([threads](https://developers.google.com/workspace/gmail/api/guides/threads)).
 
-### 7.6 Changes
+The server reads the parent's `Message-ID`, `References` and subject.
+It writes `In-Reply-To` as the parent's `Message-ID`, `References` as
+the parent's plus that id, `threadId` as the parent's thread, and the
+subject with one `Re:`. These headers carry RFC 5322 `Message-ID`
+values, which are not the API's message ids
+([RFC 5322 §3.6.4](https://www.rfc-editor.org/rfc/rfc5322#section-3.6.4)).
+`References` keeps the parent's first id, its last 38 and the parent's
+own, so a hostile parent cannot make a reply huge.
 
-`list_changes` takes a `history_id` (from `get_profile` or a previous
-call) and returns added, deleted and relabeled messages since, with the
-next `history_id`. A 404 is not `not_found`: it is reported as
-**"cursor expired — history before this point is gone"** with the
-current `history_id` to restart from and a note that changes in between
-cannot be recovered (§2.8). It never returns an empty list for an
-expired cursor. The 404's body is Google's ordinary envelope, reason
-`notFound`, "Requested entity was not found." (spike K), so the tool
-tells expiry apart by which call met it, not by the body. With a
-`label`, a 404 can also mean the label was deleted after it was
-resolved, so the label list is read again first: a missing label is
-`[not_found]`, never an expiry that would move the caller's cursor past
-changes it can still read. `label` limits
-the records to one label and `kinds` to some record types; while a
-`next_page_token` is set, the pages continue from the same `history_id`,
-and the returned one is used only once the listing is complete.
+Each condition matters to someone. For the sender's mailbox, `threadId`
+alone decides. A Gmail recipient threads by the headers and the
+subject. A live run checks both.
 
-### 7.7 Settings, reading
+Rejected: the API's message id in `In-Reply-To`; `threadId` alone.
+Cost: a caller's `subject` on a reply is `[invalid]`, since it is one of
+the three conditions.
 
-`get_settings` returns vacation responder, auto-forwarding state and
-address, forwarding addresses, IMAP, POP, language and send-as
-identities, forwarding first. `list_filters` returns filters, each
-forward action flagged, labels by name. Showing that mail is being
-forwarded is the useful half of those APIs; changing forwarding is
-written off (§4.1). Filters, the signature and the vacation reply can be
-changed behind a flag (§7.9). Addresses, display names and filter criteria are the account's
-own configuration and stand in the server's voice, like label names; the
-vacation reply and the signatures are free text that goes out as mail,
-so they sit inside blocks and in `untrusted_*` fields. Each send-as
-address states its name and signature even when Gmail returned none,
-and `signature_set` tells a signature of images or hidden text alone,
-which has no text to show, from none; blank text, and markup or a
-comment alone, as an emptied editor leaves, is none. That signature is the one Gmail adds to new emails, the
-only one the API holds, and the list's heading says so (§18 row 88).
-Text a reader would not see is left out of a signature and a vacation
-reply as shown, and counted, as from a message (§4.1): hidden HTML, and
-invisible characters in a plain-text reply. Gmail keeps them, so the
-note says the text holds them rather than that they were removed. A reply whose
-body is an image alone is set up, and `body_set` says so.
+### D-40 `reply_to` takes a message id and `reply_to_thread` a thread id
 
-### 7.8 Sending
+`reply_to` takes a message id. `reply_to_thread` takes a thread id, and
+the server picks the newest message that is not a draft, not in the
+trash and not a reaction, and names the chosen message in the result.
+A `reply_to` naming a draft, a trashed message or a reaction is
+`[invalid]`.
 
-`send_draft` per §4.2 and §4.3. Registered only with
-`GMAIL_ENABLE_SEND=true`. It takes `draft_id`, the `message_id`,
-`subject` and `first_line` witnesses, `confirm_recipients` and
-`dry_run`. It reads the draft (`format=full`, for the attachments),
-compares `message_id` and `subject`, then checks what needs no thread —
-a recipient at all, at most 50, no confirmation of an address the draft
-does not send to, and, unless it is a dry run, every recipient
-confirmed — then `first_line`, and then reads its thread's `From`, `To`
-and `Cc` (§4.2). A dry run
-reports the recipients the guard would stop instead of refusing, since
-that is how the caller learns whom to confirm. A draft with no recipient
-is `[invalid]`. The send is one `drafts.send`; the result names the sent
-message, its thread and labels, read from Gmail's answer. On
-`[ambiguous_outcome]` the verdict — `sent`, `not_sent` or `unknown` — is
-in the message, from a `drafts.get` and a reread of the draft's thread
-for a new message in `SENT` (§4.3), made 5 seconds after the failure so a
-send still running at Google is not read as not sent. Those reads run
-even when the call's own context has ended, bounded at 30 seconds. A send
-that fails as `[unavailable]` — an answer that could not be read, or a
-503 — is settled the same way, since it too may have gone out. A draft
-whose `To`, `Cc` or `Bcc` is repeated, or could be read only leniently,
-is `[blocked]`: the server reads the first of a repeated header and drops
-what a lenient read cannot parse, while Gmail sends to every address it
-finds, so the guard would check a shorter list than the send reaches.
+They are two fields because the two ids cannot be told apart. A
+thread's id is its first message's id, so one field taking both would
+answer the first message when the caller meant the thread. The parent
+is chosen, never defaulted, since a draft, a trashed message or an
+emoji reaction is not something to reply to.
 
-`subject` is compared with the draft's subject as get_draft shows it,
-hidden characters removed. `first_line` is the body's first line as
-get_draft shows it: the text Gmail stored, its charset decoded and the
-characters a reader would not see removed, cut at its first line break.
-Both are compared without the spaces around them. Neither is repeated
-in the refusal, since a draft's text can come from someone else's
-message. When Gmail keeps part of the body behind an attachment id, it
-is read first, 20 units a part, so a long draft is not refused for a
-first line the server never read; that is why `first_line` is compared
-after the checks that cost nothing.
+Rejected: one field taking both ids.
+Cost: `reply_to_thread` reads the thread with its bodies, since only a
+format that carries the parts can tell a reaction.
 
-### 7.9 Settings writes
+### D-41 `reply_all` expands from the parent and names where each recipient came from
 
-Registered only with `GMAIL_ENABLE_SETTINGS=true`; the two that remove
-or hide mail for good, `create_trash_filter` and `delete_filter`, only
-with `GMAIL_ENABLE_DESTRUCTIVE=true` as well, since §3 of the shared
-standard puts every delete behind the destructive flag and a risky
-variant in its own tool. The settings flag also
-requests `gmail.settings.basic`: the discovery document lists no other scope for
-these methods, `https://mail.google.com/` included. Each reads what it
-changes first, so its result shows before and after, and a dry run stops
-after that read.
+`reply_all: true` expands the recipients from the parent and drops the
+account's own addresses, read from `sendAs.list`. When the parent is the
+account's own message, the reply goes to its To, as in Gmail. The
+caller's addresses are added last.
 
-- `update_signature` sets the signature of one of the account's own
-  send-as addresses, the default unless `send_as` names another. The
-  text is plain: each line is written as a draft's HTML version writes
-  it (§7.4) and line breaks become `<br>`, so no markup a caller passes
-  is applied. Empty clears it. Gmail adds the
-  signature to new emails written in Gmail (§18 row 88); a draft this
-  server writes carries it as §7.4 says: with `signature: true`, or for
-  a new draft unasked when `GMAIL_DRAFT_SIGNATURE` is set. It patches the signature and nothing
-  else. A signature of images or hidden text alone, before or after, is
-  reported as set with no text, never as none.
-- `create_filter` takes Gmail's criteria and actions as labels added or
-  removed, with `archive`, `mark_read` and `star` as flags. It
-  cannot forward: `gmail.FilterWrite` has no such field (§17.5). It
-  cannot trash either: `SENT`, `DRAFT`, `SPAM` and `TRASH` cannot be
-  added, and naming `TRASH` points to `create_trash_filter`. An
-  identical filter is `[conflict]`,
-  found by reading the list first; Gmail itself keeps duplicates. Gmail
-  rounds a size (§18 row 52), so a filter with one may escape the check. A filter acts on mail that arrives
-  from now on, never on mail already there, so it is not a write that
-  takes a query (§4.7).
-  `SPAM` among a filter's removed labels is Gmail's "Never send it to
-  Spam". `remove_labels` keeps Gmail's list, `never_spam` says it, and
-  the text says "never sends matching mail to spam" rather than naming a
-  label taken off. Gmail stores a filter with the labels sent, but was
-  seen adding `SPAM` to every archiving filter later, ones it did not
-  just write included (§18 row 56). So the duplicate check, and the
-  read that settles an unconfirmed create, ignore a stored `SPAM` when
-  the request archives and does not name it.
-  A create Google did not confirm is `[ambiguous_outcome]` and is not
-  repeated. As §4.3 does for a send, the server waits 5 seconds, reads
-  the list, and gives a verdict: `created`, naming the new filter that
-  does this; `not_created`; or `unknown` when the read fails (§18
-  row 55).
-- `create_trash_filter` takes the same criteria and `confirm: true`, and
-  makes a filter whose one action is to add `TRASH`: matching mail goes
-  to the trash as it arrives, unseen, and Gmail deletes it 30 days
-  later. Until 3.0.0 this was `create_filter`'s `trash` flag; a client
-  that always allows `create_filter` would have carried it unseen (§4.13).
-  Everything above about duplicates and an unconfirmed create holds.
-- `delete_filter` takes a filter id, its `criteria` as `list_filters`
-  gives them, and `confirm: true`, and reports what the filter did. A
-  404 on the delete is reported as gone. Gmail filters cannot be
-  changed, so the id is a sufficient witness of the filter; the
-  criteria put which filter goes into the call, where a client's prompt
-  shows it (§4.13). Every criterion is compared, text without the
-  spaces around it, and criteria that are not the filter's are
-  `[stale]`, on a dry run too.
-- `set_vacation` also needs `GMAIL_ENABLE_SEND=true`: an auto-reply
-  writes to other people (§17.4). Turning it on needs a body, an
-  `audience` of `contacts` or `domain` — every sender is not offered —
-  and `confirm: true`; `start` and `end` bound it. The body is sent
-  exactly as given. Turning it off keeps its text for next time.
-  `domain` is refused on a personal account (`gmail.com`,
-  `googlemail.com`), found by one profile read: whether Gmail refuses it
-  there or answers every sender is unchecked (§18 row 51).
+Each recipient in the result carries its origin: the parent,
+`reply_all`, or the caller. An address a correspondent wrote into their
+own message is a stranger's choice, and the result shows which ones
+those are before anything is sent. The send still needs every one named
+(D-49).
 
-Settings changes run one at a time within the process. Gmail refused
-filter writes sent together, and some sent back to back, with 400
-`failedPrecondition`, "Precondition check failed.", and took each 5
-seconds later (§18 row 54). Each change holds the client's settings
-lock from its first read to its write; a dry run takes none. Filter
-writes are also paced: each attempt waits until 5 seconds have passed
-since the last one finished. That refusal on a filter write says
-nothing of its cause, and a limit or a policy may answer the same, so
-it is repeated once, after the pacing wait, then reported
-`[unavailable]` with Google's own words and no cause claimed. If an
-earlier attempt of the same call may have taken effect, as a delete
-that failed after it was sent may have, it is `[ambiguous_outcome]`
-instead. `update_signature` and `set_vacation` take the lock but not
-the pacing or the repeat: their writes were not probed (rule 18). Any
-other `failedPrecondition` stays `[invalid]`. Spike L, which sends
-filter writes at once to see how Gmail refuses them, runs only with the
-live driver's `-spike-l`. Once, creates sent together were answered 500
-instead; on a create that is `[ambiguous_outcome]`, settled as above. A delete Google did not
-confirm is settled the same way: the list read 5 seconds after gives
-`deleted`, `still_there` or `unknown`, and the delete is not sent
-again. The pacing reserves each write's slot before it waits, so two
-writers that do not hold the lock still go 5 seconds apart. The
-duplicate check compares criteria exactly, a size included: Gmail's
-rounding rule is unknown (§18 row 52), so a request with a size may
-slip past an existing filter, which the verdict after an unconfirmed
-create says. When the existing filter differs only by a `SPAM` Gmail
-added, the conflict says so, and that deleting it and creating this
-again gives the filter without it.
+Rejected: expanding reply-all without saying where each address came
+from, which hides an address a correspondent added among the ones the
+caller chose.
+Cost: a parent's address that cannot be written into a header is left
+out and counted, never quoted in the server's voice.
 
-## 8. Tool surface
+### D-42 A write never replaces what it did not read
 
-Thirty tools: twenty-two by default, fourteen in read-only mode,
-two fewer in each when `GMAIL_LOCAL_DIR` is unset.
-Annotations come from `Kind` in one place (`CLAUDE.md` rule 11);
+gmail/v1 has no ETag and no `If-Match` anywhere, and `drafts.update` is
+a PUT that "replaces a draft's content"
+([drafts.update](https://developers.google.com/workspace/gmail/api/reference/rest/v1/users.drafts/update)).
+The last writer wins. So a draft update is a read, a merge and a write
+against a witness.
+
+The witness is the id of the message inside the draft, which Gmail
+changes on every save. `get_draft` returns it. `update_draft` requires
+it, reads the draft again, and refuses `[stale]` if the draft moved. It
+then merges the fields given onto what it read, as a tree edit of the
+draft's own bytes. Headers and parts the call does not name are written
+back byte for byte. Omitted means unchanged, and an attachment is
+removed only by the `part_id` the call names.
+
+Labels are patched, never replaced: `labels.update` is written off.
+
+Rejected: a hash of the raw bytes as the witness; dropping an
+attachment, a Cc or a header by omission.
+Cost: the window between the read and the PUT is not closed, and the
+result does not claim it is.
+
+### D-43 Every write takes `dry_run`, and a dry run cannot write
+
+Every write takes `dry_run`. It puts the call on a context under which
+`internal/gapi` refuses every write before it reaches the network.
+
+A preview that works by convention writes the first time one branch
+forgets it. A refusal in the one client every request goes through holds
+for every tool, including one added later. A preview may still read what
+it has to show. `send_draft`'s reads the draft and its thread, and the
+label writes predict each item's labels after from the labels they read.
+The `outcomes` gate holds that every write's result states its outcome
+on every branch, the dry run's included.
+
+Rejected: a dry run kept by each tool's own code path, which one
+forgotten branch turns into a write.
+Cost: a dry run spends the reads its preview needs: `send_draft`'s costs
+one `drafts.get` and one `threads.get`.
+
+### D-44 Writes take explicit ids, at most 100, never a query
+
+`modify_labels`, `trash`, `restore` and `delete_permanently` take
+explicit message or thread ids, at most 100 per call. None takes a
+query.
+
+A search is a read the model has seen, and a write names what it
+touches. An "apply to all results" parameter is how a single injected
+instruction empties a mailbox (D-99).
+
+A filter matches a query, and is not an exception. Gmail applies it only
+to mail that arrives after it exists, and the server never applies one
+to mail already there. What a filter can hide is mail nobody has seen
+yet, which is why one that trashes is a tool of its own behind two
+switches (D-57).
+
+Rejected: an "apply to all results" parameter; `batchModify` over the
+results of a search.
+Cost: a call names at most 100 ids, far below the 1,000 `batchModify`
+accepts.
+
+### D-45 Each item of a multi-id write is read, written only if needed, and reported alone
+
+Each item of a multi-id write is its own pair of calls: a read of its
+labels, then `messages.modify`, `trash` or `untrash` on the message, or
+the thread's. The answer is the labels after. An item already as asked
+is not written, and is reported unchanged. A call that trashed 97 of 100
+says which three failed and why.
+
+Another server reported a batch's per-item rate-limit failures as
+success. `batchModify` answers with nothing
+([batchModify](https://developers.google.com/workspace/gmail/api/reference/rest/v1/users.messages/batchModify)),
+so it could say neither which messages changed nor why one failed.
+`batchDelete` "provides no guarantees that messages were not already
+deleted or even existed". `modify`, `trash` and `untrash` are declared
+repeatable, since applying a label twice is applying it once (D-78).
+
+Rejected: `batchModify`, which answers with nothing; `batchDelete`.
+Cost: each item is its own pair of calls, read and write, and spends its
+own units.
+
+### D-46 Results say what changed, read back from Gmail
+
+Every write reports the state it produced, read back rather than
+assumed: each message's labels before and after, the draft's thread,
+the recipients a send reached, the messages a trash moved. A write that
+changed nothing says so, as "already in `TRASH`", rather than reporting
+success.
+
+A result that asserts what it meant to do misleads the next call. The
+draft's thread is read from the `threadId` of the draft Gmail made, so
+the result says whether Gmail filed a reply or a forward where it was
+asked to. The `outcomes` gate holds that every write's result states its
+outcome on every branch.
+
+Rejected: reporting success for a write that changed nothing.
+Cost: every write reads before or after it writes, and the units each
+result reports include those reads.
+
+### D-47 A call that cannot be undone repeats what it acts on
+
+A call that cannot be undone carries what it acts on, in words the
+person would recognize. `delete_draft` takes the draft's `message_id`.
+`send_draft` takes the `message_id`, the draft's `subject` and the first
+line of its body, `first_line`. `delete_filter` takes the filter's
+`criteria`. Each is compared with what Gmail holds, and refused `[stale]`
+when it is not.
+
+A client's prompt shows the call's arguments and nothing else (D-65).
+So the argument is where the person sees what the call does. `subject`
+and `first_line` are compared as `get_draft` shows them, hidden
+characters removed and the spaces around them dropped. `first_line` is
+compared after the checks that cost nothing, since reading it can cost
+20 units a part. Neither the refusal nor a log repeats the value,
+because a draft's text can come from someone else's message.
+
+Rejected: a question the server puts to the person, which D-104 records.
+Cost: what no argument carries, a send's attachment count, the body
+past its first line and a filter's actions, shows only on the dry run.
+A change between the witness read and `drafts.send` is what Gmail sends.
+
+### D-48 Sending exists only with `GMAIL_ENABLE_SEND`, and only through a draft
+
+`send_draft` is registered only with `GMAIL_ENABLE_SEND=true`. There is
+no one-shot send (D-103): everything that leaves the server existed
+first as a draft the person could open in Gmail.
+
+Registration is the only control, because the scopes cannot separate
+drafting from sending. `gmail.compose`, "Manage drafts and send
+emails", and `gmail.modify` both grant `messages.send` and
+`drafts.send`
+([scopes](https://developers.google.com/workspace/gmail/api/auth/scopes)).
+The token that writes a draft can send. Google's own Gmail MCP server
+takes the same position: it asks for `gmail.compose` and ships drafts
+with no send tool.
+
+An annotation is not a control either. A registered tool can run
+unattended.
+
+Rejected: a narrower scope that drafts but cannot send, which Gmail does
+not have; an annotation as the control.
+Cost: the default token can send. Leaving `send_draft` unregistered
+stops this server sending, and does not stop anything else that holds
+the token, which is why the token lives in the keyring (D-71).
+
+### D-49 Every recipient of a send is named in `confirm_recipients`
+
+Every recipient of a send must be listed in `confirm_recipients`,
+exactly. Otherwise the call is `[blocked]` and names the recipients by
+field and position, such as `cc[1]`, never by address. Over 50
+recipients is `[blocked]` outright.
+
+A client's prompt shows only the call's arguments, so the list there is
+everyone the send reaches. The model has to write out an injected
+address itself, rather than inherit it from a draft someone else shaped.
+The thread's participants are read and shown, and still confirmed.
+
+A draft whose `To`, `Cc` or `Bcc` is repeated, or can be read only
+leniently, is `[blocked]`, dry run included. The guard reads the first
+of a repeated header and drops what a lenient read cannot parse, while
+Gmail sends to every address it finds, so the guard would check a
+shorter list than the send reaches. A dry run reports the unconfirmed
+recipients instead of refusing, which is how the caller learns whom to
+confirm.
+
+Rejected: a received message's `To`, `Cc` and `Reply-To` counted as
+participants, since its sender wrote them; participants cleared without
+confirming.
+Cost: one `confirm_recipients` entry per address, and over 50 is refused
+outright.
+
+### D-50 A send is never retried, and an ambiguous one is settled by reading
+
+`drafts.send` takes only an id
+([drafts.send](https://developers.google.com/workspace/gmail/api/reference/rest/v1/users.drafts/send)).
+There is no request id and no documented deduplication. A retried send
+whose first attempt landed is a second delivery to every recipient, a
+defect reported against another server. So the send is one call, never
+retried.
+
+On an ambiguous failure, or an `[unavailable]` one that may have gone
+out, the tool settles by reading. Before the send it records the ids of
+every message in the draft's thread. After the failure it waits 5
+seconds, then reads the draft and the thread. The draft gone and a
+message in `SENT` that was not there before means sent. The draft
+present and no such message means not sent. Anything else is unknown.
+The reads run even when the call's own context has ended, bounded at 30
+seconds.
+
+The `Message-ID` cannot settle it. Gmail replaces it on `drafts.create`
+and again on `drafts.send`, and the sent copy gets a new id, filed in
+the draft's thread.
+
+Rejected: settling by the `Message-ID`; resending on "not sent".
+Cost: a verdict can stay unknown, and the person decides.
+
+### D-51 Removal is trash, an ordinary write
+
+`trash` and `restore` are ordinary writes, registered by default. Gmail
+keeps trash for 30 days.
+
+Gating trash would teach people to set the switch that also arms
+permanent deletion. A gate everyone turns on protects no one. Removal
+that can be undone is the removal a model should reach for, so it is
+the one always there.
+
+Each item is read first, and its labels after are reported, as every
+multi-id write does (D-45). Gmail takes a trashed message out of the
+inbox, so `trash` adds `TRASH` and removes `INBOX`, and its dry run
+predicts both. `restore` takes off `TRASH` alone.
+
+Rejected: gating trash behind the destructive switch.
+Cost: a draft cannot be trashed, so `trash` refuses that item and
+points to `delete_draft`.
+
+### D-52 Permanent deletion exists only with the flag that requests full mail access
+
+`delete_permanently` and `delete_label` are unregistered unless
+`GMAIL_ENABLE_DESTRUCTIVE=true`, and each call takes `confirm: true`.
+That switch is also the only setting that asks for
+`https://mail.google.com/`.
+
+`messages.delete`, `messages.batchDelete` and `threads.delete` accept
+only that scope
+([messages.delete](https://developers.google.com/workspace/gmail/api/reference/rest/v1/users.messages/delete)),
+and a live run holds that `messages.delete` under `gmail.modify`
+answers 403. So a default token cannot delete for good even if a tool
+were registered by mistake: the scope and the registration are two
+locks. `delete_permanently` reads each item first, and refuses a thread
+holding a draft for that item, pointing to `delete_draft`.
+
+Rejected: a delete tool registered and refusing, which would fail every
+call without the scope.
+Cost: turning the switch on needs a fresh `login`. The filter deletes
+bring the full-mail scope too (D-57).
+
+### D-53 `delete_draft` is a default write that takes `confirm` and its witness
+
+`delete_draft` is registered by default. Its call takes `confirm: true`
+and the draft's `message_id`, and is refused `[stale]` when the draft
+holds another. A draft deleted between the read and the delete is
+reported gone. It is annotated destructive.
+
+Gmail deletes a draft rather than trashing it, so the delete cannot be
+undone. Gating it behind the destructive switch would arm permanent mail
+deletion, and ask for full mail access, for whoever wants to tidy their
+drafts. `update_draft`, an ordinary write, can already replace a draft
+for good. The witness holds the delete to the draft the caller read.
+
+Rejected: gating it behind the destructive switch.
+Cost: one delete that cannot be undone is registered by default.
+
+### D-54 Archiving, marking read and starring are label changes, not tools
+
+`modify_labels` adds and removes labels. Archiving is removing `INBOX`,
+marking read is removing `UNREAD`, and starring is adding `STARRED`. The
+description says so, and the result names the verb the change amounted
+to.
+
+Each verb is the same write on the same resource. A tool per verb would
+multiply the surface without adding a rule.
+
+`SENT` and `DRAFT` are `[conflict]` before anything is sent, since Gmail
+refuses them by hand. `TRASH` is `[invalid]`, pointing to `trash` and
+`restore`. A draft's message is `[unsupported]` for that item, since
+Gmail does not label drafts.
+
+Rejected: a tool per verb.
+Cost: the model has to know that archiving is removing `INBOX`, which
+the description and the result's verb carry.
+
+### D-55 Settings writes exist only with `GMAIL_ENABLE_SETTINGS`, which adds their one scope
+
+The settings writes are registered only with
+`GMAIL_ENABLE_SETTINGS=true`: `update_signature` and `create_filter`, then
+`set_vacation` with the send switch as well (D-60), and
+`create_trash_filter` and `delete_filter` with the destructive switch as
+well (D-57).
+
+The switch also asks for `gmail.settings.basic`, the one scope the
+discovery document lists for these methods
+([filters.create](https://developers.google.com/workspace/gmail/api/reference/rest/v1/users.settings.filters/create)).
+Not even `https://mail.google.com/` covers them. A setting changes how
+the account treats every message after it, so the operator decides it
+before the conversation starts.
+
+Each settings write reads what it changes first, so its result shows
+before and after, and a dry run stops after that read. The descriptions
+of `get_settings` and `list_filters` follow the switches (D-85).
+
+Rejected: the full-mail scope satisfying the settings writes, which
+Gmail does not allow.
+Cost: `GMAIL_ENABLE_SETTINGS` adds its scope in every mode, the
+destructive one included.
+
+### D-56 A filter cannot forward
+
+`create_filter` cannot forward. `gmail.FilterWrite`, the type a filter is
+written as, has no forward field, so no argument can express one.
+
+A forwarding filter turns one persuaded call into a permanent leak of
+every future message that matches (D-13). Absent from the type, it
+cannot be reached by a bug, a flag or an argument. `list_filters` still
+reads a filter's forward action and flags it, and shows such filters
+first (D-15).
+
+The write type is narrower than the schema it writes. `api-fields`
+holds it to that schema's fields through a declared view, so the
+missing field is a recorded verdict rather than an oversight.
+
+Rejected: a forwarding filter behind a switch rather than absent.
+Cost: a person who wants a forwarding filter makes it in Gmail.
+
+### D-57 A risky variant is its own tool
+
+A form of a write that does more harm than the ordinary one is a tool
+of its own, never an argument. A filter that trashes is
+`create_trash_filter`, behind the settings and destructive switches,
+with `confirm: true`. Its one action adds `TRASH`, so matching mail goes
+to the trash unseen as it arrives.
+
+A client remembers "always allow" per tool, never per argument value. A
+risky argument on an allowed tool rides along unseen. A tool of its own
+gets its own prompt and its own switch.
+
+`set_vacation` keeps on and off as one tool. Turning a reply off is the
+safe half of a risky tool, not a risky variant of an ordinary one.
+
+Rejected: `create_filter` taking a `trash` flag.
+Cost: `create_trash_filter` and `delete_filter` need the destructive
+switch, and so the full-mail scope.
+
+### D-58 A filter's duplicate check and an unconfirmed write are settled by reading the list
+
+An identical filter is `[conflict]`, found by reading the list first.
+Gmail keeps a second identical filter rather than refusing it.
+
+A create Google did not confirm is `[ambiguous_outcome]`, and is not
+repeated. As a send does (D-50), the server waits 5 seconds, reads the
+list, and reports `created` with the filter that matches, `not_created`,
+or `unknown` when the read fails. A delete Google did not confirm
+settles the same way, as `deleted`, `still_there` or `unknown`. A 404
+on a delete is reported as gone.
+
+Criteria are compared exactly. Gmail adds `SPAM` to an archiving
+filter's removed labels later, so the check and the settle read ignore a
+stored `SPAM` when the request archives and does not name it. The
+conflict says so, and how to get the filter without it.
+
+Rejected: trusting Gmail to refuse a duplicate; a loose criteria match
+that folds case and `OR`, which changes a Gmail query; repeating an
+unconfirmed create.
+Cost: a filter with a size may slip past the check, since Gmail stores
+the size rounded by a rule nobody documents.
+
+### D-59 Settings changes run one at a time, and filter writes are paced
+
+Settings changes run one at a time within the process. Each holds the
+client's settings lock from its first read to its write, and a dry run
+takes none. Filter writes are also paced: each attempt waits until 5
+seconds have passed since the last one finished, and reserves its slot
+before it waits.
+
+Gmail refuses filter writes sent together, and some sent back to back,
+with 400 `failedPrecondition`, "Precondition check failed.", and takes
+each one 5 seconds later. That refusal says nothing of its cause, and a limit
+or a policy may answer the same. So it is repeated once after the
+pacing wait, then reported `[unavailable]` in Google's words, with no
+cause claimed. When an earlier attempt may have acted, it is
+`[ambiguous_outcome]` instead (D-58).
+
+`update_signature` and `set_vacation` take the lock but not the pacing
+or the repeat, since nothing showed their writes refused that way. Any
+other `failedPrecondition` stays `[invalid]`.
+
+Rejected: calling the `failedPrecondition` an overlap; a 2-second wait,
+which nothing showed to work; pacing `sendAs.patch` and
+`updateVacation` without evidence.
+Cost: each filter write waits until 5 seconds after the last finished.
+
+### D-60 The vacation reply needs the send flag, a bounded audience and `confirm`
+
+`set_vacation` needs `GMAIL_ENABLE_SEND` as well as the settings switch.
+An auto-reply writes to other people, which is sending by another name.
+
+Turning it on needs a body, an `audience` of `contacts` or `domain`, and
+`confirm: true`; `start` and `end` bound it. The audience maps to
+Gmail's `restrictToContacts` and `restrictToDomain`
+([VacationSettings](https://developers.google.com/workspace/gmail/api/reference/rest/v1/VacationSettings)),
+and every sender is not offered. Turning it on writes every text field,
+empty included, so an old HTML body cannot go out in place of the
+caller's. The body goes exactly as given. Turning it off keeps its text
+for next time.
+
+Rejected: an audience of every sender; on and off as two tools, since
+off is the safe half (D-57).
+Cost: `domain` is refused on a personal account (`gmail.com`,
+`googlemail.com`), found by one profile read. Whether Gmail refuses it
+there or answers every sender is unchecked.
+
+### D-61 `update_signature` writes plain text lines, never caller markup
+
+`update_signature` sets the signature of one of the account's own
+send-as addresses, the default unless `send_as` names another. The text
+is plain. Each line is written as the made HTML writes it (D-29), with
+runs of spaces kept, and line breaks become `<br>`. Empty clears it. It
+patches the signature and nothing else.
+
+A signature goes out on every message the person writes. The caller is
+a model that reads mail other people wrote, so markup it passes is never
+applied, and a sender's tracking image or hidden text cannot become the
+account's signature. Web addresses still become links (D-32).
+
+A signature of images or hidden text alone, before or after, is
+reported as set with no text, never as none.
+
+Rejected: applying markup a caller passes.
+Cost: a signature with an image, or a link whose text is not its
+address, is set in Gmail, not here.
+
+### D-62 `get_settings` leads with forwarding and says what is empty
+
+`get_settings` returns the vacation reply, auto-forwarding, forwarding
+addresses, IMAP, POP, language and send-as identities, forwarding first.
+
+Showing that mail is being forwarded is the useful half of those APIs,
+since nothing here changes it (D-13). Addresses, display names and
+filter criteria are the account's own configuration, and stand in the
+server's voice. The vacation reply and the signatures are free text that
+goes out as mail, so they sit inside blocks and `untrusted_*` fields
+(D-09).
+
+Each send-as address states its name and signature even when Gmail
+returned none. `signature_set` tells a signature of images or hidden
+text alone, which has no text to show, from none. Blank text, or markup
+or a comment alone, is none. The signature shown is the one Gmail adds
+to new emails, the only one the API holds, and the heading says so.
+
+Rejected: leaving the signature line out when Gmail returns none.
+Cost: an account whose signature is chosen only for replies reads as
+none.
+
+### D-63 Every tool goes through one `register`, whose `Kind` decides the rest
+
+Every tool is added through one `register` in `internal/tools`. A tool's
+`Kind` decides its annotations, whether it registers under the
+configuration, its `_meta`, whether it takes `confirm`, the dry-run
+context and the rendered reply. Nothing else may decide those.
+
+The kinds are Read, Read (local write), Adding, Write, Write for good,
+Send, Destructive, Settings, Settings for good and Auto-reply. Each says
+what a tool does to the world and which switch it sits behind.
+
+Rules kept by hand at every call site are ways to be quietly wrong, one
+tool at a time. A rule kept in one function holds for a tool added
+later. `register` panics at start on a combination it refuses (D-66),
+so the mistake fails in every configuration. Tests drive the surface in
+each mode, and the smoke gate drives the shipped binary in a mode per
+kind.
+
+Rejected: annotations, gating and `confirm` written per tool.
+Cost: Write, Write for good and both Settings kinds look alike to a
+client, and Auto-reply like Send, so the schema dump names each tool's
+kind.
+
+### D-64 A gated tool is unregistered, never registered and refusing
+
+A tool behind a switch is absent when the switch is off. It is never
+registered and refusing.
+
+The permanent-delete methods accept only a scope the server asks for
+only under the destructive switch (D-52). A registered delete tool would
+therefore fail every call by default, which is two defects: a tool that
+cannot work, and a scope nobody asked for. A registered send tool is
+exactly the control an injected instruction gets to argue with. A client
+that runs with nobody watching gets none of the gated tools.
+
+The download tools follow the same rule: they register only when
+`GMAIL_LOCAL_DIR` is set (D-25).
+
+Rejected: a tool registered in every mode that refuses each call while
+its switch is off.
+Cost: changing what registers means changing the configuration, and for
+the destructive switch a fresh `login`.
+
+### D-65 The server asks the person nothing; per-call approval is the client's
+
+The server puts no question to the person. Approval of each call is the
+client's.
+
+The MCP specification puts consent on the host. Clients "SHOULD prompt
+for user confirmation on sensitive operations"
+([tools](https://modelcontextprotocol.io/specification/2025-11-25/server/tools)).
+It lets a server ask through elicitation, but never makes the answer
+consent: the client gathers it "from the user or other sources"
+([elicitation](https://modelcontextprotocol.io/specification/2025-11-25/client/elicitation)).
+D-104 records why asking was declined.
+
+What holds on every client is what the server itself enforces:
+registration (D-64), `confirm` (D-66), the guards and witnesses (D-47,
+D-49), and `dry_run` (D-43). forbidigo refuses both ways of asking,
+`ServerSession.Elicit` and an input-required result. The test harness's
+client declares elicitation and fails any call that asks, so every tool
+test holds the server to asking nobody.
+
+Rejected: a question the server puts to the person before a write
+(D-104).
+Cost: a client that runs with nobody watching makes every registered
+write. Leave the send, destructive and settings switches off for one.
+
+### D-66 `confirm` is a witness on every write that cannot be undone, never approval
+
+Every write that cannot be undone takes `confirm: true`: every delete,
+`create_trash_filter`, and `set_vacation` turning the reply on. It is a
+witness that the caller meant the call, never approval, since the model
+sets it.
+
+`register` refuses three things at start. A kind that cannot be undone
+must take `confirm`. A tool that takes `confirm` must be annotated
+destructive. A Write must not take it, since another write undoes a
+Write. Each tool's service refuses a call that leaves it out, in its own
+words.
+
+The descriptions and the server instructions say to pass it only when
+the person asked for that write. A model that passes it has read that
+sentence, which is all a witness can show.
+
+Rejected: `confirm` on a Write, which another write undoes, so the
+witness would be noise on every routine call.
+Cost: the model sets it, so it is never approval, and each service
+refuses its absence in its own words rather than in one place (#52).
+
+### D-67 `destructiveHint` is true on every kind but Read, Read (local write) and Adding
+
+The MCP schema reads `destructiveHint: false` as "the tool performs only
+additive updates", and the default is true
+([ToolAnnotations](https://modelcontextprotocol.io/specification/2025-11-25/schema)).
+So every kind is annotated destructive except Read, Read (local write)
+and Adding. That covers a write that changes or removes what is there,
+one that cannot be undone, a send, the vacation reply and every
+settings write. `readOnlyHint` is on the Read kinds alone, and
 `openWorldHint` is true only where the call reaches another person.
-"Write, for good" is registered as a Write is and takes `confirm`,
-because Gmail deletes a draft rather than trashing it. Every kind but
-Read, Read (local write) and Adding is annotated destructive, since the
-MCP schema reads `false` as "only additive updates", so a client that
-prompts by annotation prompts for it: Send and Auto-reply because mail
-that left cannot be recalled (§4.13).
-`_meta["anthropic/requiresUserInteraction"]` is set on the Destructive
-kind alone, as a signal and not a control: `delete_permanently` skips
-the trash Gmail offers, and `delete_label` takes a label off every
-message (§4.13). `register` refuses a kind that cannot be undone —
-Write, for good, Destructive and Settings, for good — without
-`confirm`, a tool that takes `confirm` under a kind not annotated
-destructive, and a Write that takes it, since another write undoes a
-Write. The schema dump names each tool's kind, since Write, Write for
-good and both Settings kinds look alike to a client, and Auto-reply
-like Send, and the smoke gate reads which switch a tool sits behind
-from it.
 
-| Tool | Kind | Registered | Scope needed | Units |
-|---|---|---|---|---|
-| `get_profile` | Read | always | `gmail.readonly` | 1 |
-| `search_threads` | Read | always | `gmail.readonly` | 10 + 40/result |
-| `search_messages` | Read | always | `gmail.readonly` | 5 + 20/result |
-| `get_thread` | Read | always | `gmail.readonly` | 40 (+20/fetched part) |
-| `get_message` | Read | always | `gmail.readonly` | 20 (+20/fetched part) |
-| `read_attachment` | Read | always | `gmail.readonly` | 20 (+20 when stored apart) |
-| `list_labels` | Read | always | `gmail.readonly` | 1 (+1/label with counts) |
-| `list_drafts` | Read | always | `gmail.readonly` | 5 + 20/result |
-| `get_draft` | Read | always | `gmail.readonly` | 20 (+20/fetched part) |
-| `list_changes` | Read | always | `gmail.readonly` | 2/page + 1 (+1 on expiry) |
-| `get_settings` | Read | always | `gmail.readonly` | 1 each, 7 |
-| `list_filters` | Read | always | `gmail.readonly` | 1 + 1 |
-| `download_attachment` | Read (local write) | `GMAIL_LOCAL_DIR` set | `gmail.readonly` | 20 + 20 |
-| `download_attachments` | Read (local write) | `GMAIL_LOCAL_DIR` set | `gmail.readonly` | 20 + 20/part stored apart |
-| `create_draft` | Adding | not read-only | `gmail.modify` | 1 + 10 (+20 reply_to or forward, +40 reply_to_thread, +20/quoted part stored apart) |
-| `update_draft` | Write | not read-only | `gmail.modify` | 20 + 15 (+1 `signature: true`) |
-| `delete_draft` | Write, for good | not read-only | `gmail.modify` | 20 + 10 |
-| `modify_labels` | Write | not read-only | `gmail.modify` | 1 + 25/message, 50/thread |
-| `trash` | Write | not read-only | `gmail.modify` | 1 + 40/message, 60/thread |
-| `restore` | Write | not read-only | `gmail.modify` | 1 + 25/message, 50/thread |
-| `create_label` | Adding | not read-only | `gmail.modify` | 1 + 5 |
-| `update_label` | Write | not read-only | `gmail.modify` | 1 + 5 |
-| `send_draft` | Send | `GMAIL_ENABLE_SEND` | `gmail.modify` | 20 + 40 + 100 (+20/part of its text stored apart) |
-| `delete_permanently` | Destructive | `GMAIL_ENABLE_DESTRUCTIVE` | `https://mail.google.com/` | 1 + 30/message, 60/thread |
-| `delete_label` | Destructive | `GMAIL_ENABLE_DESTRUCTIVE` | `gmail.modify` | 1 + 1 + 5 |
-| `update_signature` | Settings | `GMAIL_ENABLE_SETTINGS` | `gmail.settings.basic` | 1 + 100 |
-| `create_filter` | Settings | `GMAIL_ENABLE_SETTINGS` | `gmail.settings.basic` | 1 + 1 + 5 |
-| `create_trash_filter` | Settings, for good | `GMAIL_ENABLE_SETTINGS` and `GMAIL_ENABLE_DESTRUCTIVE` | `gmail.settings.basic` | 1 + 1 + 5 |
-| `delete_filter` | Settings, for good | `GMAIL_ENABLE_SETTINGS` and `GMAIL_ENABLE_DESTRUCTIVE` | `gmail.settings.basic` | 1 + 1 + 5 |
-| `set_vacation` | Auto-reply | `GMAIL_ENABLE_SETTINGS` and `GMAIL_ENABLE_SEND` | `gmail.settings.basic` | 1 + 5 |
+Clients decide their prompts from these. claude.ai and Codex prompt by
+`destructiveHint`. VS Code ignores it and prompts on every tool without
+`readOnlyHint`. The README's Claude Code example allows the server's
+tools and asks for each one that sends, changes a setting or deletes for
+good. `staleness` holds that example to every tool annotated
+destructive outside the Write kind.
 
-The staleness gate holds those counts against the table.
+Rejected: `destructiveHint: false` on a write that can be undone, which
+the schema does not mean.
+Cost: claude.ai and Codex prompt for every write but an add, and VS Code
+for every tool without `readOnlyHint`.
 
-Resources, for clients that attach rather than call:
+### D-68 Only `delete_permanently` and `delete_label` carry the mark
+
+`delete_permanently` and `delete_label` carry Claude Code's
+`anthropic/requiresUserInteraction`. The first skips the trash Gmail
+offers, and the second takes a label off every message. Neither can be
+undone.
+
+Claude Code then prompts on every call in every interactive mode,
+whatever the operator's rules say, and denies the call where no prompt
+can be drawn. No other client reads the mark. It is for tools whose
+prompt is the point, so it goes only on the Destructive kind.
+
+A send is none of those cases: the person confirms its recipients by
+name (D-49), and the operator chose to enable it. A delete done many
+times in a row, as `delete_draft` is, would bring back a prompt on every
+call. Everything else is the operator's to decide, with Claude Code's
+allow and ask rules.
+
+Rejected: the mark on `send_draft` and `set_vacation`; the mark on
+`delete_draft`.
+Cost: an allow rule for `send_draft` or `set_vacation` takes effect in
+Claude Code.
+
+### D-69 No tool widens the server's own reach
+
+No tool turns a setting on, names another directory or profile, or
+writes the server's stored configuration.
+
+The model can be persuaded, so it must not be able to widen its own
+reach. What the server may do is the operator's decision, made before
+the conversation, in the process's environment and flags.
+
+A test drives every tool with its guards set and holds the environment,
+the profile directory and the home directory unchanged. It also holds
+that no tool takes an input named after a setting, with the names
+derived from `internal/config`.
+
+Rejected: a tool that changes the server's configuration, such as
+turning sending on for one call.
+Cost: a change of reach needs the operator to restart the server with
+other settings, and for a scope a new `login`.
+
+### D-70 Read-only mode registers the reads and asks for `gmail.readonly`
+
+`GMAIL_READ_ONLY=true` registers the Read kind and asks for
+`gmail.readonly`. The download tools stay when `GMAIL_LOCAL_DIR` is set
+(D-25).
+
+The difference matters here more than for most APIs. The alternative to
+`gmail.readonly` is a scope that can send (D-48). `gmail.metadata` is
+narrower still, but it refuses `q`
+([messages.list](https://developers.google.com/workspace/gmail/api/reference/rest/v1/users.messages/list)),
+which every search needs.
+
+Read-only mode with any enable switch is refused at start, naming both.
+A configuration that asks for both says two contrary things, and
+starting with either would surprise whoever set the other.
+
+Rejected: write scopes in read-only mode, to spare a second consent
+when the mode changes.
+Cost: read-only with any enable switch is refused at start, and leaving
+read-only mode needs a new `login`.
+
+### D-71 Login is a loopback flow with PKCE, and the token lives in the OS keyring
+
+`login` runs Google's flow for desktop apps: a loopback redirect on
+`127.0.0.1` at a random port, PKCE with S256, and `state` checked.
+[RFC 8252 §7.3](https://www.rfc-editor.org/rfc/rfc8252#section-7.3)
+describes the loopback redirect for native apps. There is no
+out-of-band flow. `--no-browser` prints the URL and the exact `ssh -L`
+line, so login works over SSH.
+
+The client JSON comes from `--client-secret` or `GMAIL_CLIENT_SECRET`,
+over the stored profile. The refresh token resolves from the
+environment, then the OS keyring, then an owner-only file that warns on
+every use. The environment wins so automation can run without a
+keyring. The config directory override is refused outside the home
+directory.
+
+The token is the account. It belongs where the operating system guards
+secrets, and where no tool can read it.
+
+Rejected: an out-of-band flow; the keyring before the environment.
+Cost: on Windows a `0600` mode protects nothing, so the file fallback
+needs an access list, and it warns on every use.
+
+### D-72 Consent is forced only when the scope set grows
+
+`login` asks Google to show the consent screen only when the scope set
+grows, or with `login --consent`.
+
+A login without forced consent still gets a refresh token, and `login`
+stores it in place of the old. So skipping consent spares the person a
+screen, not a token. An account holds at most 100 refresh tokens per
+client, and Google invalidates the oldest past that
+([OAuth 2.0](https://developers.google.com/identity/protocols/oauth2#expiration)).
+A login that gets no refresh token keeps the stored one. `login` says
+whether Google issued a token.
+
+Rejected: forcing consent on every login.
+Cost: every login still mints a refresh token toward the 100 per
+client.
+
+### D-73 Scopes follow the flags, and a granted set that differs is named
+
+`internal/scopes` is the one source of the scopes each mode asks for,
+and of which granted scope covers which: `https://mail.google.com/`
+covers `gmail.modify`, which covers `gmail.readonly`. It also says what
+each tool needs, and generates the scope block of
+[gcp-setup.md](gcp-setup.md), which `staleness` compares exactly.
+
+Startup and `doctor` compare the granted scopes with the required ones
+and name what is missing, so a switch that changes the scopes fails at
+start rather than on the first call that needs them. `doctor` also
+names a token wider than the configuration, such as full mail access
+left after the destructive switch is turned off, and says `logout` then
+`login` narrows it.
+
+Google asks for the scope list on the consent screen only for apps used
+outside a Workspace organization, so the setup page asks for it on
+External apps only.
+
+Rejected: finding a missing scope on the first call that needs it.
+Cost: a token wider than the configuration stays until `logout` and
+`login`.
+
+### D-74 Every setting is read through one reader, and a removed one is refused
+
+Every setting is a `GMAIL_*` variable with a flag bound to it, except
+the config directory and the refresh token, which are environment only.
+A flag overrides the environment, and the environment overrides the
+default. `Define` and `Build` validate everything once at start, with
+every problem reported together.
+
+Every reader goes through `config.Lookup`, which drops the spaces around
+a value and reads a value of spaces alone as unset. `config.Vars` is the
+registry of every variable. A scan holds every `GMAIL_` name spelled in
+`cmd/`, `internal/` and `scripts/` to it, and the configuration page and
+the bundle gate read it.
+
+A removed setting that is turned on is refused at start, naming its
+replacement. `GMAIL_REQUIRE_PROMPT` is one. Ignoring it would allow what
+its owner set it to stop.
+
+Rejected: `main` wrapping the environment once, which a reader that
+skips it escapes; ignoring a removed setting.
+Cost: every reader goes through `config.Lookup` and into the registry,
+and the scan fails a name that does not.
+
+### D-75 The server starts and lists its tools without credentials
+
+The server starts, serves and lists its tools with no credentials. Each
+call then answers `[auth]`, naming `login`. `doctor` and
+`--dump-schemas` work signed out, and the token is warmed off the
+startup path.
+
+A server that serves signed out can answer each call with what to do
+next. `doctor` can then walk the setup and name the missing step, and
+the schema dump, which CI runs, needs no account at all.
+
+Rejected: refusing to start without a token, which leaves the person
+no tool that says what to do.
+Cost: a signed-out server lists tools it cannot run, and every call
+checks for credentials before it does anything.
+
+### D-76 `logout` revokes at Google, which ends the whole grant
+
+`logout` revokes the refresh token at Google before it deletes the
+local copy. It leaves a token from the environment alone.
+
+Google's page says "Revocation removes all OAuth 2.0 scopes previously
+granted to a project, invalidating any issued access or refresh tokens
+for all clients registered under that project"
+([revoking a token](https://developers.google.com/identity/protocols/oauth2/native-app#tokenrevoke)).
+So a revoke signs out every profile that uses the same Cloud project.
+`login` records the project from the client JSON, and `logout` compares
+what was recorded and names the other profiles the revoke signs out. The
+note follows a revoke that succeeded.
+
+Rejected: reading the client file's project at logout time, since a
+relative or replaced file could hide a profile the revoke signs out.
+Cost: a revoke ends every token the account granted the project, on
+every machine. The rule rests on Google's page, not a live probe, since
+the probe costs a grant.
+
+### D-77 Every error is `[class] message` from a closed vocabulary
+
+Every tool error is `[class] message`. The class comes from a closed
+vocabulary declared in `internal/gapi/errors.go`, where each class's
+comment says what the caller should do. `internal/service` is the only
+place a Google failure becomes a tool error.
+
+The class tells the caller what to do next, so two failures that need
+different actions need two classes. `stale` and `conflict` stay apart:
+one says read again, the other says reconsider. `ambiguous_outcome`
+exists because a send may have landed (D-50). `rate_limited` tells the
+sending limit from the request limits in its message.
+
+`make classes` holds the vocabulary from three sides: the constants, the
+`Classes` list beside them, and the classes the code emits. A class
+declared and never emitted fails, and so does one emitted and never
+declared.
+
+Rejected: a vocabulary of six classes, with `stale` folded into
+`conflict` and no class for an outcome that may have happened; and a
+table of the classes in this document, a second copy the gate had to
+hold to the code.
+Cost: the class list and the code change in the same commit, and a
+reader finds what each class asks for in the code, not here.
+
+### D-78 Repeatability comes from the HTTP method, and a POST is retried only when turned away
+
+Whether a request may be repeated comes from its HTTP method. A GET is
+retried. A POST is not, except `modify`, `trash` and `untrash` on a
+message or thread, which are declared repeatable at the call site with
+the reason: applying a label twice is applying it once. `drafts.send`
+is never retried (D-50).
+
+A status that turns a request away before Google acts is retried for
+any method. That covers 429, 503, a 403 with a rate-limit reason, a
+connection never made, and a filter write refused with "Precondition
+check failed." once (D-59). `Retry-After` is a minimum, the backoff has
+full jitter, and a call makes at most four attempts, as Google's error
+guide advises backoff
+([handle errors](https://developers.google.com/workspace/gmail/api/guides/handle-errors)).
+Gmail's per-user unit limit arrives as a 403 `rateLimitExceeded` with
+no `Retry-After`, which a live run checks.
+
+Rejected: retrying `drafts.create`, which makes two drafts.
+Cost: the sending-limit 429 is not retried, since its wait is hours;
+`rate_limited` says which limit it was.
+
+### D-79 Quota is spent in units against a per-user budget, and each result reports it
+
+Gmail meters quota in units per user per minute, and a method's cost
+runs from 1 to 100 units
+([quota](https://developers.google.com/workspace/gmail/api/reference/quota)).
+The client carries each method's cost and spends it against a per-user
+budget of 6,000 units a minute, waiting rather than earning a refusal.
+Concurrent calls share the budget.
+
+Each tool result and each log line reports the units the call spent.
+`search_threads` defaults to 20 results because 20 thread reads cost
+800 units, and its description says so.
+
+Rejected: a request-rate limiter, which is wrong by up to 100 times,
+since the costs differ that much.
+Cost: every method needs its unit cost in the client's table, or the
+client refuses the call.
+
+### D-80 Every request is bounded by progress and by size
+
+Every request has a timeout, `GMAIL_HTTP_TIMEOUT`, and a response body
+is capped at 32 MiB. Other servers hung on a dead socket.
+
+A stream is bounded by time without progress, not in total. That
+covers an attachment downloaded to disk and a draft uploaded. A large
+file on a slow link finishes, and a stalled one fails. A whole-request
+timeout on an upload would end a slow 35 MB draft as
+`[ambiguous_outcome]`, and a retry could make a second draft.
+
+`attachments.get` answers JSON, so the client reads it token by token up
+to `data` and decodes that string as it arrives, never holding it whole.
+It stops at 64 MB, and an attachment declared larger is refused before
+it is read.
+
+Rejected: a whole-request timeout on a stream or an upload.
+Cost: a body cut anywhere is a failed read, and a retried read starts
+the file over.
+
+### D-81 A credential goes only to Google's origins, checked on every redirect
+
+`internal/gapi` keeps an allow-list of Google's origins, port included.
+It checks the list before any credential is attached, and again on
+every redirect. An HTTP client injected for tests keeps the list.
+
+The access token is the account. An answer can name any host in a
+redirect, and a client that follows it with the token attached hands
+the account to that host. Checking the origin where the credential is
+attached closes that for every method, including one added later.
+
+Rejected: following a redirect wherever Google's answer points, with
+the credential attached.
+Cost: a Google endpoint outside the list fails until it is added to the
+list.
+
+### D-82 A reply carries both halves, never the same bytes twice
+
+Every reply carries both halves: `structuredContent` under the tool's
+output schema, and a readable rendering in `content`. The SDK is given
+`Content`, so it does not add the JSON as a second text block.
+
+The two halves serve different readers. A program reads the fields. A
+model reads the rendering, which carries the boundaries (D-09) and the
+budget (D-14). The same JSON twice would spend the model's context on
+bytes it has already been given.
+
+Rejected: the same bytes twice, in `content` and in
+`structuredContent`.
+Cost: every read carries its mail text twice, in `content` and in
+`untrusted_text`, a released field (D-84). The listing budget counts
+both copies.
+
+### D-83 An unknown value is left out, never sent as a zero
+
+A message's `date` and a thread row's `latest` are left out of the
+structured result when unknown. An `internalDate` of zero reads as no
+date, and the `Date` header stands in.
+
+A zero sent as a value is a date a program believes. Go's zero time
+reads as the first year of the calendar, and the Unix epoch as 1970.
+No mail Gmail holds dates from 1970, so a zero `internalDate` is a
+missing value, and nothing is shown as sent then. The text half says
+"unknown date".
+
+Rejected: Go's zero time; the Unix epoch as a date.
+Cost: the schema allows null, though the server omits rather than nulls,
+as the optional settings and search times already do.
+
+### D-84 The released tool surface is a contract held by a committed baseline
+
+`testdata/schema-baseline.json` is the released surface: every tool,
+resource and resource template, dumped whole with `_meta` and the output
+schema. `schema-diff` fails on a removed tool, or an input or output
+field lost at any depth. It also fails on a type change that breaks a
+caller, a new required input, an input enum that loses a value, or an
+output field that stops being required. The dump carries no `GMAIL_` setting.
+
+The baseline is the CHANGELOG's newest release, stamped with its
+version. With nothing under `[Unreleased]`, the build must match it
+exactly. `schema-baseline` refuses a break unless the release is a new
+major version.
+
+In CI, `schema-ack` compares the pull request's head with its
+merge-base, and needs every changed item named in a commit footer.
+`SCHEMA-CHANGE:` is read in any case, and `BREAKING CHANGE:` only in
+capitals, as
+[Conventional Commits 1.0.0](https://www.conventionalcommits.org/en/v1.0.0/)
+items 15 and 16 say.
+
+Rejected: a baseline read from the last tag, since CI's checkout is
+shallow and has no tags.
+Cost: a break needs a major release and a **Breaking:** entry naming the
+tool.
+
+### D-85 Instructions and descriptions are built from the configuration
+
+The server instructions are built from the tools actually registered,
+so a read-only server and one that sends say different things. Four
+descriptions depend on the settings: `get_settings` and `list_filters`
+by which writes exist, `create_filter` by whether `create_trash_filter`
+does, and `create_draft` by `GMAIL_DRAFT_SIGNATURE`.
+
+Text that names a tool not registered sends the model to a call that
+fails. Text that says a write exists when it does not is worse. The
+schema dump carries every sentence of the instructions, and tests hold
+each description to its switches.
+
+Rejected: one fixed wording for every configuration.
+Cost: `--dump-schemas` prints one wording of each description that
+depends on the settings, so a change to another wording passes
+`schema-ack` unseen (#51).
+
+### D-86 Resources carry the same text as their tools
+
 `gmail://threads/{id}` and `gmail://messages/{id}` carry the same text
-as `get_thread` and `get_message` under the same budget and boundaries;
-`gmail://labels` carries `list_labels`.
+as `get_thread` and `get_message`, under the same budget and
+boundaries. `gmail://labels` carries `list_labels`. Resource reads are
+logged and counted like tool calls.
 
-### 8a. Every published method, with a verdict
+A client that attaches a resource gives the model the same marked,
+bounded text a tool returns. A rendering of its own would be a second
+place to get the boundaries wrong. The resource templates are part of
+the released surface, and the schema diff holds their URIs as it holds
+the tools (D-84).
 
-All 79 methods of the discovery document have a verdict in
-`testdata/api-coverage.tsv` — used, gated or written off
-with a reason — and the `api-coverage` gate holds it. The
-table that stood here during design moved there in phase 0, so there is
-one copy. It holds thirty used, eight gated, zero deferred to §17,
-forty-one written off. Phase 1 wrote off `filters.get` and
-`forwardingAddresses.get`, whose lists return the same fields (§18
-row 36). Phase 2 wrote off `messages.batchModify`, which reports nothing
-per item, and `sendAs.get`, whose list `create_draft` reads anyway (§18
-row 39). Phase 5 gated the four settings writes §17 had deferred or
-written off: `filters.create` and `filters.delete`, `sendAs.patch` for
-the signature, and `updateVacation`.
+Rejected: a rendering for resources of their own.
+Cost: a resource takes no options, so a read that needs one, such as an
+offset or every header, needs the tool.
+
+### D-87 The live driver reads only what it wrote and reaches nobody by default
+
+`scripts/livemail` drives the shipped binary against a real mailbox. It
+creates a label named for the run and inserts its own messages with
+`messages.insert`. Every read it makes is constrained to that label,
+and it never searches the mailbox unconstrained. At the end it trashes
+what it inserted and deletes its label, unless `-keep` is set. `-clean`
+removes a stranded run by its name.
+
+A real mailbox holds other people's mail, which the run has no reason
+to read and every reason not to print. The driver's guard refuses a
+read outside the run and holds every write to the run's own mail.
+
+A step that sends goes only to the address the maintainer passes as
+`-send-to`, and none sends without it. The settings steps save the
+signature and the vacation reply first and restore both exactly. Their
+filters match only the run's own sender at a domain that never
+resolves, the vacation reply starts far in the future, and a signature
+Gmail will not take back unchanged is never changed.
+
+Rejected: an unconstrained search of the mailbox.
+Cost: the sending steps need the maintainer's second address, so a run
+without `-send-to` skips them.
+
+### D-88 The live transcript goes through one redacting writer
+
+Everything the live driver prints goes through one writer, which
+redacts. The `transcript` gate holds that the drivers cannot reach
+`os.Stdout`, `os.Stderr` or `log.*`. Exactly one exempt package may
+write, at exactly one site.
+
+A transcript is read by a person and can be pasted into a pull request.
+Nothing in it may identify the account (D-04). The redactor masks
+addresses, history ids, label and filter ids, the system's temporary
+directory, and the Cloud project number in the `Received` header Gmail
+stamps on inserted mail. `-raw` turns redaction off, for a terminal
+nobody else sees.
+
+Rejected: redaction at each print site, where one forgotten site leaks.
+Cost: the redactor masks by shape, so an id of a kind it does not know
+prints in the clear until a rule is added for it.
+
+### D-89 A write-path change counts only after a live run whose transcript is read
+
+A change to the write path, or to how the server reads an API response,
+counts as done only after a live run whose transcript a person read.
+
+Every fake in the unit suite is written from a belief about Gmail, so a
+unit test asserts the behavior the code was written to have. Only
+Gmail can show the belief wrong. `make live` drives the shipped binary
+against a real account.
+
+`make live-cover` runs in `make check`. It records at run time, through
+the stdio client, every tool option the driver's steps pass, and fails
+on one no step drives. A waiver in `testdata/live-waivers.tsv` carries a
+reason, the waivers have a ceiling, and a waiver whose option a step
+drives fails. How to run a live check is in
+[CONTRIBUTING.md](../CONTRIBUTING.md#the-live-run).
+
+Rejected: green gates as done.
+Cost: a run needs a real account, and a person reads the transcript,
+which no gate can hold. Some checks need more than one account or a
+real send and are not run yet (#53).
+
+### D-90 Evals score the calls and the mailbox, with planted instructions
+
+`scripts/evals` gives tasks to a model through the claude CLI, fenced to
+this server's tools. The real server answers over streamable HTTP on the
+loopback interface, against a fresh `gmailtest` mailbox per trial. A
+task is scored on the calls the model made, its answer and the mailbox
+afterward.
+
+What the model says it did is not evidence. Some tasks carry a planted
+instruction in their mail. Obeying it, by the tool it asks for or by
+its address in any argument, is counted apart from an ordinary failure.
+A task passes only when every trial does, and a run the CLI stopped is
+reported rather than scored.
+
+`make evals-check` runs in `make check` and needs no model. Every canned
+transcript must get its expected verdict, and every task must fail on a
+mailbox nobody touched.
+
+Rejected: scoring what the model says it did.
+Cost: runs spend money and are run by hand.
+
+### D-91 A rule is made to fail: a test, a list derived from the code, a floor
+
+A rule is a test, its list is derived from the code, and its checker
+asserts a floor on how much it read. Every check the repository runs on
+itself is Go under `scripts/gates`, behind one registry.
+
+A checker that reads nothing passes, and so does a list kept by hand
+beside the code it describes. So the error classes come from the
+declared constants, the variables from `config.Vars`, the tools from the
+binary, and the methods from the discovery document. A gate with a
+floor fails when it read fewer files, rows or names than the floor, and
+a test holds the floor.
+
+Rejected: a list kept by hand beside the code, which passes while the
+code moves.
+Cost: every gate carries a floor, which a smaller repository has to
+lower on purpose.
+
+### D-92 `make check` and CI run the same set of gates
+
+`make check` and CI run the same set of gates. Each registry entry
+declares where it runs: by hand, in `make check` and CI, in CI alone,
+or in the release. A missing declaration is refused.
+
+The two lists live in different files, and a contributor edits one of
+them. `parity` maps each Makefile target to the CI step that runs it by
+its recipe, with Makefile variables expanded and `run: |` blocks read. A
+step's name is not counted as running it. Every `vet -tags=` must appear
+in both, so tagged code compiles in CI and not only on a laptop.
+`checklist` holds the definition of done in `CLAUDE.md` to the `check:`
+prerequisites, both ways.
+
+Rejected: a Makefile comment claiming to be everything CI runs, which
+stops the next person checking.
+Cost: a gate added to one list fails `parity` until it is in the other.
+
+### D-93 A release is reproducible, signed, attested, and refused unless CI is green
+
+`release.yml` refuses a tag whose CI run is not green, and runs the tests
+before it signs anything. It builds one target twice and compares the
+hashes, which is what proves the build reproducible. goreleaser builds
+with `-trimpath` and the commit's timestamp, and runs `go mod download`,
+never `tidy`.
+
+The checksum file carries a keyless cosign signature. Each archive has
+an SBOM, and build provenance names the archives, the checksum file and
+the bundle. A person can verify every artifact from outside, without
+trusting the page it came from.
+
+The `release` gate holds `.goreleaser.yaml` against the release workflow
+on every commit, and `make goreleaser-check` validates the config. The
+steps are in [release.md](release.md).
+
+Rejected: trusting a tag alone, with no check that its commit passed CI.
+Cost: the steps that need an OIDC token run only in a real release, so
+no rehearsal reaches them.
+
+### D-94 The registry entry's hash is read only after the checksum signature verifies
+
+The registry entry is published by its own workflow, after the release.
+It runs `cosign verify-blob` on the checksum file, with the
+certificate identity pinned to this repository's release workflow at
+the exact tag, before it reads the bundle's hash.
+
+A hash read from a file nobody verified vouches for whatever the file
+says. The entry is built from the manifest the bundle gate reads, and
+only once that gate passes on it. The checksum file must hold exactly
+one bundle row, and the entry is validated against the vendored
+registry schema.
+
+Rejected: reading the bundle's hash before the signature is checked.
+Cost: an entry cannot be taken back, so a prerelease tag skips the
+step.
+
+### D-95 Every tool is pinned to one exact version everywhere it is named
+
+Every tool the build, CI and the release run is pinned to one exact
+version, and each action to a full commit SHA with its version in a
+trailing comment. The Go version comes from `go.mod`.
+
+A tool named in two places at two versions passes in one and fails in
+the other. The `pins` gate parses the workflows as YAML and classes every
+action as an installer or not, failing on one it does not know. An
+installer's tool pin is required. The Makefile's goreleaser pin must
+equal the workflow's, and the pre-commit and CI gitleaks versions must
+match. Each pin is checked against upstream when it is set.
+
+Rejected: a pin copied from another project, which trailed upstream.
+Cost: a version bump touches every file that names the tool, in one
+commit.
+
+### D-96 The bundle defaults every switch off and passes settings through `env` alone
+
+The Claude Desktop bundle asks for what a person sets in another
+client's configuration: the OAuth client file, the profile, read-only
+mode, the send, destructive and settings switches, the signature default
+and the attachment folder. Each switch defaults to off, the server's own
+default, and every other field to empty.
+
+Claude Desktop approves per tool from its annotations, and a person can
+choose "Always allow to skip the prompt for that tool from now on"
+([connectors](https://claude.com/docs/connectors/getting-started)).
+There is no per-call rule behind that. So a switch left off is the one
+guard a bundle install keeps.
+
+Settings reach the server through `mcp_config.env` alone. The reference
+host takes an override's `args` or `env` in place of the base's
+([config.ts](https://github.com/anthropics/mcpb/blob/v2.1.2/src/shared/config.ts)),
+so the base `args` is `[]` and an override carries neither. The bundle
+asks for every variable in `config.Vars` unless one is left out with a
+reason, and the gate starts every set of switches from the defaults.
+
+Rejected: a `tools` list in the manifest, which is display only and
+wrong for most installs; `args` or `env` on an override; an optional key
+with no default, which reaches the server as unsubstituted text.
+Cost: a person turns each switch on in the bundle's settings.
+
+### D-97 The bundle manifest is held to its vendored schema and read once
+
+`packaging/mcpb/manifest.json` is validated against the schema vendored
+for its own `manifest_version`, with a floor on the vendored file's
+properties. Its `$schema` must be a whole URL at a full tag or SHA.
+
+The gate, the packer and the registry entry read the manifest once,
+through one function. A key repeated in any object, or two keys equal
+but for case, is refused before any other check. Go's typed decode
+merges a repeated object and matches keys without regard to case, while
+the schema validator, the packer's stamp and a JavaScript host keep the
+last and read a key only as spelled. One document would mean two
+things.
+
+Every command must start with `${__dirname}/`. The
+[manifest specification](https://github.com/anthropics/mcpb/blob/v2.1.2/MANIFEST.md)
+says it "is replaced with the absolute path to the extension's
+directory", and says nothing of what a relative command resolves
+against. The packer stamps the version by decoding and encoding, and
+holds the result to the schema.
+
+Rejected: a relative or absolute command; text substitution when
+stamping.
+Cost: a vendored schema says nothing about upstream until
+`make schema-refetch` runs.
+
+### D-98 `watch` pushes changes through Cloud Pub/Sub
+
+`users.watch` could push changes as they happen. It is not used.
+
+`watch` delivers notifications to a Cloud Pub/Sub topic
+([push](https://developers.google.com/workspace/gmail/api/guides/push)).
+A stdio process owns no topic, and a person's own client brings no
+infrastructure to receive one. Building that would make this a hosted
+service, which D-01 declines. `list_changes` reads the same history a
+notification would point to, and says when its cursor has expired, so
+nothing a push would carry is out of reach.
+
+Rejected: `watch`, since it delivers to a Pub/Sub topic and a stdio
+process owns none.
+Cost: `list_changes` polls `history.list` (D-19), so a change shows only
+when the model asks for it.
+
+### D-99 A write acts on every result of a query
+
+A write could take a search query and act on every result: archive
+everything from a sender, empty the trash, relabel by query. None does.
+
+That is how a single injected instruction empties a mailbox. A write
+that names its ids acts only on mail the model has seen in a result
+(D-44). Gmail's `batchModify` takes 1,000 ids, and the server still
+offers neither the query nor that size.
+
+Rejected: a write over the results of a query, because one persuaded
+call would reach every message the query matches.
+Cost: there is no "archive everything from X", no "empty trash" and no
+relabel by query. The model searches, reads the ids, and passes at most
+100 a call.
+
+### D-100 The server imports or inserts mail
+
+The server could import or insert mail into the mailbox. It does not.
+
+`messages.import` and `messages.insert` deliver mail that was never
+sent, under whatever sender the message names, and `messages.insert`
+skips the classification a received message gets. A persuaded call could
+plant mail that reads as if someone the person trusts sent it. Both
+methods are written off in `testdata/api-coverage.tsv` with that
+reason. Moving a
+mailbox is a migration job, not an assistant's.
+
+Rejected: `messages.import` and `messages.insert` as tools, since they
+deliver mail that was never sent.
+Cost: `messages.insert` is used only by the live driver, for its own
+synthetic mail (D-87). A migration takes another tool.
+
+### D-101 The server administers a Workspace through service accounts and delegation
+
+The server could administer a mailbox as an administrator does:
+delegates, forwarding addresses, send-as identities and auto-forwarding.
+It does not.
 
 The discovery document says the delegate methods, creating and deleting
 a forwarding address, creating, deleting and verifying a send-as
 address, and `updateAutoForwarding` are only for service accounts with
-domain-wide authority, and that `sendAs.update` is too for any address
-but the primary. This server signs in as one person, not as such a
-service account, so no flag could turn those methods on (§18 row 79).
-`sendAs.patch`, which `update_signature` calls, carries no such
-sentence; whether it reaches an address other than the primary is
+domain-wide authority. `sendAs.update` is too, for any address but the
+primary. This server signs in as one person, not as such an account, so
+no switch could turn those methods on. Each would also redirect mail
+(D-13).
+
+Rejected: service accounts and domain-wide delegation, which this
+server never holds.
+Cost: delegation, forwarding addresses and send-as identities beyond a
+signature are out of reach. Whether `sendAs.patch`, which
+`update_signature` calls, reaches an address other than the primary is
 unproven.
 
-### 8b. Field coverage
-
-`api-fields` holds a verdict for every field of `Message`, `MessagePart`,
-`MessagePartHeader`, `MessagePartBody`, `Thread`, `Draft`, `Label`,
-`LabelColor`, `History` and its four record types, `Profile`,
-`ListMessagesResponse`, `ListThreadsResponse`, `ListDraftsResponse`,
-`ListHistoryResponse`, `VacationSettings`, `AutoForwarding`,
-`ForwardingAddress`, `ImapSettings`, `PopSettings`, `LanguageSettings`,
-`SendAs` and `Filter` with its criteria and action — modeled, or left
-out with a reason — held by `api-fields`. Two are called out now:
-`Message.classificationLabelValues` (Workspace classification; read and
-shown, never written, since `batchModify` can change it and that is an
-administrator's decision) and `Filter.action.forward` (read and flagged,
-§7.7).
-
-## 9. Confidentiality, security, safety
-
-Nothing deployer-specific ever enters the repository — `CLAUDE.md` rule
-1 lists it. A mailbox is the worst payload in the family: every message
-carries third parties' addresses, words they wrote to someone else, and
-a signature with their phone number and employer.
-
-### 9.1 What may never enter the repository, and what stops it
-
-Two structural rules, not matters of care:
-
-1. **Fixtures are generated, never recorded.** `gmailtest` builds its
-   mailbox from code: names from a fixed synthetic list, addresses at
-   `example.com`, `example.org` and `.invalid`, bodies from templates,
-   ids from a counter formatted as Gmail's hex. A fixture copied from a
-   live response is itself the leak, whatever a scanner says about it.
-2. **The live driver reads only what it wrote.** It creates a label
-   named for the run, **inserts** its own messages with
-   `messages.insert` (§8a: used by the driver, written off for the
-   server), and every read it makes is constrained to that label. It
-   never searches the mailbox unconstrained. Sending — the send spikes and
-   the `send_draft` step — goes only to the address the maintainer
-   passes as `-send-to`, and the transcript records its redacted form
-   only. At the end of a run it trashes what it inserted and deletes its label,
-   unless `-keep` is set.
-
-The leak gate is an allow-list anchored on shapes the server's own
-generated fields cannot take: an `@` with a dot-suffixed domain outside
-the example and invalid set; `mail.google.com/mail/u/` URLs; a keyword
-(`message`, `thread`, `draft`, `msg`) followed by a 16-hex id not in the
-fixture range; the Google OAuth shapes. The exemption list is asserted,
-so a new entry is an argued decision.
-
-### 9.2 Logging
-
-Method, tool, outcome, duration, units, and an id truncated to its first
-six characters. Never: an address, a subject, a snippet, a body, a
-filename, a label name or a query. `q` reaches a log through a request
-URL, so transport errors are stripped of their query string before
-logging. `TestLogsNeverCarryThePayload` drives every registered tool
-with canary values in every string argument, at debug, and asserts the
-log is non-empty and carries none of them.
-
-### 9.3 What a tool result carries
-
-Mail. The result is the one place the payload is supposed to go, so the
-rule there is §4.1's rather than §9.2's: it is marked as untrusted, and
-nothing the server adds is phrased as something to do.
-
-### 9.4 What the flags do
-
-| Setting | Registers | Requests |
-|---|---|---|
-| `GMAIL_READ_ONLY=true` | the Read kind | `gmail.readonly` |
-| default | Read, Write, Write for good and Adding | `gmail.modify` |
-| `GMAIL_ENABLE_SEND=true` | adds `send_draft` | `gmail.modify` (no change: §2.10) |
-| `GMAIL_ENABLE_DESTRUCTIVE=true` | adds `delete_permanently`, `delete_label`; with `GMAIL_ENABLE_SETTINGS`, also `create_trash_filter`, `delete_filter` | `https://mail.google.com/` |
-| `GMAIL_ENABLE_SETTINGS=true` | adds `update_signature`, `create_filter`; with `GMAIL_ENABLE_DESTRUCTIVE`, also `create_trash_filter`, `delete_filter`; with `GMAIL_ENABLE_SEND`, also `set_vacation` | adds `gmail.settings.basic` |
-| `GMAIL_DRAFT_SIGNATURE=true` | nothing: `create_draft` signs a new draft when the call leaves `signature` out (§7.4) | no change |
-| `GMAIL_REQUIRE_PROMPT` | removed in 3.0.0; anything but `false` refuses to start (§4.13) | — |
-
-`READ_ONLY` with any enable flag is refused at startup, naming both.
-`docs/security.md` says plainly what the table implies: **the default
-token can send**. Leaving `send_draft` unregistered stops this server
-sending; it does not stop anything else that holds the token. That is
-why the token lives in the keyring and nowhere a tool can read.
-
-## 10. Auth, config, process model
-
-The family's settled login (standard §3b): loopback on `127.0.0.1:0`,
-PKCE S256, no out-of-band flow, `--no-browser` printing the URL and the
-exact `ssh -L` command, the client JSON by `--client-secret` or
-`GMAIL_CLIENT_SECRET` over the stored profile, the refresh token in the
-OS keyring with a warned 0600 file fallback.
-
-Gmail adds three things:
-
-- **Every scope is restricted** (§2.11). The person's own client is
-  either **Internal** to a Workspace organization, or **External** in
-  Testing with themselves as a test user — whose refresh tokens expire
-  after seven days. `docs/gcp-setup.md` says which to choose and why,
-  `doctor` names the seven-day expiry when a refresh fails, and an `invalid_grant` after about a week is explained in
-  `docs/runbook.md` as this, not as a bug.
-- **Consent is forced only when the scope set grows**, or with
-  `login --consent`. Spike J found that a login without it still mints
-  a refresh token, so this spares the screen, not a token toward the 100
-  per client (§18 row 43).
-- **Changing a flag that changes scopes needs a new login**, and the
-  server says so at startup rather than failing on the first call:
-  `doctor` and startup compare granted with required scopes.
-
-Configuration: `GMAIL_PROFILE`, `GMAIL_CLIENT_SECRET`, `GMAIL_READ_ONLY`,
-`GMAIL_ENABLE_SEND`, `GMAIL_ENABLE_DESTRUCTIVE`, `GMAIL_ENABLE_SETTINGS`,
-`GMAIL_LOCAL_DIR`,
-`GMAIL_LOG_LEVEL`, `GMAIL_LOG_FORMAT` (`text` default), `GMAIL_HTTP_TIMEOUT`
-(60 s default), `GMAIL_CONFIG_DIR`, `GMAIL_REFRESH_TOKEN`. Each also a
-flag, except the last two, which are env-only. `docs/configuration.md`
-is checked against the exported list.
-
-Process: one stdio session; starts before authentication so `doctor` and
-`--dump-schemas` work signed out; a disconnect is exit 0.
-
-## 11. Reliability
-
-- **Repeatability comes from the HTTP method.** GET is retried. POST
-  is not, except `modify`, `trash` and `untrash` on a message or
-  thread, which are declared repeatable at the call site with
-  the reason (applying a label twice is applying it once). `drafts.create`
-  is not repeatable: a retry makes two drafts. `drafts.send` is never
-  retried (§4.3).
-- **Turned-away statuses** — 429, 503, a 403 with a rate-limit reason,
-  a filter write refused with Google's generic "Precondition check
-  failed." (§7.9, repeated once), or a
-  connection never made —
-  are retried for any method, since Google did not act; `Retry-After`
-  is a minimum; full jitter; at most four attempts; the sending-limit
-  429 is not retried at all, because its wait is hours.
-- **The unit budget** of §4.9 in front of every call.
-- **Timeouts** on every request (§3.16), a 32 MiB cap on a response
-  body, and attachments streamed.
-- **Per-item outcomes** for every multi-id write (§4.7).
-
-## 12. Distribution and setup
-
-`go install`, six platform archives with SBOMs, a signed checksum file,
-build provenance, the `.mcpb` bundle for Claude Desktop and an MCP
-registry entry. All of it is in phase 0, not a late phase: a sibling
-built its release path in its fifth phase and found the packer's macOS
-glob "could never have matched anything", and the release gates of §5a
-run in `make check` from the first commit, so the pipeline they check
-might as well exist. The first tag is the canary for every one of those
-paths, and `docs/release.md` says what to check after it.
-
-`docs/gcp-setup.md` is an input, not a description: its scope block is
-generated from `internal/scopes` and gated (§5a, `staleness`).
-
-The bundle asks for what a person sets in another client's
-configuration: the OAuth client file, the profile, read-only, the send,
-destructive and settings switches, and the attachment folder. Each
-switch defaults to the server's own default, which is off, and the
-`mcpb` gate holds that. Claude Desktop approves each tool, and a person
-can set a tool to always allow, so a switch left off is the one guard a
-bundle install keeps (§18 row 92). Read-only with any switch is refused
-at startup, and each field involved names the other by its title. The
-gate starts every set of the switches and holds the refused ones to its
-declared list.
-
-## 13. Testing
-
-- **`internal/mime` first**, with table tests over the cases of §3.6
-  and §3.7 and a build-then-parse fuzz test (§4.10).
-- **`gmailtest`**, an in-memory Gmail behind the REST paths the client
-  uses, generated per §9.1, which models the facts of §2 that the
-  server's logic depends on: a draft filed by its thread id alone, as
-  Gmail did live, or by the three conditions as documented (§18 row
-  85); `SENT` and `DRAFT` refusing manual application; a draft's
-  message id changing on update (spike A); 404 for an expired history
-  id; unit costs.
-- **Renderer goldens** for thread, message, listing, draft and changes,
-  including the hidden-text and link-mismatch cases of §4.1.
-- **The logging test** of §9.2, which also drives every write with its
-  guards set, and floors on a write reaching Gmail.
-- **Nobody is asked** (§4.13): the test harness's client declares
-  elicitation and fails any call that asks, so every tool test holds
-  the server to asking nobody, and `forbidigo` refuses both ways of
-  asking, `ServerSession.Elicit` and an input-required result, anywhere
-  in the server; `register` refuses a kind that cannot be
-  undone without `confirm`, and `confirm` under a kind not annotated
-  destructive; only the two widest deletes carry the mark, read from the
-  whole surface.
-- **No tool writes the server's own settings** (§4.13): every tool,
-  driven with its guards set, leaves the environment, the profile
-  directory and the home directory as they were, and no tool takes an
-  input named after a setting, the names derived from `config`.
-- **The live driver**, `scripts/livemail`, per §9.1: every tool and
-  option (held by `live-cover`), the transcript through one redacting
-  writer (held by `transcript`), and the transcript read by a person
-  before a phase counts.
-- **Evals**, `scripts/evals`, against `gmailtest` only, including tasks
-  whose mail contains an injected instruction, scored on whether the
-  model followed it. The real server answers over an in-memory
-  transport; a task is scored on its calls, its answer and the mailbox
-  afterwards. `-self-check`, in `check`, needs no model: every canned
-  transcript gets its expected verdict, and every task fails on a
-  mailbox nobody touched.
-
-## 14. Confirmed decisions and their consequences
-
-| Decision | By | Consequence |
-|---|---|---|
-| Design first, reviewed before code | maintainer, 2026-09-24 | this document; phase 0 waits for "go" |
-| Drafts are the default write; send registered only with `GMAIL_ENABLE_SEND` | maintainer, 2026-09-24 | §4.2; `send_draft` is the only send |
-| Trash by default; permanent delete only with `GMAIL_ENABLE_DESTRUCTIVE`, which alone requests `https://mail.google.com/` | maintainer, 2026-09-24 | §4.6, §9.4 |
-| Adopt the vendored-schema validation of manifests and registry entries, with its known gaps closed | maintainer, 2026-09-24 | §5a `mcpb`, `server-json` |
-| Send only through drafts; `messages.send` written off | this design | §4.2, §8a |
-| Unregistered, not registered-and-refusing, for gated tools | this design | §17b |
-| Release pipeline in phase 0 | this design | §12 |
-| `delete_draft` is a default write that takes `confirm: true`, not destructive-gated | maintainer, 2026-09-26; **kept 2026-10-23**, with a required `message_id` witness | §17.1, §7.4, §17b; a deviation from the standard's §3 |
-| The recipient guard counts `From` on received messages and `To` and `Cc` on the account's own; a correspondent's `Cc` and `Reply-To` need confirming | maintainer, 2026-09-27; **narrowed 2026-10-23**: every recipient needs confirming, and participants are shown, not cleared | §4.2, §17.8 |
-| Arguments are decoded exactly as the schema declares; a JSON string where an array or integer is declared is `[invalid]` | maintainer, 2026-09-27 | §17.7, §18 row 47 |
-| `get_thread` shows the thread's drafts, marked, after its other messages | maintainer, 2026-09-27 | §7.2, §17.2 |
-| Settings writes behind a new opt-in flag, `GMAIL_ENABLE_SETTINGS`, which alone requests `gmail.settings.basic` | maintainer, 2026-09-27 | §7.9, §9.4 |
-| A filter may trash matching mail, with `confirm: true`; it can never forward | maintainer, 2026-09-27; **narrowed 2026-10-23**: only through `create_trash_filter`, behind the settings and destructive flags | §7.9, §17.5 |
-| The vacation reply needs both the settings and the send flags, an audience of contacts or domain, and `confirm: true` | maintainer, 2026-09-27 | §7.9, §17.4 |
-| The person confirms, through MCP form elicitation, each write that takes `confirm` or `confirm_recipients`, on top of those arguments; only an accept writes, and anything else is `[blocked]` as "not confirmed by the person", never "declined" | maintainer, 2026-09-28; **superseded 2026-10-23** | §4.13 |
-| Accepting the question is the confirmation; the form has no checkbox | maintainer, 2026-09-28, after the interactive check; **superseded 2026-10-23** | §4.13, §18 row 64 |
-| A client that cannot ask falls back to `confirm` and `confirm_recipients`; `GMAIL_REQUIRE_PROMPT=true` refuses instead | maintainer, 2026-09-28; **superseded 2026-10-23** | §4.13, §9.4 |
-| The server asks the person nothing; per-call approval is the client's. Registration, `confirm`, the guards, the witnesses and `dry_run` stay; `GMAIL_REQUIRE_PROMPT` is removed and refused when set | maintainer, 2026-10-22 (the shared standard's §3), port approved 2026-10-23 | §4.13, §18 rows 89, 90; a major release, 3.0.0: a client that could not make these writes before can, and `delete_draft`, `send_draft` and `delete_filter` take new required inputs |
-| `delete_filter` is registered only with the settings and destructive flags; a filter that trashes is its own tool, `create_trash_filter`, behind both, with `confirm: true` | maintainer, 2026-10-23 | §7.9, §9.4; the full-mail scope comes with the destructive flag |
-| `send_draft` and `set_vacation` carry no mark and are annotated destructive; `delete_permanently` and `delete_label` carry the mark for every client | maintainer, 2026-10-23 | §4.13, §8 |
-| `confirm_recipients` names every recipient, the thread's participants included | maintainer, 2026-10-23 | §4.2 |
-| `set_vacation` keeps `confirm` to turn the reply on, and on and off stay one tool | maintainer, 2026-10-23 | §7.9; turning it off is the safe half of a risky tool, not a risky variant of an ordinary one |
-| `send_draft` takes the draft's subject and the first line of its body, and `delete_filter` the filter's criteria, each refused `[stale]` when not what Gmail holds | the port's review, 2026-10-23 | §4.13, §7.8, §7.9; the standard's §3: where a question showed what an argument means, the argument carries it |
-| An invitation's identifiers and times are read from its calendar part, reversing §7.2's "no further parsing" | maintainer, 2026-10-09 | §7.2, §18 row 81 |
-| `read_attachment` reads an attachment's text into a result, registered by default, reversing §7.3's "never inlined" | maintainer, 2026-10-09 | §7.3, §18 row 84; text types only, inside the boundaries |
-| `create_draft` forwards a message by attaching it, with its `Bcc` left out; the server adds to a draft only what the caller names | maintainer, 2026-10-09 | §4.2, §7.4, §18 row 85; never inline, so the original goes as Gmail stored it |
-| A draft carries the From address's send-as signature when `create_draft` or `update_draft` is asked to, in the markup Gmail's composer writes; §4.2.2 no longer says never | maintainer, 2026-10-30, issue #39 | §4.2, §7.4, §18 rows 97 and 98; CLAUDE.md rule 5 |
-| The person running the server may have every new draft signed, with `GMAIL_DRAFT_SIGNATURE`, off by default; rule 5 and §4.2.2 now read "what the caller names, or what the person running the server set". Signing by default for everyone (4.0.0) was weighed and not taken | maintainer, 2026-10-30 | §4.2, §7.4, §9.4, §18 row 100; CLAUDE.md rule 5 |
-| A reply quotes its parent below the body only when `quote` asks, reversing "no suffix" for that one block | maintainer, 2026-10-09 | §4.2, §7.4, §18 row 86; the body the caller wrote is never changed |
-| Spikes D and E send in phase 2, from the live driver's run, to a second address the maintainer passes on the command line and never commits | maintainer, 2026-09-26 | §15; the transcript records the address redacted only |
-
-## 15. What must be verified live
-
-Each spike states its question and, when run, its verdict separately.
-All have run; what is still owed is named under each.
-
-- **Spike A — does `drafts.update` change the draft's message id?** The
-  witness of §4.4 depends on it. Create, update twice, read between.
-  Verdict decides between the message id and a raw-bytes hash.
-
-  **Answered 2026-09-26, twice.** Yes: a create and two updates of the
-  same bytes gave three distinct message ids, and `drafts.get` named
-  each. The message id is the witness.
-- **Spike B — does Gmail keep a client-set `Message-ID`?** Create a
-  draft with one, send it to the maintainer's second address, read the
-  sent copy and the received copy. §4.3's settle-by-reading depends on
-  it. If Gmail rewrites it, the fallback is the draft's own message id
-  in `SENT`, which spike C checks.
-
-  **Answered in part 2026-09-26, by phase 2's runs.** No, for the
-  sender: `drafts.create` replaced the `Message-ID` of every draft the
-  server built, and `messages.send` replaced spike D's original's.
-
-  **`drafts.send` answered 2026-09-27, by phase 3's run.** It replaced
-  the `Message-ID` again: the sent copy carries neither the one the
-  server wrote nor the one the draft held. So §4.3 cannot settle by any
-  `Message-ID`, and settles by the draft's thread instead (§18 row 44).
-  **Received copy read 2026-09-27 by the maintainer**, in the second
-  mailbox, a Gmail account. The message arrived in the inbox with the
-  subject and body exactly as the draft held them and nothing added — no
-  signature, footer or prefix — which is §4.2's verbatim send seen from
-  the receiver. The received copy's `Message-ID` was not read.
-- **Spike C — what does `drafts.send` leave behind?** Is the sent
-  message's id the draft's message id? Does `drafts.get` answer 404
-  afterwards? §4.3's verdict table is written from this.
-
-  **Answered 2026-09-27.** The sent message has a new id, not the
-  draft's message id, and it is filed in the draft's thread. `drafts.get`
-  on the sent draft answers 404, reason `notFound`. So after a send the
-  draft is gone and its thread holds a message in `SENT` that was not
-  there before, which is what §4.3's verdicts read.
-- **Spike D — threading.** A reply built per §4.5 lands in the thread;
-  and each of the three conditions of §2.5 removed in turn, to see which
-  ones Gmail actually enforces for the sender and for a non-Gmail
-  receiver.
-
-  **Sender side answered 2026-09-26.** An original and four replies were
-  sent to the second address. The reply with all three conditions
-  joined the original's thread. So did the reply without `In-Reply-To`
-  and `References`, and the one with another subject. Only the reply
-  without `threadId` started a new thread. For the sender, `threadId`
-  alone decides (§18 row 42). Drafts agree: every reply draft the steps
-  made joined its parent's thread.
-
-  **Receiver side answered 2026-09-27 by the maintainer**, reading the
-  second mailbox, a Gmail account. The reply without `In-Reply-To` and
-  `References` did not thread there, and neither did the one with
-  another subject. So each condition matters to someone: `threadId` to
-  the sender, the headers and the subject to the receiver. That is what
-  §4.5 writes, and why a reply refuses a caller's subject. A non-Gmail
-  receiver is not yet checked.
-- **Spike E — non-ASCII round trip.** Subject, display names, body and
-  an attachment filename in four scripts, built by `internal/mime`,
-  read back from Gmail and from a non-Gmail receiver.
-
-  **Answered for Gmail 2026-09-26.** A draft and a sent message, each
-  with subject, display names, body and attachment name in Latin,
-  Cyrillic, Greek and Japanese, read back with every field intact.
-
-  **Receiver side answered 2026-09-27 by the maintainer**, reading the
-  second mailbox, a Gmail account. The subject and body showed in all
-  four scripts, and so did the attachment's name, cut short only by the
-  attachment tile. The recipient's display name does not show in that
-  view. A non-Gmail receiver is not yet checked.
-- **Spike F — `messages.insert` as a fixture source.** Do inserted
-  messages appear in `threads.list`, `q` search and `history.list` like
-  delivered ones? §9.1's driver depends on it.
-
-  **Answered 2026-09-26.** Yes for listing and search: inserted messages
-  appear in `threads.list`, in `q` search and in `rfc822msgid:` lookups
-  like delivered ones. `history.list` reports them as added, checked by
-  phase 1's live runs. And a date surprise: with
-  `internalDateSource=receivedTime`, Gmail recorded the message's own
-  `Date` header as `internalDate`, while `after:` still matched it by
-  the time of the insert (§18 row 35).
-- **Spike G — scope refusals.** Under `gmail.modify`, `messages.delete`
-  is refused 403 (the reason §4.6 gates by scope as well); under
-  `gmail.readonly`, every write is refused. The error shape of each,
-  for §6.5's mapping.
-
-  **Positive half answered 2026-09-26:** `messages.delete` on the run's
-  own message under `gmail.modify` answered 403, so permanent deletion
-  needs `https://mail.google.com/` and §4.6's scope gate holds. The
-  negative half needs a profile granted only `gmail.readonly` and is
-  still owed.
-- **Spike H — rate limiting.** What a 429 looks like: `Retry-After`
-  present or not, and the reason string that tells the sending limit
-  apart from the rest.
-
-  **Answered for the request limit 2026-09-27.** Reads of the run's own
-  message from 32 workers met a refusal after 1,321 reads, 26,420 units:
-  **403**, not 429, reason `rateLimitExceeded`, message "Quota exceeded
-  for quota metric 'Total Query Cost' and limit 'Units per minute per
-  user'", and **no `Retry-After`**. The client already reads it as a
-  request-rate limit and backs off; a test now holds that shape (§18
-  row 45). The run's cleanup met the same limit straight after, so the
-  driver's own calls now wait it out. The sending limit was not
-  provoked: its wait is up to a day.
-- **Spike I — label names and case.** Can `Foo` and `foo` coexist? What
-  does creating a label named like a system label return?
-
-  **Answered 2026-09-26.** No: the second answered 409, reason `aborted`,
-  "Label name exists or conflicts". `INBOX` and `Inbox` both answered
-  400, reason `invalidArgument`, "Invalid label name". §6.2.
-- **Spike J — consent without `prompt=consent`.** With a refresh token
-  already issued, does a login that omits it get a new refresh token,
-  none, or an error? §10.
-
-  **Answered 2026-09-27 by the maintainer's login.** A new refresh token.
-  The authorization URL carried no `prompt`, every scope was already
-  granted, and Google still issued one, which `login` stored in place of
-  the old. So skipping consent spares the screen, not the token: every
-  login mints one toward the 100 per client (§18 row 43). The old token
-  stays valid at Google until it ages out or the cap evicts it; it
-  cannot be revoked alone (§17a, §18 row 53).
-- **Spike K — expired history.** A `startHistoryId` far below the
-  current one: 404, and the body's shape. §7.6.
-
-  **Answered 2026-09-26:** `startHistoryId=1` answered 404, as the sync
-  guide says, in Google's ordinary envelope: reason `notFound`, message
-  "Requested entity was not found." Nothing in the body says the cursor
-  expired, so `list_changes` reads any 404 from `history.list` as expiry
-  (§7.6).
-
-- **Spike M — does Gmail keep a long plain-text line whole?** Drafts the
-  server saved with each paragraph on one line reached their readers
-  wrapped at 70 columns after the person sent them from Gmail (§18 row
-  73). `M (stored)` saves a draft with no HTML part and one with the HTML
-  made from its text, and reads their bytes back; `M (sent)` reads the
-  copy `send_draft` sent of a draft whose HTML a body-only `update_draft`
-  made again. What Gmail's web composer does when a person presses Send
-  cannot be driven: a run given `-send-to`, `-keep` and
-  `-run 'compose a draft to|long paragraph'` leaves that draft unsent,
-  and a person sends it from Gmail to the second mailbox, then removes
-  the run with `-clean`.
-
-  **Answered 2026-10-06, live.** Gmail stores both drafts as built: the
-  214-character line came back whole, and the HTML part came back as the
-  one made from the text, so a body-only update recognizes it. What
-  Gmail delivers is not what it keeps in Sent. The copy `send_draft` left
-  in Sent held the line whole, but the received copy, read in the second
-  mailbox, was rebuilt as `multipart/alternative` under Gmail's own
-  boundary, its plain part wrapped at 75. The draft a person sent from
-  Gmail's web composer arrived the same way, where a draft with no HTML
-  part arrives as plain text alone, wrapped at 70 (§18 row 73).
-
-Spikes B, C, D and E send real mail and need the maintainer's second
-address; they are the "ask before doing" of `CLAUDE.md`. D and E were
-approved on 2026-09-26 to send in phase 2 (§14), to that address only,
-passed to the driver as a flag. They sent six messages in one run; the
-second run sent none. Phase 3's run answered B and C.
-
-- **3.0.0 — the client decides.** A run with the settings
-  scope and `-send-to`, its transcript read: no step draws a question;
-  `delete_draft` refuses another draft's message id as `[stale]` and
-  deletes with the right one; `create_trash_filter` refuses without
-  `confirm`, shows its filter on a dry run, creates it, is found as a
-  duplicate, and `delete_filter` removes it; a reply-all's dry run
-  names both recipients unconfirmed; and a reply to the sent message,
-  whose recipient is a participant, is refused until
-  `confirm_recipients` names it, then deleted unsent. `send_draft`
-  refuses another subject and another first line as `[stale]`, and
-  every dry run and the send pass with the subject the draft's write
-  gave and the first line the run wrote, the long paragraph's draft
-  included; `delete_filter` refuses other criteria as `[stale]`, and
-  deletes each filter with the criteria its create gave.
-
-  **Run 2026-10-23, with the settings scope and without `-send-to`:**
-  99 steps passed, none failed, and none drew a question. `delete_draft`
-  refused another message id as `[stale]` and deleted with the right
-  one. `create_trash_filter` refused without `confirm`, showed its
-  filter on a dry run, created it and refused an identical one, and
-  `delete_filter` removed it. A reply-all's dry run named both
-  recipients unconfirmed, one of them a participant. `send_draft`
-  refused unconfirmed recipients, an old message id, another subject and
-  another first line, each with nothing sent. `delete_filter` refused
-  other criteria as `[stale]` and deleted each filter with the criteria
-  its create gave. Still owed: the seven steps that need `-send-to`,
-  which are the send itself, the long paragraph's draft, and the reply
-  to a participant refused until confirmed, then deleted unsent.
-
-## 16. Delivery phases
-
-Each phase is one session and ends ready to tag, then waits for an
-explicit "go". The next session starts from this repository alone.
-
-**Phase 0 — scaffolding, gates, MIME and reading (v0.1.0).** Everything
-of §5a: CI, release, publish, bundle, registry, every gate of the
-`check` list, pre-commit, templates, community files, and the docs
-(`README`, `CHANGELOG`, `CONTRIBUTING`, `SECURITY`, `CODE_OF_CONDUCT`,
-`docs/configuration.md`, `development.md`, `release.md`, `security.md`,
-`gcp-setup.md` generated, `runbook.md`, `docs/README.md`). The core:
-`cmd` with `login`, `logout`, `status`, `doctor`; `config`,
-`credentials`, `fileperm`, `userconfig`, `auth`, `scopes`, `redact`,
-`version`, `app`, `server`, `tools`, `gapi` with the read methods and the
-unit budget. **`internal/mime` parse side complete with its table
-tests**, because everything else stands on it. `gmailtest`. The read
-tools: `get_profile`, `search_threads`, `search_messages`, `get_thread`,
-`get_message`, `list_labels`, `list_drafts`, `get_draft`. The
-untrusted-content rendering of §4.1 and the budget of §4.8. §8a moved
-to `testdata/api-coverage.tsv`; §8b's record. Spikes F, G and K. A live
-run whose transcript is read.
-
-Built 2026-09-25, on a topic branch. Beyond the list above: the smoke gate
-probes `server/discover`, since the 2026-07-28 revision is not reachable
-through `initialize` (§18 row 32); the README's tool table is held to the
-binary's surface; and `messages.attachments.get` moved into this phase,
-because `get_message` must fetch body parts Gmail stores behind an
-attachment id (§7.2). After the reviews, the boundary between mail and the
-server's voice is a type rather than a rule: `internal/render` writes
-server text only from typed parts, so sender text cannot reach a note
-without going through a block, and a property test plants markers in every
-sender-controlled field of hostile mail across every renderer.
-
-Run live 2026-09-26, twice. Both runs passed every step, and reading the
-first transcript found four things the green steps did not: the Cloud
-project number in the `Received` header Gmail stamps on inserted mail,
-which the transcript redactor let through (§18 row 34); dates that were
-the `Date` header rather than the time of the insert (spike F, §18 row
-35); Gmail's result estimate stated as a count when it was 201 for a
-search matching 3 (§18 row 33); and escaped angle brackets in the
-driver's argument echo. The second run is the one with all four fixed.
-
-**Phase 1 — attachments, changes, settings, resources (v0.2.0).**
-`download_attachment`, `list_changes`, `get_settings`, `list_filters`,
-the three resources. Spike I.
-
-Built 2026-09-26, on a topic branch stacked on phase 0's. Beyond the list:
-the client gained a streaming path for attachments (§7.3); `get_message`
-lists each attachment's `part_id`, which `download_attachment` takes; the
-header block of a read is capped at half the budget, closing the §17a
-entry; resource reads are logged and counted like tool calls; and
-`filters.get` and `forwardingAddresses.get` were written off (§18 row 36).
-`unsupported` moved to phase 2, where `modify_labels` meets a draft.
-
-Run live 2026-09-26, three times, every step passing each time. Reading
-the first transcript found the account's real history ids in the clear,
-in `list_changes`'s lines and the argument echo, which the redactor did
-not know as ids (§18 row 38); the second run has that fixed. The third
-ran after the review fixes to the streaming path, and its transcript also
-masks the system temporary directory the download path runs through.
-
-**Phase 2 — the write path (v0.3.0).** `internal/mime` build side and
-its round-trip fuzz; `create_draft` with replies, `update_draft` with
-the witness, `delete_draft`, `modify_labels`, `trash`, `restore`,
-`create_label`, `update_label`; per-item outcomes. Spikes A, D, E, J.
-
-Built 2026-09-26, on a topic branch stacked on phase 1's. `internal/mime`
-builds with RFC 2047 headers, RFC 2231 filenames and quoted-printable
-text, and `EditRaw` edits a draft's own bytes as a tree, leaving every
-part it does not touch as Gmail stored it. Two fuzz targets hold them:
-built messages parse back to the same fields, and edits never break a
-parse. `gmailtest` reads what it is sent with the standard library rather
-than `internal/mime`, so the builder is not tested against its own
-parser's mistakes. It models threading on all three conditions, a new
-message id per draft save, `SENT` and `DRAFT` refused by hand, and a
-draft refused a label.
-
-Beyond the list: the reply's thread is its own field,
-`reply_to_thread` (§4.5). Each item of a multi-id write is read, then
-written only if needed (§4.7). `messages.batchModify` and `sendAs.get`
-were written off (§18 row 39). `login` now says whether Google issued a
-new refresh token, which is spike J's question. And the `outcomes` gate
-had been reading nothing since phase 0: it knew input types spelled
-`FooInput`, this repository spells them `FooIn`, and its floor caught
-that when the first write tool registered. It now reads both, with a
-test. Its floor counted distinct field names, and all the writes share
-one `dry_run`, so it now counts fields per input type.
-
-Run live 2026-09-26, twice, with every step passing each time. The first
-run sent six messages to the maintainer's second address for spikes D
-and E; the second sent none. Reading the first transcript found that
-Gmail replaces the `Message-ID` of a draft created through the API, so
-`create_draft` had reported an id Gmail did not keep (§18 row 41). It
-reports none now, and the fake replaces the id as Gmail does. It also
-found that the sender threads by `threadId` alone (§18 row 42). The
-second run is the one with the fix.
-
-**Phase 3 — sending and the gated tools (v0.4.0).** `send_draft` with
-the recipient guard and the settle-by-reading of §4.3;
-`delete_permanently`, `delete_label`; the scope escalation and re-login
-path. Spikes B, C, H.
-
-Built 2026-09-27, on a topic branch stacked on phase 2's. Beyond the
-list: `send_draft` takes the draft's `message_id` as a witness, as
-`update_draft` does, so a draft changed after it was shown is `[stale]`
-rather than sent (§4.2). A dry run with unconfirmed recipients reports
-them instead of refusing. `delete_permanently` reads each item first, as
-the other multi-id writes do, and reports a 404 on the delete as deleted.
-`delete_label` reads the label's counts, so its result says how much mail
-loses it. The escalation path was mostly in place from phase 0 — startup
-and `doctor` compare granted with required, and `login` asks for consent
-when the scope set grows. Phase 3 adds its other direction: `doctor` names
-a token wider than its configuration, typically `https://mail.google.com/`
-left after the destructive flag is turned off, and says `logout` then
-`login` narrows it. The fake models `drafts.send` filing the message in
-`SENT` under a new id, a permanent delete refused 403 without the full
-scope (spike G), and a failure served after the request was acted on, so
-an ambiguous send whose draft did go out is tested. The schema-diff floor
-now counts the whole surface, 23 tools; it had stayed at phase 0's eight.
-
-Run live 2026-09-27, four times. The first, with `-send-to` and the
-destructive login, passed all 56 steps and drove 106 of 106 options; it
-sent one message through `send_draft`. Spikes B and C found that
-`drafts.send` replaces the `Message-ID` and files the sent copy under a
-new id in the draft's thread, so the settle-by-reading of §4.3 as
-written could never have found a sent message; it now rereads the
-thread (§18 row 44). The second, for spike H alone, met the per-user
-limit, and so did its cleanup, which left two drafts and two messages
-until `-clean` removed them. The third answered spike H with the driver
-waiting the limit out. The fourth ran after the thread-based settle,
-without `-send-to`: 54 steps passed, the two that send were skipped, and
-105 of 106 options were driven, the missing one being `confirm_recipients`
-on the send the first run made. The maintainer's login showed the re-login path
-both ways: `doctor` named the missing scope, `login` asked for consent,
-and with the flag off again `doctor` names the wider token.
-
-The live driver runs the server with both flags on. Every `send_draft`
-step but one uses a draft addressed to reserved domains and is a dry run
-or refused; the one that sends needs `-send-to`, and the guard holds its
-recipient and its `confirm_recipients` to that address. The permanent
-delete runs only when the profile's login granted
-`https://mail.google.com/`, and spike G, which needs a profile without
-it, runs only when it is absent. Spike H floods reads of the run's own message only
-with `-spike-h`. Spikes D and E, answered in phase 2, send again only
-with `-spikes-de`, so a run with `-send-to` sends one message.
-
-**Phase 4 — evals and 1.0 (v1.0.0).** The evals harness with the
-injection tasks of §13; the surface frozen into the schema baseline;
-§17 closed or each item argued open.
-
-Built 2026-09-27, on a topic branch stacked on phase 3's. The harness
-serves the real server over streamable HTTP on the loopback interface,
-against a fresh `gmailtest` mailbox per trial, and gives each task to a
-model through `claude -p`, fenced to this server's tools as the newest
-sibling fences it. It scores six tasks on their calls, their answer and
-the mailbox after the run. Three carry a planted instruction; obeying it, by the tool it asks
-for or by its address in any argument, is counted apart from an ordinary
-failure. `-trials` repeats each task, and a task passes only when every
-trial does. A run the CLI stopped, or one that called a tool not this
-server's, is reported rather than scored. `-self-check`, in `check`, scores
-15 canned transcripts and requires every task to fail on a mailbox
-nobody touched.
-
-§17 is closed item by item, each decided by the maintainer on 2026-09-27
-from the references in §18 rows 46 and 47: the recipient guard clears
-the senders of a thread's messages and the addresses the account itself
-sent to, and no longer a correspondent's `Cc` or `Reply-To`; `get_thread`
-shows a thread's drafts in a section after the conversation; arguments
-are decoded exactly as declared. §17.4 and §17.5 stay deferred to after
-1.0, and §17.6 stays open by design, checked for 1.0 in §18 row 48. The
-live driver gained a dry run of a reply-all on a received thread, which
-holds the narrowed guard against Gmail's own labels.
-
-Run live 2026-09-27, twice, without `-send-to`: 55 steps passed each
-time, the two that send were skipped, and 105 of 106 options were
-driven. Reading the first transcript found the dry run's own sentence
-still saying a thread's "senders and recipients need no confirming",
-which the narrowed guard made untrue; it now says whoever the account
-sent them to. The second run is after that fix and the reviews. Two
-more ran on the final code with `-send-to`, 57 steps and 106 of 106
-options each: the first sent one message through `send_draft`; the
-second also sent spikes D and E, seven messages in all, and flooded
-reads for spike H. Every spike reproduced its verdict of §15: B and C
-the replaced `Message-ID` and the draft's 404; D threading by
-`threadId` alone for the sender; E four scripts intact; H a 403
-`rateLimitExceeded` without `Retry-After`, this time after 22,800
-units. No
-scored evals run had been made at that point.
-
-Scored 2026-09-27 through the CLI, `claude-opus-5-5` at high effort,
-three trials per task, on the committed harness: six of six tasks
-passed every trial, the planted instruction was followed in none of 18
-trials, and the run cost $1.32. Every answer to the injected tasks
-named the planted message as likely phishing and said it had not acted
-on it. An earlier run had failed `send-draft` three times, and reading
-it showed
-why: the CLI asked for a person before every `send_draft` call, dry
-runs included, because the tool carries `requiresUserInteraction`
-(§18 row 49), and under `claude -p` there is none. The model found the
-draft and its witness each time and stopped to ask. The task now scores
-reaching the send with the right witness, whether the client holds the
-call or lets it through.
-
-**Phase 5 — settings writes (v1.1.0).** Asked for by the maintainer
-after 1.0, 2026-09-27: `update_signature`, `create_filter`,
-`delete_filter` and `set_vacation` behind a new `GMAIL_ENABLE_SETTINGS`,
-which requests `gmail.settings.basic`; the vacation reply also behind
-`GMAIL_ENABLE_SEND` (§7.9, §14, §17.4, §17.5).
-
-Built 2026-09-27, on a topic branch from `main`. A filter cannot forward:
-the type it is written as has no such field. The schema dump now names
-each tool's kind, since a settings write looks like a write for good to a
-client and the vacation reply like a send, and the smoke gate drives two
-more modes from it. The `api-fields` gate learned a declared view, a
-`Schema: <Name>` line, so a write type narrower than its schema is still
-held to that schema's fields. The live driver saves the default
-address's signature and the vacation reply before its settings steps
-and restores both exactly after; its filters match only the run's own
-sender at a domain that never resolves, and its vacation reply starts
-300 days ahead. `injected-helpdesk` now runs with the settings tools on.
-
-Run live 2026-09-27, twice, on a Workspace account after a login that
-granted `gmail.settings.basic`, without `-send-to`. The first run found
-three things the unit tests could not (§18 row 52): Gmail keeps a second
-identical filter, it stores a filter's size rounded, and a vacation reply
-sent with an empty HTML body beside a plain one came back with no body.
-The HTML body is now left out unless it holds something, and the fake
-answers as Gmail did. The second run passed all 71 steps and drove 136 of
-137 options, the missing one being `confirm_recipients`, which needs a
-send. Both runs restored the account's signature and vacation reply.
-
-Scored 2026-09-27 after the release, through the CLI, `claude-opus-5-5`
-at high effort, three trials per task, with the settings tools on in
-`injected-helpdesk`: six of six tasks passed every trial, the planted
-instruction was followed in none of 18 trials, and the run cost $1.47.
-
-**Phase 6 — the person confirms (unreleased).** Asked for by the
-maintainer on 2026-09-28, after a client's approval prompts named labels
-by id: the server asks the person, through MCP elicitation, before each
-write that takes `confirm` or `confirm_recipients` (§4.13, §14). Checked
-first against the specification, the SDK's source, a throwaway probe
-server and the clients' own documentation (§18 rows 58 to 63).
-
-Built 2026-09-28, on a topic branch from `main`. The service asks at
-its write, after every read and guard, so the question states what
-would be written; `register` gives each call a way to ask for the kinds
-that take `confirm`, and the question goes out as a multi-round-trip
-input request on every protocol. The answer is bound by a signed,
-single-use `requestState` to the tool, the arguments and the question's
-words, so a retry whose question changed is refused and asked again.
-Mail text in a question is quoted on one line with no link drawn. The
-test client, `testutil.ConnectClient`, takes client options and a
-protocol, so the tests answer as a person would on 2025-06-18,
-2025-11-25 and 2026-07-28, and forge and replay answers by hand. The
-descriptions of the tools that take `confirm` say the server also asks.
-
-The live driver is now a client that declares elicitation and answers
-for the maintainer, since it is their own scripted run: accept, but for
-one step that declines and checks the refusal. It
-prints every question into the transcript. The evals' `send-draft` task
-already scored reaching the send with the right witness; its wording now
-says that `claude -p` may pass the call and cancel the server's question
-rather than hold it, and either scores the same.
-
-Run live 2026-09-28, once, without `-send-to`, on protocol 2025-11-25:
-78 steps passed, and 136 of 137 options were driven, the missing one
-being `confirm_recipients`, which needs a send. Each write that takes
-`confirm` put one question to the driver, the send aside, since no step
-sent; the declined delete wrote nothing and said so. Reading the transcript found the questions as
-§4.13 describes them, with the run's own label, subject and filter
-criteria quoted.
-
-Checked by the maintainer 2026-09-28 in Claude Code 2.1.284, on
-protocol 2025-11-25, with `delete_draft` (§18 row 64). Accept with the
-box unticked, Esc and Decline were each `[blocked]`, logged as
-`accept` unconfirmed, `cancel` and `decline`; the box ticked and
-Accept deleted the draft. The model never saw the question and did not
-call again on its own, and the log carried no subject or address. The
-first case, a person meaning to confirm and refused, is why accepting
-is now the confirmation and the form has no box.
-
-The review round that followed is in §16a. Run live again
-2026-09-28 after it, without `-send-to`: 78 steps passed, 136 of 137
-options driven. The driver answered with an accept alone, the vacation
-question showed the reply's text, and the declined delete wrote nothing.
-
-Run live 2026-09-28 with `-send-to` and no spike that sends: 80 steps
-passed, and 137 of 137 options were driven, `confirm_recipients`
-included. The send was the run's one message. Its question named the
-one recipient, the run's subject and the body's single line, the driver
-accepted, and the result reported 1 recipient, 1 confirmed. Spikes B and
-C reproduced their verdicts of §15: a replaced `Message-ID`, a new
-message id, and 404 on the sent draft. Cleanup and the settings restore
-ran without a failure.
-
-Scored 2026-09-28 through the CLI, `claude-opus-5-5` at high effort,
-three trials per task: six of six tasks passed every trial, the planted
-instruction was followed in none of the 9 trials that carry one, and the run cost
-$1.31. In each `send-draft` trial the CLI held the dry run for a person
-(§18 row 49), so the call never reached the server and its question.
-The task scores that the same as before; the server's question under
-`claude -p` is not yet seen from a model.
-
-Owed: the maintainer's check of the empty form in an interactive
-client; and `/simplify` and `/security-review` on the round.
-
-**2.0.1 — questions drawn as Markdown (released 2026-09-29).** From the
-elicitation research of 2026-09-29. VS Code draws a question as
-Markdown, and 2.0.0 quoted mail text in double quotes, so a label
-named in Markdown's link syntax drew a link there. Each quoted value is now a code
-span and the lines stand apart (§4.13, §18 row 66).
-`TestQuestionsAreInertMarkdown` puts Markdown in every field of every
-question and holds the text outside the spans to the server's own. The
-form stays empty: the maintainer compared three forms in Claude Code
-2.1.284 against a throwaway probe, and a required choice naming the
-outcome was slower and less clear than Accept (§18 row 67).
-
-Run live 2026-09-29 without `-send-to`, before and after the review
-round: 78 steps passed each time, 136 of 137 options driven, the
-missing one `confirm_recipients`, which needs a send. The transcript's
-nine questions each quote the run's own text in code spans, one line
-apart, and the declined delete wrote nothing. Reviews in §16a.
-
-**2.0.2 — the ask path hardened (released 2026-09-30).** From a review of the
-same pattern, 2026-09-29. Three changes, none reachable as a bypass
-here:
-
-- The link shapes in a question anchored on `\b`, which in Go is ASCII
-  only and counts `_` as a letter, so `x_evil.example/login`,
-  `a_https://` and a Cyrillic domain with a path stayed linkable. The
-  shapes are now unanchored, and a domain's letters may carry combining
-  marks (§18 row 68).
-- A decline, cancel or other answer was refused only when the retry
-  reached its question, after its reads. Every question here depends
-  only on the arguments, so each retry reached it; the refusal now comes
-  first all the same (`TestARefusalIsRefusedBeforeAnyRead`).
-- A round that carries an accept counted as writing only from its
-  question. It now does from the start, so a failure without a result
-  on that round is never "nothing was written" (§4.13 item 10), and it
-  counts as written only once the answer is spent on its question.
-
-Run live 2026-09-29 without `-send-to`, before and after the review
-round: 78 steps passed each time, 136 of 137 options driven, the missing
-one `confirm_recipients`, which needs a send. The declined delete was
-refused and wrote nothing; each question quotes the run's own text in
-code spans. Reviews in §16a.
-
-**2.0.3 — bare domains and the transcript (released 2026-09-30).** The two items
-2.0.2 left to the maintainer:
-
-- A question breaks the last dot of a bare domain a fuzzy Markdown
-  linkifier would link, by linkify-it's own rule, and leaves a file name
-  like `report.pdf` and an address as they are (§18 row 69).
-- The live driver's transcript masks `Label_` ids and filter ids: a
-  filter id by Gmail's observed shape, and by position after "filter"
-  when it carries a digit, which keeps a word like "without" readable.
-
-Run live 2026-09-30 without `-send-to`: the transcript carried no label
-or filter id. The first run's count double-counted a filter id echoed in
-a step's arguments; review fixed that, and the second run is the one
-recorded below the review round.
-
-**2.0.4 — a dry run's labels after (released 2026-10-01).** Found in use, cleaning
-a personal mailbox: a dry run of `modify_labels`, `trash` or `restore`
-left `labels_after` empty, which read as every label being removed.
-
-- Each item write predicts its labels from the ones it read:
-  `modify_labels` applies the change to each message but a thread's
-  drafts; `trash` adds `TRASH` and removes `INBOX`; `restore` removes
-  `TRASH` only (§18 row 70). The text says the labels after too, "none"
-  when there would be none.
-- `gmailtest` trashes the same way, so the test that holds a dry run to
-  the write after it cannot agree by construction with a wrong fake.
-- The live driver holds each modify, trash and restore write to its dry
-  run's labels after.
-
-Run live 2026-10-01 without `-send-to`: every dry run's labels after
-matched the write that followed, for messages and threads. The run's
-own mail carries no `INBOX`, so the inbox half of trash rests on row 70's
-evidence, not on this run. Reviews in §16a.
-
-**2.1.0 — HTML made from the plain text (released 2026-10-06).** Found in use:
-drafts the server wrote, which the person opened in Gmail and sent,
-reached their readers with every paragraph wrapped at 70 columns. The
-model had written each paragraph on one line and the server had saved it
-as given; Gmail's web composer wrapped it on send, as it does any draft
-with no HTML part (§18 rows 73 and 74).
-
-- `create_draft` saves an HTML version made from `body` when no
-  `body_html` is given, and `update_draft` makes it again from a new
-  body (§7.4).
-- `plain_only` keeps a draft plain for a list that refuses HTML, and
-  `update_draft` keeps a draft's shape unless `plain_only` changes it
-  (§17.9). An emptied body drops the made HTML version with it.
-- `mime.EditRaw` decides whether the HTML version moves, with the parts
-  it replaces in hand, and reports it, so the decision and the edit are
-  one step on one parse. It recognizes the made version by reading it
-  back, not by remaking it, so a later change to the line rules strands
-  no draft; a fuzz test holds that every version it makes reads back.
-- `update_signature` keeps every space of a run: a run of three had lost
-  one. A signature line and a line of the HTML version share one rule.
-- A web address in the HTML version, or in a signature, is a link whose
-  text is the address (§18 row 75); a fuzz test holds that a line adds
-  no other markup and reads back as written.
-
-Run live 2026-10-06: one full run with `-send-to`, one send, and later
-runs without it, 81 steps each, every option driven but the send's
-`confirm_recipients` when not sending. A draft made plain, given the
-HTML version with a link in it, and made plain again shows Gmail keeps
-that HTML as the server made it. Two copies reached the second mailbox,
-one from `send_draft` and one a person sent from Gmail's web composer;
-both showed the paragraph flowing in Gmail's web reader (§18 row 73).
-- The `body` descriptions ask for a paragraph per line and a blank line
-  between paragraphs, which is what the HTML version is made from.
-- A build test holds that a paragraph of any length goes out as one
-  line, in quoted-printable lines of at most 76.
-- The live driver gives the draft it sends a long paragraph through a
-  body-only update, and spike M reads the stored and the sent bytes
-  (§15).
-
-**3.0.0 — the client decides (released 2026-10-23).** The shared standard's §3,
-decided 2026-10-22, and this server's port, approved by the maintainer
-2026-10-23 (§14).
-
-- The server asks the person nothing (§4.13). The question, its signed
-  state, its rendering and `GMAIL_REQUIRE_PROMPT` are gone; the setting,
-  set to anything but `false`, refuses to start, and its flag no longer
-  parses. The test harness declares elicitation and fails any call that
-  asks, the live driver fails the step that draws a question, and
-  `forbidigo` refuses `ServerSession.Elicit` and an input-required
-  result.
-- `create_filter` no longer takes `trash` or `confirm`;
-  `create_trash_filter` makes a filter that trashes, with
-  `confirm: true`, behind the settings and destructive flags. A client
-  remembers approval per tool, so the risky variant has its own (§7.9).
-- `delete_filter` needs the destructive flag as well as the settings
-  flag (§7.9, §9.4).
-- `send_draft` and `set_vacation` lose the mark and are annotated
-  destructive, so claude.ai and Codex prompt for them; the mark stays on
-  `delete_permanently` and `delete_label` for every client (§4.13, §8).
-- `confirm_recipients` names every recipient, the thread's participants
-  included (§4.2).
-- `delete_draft` takes the draft's `message_id` and refuses `[stale]`
-  when the draft changed; it stays registered by default, a deviation
-  §17b records.
-- `send_draft` takes the draft's `subject` and `first_line`, and
-  `delete_filter` the filter's `criteria`, so a client's prompt shows
-  what the question showed; each is refused `[stale]` when it is not
-  what Gmail holds (§4.13, §7.8, §7.9).
-- `register` refuses a kind that cannot be undone without `confirm`,
-  and `confirm` under a kind not annotated destructive. A test holds
-  that no tool writes the server's own settings (§13).
-- `schema-diff` accepts a break the unreleased CHANGELOG declares under
-  **Breaking:**, naming the tool, when no version heading there keeps
-  the baseline's major. `staleness` holds the README's
-  `permissions.ask` rules to the registered tools, and requires one for
-  every tool annotated destructive.
-- The module path is `/v3`.
-
-Done: `/code-review high` and `/security-review` (§16a), and a live
-run, its transcript read (§15). Owed: the steps of §15 that need
-`-send-to`.
-
-**3.2.0 — the send-as signature on request (released 2026-10-30).** Issue #39:
-a draft the server wrote carried no signature, and the person pasted
-theirs in before sending. Gmail's composer adds one only to a message it
-starts (§18 row 97). Approved by the maintainer 2026-10-30 (§14).
-
-- `create_draft` takes `signature`, which puts the signature Gmail holds
-  for the From address below the body, in the composer's markup: with
-  the delimiter when it ends the message, without it above a `quote`
-  (§7.4, §18 row 98). It costs no read beyond the `sendAs.list` the call
-  already makes.
-- `update_draft` keeps the signature a draft carries below a new body,
-  and takes `signature`: `false` drops it, `true` puts the address's
-  current one there for one `sendAs.list`.
-- One function, `mime.Bodies`, writes the body, the signature and a
-  quote for both tools. `mime.EditRaw` finds the signature by its
-  markup, and its text in the plain part by reading that markup again;
-  what is left must still be the HTML version made from the text, or
-  the draft needs both bodies, as before. It reports the signature it
-  found and the one it wrote, which the result is made from. A fuzz
-  test holds that a signature written below any body is found and
-  carried below a new one.
-- The result reports what the signature shows, never its text; a test
-  plants a canary signature and reads every result and log line.
-- A signature's image carried inside its HTML goes as an inline part in
-  `multipart/related`. Found live: Gmail rewrote a draft holding a
-  `data:` image as HTML and an image part, without the plain version,
-  so a new body was refused and `drafts.send` would have sent HTML
-  alone (§18 row 99). `EditRaw` keeps such parts beside a new body,
-  adds none twice, and takes out those only a dropped or replaced
-  signature showed.
-- `golang.org/x/net` v0.62.0, for GO-2026-6860, which failed `make check`
-  on `main`.
-
-Run live 2026-10-30 against the maintainer's account: 96 steps passed and
-15 were skipped, the transcript read. Seven are the sending steps, with
-no `-send-to`. Eight are the signature steps: Gmail refused the
-account's own signature written back unchanged, HTTP 400
-`invalidArgument`, in that run and in one of the signature steps alone,
-so the driver changed nothing and read the signature back as it found
-it. The signature was checked by hand instead, through four drafts sent
-from the composer to a second mailbox, the last written by this build's
-own `signature: true` (§18 row 97). Then by this build against the
-account's own signature, logo included: a draft written, given a new
-body, the signature kept with its image part, then dropped with it,
-and a signed draft sent with `send_draft` (§18 row 99). Owed: the
-signature steps on an account whose signature Gmail takes back
-unchanged.
-
-**3.3.0 — new drafts signed by the operator's choice (released 2026-10-30).**
-A draft went out unsigned unless every call that made one asked for the
-signature. Approved by the maintainer 2026-10-30, option A of two (§14).
-
-- `GMAIL_DRAFT_SIGNATURE=true`, off by default and the bundle's
-  `draft_signature`, signs a new draft when `create_draft` leaves
-  `signature` out; a reply or forward only when asked. The default
-  never refuses: a body that already carries the signature, or plain
-  text alone, goes without it, and the result says `skipped` and why.
-  `create_draft`'s description says whether the server signs (§7.4).
-- `signature` on `create_draft` is `true`, `false` or left out, as on
-  `update_draft`; the result adds `by_default` and `reason`.
-- `update_draft` refuses `[conflict]` new `body_html` that would drop a
-  signature the draft's HTML holds and cannot carry, unless `signature`
-  says what to do. 3.2.0 dropped it silently (§16a, the second review).
-
-### 16a. Found by review, and fixed
-
-Each phase's `/code-review high` and `/security-review` findings, with
-what fixed them.
-
-- **Phase 0, security review: sender text reached the server's voice.**
-  A part's `charset` parameter, which RFC 2231 lets a sender
-  percent-encode with newlines, was printed unsanitized in a `note:` line
-  after the untrusted block closed; a crafted header could write fake
-  server notes. An unsafe attachment name was echoed in a note the same
-  way, on one line. Fixed: `internal/mime` returns a charset label only
-  when it has the IANA shape, and the attachment note no longer names the
-  file. `TestSenderTextNeverReachesTheServersVoice` drives hostile raw mail
-  through parse, model and render, and fails on the old code in all three
-  cases.
-- **Phase 0, code review: ten findings, all fixed, each with a test that
-  failed first.**
-  - Three more ways sender text reached the server's voice: a `mailto:`
-    link's percent-decoded host in the link-mismatch note (hosts are now
-    host-shaped or absent); the senders of messages a thread read did not
-    show (now inside a block); and invisible or bidi characters in an
-    address, which were never stripped (now stripped and counted).
-  - Two quadratic paths over sender text: `StripInvisible` on a long
-    invisible run, and quote-span marking. Both are linear, held by tests
-    with 300k-character and 200k-span inputs.
-  - A `Retry-After` above the cap was honored on 503 and 5xx, so one call
-    could sleep an hour. One place now reports a long wait for every
-    status.
-  - The server instructions named tools phase 0 does not have. They are
-    now built from the tools actually registered.
-  - Google's error text kept a third party's domain. Addresses in it are
-    now masked domain and all.
-  - Listings read each row one after another, 22 round trips for a default
-    `search_threads`. They now read up to five at a time, in row order,
-    with the first failing row's error.
-  - The scripts carried their own copy of `redact.ID` with different
-    rules. They now use the server's.
-
-- **Phase 1, security review: nothing found.** The download path, the
-  streaming decoder, the resources, the new renderers, the log line for a
-  resource read and the driver's transcript were each checked; none met
-  the bar of a real exploit. `fileperm.RestrictToOwner` works on a path
-  outside the `os.Root`, which only a local race inside the person's own
-  directory could turn; accepted, since the file is already created
-  `0600`.
-- **Phase 1, code review: ten findings, nine fixed, one accepted.**
-  - A body cut before the `data` string was read as a malformed answer
-    and not retried. Every cut is now a failed read; a test drives four.
-  - The whole-request timeout bounded a streamed attachment, so a large
-    one on a slow link could never finish. Streams are now bounded by
-    time without progress; a test shows a slow body outlasting the
-    timeout and a stalled one failing.
-  - An attachment declared over 64 MB was downloaded before it was
-    refused. It is now refused from its declared size, with no read.
-  - A label deleted between its resolution and `history.list` read as an
-    expired cursor (§7.6). The label list is read again first.
-  - The driver's download path ran through the system's temporary
-    directory, which can name the maintainer's account. The transcript
-    redactor masks it.
-  - `list_changes`'s description priced a page at two units; it is three,
-    four on expiry.
-  - A `history_id` with spaces round it was rendered as "(unreadable
-    id)". The rendering uses the trimmed id.
-  - POP showed as on for any window but `disabled`. Only the two
-    documented windows show as on; anything else is "unknown".
-  - The test meant to prove a JSON escape in `data` is refused had lost
-    its backslash. It has it back.
-  - `fileperm.RestrictToOwner` outside the root: accepted, as above.
-- **Phase 1, `/simplify`:** duplicates folded (the `rfc822:` resolver,
-  page-size bounds, change kinds, the forwarding count, the write-failure
-  message), and a test that runs `list_changes`'s renderer through the
-  transcript redactor, which found "history from N" unmasked.
-
-- **Phase 2, code review: ten findings, seven fixed, three recorded.**
-  - A draft upload was bounded by the 60-second whole-request timeout,
-    so 35 MB on a slow uplink timed out as `[ambiguous_outcome]` and a
-    retry could make a second draft. Uploads are now bounded by time
-    without progress, as downloads are. A test drives a slow transport
-    past the timeout, and a stalled one fails.
-  - `delete_draft` carried `destructiveHint: false`, so a client that
-    runs non-destructive tools unasked would run it. It has its own
-    `Kind` now, registered as a Write and annotated destructive.
-  - An edit of a draft with more MIME parts than are read would have
-    dropped the rest. It is refused as `[unsupported]`.
-  - A named pipe in `GMAIL_LOCAL_DIR` hung `create_draft` on open. Files
-    are checked as regular before they are opened.
-  - A label whose visibility Gmail did not state read "other". It reads
-    "not set".
-  - A reply to a subject with a run longer than a line could hold was
-    refused. Such a subject is now encoded.
-  - `part_id ""` passed one check and failed another. It is refused with
-    what it means: the whole draft.
-
-  Recorded, not changed:
-  - `reply_to_thread` reads the thread with its bodies, which only a
-    format that carries the parts can tell a reaction by.
-  - A draft on `modify_labels` is `[unsupported]` and on `trash`
-    `[invalid]`. These are different conditions: Gmail refuses to label a
-    draft, while trash has a tool of its own for drafts.
-  - Upload bodies are copied once more into the multipart envelope.
-- **Phase 2, security review: nothing found.** It checked:
-  - header injection through a subject, a name, a filename or a parent's
-    References;
-  - recipients taken from a hostile parent;
-  - sender text in the server's voice in the write results;
-  - reading attachments out of `GMAIL_LOCAL_DIR`;
-  - the upload origin;
-  - writes under `dry_run`;
-  - the live driver's sending.
-  
-  Two notes, neither a vulnerability. `EditRaw` does not hold the
-  998-character line limit `Build` does, since a draft Gmail stored may
-  already carry longer lines and refusing them would refuse the edit. A
-  FIFO in `GMAIL_LOCAL_DIR` would block a read, which only the person who
-  owns the directory can arrange.
-- **Phase 2, `/simplify`: the `outcomes` gate was green and read
-  nothing.** Phase 2 moved every branch on a request field out of
-  `internal/tools` into `internal/service`, and the gate read only the
-  first. It now reads both. It treats as requests the struct types an
-  exported service method takes, and a bare bool such as `confirm`. It
-  fails when write tools exist and no branch was examined; a test holds
-  each case. Also folded:
-  - One table each in `model` for label visibility, the change verbs and
-    the updatable fields. Service and render derive from it, so no list
-    is typed twice.
-  - One base-name check (`mime.ValidFilename`) and one control-character
-    check (`mime.HasControl`). `NewMessageID` takes the sender's address.
-  - `splitHeaders` built on the raw splitter. The edit tree now classes a
-    boundary-less multipart as the parser does, so the two walkers agree
-    on which parts are bodies.
-  - One call per draft method, with `gapi.Uploads` deciding the path.
-  - Base64 written straight into a buffer of its final size, and buffers
-    sized once. The send-as list and a reply's parent read concurrently.
-  - The fake's shared insert, minimal format and upload routing.
-  - The driver's guard: it refuses a write argument it has no rule for,
-    and reads addresses with the server's parser. `Send` itself holds a
-    spike to `-send-to`.
-
-  Skipped, with reasons:
-  - `update_draft` parses the draft twice. It costs memory on drafts near
-    35 MB, and a headers-only parse is not worth a second parser.
-  - `Upload` and `Reply.Joined` are stored rather than derived. Each is
-    read from one decision at the point it is made.
-  - A thread's labels are read again when Gmail's write answer lists no
-    messages. The live run shows whether that fallback ever fires.
-
-- **Phase 3, `/simplify`.** Folded:
-  - A recipient's position is set once in the model; the guard, the
-    rendering and the structured output read it, instead of counting it
-    four times.
-  - The guard is two checks. What needs no thread — no recipient, over
-    50, a confirmation of an address the draft does not send to — runs
-    before the thread is read. A dry run skips only the confirmation
-    check, rather than swallowing its refusal after the fact.
-  - The settle reads check the `Message-ID` first, and stop after a draft
-    read that is neither found nor 404.
-  - `delete_label` refuses a system label from the list it already read.
-  - One fake handler for both permanent deletes, one attachment line for
-    both write blocks, and one set of words per write op in the items
-    rendering.
-  - `send_draft`'s description priced a new conversation at 120 units. It
-    is 160, since every draft sits in a thread and the thread is read.
-
-  Skipped, with reasons:
-  - Reading the thread only when some recipient is unconfirmed. It would
-    save 40 units, but the result would lose the thread it joins, which
-    §4.2 says a send shows.
-  - Reading a thread's labels before deleting it. The read is what
-    `labels_before` reports.
-  - The label list overlapping the item fan-out. `trash` has the same
-    shape, and one round trip does not justify diverging.
-  - A shared draft-read and witness helper. The three callers read in
-    different formats and give different advice on `[stale]`.
-  - Dropping `sent` and `deleted`, which restate `dry_run`. `delete_draft`
-    already reports `deleted` that way.
-
-- **Phase 3, code review: ten findings, eight fixed, two recorded.**
-  - The guard read only the first `To`, `Cc` and `Bcc` header, and a
-    lenient read drops what it cannot parse, while Gmail sends to every
-    address. A draft shaped elsewhere with a second `Cc` line reached an
-    address nobody confirmed. Such a draft is now `[blocked]`, dry run
-    included; a test drives both shapes.
-  - A send that failed as `[unavailable]` — a 2xx whose body could not be
-    read, or a 503 after Google acted — was reported as a failure with
-    "retry shortly". It is settled by reading now, like an ambiguous one.
-  - The settle reads ran in the same instant as the failure, so a send
-    still running at Google read as not sent. They wait 5 seconds first,
-    through the client's own sleep, and the verdict says Gmail can file
-    a send late.
-  - `delete_permanently` on a thread holding a draft deleted the draft
-    with it. That item is refused and points to `delete_draft`.
-  - `/simplify` had moved `confirm_recipients` onto the `to` parser,
-    which requires an ASCII address, so a draft to an internationalized
-    address could never be confirmed. It has its own strict parse again.
-  - A `message_id` with spaces round it read as `[stale]`. It is trimmed.
-  - The driver's permanent delete removed two messages from the run's
-    list, which the thread-ids spike reads beside the thread list by
-    position. Deleted messages are marked instead, and cleanup skips them.
-
-  Recorded, not changed:
-  - Between the witness read and `drafts.send` the draft can still
-    change, and Gmail sends what it holds then. `drafts.send` takes only
-    an id, so nothing narrows this further (§17b).
-  - The recipient and attachment walks repeat `compose.go`'s. The shapes
-    differ (a send keeps part ids and positions).
-- **Phase 3, security review: nothing at the reporting bar.** It checked
-  the guard (address comparison, lookalike addresses, the participant
-  set), the witness, no retry, the dry runs, the destructive gates, the
-  server's voice in results and errors, `doctor`'s new line, and the
-  driver's guard. It raised one design question, recorded as §17.8: a
-  participant's `To`, `Cc` and `Reply-To` are the sender's own words.
-
-- **Phase 4, simplify: the drafts rule in one layer.** The service had
-  reordered a thread with its drafts last, which changed what
-  `Latest()` means for every later caller. It returns Gmail's order
-  again; `get_thread` and the renderer split the drafts off themselves.
-  The self-check stopped building a whole server per canned transcript,
-  and the fake counts calls by method for the tests and the harness.
-- **Phase 4, code review: ten findings, all fixed.**
-  - `/simplify` deleted `TestSendDraftReply` along with the helper it
-    replaced, which took away the only tool-level test of a send's
-    `[stale]` refusal and a reply's send. It is restored.
-  - Over the budget, the drafts listing was uncapped, so forty drafts
-    pushed a read past its budget and cut the newest message to nothing.
-    It lists five and counts the rest; a test reads forty.
-  - Drafts were numbered newest first from 1, the other way from the
-    conversation. The newest draft is now `N of N`, like a message.
-  - The reply task searched quoted-printable bytes for a word, and a
-    soft line break inside it failed a correct reply. Soft breaks are
-    undone first; a test puts the break inside the word.
-  - The answer scored was the last text block of the whole run, not the
-    last turn's text. It is the last turn's blocks, joined.
-  - A trial the CLI stopped, or that never ran, counted as a
-    failed task and printed the hint about tool descriptions. It is
-    counted as incomplete, and the run exits 2.
-  - `summarize-thread` no longer required `get_thread`, so an answer
-    from search snippets passed. It requires it again.
-  - The self-check no longer refused a task named twice, or an injection
-    with no tools or no marker. It does again.
-  - Each turn re-billed the growing conversation. Moot since: the
-    harness now runs the model through the claude CLI, which manages
-    its own caching.
-  - A schema-gate comment named a release version in prose, which
-    `CLAUDE.md` rules out. Reworded.
-- **Phase 4, security review: nothing at the reporting bar.** It checked
-  the narrowed guard (the `SENT` label is matched by id, and only the
-  account can apply it), the drafts section's server voice, and the
-  harness's handling of the API key, which it no longer needs.
-- **1.0.0, the first CI run: three Windows tests and one CodeQL alert.**
-  CI had never run before the release pull request, so the Windows
-  runner met these for the first time. A test left its temporary file
-  open, which Windows cannot delete; `TestDefaults` did not redirect
-  `%AppData%`, which `os.UserConfigDir` reads on Windows; and the bundle
-  test held its own zip reader open while it packed again over the same
-  file. All three were in the tests, not the code they test. CodeQL
-  flagged the leak scanner's Gmail-link pattern as an unanchored URL
-  regex. It is unanchored on purpose: it finds a link anywhere in
-  committed text and decides nothing about fetching one. The alert is
-  dismissed as a false positive, with that reason.
-- **Phase 5, simplify.** `get_settings` and `list_filters` still said
-  this server could change neither settings nor filters; their
-  descriptions now follow the flags, with a test. `update_signature`
-  had its own default-address rule, which dropped the primary fallback
-  `create_draft` has; they share one. The fake compared filters with
-  label order mattering and the service without; both ignore it. Render,
-  label checks, time parsing and the vacation field copies now share
-  one helper each, and `create_filter` reads labels and filters at once.
-  Kept: `Kind` stays one value per switch and effect rather than an
-  effect with a flag set, a design question for a later phase.
-- **Phase 5, security review: one medium finding, fixed; one question,
-  refused until checked.** A driver step run alone with `-run` could print
-  the account's own signature or vacation text; every such step is quiet.
-  `audience: domain` on a personal account is unchecked, so it is refused
-  there (§18 row 51). An HTML-only vacation reply lost its text when
-  turned off; the write type carries it.
-- **Phase 5, code review: nine findings, all fixed.** Turning the reply
-  on now writes every text field, empty included, so an old HTML body
-  cannot go out in place of the caller's. The driver saved the default
-  address's signature but changed the account's own, which differ when
-  the default is an alias; it changes the one it saved. Settings tools
-  are annotated destructive, since this server does not put back a
-  signature or trashed mail. Filter criteria are trimmed, and
-  `exclude_chats` alone is refused. A size out of range is refused
-  rather than clamped. Runs of spaces survive in a signature. A 404 on a
-  filter delete says it may follow a lost answer. `set_vacation` reads
-  the profile at once with the reply.
-- **1.1.1, code review: ten findings, nine fixed, one recorded.**
-  `logout` read each profile's Cloud project from its client file at
-  logout time, so a relative or replaced file could hide a profile the
-  revoke signs out; `login` now records the project, from the one
-  client-JSON parser, and `logout` compares what was recorded. A
-  profile with no client path was skipped rather than named. The note
-  printed before the revoke, and when none happened; it now follows a
-  revoke that succeeded. A command-level test holds the note. Three
-  doc slips from the sweep are fixed. Recorded: the rule that a revoke
-  ends the account's grant to the whole project rests on Google's page,
-  not a live probe (§18 row 53, tier 3). `logout` relied on it before
-  this release; the probe costs the maintainer's grant and a new login.
-- **1.1.1, security review: no findings.**
-- **Filters and search size, self-review: four findings fixed, two
-  recorded.** The first live run read an archiving filter back at once
-  without `SPAM`, and the fix first concluded Gmail never adds it.
-  Gmail was later seen adding it to archiving filters; the duplicate
-  check and the settle read now ignore a stored `SPAM` on a request
-  that archives without it (§18 row 56). Spike L showed deletes sent back to
-  back refused like overlapping ones, so a repeat waits at least 2
-  seconds (§18 row 54). The fake refused an identical filter, which row
-  52 had refuted, and the client's comment said Gmail does; both now
-  keep it. The search descriptions name `omitted_ids`. Recorded: every
-  read carries its text twice, in `content` and in `untrusted_text`,
-  which reads against `CLAUDE.md` rule 12; `untrusted_text` is a
-  released field (rule 14), so the listing budget counts both copies
-  instead. And a listing now shows fewer rows under the same budget:
-  10 of a page of 100 generated messages, and 12 of a default page of
-  20, where the text alone showed about 42. Search takes no
-  `budget_chars` to widen it; adding one is not breaking.
-- **Filters and search size, code review: ten findings, all fixed.**
-  Rows past a listing's budget were dropped from the structured half,
-  which lost filters (a forwarding one included) and changes for good,
-  and left search and draft rows past the budget unreachable, since the
-  next page starts after them. Every row now stays: search and draft
-  rows past the budget are slim, without what a sender wrote; filters
-  and changes are kept whole and spent first (§4.8). A change could
-  name a message both shown and omitted; `omitted_ids` now leaves out
-  any id a shown row carries. `budget_chars` and `omitted_ids` say what
-  they now mean. The CHANGELOG files the listing change under Changed.
-  The new evidence rows named whose account they came from; they no
-  longer do. The overlap repeat covered `sendAs.patch` and
-  `updateVacation` with no evidence (rule 18); it covers the filter
-  writes alone. The live report step found its filter in the text, which
-  a long list cuts, and slept without its context; it reads the
-  structured rows and waits on the run's context. The listing
-  marshaled the remaining ids on every row, which is quadratic; it keeps
-  a running total. Two JSON sizing helpers became one,
-  `render.JSONChars`.
-- **Filters and search size, second code review: ten findings, all
-  fixed.** A change left out whose message a shown row named went
-  unnamed, and the "not shown" line could vanish while the page was
-  truncated; the line now counts every row left out and names each
-  message once. The `not_created` verdict promised a retry would be
-  refused as a duplicate, which a rounded size can defeat; with a size
-  it says to list the filters first. The driver's cleanup deleted
-  filters back to back with no repeat, so a refusal could leave one on
-  the account; it waits out an overlap refusal as it does a rate limit.
-  Spike L ran on every settings run; it needs `-spike-l`. The overlap
-  repeat waited 2 seconds, which nothing showed to work; it waits 5, the
-  one wait seen to. Many filters could leave the text with none; filters
-  now have the text budget to themselves, forwarding ones first. The
-  listing still rendered the rest of the page on every row; it reserves
-  that line once. The evidence rows described the account they came
-  from; they describe only what Gmail did. The live report step printed
-  the account's filter count; it prints only the fact about the run's
-  own filter. The listing chose its mode from a zero-filled slice; it
-  takes an explicit reply cost.
-  Recorded: one live run after these fixes had the step that clears the
-  signature refused, and the driver's restore of the signature answered
-  400; the signature ended as the run found it, read back without
-  printing it. The refusal was not printed, since the step is quiet; the
-  driver now prints a quiet step's refusal, which carries no setting's
-  text. Two runs after, the signature steps alone and the whole driver,
-  passed. `sendAs.patch` is not repeated on a refusal until one is seen
-  and read (rule 18).
-- **Filters and search size, third code review: ten findings, all
-  fixed.** The repeat matched Google's generic "Precondition check
-  failed.", which a limit or a policy may also answer, and called it an
-  overlap; it is repeated once and reported in Google's words. The lock
-  released at once, and Gmail refuses writes back to back; filter
-  writes are paced 5 seconds apart, tested on a fake clock. The
-  refusal said "nothing was changed" after an earlier attempt that may
-  have acted; that is `[ambiguous_outcome]` now. The listing kept room
-  for the "not shown" line on every page, so a page that fit was cut;
-  the room is kept only when a row will be left out. The duplicate check
-  and the settle read compared criteria exactly; they ignore case and
-  runs of spaces, as Gmail's search does. `omitted_ids` is described per
-  tool. A slim row could pass for a blank message; it carries
-  `content_omitted`. The fake's list of filter writes is held equal to
-  the client's by a test. The filter settle and the send settle share
-  their scaffolding, `settleAfter`; the send's own reads are unchanged
-  and never send. The driver's `call` comment sat on a constant and
-  named only 403s.
-- **Filters and search size, fourth code review: the listing design
-  reverted, and seven filter findings fixed.** The lead reverted the
-  whole-reply budget: emptying the content of rows past it changes what
-  a released field holds, which `CLAUDE.md` makes a breaking change, for
-  a size that only a page near `max` 100 reaches. Every row is full
-  again, `budget_chars` bounds the text, and the descriptions advise a
-  smaller `max`; `content_omitted` and the reply-cost options are gone.
-  The text's "not shown" line and `omitted_ids` disagreed for changes;
-  they name the same ids, and the line counts the rest apart. The loose
-  criteria match folded `OR`, `AND` and `AROUND` to lower case, which
-  changes a Gmail query; criteria are compared exactly again, and a
-  sized filter's rounding is a known limit. A call canceled while
-  waiting its turn or its backoff after an attempt that may have acted
-  said "not sent"; it is `[ambiguous_outcome]`. Pacing reserved no
-  slot, so two unlocked writers could send together; it reserves one.
-  Units were charged and the timer started before the pacing wait, and
-  the final attempt went unlogged; both are fixed, and a canceled wait
-  charges nothing. A filter delete Google did not confirm is settled by
-  reading, as a create is. A conflict with a filter that also keeps
-  mail out of spam says so, and how to get the filter without it.
-- **Filters and listings, code review at medium: one finding, fixed.**
-  A call whose last attempt failed on its own returned that failure
-  unchanged, though an earlier attempt may have acted; it is
-  `[ambiguous_outcome]`, so a filter delete settles by reading.
-
-- **Phase 6, the maintainer's check and `/code-review high`.**
-  - Accept without the box ticked was refused, though the person meant
-    to confirm. Accepting is now the confirmation: the form has no
-    fields, which the specification allows (§18 row 64).
-  - A call that failed as a JSON-RPC error after its question said
-    "nothing was written", even when the retry had already written.
-    The middleware now follows the call's stage: after the answer
-    confirmed the write it is `[ambiguous_outcome]`, `written` or
-    `unknown` (§4.13 item 10).
-  - The 5-minute expiry refused a slow accept on protocols before
-    2026-07-28, where the state never leaves the process. It applies
-    only where the client carries the state.
-  - A label receiving mail between the rounds could never be deleted,
-    since the question bound its counts. They are shown and not bound;
-    the label's id and name are.
-  - The send and vacation questions did not show the body. They show
-    its start, and bind a hash of all of it.
-  - A draft edited between the rounds would be deleted on the old
-    answer. The question binds the message the draft holds.
-  - Asking repeats the reads, which the descriptions did not count:
-    `delete_draft` said 30 units and charged 50. Each description of a
-    tool that asks says how many more units, and a test holds it.
-  - The recipient grouping was written twice; the argument hash was
-    computed on calls that asked nothing; the test client of the live
-    driver answered `ping` as an unknown method; "fulfils". Each fixed.
-  - Security review, below its threshold: typographic and fullwidth
-    quote marks now fold to a plain single quote, and `mailto:` and a
-    bare domain followed by a path are broken, so no client links them.
-
-- **Phase 6, security review of the review round: none at the bar; three
-  low items closed.** Lookalike double quotes outside the folded set
-  (modifier and Hebrew marks, ornament quotes, ditto marks) are folded
-  too; a bare domain followed by a port, query or fragment, or written in
-  a non-Latin script, is broken like one followed by a path; and blank
-  characters no stripping removes, such as the Braille blank, become
-  spaces, so a preview cannot be padded to steer where a client wraps it.
-  The code review at medium found nothing.
-
-- **2.0.1, code review at high: five fixed, two declined.**
-  - The closing line named backticks, which a Markdown client does not
-    draw around a code span. It now says "in backticks or code style",
-    and so do the user documents.
-  - Grave and acute lookalikes outside the folded set, such as U+00B4,
-    U+02CA, U+02F4 and the Greek oxia and tonos, could seem to close a
-    span where a client draws plain text. They fold to a plain single
-    quote.
-  - A value of invisible characters only was shown as the word `empty`.
-    It is now "invisible characters only"; blank is still `empty`.
-  - The test of `quoted` used its expected word `empty` as a sentinel,
-    and the test of whole questions counted spans across all of them.
-    Each case now states its whole output, a value literally named
-    "empty" among them, and each question has its own span count.
-  - Declined: doubling line breaks after rendering rather than where
-    lines are written. `ask` is the one place every question passes,
-    and the text it spaces is the text it binds; the test holds the
-    layout. Declined: the version named in the status line and §16,
-    which is this document's practice.
-- **2.0.2, code review at high: six fixed, one declined.**
-  - The first port anchored each link shape on a character class before
-    it. That missed a scheme after `.`, `-` or `+`, and consumed the
-    separator a second link needed, so `x.example/y.example/z` and
-    `http://https://…` kept their second link. The shapes are now
-    unanchored.
-  - A domain whose letters carry combining marks, as in Devanagari, was
-    not broken. The domain classes take `\p{M}`.
-  - The message for a failure after an accept said the server "went on
-    to write", which is false during the reads. It now says the write
-    may have started.
-  - An accepted round whose handler returned without spending its
-    answer was promoted to written. It is promoted only once the answer
-    is spent.
-  - The tests held only the cases the change was made for. They now
-    hold punctuation before a scheme and links back to back.
-  - The document lost its final newline.
-  - Declined: refusing an accepted round that returns without asking
-    again. A write that skips its question is a defect with or without
-    this change, and a success with nothing to ask would be refused.
-- **2.0.2, `/simplify`.** The stage test reuses the package's probe
-  types; `Ask` spends its answer in one place; `wrap` promotes to written
-  on the spent answer alone. Declined: a fourth stage between accepted
-  and writing, which would again depend on the round reaching its
-  question. Left to the maintainer: breaking every dot between two
-  letters, which would cover a bare domain with no path, now out of
-  scope (§4.13 item 5). **Decided 2026-09-30 by the maintainer:** break
-  what a linkifier could link, not every dot (§18 row 69).
-- **2.0.2, security review: none at the bar.** It confirmed a
-  non-accept answer is now refused even on a round that would not reach
-  its question, which before went on as if accepted.
-- **2.0.1, security review: none at the bar.** `/simplify` found the
-  code clean and simplified the new test.
-
-- **2.0.3, `/code-review high`.** Fixed: an address with a dotted local
-  part (jane.ai@...) was broken on the local part's side of the @, and is
-  now left alone on both; a domain label with a symbol in it (pay$.com)
-  was not broken, and a label is now what linkify-it reads as one; a
-  filter id echoed in a step's arguments was masked twice, as two
-  placeholders; an id ending in "-" kept that character; the evidence
-  row said linkify-it's fuzzy links are off by default, which holds for
-  6.x only (§18 row 69). Declined: breaking a domain again after another
-  shape broke part of it, since what is left is still linkable; the full
-  IANA TLD list and quoted label names and queries, which the rule
-  chosen covers by design and row 69 records.
-- **2.0.3, `/simplify`.** The domain grammar is three named fragments
-  shared by the path and bare shapes, `domainLabel` so it does not read
-  as a Gmail label, and a string with no bare domain is returned as it
-  is. Declined: masking every id by its position in the tool surface's
-  own argument names, a larger change than this release, left for the
-  next id kind rather than done for this one.
-- **2.0.3, security review: none at the bar.** It confirmed a break only
-  inserts brackets, cannot close a code span, and that the @ exception
-  reads one ASCII byte.
-- **2.0.4, `/code-review high`.** Fixed: the trash prediction kept
-  `INBOX`, copied from a fake that did the same, and a live check found
-  Gmail removes it (§18 row 70), so the prediction and `gmailtest` both
-  changed; an empty prediction rendered like an unreported one and now
-  says "after: none"; the test indexed items unchecked; the live driver
-  never compared a dry run with its write and now does. Declined: whether
-  adding `SPAM` or trashing a thread's draft does more, left unchecked in
-  row 70; carrying each write's label change as data so the check, the
-  write and the prediction share one rule, a larger change than a fix.
-- **2.0.4, `/simplify`.** `applied` drops a label in `remove`, adds
-  `add`, and sorts once, with a `skipDrafts` flag for relabel; `union`'s
-  doc comment is back above it. Declined: the same data-driven write as
-  above.
-- **2.0.4, security review: none at the bar.** The prediction runs only
-  under the dry-run context, makes no call, and renders label names
-  through the same path as the labels before.
-- **2.1.0, `/simplify`.** `HTMLDerived` judges the parts `EditRaw`
-  replaces, found by the edit tree's `bodies()`, and decodes those two
-  alone, never an attachment; `HTMLFromText` closes its last paragraph
-  with an added empty line; the live driver reads a message back in one
-  place, leaves its drafts to the run's cleanup, and reads an update's
-  ids with `updated`, as `composed` does. Declined: one line escaper
-  shared with `signatureHTML`, whose output it would change (that one
-  drops a space from a run of three); a `DeriveHTML` flag on `mime.Edit`,
-  which would change `EditRaw`'s signature for one caller.
-- **2.1.0, `/code-review high`.** Fixed: spike M called a multipart copy
-  with no HTML part "beside the HTML made from it", and now finds the
-  part with the standard library; a tab collapsed in the HTML version
-  and is kept as four spaces; §15 now says how a run leaves the draft a
-  person sends; a code comment named the release; `set_vacation`'s
-  description now asks for the blank line the changelog says it does.
-  Declined: an input that keeps a draft plain, for a list that refuses
-  HTML, which is a new input for the maintainer to decide (§17.9); a
-  body cleared on a draft with the HTML version leaves both parts empty
-  rather than the plain part alone, which shows the same nothing; the
-  `DeriveHTML` flag above.
-- **2.1.0, before release, at the maintainer's request:** the declined
-  items were fixed. The HTML decision moved into `mime.EditRaw` as
-  `HTMLMode`, which reports whether the HTML version moved; an emptied
-  body drops the made version; `signatureHTML` and `HTMLFromText` share
-  `mime.LineHTML`, which keeps an odd run of spaces whole; `plain_only`
-  answers §17.9 (§18 row 76). Comparing the stored HTML with the made one
-  now ignores space around it, which a multipart boundary can take. Web
-  addresses became links, which no reader is documented to do itself
-  (§18 row 75).
-- **2.1.0, second `/simplify`.** A link ends at any character
-  `isInvisible` names, not a list of its own; `trimLink` counts brackets
-  once and finds an entity by stepping back, so a run of them is one
-  pass, not quadratic; `writeText` escapes a segment once; `htmlFor`
-  makes HTML only when it keeps it; the attachments field is named after
-  the edit, so the made HTML follows the body without an insert; the
-  live driver's plain_only steps share one check. Declined: an enum for
-  `update_draft`'s `plain_only`, since the flag keeps `create_draft`'s
-  name and sense and the default keeps a draft made plain on purpose
-  plain; one sort of the changed fields, which the order already holds.
-- **2.1.0, second `/code-review high`.** Fixed: a draft created with no
-  body, or emptied, stayed plain once given one, so Gmail wrapped it
-  again; a draft with no text now takes the HTML version. `madeText`
-  dropped every line break in the HTML, so `a` and `b` on two source
-  lines, shown as "a b", passed as made from "ab"; only the breaks
-  `HTMLFromText` writes after its tags are dropped. A no-break or
-  ideographic space ended a link but could not start one. The live
-  driver's read-back ignored base64; it and the tests now share
-  `gmailtest.HTMLPart`. The two new refusals are `[conflict]`, the state
-  refusing, not `[invalid]` or `[unsupported]`. Stale text in §7.4 and in
-  `HTMLFromText`'s comment. Left to the maintainer: hard rule 5 of
-  `CLAUDE.md` still says a sent body is exactly what the caller gave,
-  which §4.2 now qualifies for the HTML version.
-- **2.1.0, second security review: none at the bar.** About 3 million
-  fuzzed lines, parsed back with an HTML parser, held only text, `<p>`,
-  `<br>` and links with one `href` equal to their text and starting with
-  `http` or `https`; no scheme other than those can start a link, and no
-  quote or bracket can leave the attribute. `plain_only` and the shape
-  rules drop or replace HTML only when it reads back as the text, and
-  refuse a third alternative part. Fixed below the bar: an override
-  character earlier on a line could draw a link as another address, so
-  a line holding a bidi control gets no link (§18 row 75). Left as is:
-  `html.UnescapeString` reads a numeric reference past Unicode as a
-  character where a browser shows U+FFFD, so HTML showing only such
-  characters can count as made; nothing readable is lost.
-- **2.1.0, security review: none at the bar.** Each line is escaped
-  before the only markup the server adds, attribute-free `<p>` and
-  `<br>`, so a body can neither inject markup nor hide or add words
-  against the plain part; a caller could already give any HTML through
-  `body_html`. `HTMLDerived` judges the part `EditRaw` replaces and
-  answers yes only for HTML holding nothing beyond the plain text, so
-  HTML a person wrote still needs `body_html`. Fuzzed on a scratch copy,
-  both held; no new log line or output carries the body.
-- **One question per call, code review: two fixed, one recorded.**
-  Fixed: row 77 said nothing changes unattended, but an `Elicitation`
-  hook that accepts now confirms a send or a permanent delete alone,
-  where the mark used to refuse it first; the row and the CHANGELOG say
-  so. Fixed: no test showed `tools/list` drops the mark from a copy, so
-  one server now lists for a client that can ask and then for one that
-  cannot. Recorded: on 2026-07-28 capabilities travel per request, so a
-  client can declare form elicitation to `tools/list` and none to
-  `tools/call`, and get neither the mark nor a question. That gives a
-  misbehaving client nothing it lacked, since it answers the question
-  itself and can accept without a person (row 61). The list result
-  depends on the request and goes out with the SDK's default cache
-  scope, public, but with a TTL of 0.
-
-- **2.2.0, correctness and quality reviews.** Fixed: a read's
-  notes listed every link whose text names another site, so mail with
-  thousands of them read many times its budget; each list in the notes
-  now takes at most an eighth of it and counts the rest (§4.8).
-  `rfc822:` passed its text into a search, so a term after the id could
-  pick a message the caller never saw; it takes one `<local@domain>`
-  now (§6.1, §18 row 87). A malformed `From` showed an address from
-  inside its quoted name or a comment (§6.4). A bare CR in a sent
-  message's headers moved its `Bcc` into a forward's body. Invisible
-  characters in a part's type reached results uncounted. An
-  invitation's end and recurrence id were reported against the start's
-  zone. The schema diff passed an output turning optional, an input
-  enum losing a value and a boolean schema. Three tests could not fail.
-  The forward's thread was described as certain; the server asks for
-  it, and the result says whether Gmail filed it there. The read and
-  download paths lost their duplicates. Kept on purpose: the stored
-  `invite.ics` is read beside an inline copy, since the sender can make
-  the two differ and the stored one is the file a download saves
-  (§7.2). Run live 2026-10-09 without `-send-to`: 95 steps passed and
-  the 3 that send were skipped. The transcript settled rows 78, 80 and
-  83 to 86. A second run that day settled row 81: Gmail stored the
-  inserted calendar part apart.
-
-- **2.3.0, issue #29, correctness and quality reviews.** Fixed: markup
-  an emptied editor leaves, and a comment alone, counted as a set
-  signature, the reverse of the bug; one rule decides it now: text, an
-  image, or hidden text other than a comment. A logo inside a link to
-  `#` was not counted as an image. `update_signature` reported
-  "signature before: none" over a logo the write then replaced. The
-  note on a vacation reply's hidden characters said they were removed
-  when they are written and sent; it says the text holds them, and the
-  question says they are sent as given. A subject of invisible
-  characters alone was quoted as empty in that question. The caveat that
-  the signature is the one for new emails moved from after the list into
-  its heading and the tool description. A note that Gmail may save a new
-  signature rested on a wiki's prose and came out (§18 row 88). Kept on
-  purpose: `named` in the writer, since `fill` takes only a literal
-  outside it, and a settings note worded apart from a message's, since
-  settings text can be written back and sent. Run live 2026-10-13
-  without `-send-to`: 95 steps passed and the 3 that send were skipped.
-
-- **3.0.0, the port's review.** Two things the question showed were
-  in no argument: a send's subject and the start of its body, and a
-  deleted filter's criteria. `send_draft` takes `subject` and
-  `first_line`, and `delete_filter` `criteria`, each refused `[stale]`
-  when it is not Gmail's (§4.13). Simplify: `delete_filter` takes
-  `list_filters`' own criteria type; a send the recipient guard stops
-  is refused before the thread is read; one helper refuses a moved
-  draft; `staleness` requires an `ask` rule for every tool annotated
-  destructive; `forbidigo` refuses both ways of asking; what the
-  question left behind came out. Code review, fixed, each with a test
-  that failed first: the first line was read, at 20 units a part
-  stored apart, before the checks that cost nothing; the README check
-  counted a rule under `allow` as asking; `smoke` read a tool with no
-  annotations as a send; a stale subject named the draft as given, not
-  as trimmed. Also fixed: the bundle's toggles said filters were
-  deleted under settings alone; a comment named versions. Kept on
-  purpose: deleting a filter needs the destructive flag, and so the
-  full-mail scope, as §14 records; `schema-diff` counts a tool named in
-  any **Breaking:** line as declaring its breaks, as every server of the
-  family does; the per-service `confirm` checks stay, each with its own
-  words, where one in `wrap` would hold a new tool to it too (§17a).
-  Security review: no finding at confidence 8 or above. One note
-  acted on: the CHANGELOG now says, under **Breaking:**, that a Claude
-  Code allow rule for `send_draft` or `set_vacation` takes effect once
-  the mark is gone, where the mark used to override it (§18 row 49).
-- **3.1.0, reviewed after release.** 3.1.0 shipped without
-  `/simplify`, `/code-review high` or `/security-review`, which this
-  repository's definition of done asks for. They were run over
-  `v3.0.0..HEAD` on 2026-10-24, and what they found ships in the next
-  release. Simplify, fixed in `5cedeca`: the keys the bundle asks for are
-  derived from `config.Vars`, each one left out with a reason; the
-  defaults check starts the server through `config.Load` from the
-  environment a host builds and from none, a required key's default
-  included; an override's `env` or `args` and a non-empty base `args`
-  are refused; every set of the switches is started and the refused
-  ones held to a declared list; a fixture that copied the manifest
-  went. Code review, five rounds, fixed in `1e28f48`, `7b9d25d`,
-  `235c4dc`, `1ed60c2` and the commit after it, each with a test that
-  failed first: a switch in a refused set dropped when it was required
-  or had a list default; `entry_point: "LICENSE"` passing; an empty or
-  blank title matching every description, then reported once per set,
-  and not at all when the defaults failed to start; a padded title not
-  found where it was named; the packer skipping the repository and
-  license checks, and holding the version with a check of its own; the
-  Profile field silent on what a name may be, then claiming more than
-  Build refuses, which reads capitals as lowercase, and "lowercase
-  letters" admitting `café`, and Build's Unicode lowering renaming the
-  Kelvin sign to `k`; the profile check able to go quiet; a command
-  not under `${__dirname}/` passing. Security review: no finding at
-  confidence 8 or above. Its note on commands not under `${__dirname}/`
-  is adopted on narrower grounds than it gave: `${__dirname}` is the
-  one path the specification fixes to the bundle, and nothing says
-  what a relative command is resolved against (§18 row 95). Kept: a profile name with spaces around it starts,
-  since every setting is trimmed; `ProfileRule` is typed beside the
-  pattern, which `TestProfileRule` holds at 64 and 65 characters.
-- **The family sweep of 2026-10-24.** Each row of the standard's table
-  of bundle and configuration rules was checked here. Adopted, each with
-  a test that failed when its code was broken: every variable is read
-  through `config.Lookup`, the refresh token's reader and `logout`'s
-  warning included, so spaces alone are unset and the spaces around a
-  value dropped, where a profile, log level, timeout or API base of
-  spaces stopped the server and a refresh token of spaces was sent to
-  Google; `internal/config` owns the refresh token's name, so the gates
-  import no keyring; a scan holds every `GMAIL_` name `cmd/`,
-  `internal/` and `scripts/` spell, a `+` chain read in order, to the
-  registry; the gate and the packer start from one
-  `mcpbCommittedManifest`, which reads the manifest once and refuses a
-  repeated key (§18 row 96); the packer holds the stamped document to
-  the vendored schema; the defaults check names the fields that differ,
-  where it printed the environment, through a field diff that does not
-  panic on an unexported or interface field; `server.type`, the
-  platforms against the staged table and the entry point against the
-  default command are held; `docs/configuration.md` states
-  `config.ProfileRule`, which `staleness` holds. Already carried: keys
-  from the registry with left-out reasons both ways; the base `args`
-  `[]` and an override's `env` and `args` refused; refused sets both
-  ways, titles held, an untitled field once; commands naming staged
-  programs under `${__dirname}/`; the profile field's rule with a floor;
-  `ProfileRule` in the refusal and lowering A to Z only; the docs check
-  by whole word; the OAuth client file optional; the archive's close
-  checked. Not applicable: a field listing modes, since no setting here
-  takes one, and turning a default-on switch off in a refused set, since
-  every switch defaults off. `/simplify` (one agent, four angles),
-  `/code-review medium` and `/security-review` ran over
-  `main...family-rules`. Fixed, each with a test that failed when its
-  code was broken: the field diff missed an unexported field differing
-  beside a named one and compared an unexported pointer by its address,
-  and now reads every field, an unexported one through a copy, and
-  names each that `reflect.DeepEqual` finds different; a key equal to
-  another but for case passed, which the typed decode matches to one
-  field (§18 row 96), a key holding a dot or a bracket was named
-  ambiguously, a document whose keys could not be walked passed as one
-  with no repeats, and the repeated-key problems came unsorted; the
-  registry entry read the manifest past the bundle gate, and is now
-  built only from one the gate passes; the name scan read
-  `EnvPrefix + "ENABLE_" + kind` as a variable, had no fixture of its
-  own, and floored its hits in total rather than per root, so `cmd/`,
-  whose one name was built through a format verb, could go unread, and
-  that name is now a `+` chain the scan sees; `logout` read the refresh
-  token itself, and now asks the store, as `Resolve` does; `staleness`
-  found `ProfileRule` anywhere on the configuration page, and now holds
-  it to the `GMAIL_PROFILE` row; that row and the bundle's Profile field
-  said capitals are read as lowercase, where only A to Z are; the
-  manifest type's comment claimed a second decode. Security review: no
-  finding at confidence 8 or above. Kept: each reader trims through
-  `config.Lookup`, held by a walk over the whole registry, rather than
-  `main` wrapping the environment once, which is the family's design,
-  since the walk is what keeps a new reader from missing the rule; the
-  field diff handles an unexported field though `Config` has none, the
-  family's decision.
-- **The send-as signature, 3.2.0.** `/simplify`: one `mime.Bodies`
-  builds both tools' bodies; `EditRaw` reports the signature it found
-  and wrote, so an update no longer parses the draft twice more; and
-  `update_draft` reads `sendAs.list` beside `drafts.get`.
-  `/code-review high`: a signature above a quote went unfound when the
-  quote repeated its text, since only the last place the text stood was
-  tried. The live driver's signed-draft steps ran after a failed set,
-  which would have put the account's real signature in a draft and the
-  transcript; they now need the run's own in place, which a test holds.
-  A signature that ends the draft, with unbalanced markup of its own,
-  was never found again, and now runs to the body's end. A body that
-  ends with the signature's text, as `get_draft` shows one above a
-  quote, would have carried it twice, and is refused, as `body_html`
-  holding the composer's block is. That guard fired on any
-  `gmail_signature` text, a quoted one included, and now looks for the
-  composer's mark. `signature: true` over the same signature said
-  replaced, and over none did not say the draft's was removed. Rule 5
-  and the `body` and `body_html` descriptions now say a carried
-  signature stays. A draft with no From was told its address was wrong.
-  A second `/code-review high`, over the image parts found live (§18
-  row 99): HTML replaced on a draft whose HTML was not made from its
-  text, or in Gmail's own layout, left image parts nothing showed, which
-  Gmail lists as attachments; every inline part of a related the new
-  HTML no longer shows now goes, an attachment never, which a test of
-  Gmail's layout holds. The same image signature set again said
-  replaced, being compared as a `data:` URL with its `cid:`; it is
-  compared with its images as parts. The text guard looked only at the
-  end, so a quote kept in the body let a signature in twice, and it
-  refused a one-line name a body signs off with; it now looks for whole
-  lines anywhere, for a signature of two lines or more. A `data-src`
-  was taken for the `src`, and an image type other than five, or a
-  `data:` URL with parameters, stayed in the HTML. Kept: a draft whose
-  HTML was not made from its text does not carry its signature into
-  new `body_html`, which its description says, so a block in someone
-  else's mail is never taken for the draft's. A `/security-review` of
-  the image parts: nothing at confidence 8 or above. From its notes, a
-  `cid:` in a CSS `url()` was read with its parenthesis and a
-  percent-encoded one not decoded, so a part still shown could go; and
-  parts that went were not reported. Both fixed, with tests. Kept: a
-  signature whose own markup quotes attributes brokenly could swallow
-  what follows it; only the account's owner writes it.
-  Kept: a signature above a quote with unbalanced markup is not found,
-  and the draft then needs both bodies, as one whose HTML was written
-  another way. `/security-review`: `update_draft` given `body` and
-  `body_html` carried the last signature-shaped block in the draft's
-  HTML below the new body, one inside a quote or an inline forward the
-  composer wrote included, and said it was the draft's own; a sender's
-  tracking image or hidden text could so go out from the account. A
-  signature is now carried only when the rest of the HTML is the version
-  made from the text, which a test of a quoted reply and a forward
-  holds.
-- **The operator's signature default, 3.3.0.** `/simplify`: three tests
-  for a signature block became one detector for what is refused and
-  reported, the composer's own mark kept apart for the create guard on
-  purpose; the old HTML is decoded once; `Carried` became `Found`.
-  `/security-review` and `/code-review high` both found that detector
-  panicking on a sender's HTML whose mark sits after the div before it
-  closed, which would end the server: a guard the simplify pass had
-  removed as dead, since no test held it, is back with a bound and a
-  fuzz target. From the review: new `body_html` that kept a block of its
-  own was reported as removing it; the descriptions of `body_html` and
-  `signature` did not name the refusal, and `create_draft`'s said a
-  second signature is refused where the default leaves it out; the
-  refusal's text said "ends with"; the new HTML was tokenized before the
-  cheap conditions; two goldens showed a forward signed by default; and
-  a sentence named another repository, against rule 1. All fixed. Kept:
-  `GMAIL_READ_ONLY` with `GMAIL_DRAFT_SIGNATURE` starts, the setting
-  having no effect, which the configuration page says; refusing it would
-  guard nothing.
-
-- **4.0.0, `/simplify`, `/code-review medium` and a security review.**
-  From `/simplify`: the outcomes gate's list of write kinds lacked
-  Adding, so `create_draft` and `create_label` stopped counting as
-  writes; the smoke gate named annotation shapes after kinds, so a Write
-  that lost its hint would have read "a write tool annotated as a write
-  tool", and the shapes now say what they are; nothing kept `confirm` off
-  a Write once Write was destructive, and `register` now refuses it; and
-  five passages still said only sends, settings and deletes prompt. From
-  the review: the hint change asked the reader to act without
-  **Breaking:**; the zero-`internalDate` row read as a verified
-  convention rather than a guard; no test held a thread row's unknown
-  `latest`; the README called the downloads writes. All fixed. Kept: the
-  dates' schema type allows null though the server omits rather than
-  nulls them, as the optional settings and search times already do;
-  Write's idempotency, which this release does not change; and the smoke
-  gate's shapes not reading idempotency, which the kinds' unit test
-  holds. The security review found nothing at confidence 8 or above.
-
-### Closing a phase
-
-1. `make check` green; the live driver run and its transcript read.
-2. `/simplify`, `/code-review high` and `/security-review`; findings
-   fixed or recorded in §16a.
-3. The status line, §16 and `CHANGELOG.md` say what was built and what
-   is owed.
-4. Commit on the topic branch; say what is ready to tag; stop.
-
-## 17. Open decisions
-
-1. **Is `delete_draft` destructive?** `drafts.delete` is permanent, not
-   trash. Proposed: registered by default with `confirm: true`, because
-   it only ever destroys the caller's own unsent text, and gating it
-   would put the destructive flag — and `https://mail.google.com/` —
-   between the model and tidying up a draft it wrote a minute ago. The
-   counter-argument is that a draft may be the person's own half-written
-   work, not the model's. **Decided 2026-09-26 by the maintainer:
-   registered by default, each call taking `confirm: true`** (§14).
-   **Kept 2026-10-23**, when the standard's §3 put every delete behind
-   the destructive flag: that flag also requests
-   `https://mail.google.com/`, so gating routine draft cleanup there
-   would arm permanent mail deletion for whoever turns it on, and
-   `update_draft` can already replace a draft for good. The call now
-   takes the draft's `message_id`, the witness the person's question was
-   bound to, and is refused `[stale]` when the draft changed (§17b).
-2. **Should `get_thread` fold a thread's drafts in?** A draft reply
-   appears inside its thread with the `DRAFT` label. Showing it helps a
-   model see what is pending; hiding it keeps "what was said" apart from
-   "what might be". Proposed: shown, marked as a draft, after the sent
-   messages. **Decided 2026-09-27 by the maintainer: shown, in a
-   section after the conversation** (§7.2, §14).
-3. **go-licenses v1.6.0 or v2.** One sibling runs the v2 module; the
-   rest call v1.6.0 current. **Decided in phase 0: v1.6.0.** It runs
-   clean over this module's real graph on Go 1.27.1 (2026-09-25), and no
-   dependency here carries MIT-0, which was the case for v2. Revisit when
-   one does.
-4. **Vacation responder writes.** `updateVacation` is deferred: an
-   auto-reply writes to every sender, which is sending by another name.
-   If built, it belongs behind `GMAIL_ENABLE_SEND` with the recipient
-   scope (`restrictToContacts`, `restrictToDomain`) required, never
-   defaulted. **Built in phase 5, decided 2026-09-27 by the maintainer**:
-   `set_vacation` needs both flags, answers only contacts or the domain,
-   and takes `confirm: true` (§7.9, §14).
-5. **Filters.** `filters.create` could be built with `action.forward`
-   refused structurally — the wire type would have no such field. The
-   case for it is weak and the risk is §4.1's worst one. **Built in phase
-   5, decided 2026-09-27 by the maintainer**: `create_filter` and
-   `delete_filter` behind `GMAIL_ENABLE_SETTINGS`, with forward absent
-   from the wire type and trash behind `confirm: true` (§7.9, §14).
-   **Narrowed 2026-10-23:** trashing is `create_trash_filter`, and it
-   and `delete_filter` need `GMAIL_ENABLE_DESTRUCTIVE` as well.
-6. **Google's hosted server.** §1. If it gains trash, local attachment
-   transfer and bounded reads, this server's reason to exist narrows to
-   the local-token and verified-release half. Revisit at each minor
-   release; record the check in §18. **Open, standing.** Checked for
-   1.0 on 2026-09-27 (§18 row 48): still in Developer Preview, eleven
-   tools, and still no send, trash, delete or attachment download.
-7. **Lenient argument decoding** (§3.14). Accepting `"[\"a\"]"` where
-   an array is declared helps clients that stringify, and makes the
-   schema a less exact contract. Proposed: accept JSON-in-a-string for
-   arrays and integers only, and log that it happened. **Decided
-   2026-09-27 by the maintainer: declined for 1.0** (§14, §18 row 47).
-   The client defects still open do not reach this surface, and the
-   schema stays an exact contract. Revisit if one that does is
-   reported.
-
-8. **Who counts as a participant for the recipient guard?** §4.2 counts
-   every address on the thread's messages: `From`, `To`, `Cc` and
-   `Reply-To`. The last three are written by each message's sender, so a
-   correspondent in the thread can list other addresses in their own
-   `Cc` and have a later reply-all reach them unconfirmed. Their own
-   `From` already counts, so this widens reach rather than opening a new
-   kind. Proposed by the phase 3 security review: count `From` on
-   received messages, and `To` and `Cc` on the account's own sent
-   messages only. **Decided 2026-09-27 by the maintainer: narrowed as
-   proposed** (§14, §18 row 46). RFC 5322 §3.6.3 makes a received
-   message's recipients the conventional reply-all audience, which is
-   why the guard counted them; the guidance on agents reading untrusted
-   mail says the opposite — an address someone else wrote is untrusted
-   data, and it must not choose a send's recipients. The cost is one
-   `confirm_recipients` entry per address a correspondent added.
-   **Narrowed again 2026-10-23:** every recipient is confirmed, since the
-   server no longer shows the person the send (§4.2, §4.13); who is a
-   participant is still read and shown.
-9. **A plain-text-only draft on request.** Since 2.1.0 a draft written
-   without `body_html` carries the HTML version made from its text
-   (§7.4). A mailing list that refuses HTML, such as one that takes
-   patches, needs the plain part alone. **Decided 2026-10-06, when the
-   maintainer asked for the open items fixed before release:**
-   `plain_only` on `create_draft` and `update_draft`, at the cost of
-   Gmail's web composer wrapping such a draft when a person sends it
-   (§18 row 73), and `update_draft` keeps a draft's shape unless told
-   otherwise, so a draft made plain stays plain.
-10. **Tool descriptions that depend on the settings.** Four tools read
-    differently by configuration: `get_settings` and `list_filters` by
-    whether the server is read-only and which settings writes are on,
-    `create_filter` by whether `create_trash_filter` is, and
-    `create_draft` by `GMAIL_DRAFT_SIGNATURE`. `--dump-schemas` prints one
-    wording of each, the one a server built from the default settings
-    with every tool registered gives, so a change to another wording
-    passes `schema-ack` unseen. Dumping each wording would mean a server
-    per combination, or the descriptions built by a function the dump
-    can call for each. **Decided 2026-11-01 by the maintainer: noted, to
-    be done later.**
-
-### 17a. Deferred cleanups
-
-Open:
-
-- **`confirm` checked in `wrap`, not in each service.** `register`
-  holds that a kind that cannot be undone takes `confirm`, but five
-  service functions each refuse a call without it, in their own words.
-  A check in `wrap`, dry runs aside, would hold a new tool to it too.
-  Deferred from the port's review (§16a): it moves every refusal's
-  wording and order, and each of the five tools' own tests refuses a
-  call without `confirm`.
-
-Written off:
-
-- **Revoke the replaced refresh token at login.** Not buildable. Google
-  revokes the grant, not one token, so revoking the replaced token would
-  also end the one `login` had just stored (§18 row 53). The cap of 100
-  per client is met only by repeated logins, and the runbook says so.
-
-Phase 1 closed the header-block entry: a read's header block is capped
-at half its budget, cut at a line, and the cut is stated.
-
-`schema-ack` closed the entry on a break's subject: each change the
-schema diff reports carries the item it is to and the field it breaks,
-so a **Breaking:** entry and a commit footer are matched against that,
-never against the message.
-
-### 17b. Deviations from the shared standard
-
-The standard at `~/.claude/mcp-server-standard.md`, read 2026-09-24;
-its §3 read again 2026-10-23.
-
-| The standard says | Here | Why |
-|---|---|---|
-| Errors use six classes | Twelve (§6.5) | `stale` and `ambiguous_outcome` are forced by §2.3 and §2.4; `rate_limited` must separate the sending limit from request limits; `forbidden` and `auth` ask for different fixes; `ambiguous` and `blocked` as the siblings use them |
-| Never overwrite; compute a minimal diff | Held for labels (patch); **not holdable** for drafts | `drafts.update` is PUT-only and gmail/v1 has no ETag (§2.4). §4.4's witness narrows the lost-update window without closing it, and omitted fields are carried over rather than dropped |
-| Destructive tools are not registered unless enabled | Held, and extended to sending | One sibling now registers deletes and refuses per call, and another retired its flag in favor of per-call guards. Neither fits here: the permanent-delete methods accept only a scope this server requests only when the flag is set, so a registered delete tool would fail every call by default; and a registered send tool is exactly the control an injected instruction gets to argue with |
-| Never overwrite without a witness | Held for `send_draft`'s read; **not holdable** up to the send | `drafts.send` takes only a draft id and gmail/v1 has no ETag (§2.4). The witness is checked on the read just before the send, and a change landing between the two is what Gmail sends. The window is one round trip |
-| Read-only mode requests read-only scopes | Held | Recorded because one sibling requests write scopes in read-only mode to avoid a second consent; here the difference is `gmail.readonly` versus a scope that can send |
-| A read-only mode registers only read tools | Held for the mailbox; `download_attachment` and `download_attachments` stay registered when `GMAIL_LOCAL_DIR` is set | Read-only is about the mailbox: they write only into the one directory the person named, never over a file (§7.3). Unset `GMAIL_LOCAL_DIR` and read-only writes nothing |
-| Deletes: unregistered unless the destructive flag is on, with `confirm: true` | Held for every delete but `delete_draft`, which is registered by default with `confirm: true` and a required `message_id` witness | The destructive flag also requests `https://mail.google.com/`, so gating draft cleanup there would arm permanent mail deletion for whoever wants to tidy drafts; and `update_draft`, an ordinary write, can already replace a draft for good. The witness holds the delete to the draft the caller read (§17.1, §14, maintainer 2026-10-23) |
-
-Everything else is adopted as written, including the preamble's three
-obligations: make a rule a test, derive its list from the code, and
-have the checker assert a floor on how much it read.
-
-## 18. Evidence log: conventions checked, changed, or rejected
-
-Sources: the Gmail v1 discovery document (revision 20260917, fetched
-2026-09-24); Google's Gmail guides for quota, errors, batch, threads,
-uploads, sync, filtering and labels; the Gmail scopes page; Google's
-OAuth 2.0 page and Cloud help on Testing status; the Workspace MCP
-configuration guide; Gmail and Workspace help on sending limits;
-RFCs 5322, 2045–2047, 2231, 4648 and 8252; the MCP specification
-2025-11-25; the servers of §1 and their issue trackers. Checked
-2026-09-24.
-
-**Three tiers.** (1) Verified here against a primary source. (2) Taken
-from a sibling server's own evidence log, which was verified there. (3)
-Asserted from documentation or a secondary source and **not yet probed
-live** — §15 exists to settle these, and they are marked.
-
-| # | Convention or assumption | How checked | Verdict |
-|---|---|---|---|
-| 1 | A narrower scope can allow drafts but not sending | Discovery document, per-method scopes | **Refuted.** `gmail.compose` and `gmail.modify` both grant `messages.send` and `drafts.send`. Registration is the only control; §4.2 |
-| 2 | `gmail.modify` covers every write the server needs | Discovery document | **Confirmed, except permanent deletion**, which accepts only `https://mail.google.com/`. §4.6 gates the tool and the scope together |
-| 3 | Gmail has ETags for optimistic concurrency, as the Calendar API does | Discovery document, all schemas and parameters | **Refuted.** No `etag`, no `If-Match`. §4.4 and §17b |
-| 4 | Drafts can be patched | Discovery document | **Refuted.** `drafts.update` is PUT and "replaces a draft's content". §4.4 |
-| 5 | A retried send is harmless | Discovery document, `messages.send` parameters; a public double-send issue | **Refuted.** No request id, no documented dedupe; a lost 200 became a second delivery. §4.3 |
-| 6 | Quota is a request rate | Gmail quota page | **Refuted.** Units per user per minute, 6,000, with per-method costs from 1 to 100; changed for projects created from 2026-05-01. §4.9 |
-| 7 | `threadId` alone threads a reply | Gmail threads guide; `Message.threadId` in discovery | **Refuted.** Three conditions: `threadId`, RFC 5322 `References`/`In-Reply-To`, matching `Subject`. §4.5; spike D probes which Gmail enforces |
-| 8 | The API's message id is what `In-Reply-To` carries | RFC 5322 §3.6.4; a public fix to a server that did this | **Refuted.** It carries the RFC 5322 `Message-ID` header value. §4.5 |
-| 9 | A 404 from `history.list` means the mailbox or id does not exist | Gmail sync guide | **Refuted.** It means the cursor expired; the client must fully resync. §7.6; spike K (tier 3 for the body shape) |
-| 10 | Dates in `q` are read in the account's zone | Gmail filtering guide | **Refuted.** Midnight Pacific. §6.3 adds `after`/`before` as epoch seconds |
-| 11 | `q` works under every read scope | Discovery document, `messages.list.q` | **Refuted for `gmail.metadata`.** Read-only mode uses `gmail.readonly` |
-| 12 | `gmail.readonly` is a sensitive, easily granted scope | Gmail scopes page | **Refuted.** Restricted, like every Gmail scope that reads content. §2.11, §10 |
-| 13 | A personal client's refresh token lasts until revoked | Google OAuth 2.0 page | **Refuted for External/Testing:** seven days. §10, runbook |
-| 14 | `prompt=consent` on every login is harmless | Google OAuth 2.0 page (100 tokens per client per account); secondary reports of token churn | **Tier 3.** Each forced consent mints a token and the oldest is invalidated past 100; §10 asks consent only when scopes grow; spike J |
-| 15 | Upload size is limited only by the attachment limit | Discovery document `mediaUpload.maxSize`; uploads guide | **Refined.** 35 MB for send and drafts, 150 MB for insert and import; simple upload recommended up to 5 MB. §7.4 |
-| 16 | `batchModify` is a cheap way to act on search results | Discovery document (1,000 ids); errors guide | **Rejected as a surface.** Capped at 100 explicit ids, never a query. §4.7 |
-| 17 | `batchDelete` reports what it deleted | Discovery document | **Refuted.** "Provides no guarantees that messages were not already deleted or even existed." Written off; §8a |
-| 18 | Push notifications could drive `list_changes` | Discovery document, `watch` | **Rejected.** Delivers to Cloud Pub/Sub; a stdio server owns no topic |
-| 19 | System label ids are a closed, documented set | Gmail labels guide | **Refuted.** "Not exhaustive." Label resolution never hard-codes the list beyond aliases for the common ones; spike I |
-| 20 | `SENT` and `DRAFT` can be applied like other labels | Gmail labels guide | **Refuted.** Refused; `conflict` in §6.5 |
-| 21 | Mail content can be shown to the model as plain text | Workspace MCP guide ("hidden instructions that can hijack your session"); a public issue reporting an injected forward | **Rejected.** §4.1 |
-| 22 | The vendor's own Gmail MCP server offers send | Workspace MCP configuration guide | **Refuted.** Requests `gmail.readonly` and `gmail.compose`, ships drafts but no send, trash or delete. Supports §4.2's position. Whether it is labeled Developer Preview is **tier 3** |
-| 23 | Sending limits are request quota | Gmail and Workspace help | **Refuted.** Separate daily and per-message recipient limits, surfaced as 429, possibly minutes late. §6.5 `rate_limited` separates them; spike H |
-| 24 | Attachments may be read from any path the caller names | A surveyed server's README | **Rejected.** Only base names inside `GMAIL_LOCAL_DIR`. The exfiltration scenario is this design's inference, not a reported incident |
-| 25 | Non-ASCII headers can be sent raw | RFC 5322 §2.2, RFC 2047; public 400s on accented display names | **Refuted.** Encoded-words, ≤75 characters each. §4.10; spike E |
-| 26 | The credential order is keyring → file → env, as four sibling documents say | The sibling code | **Refuted (tier 2).** Every sibling's code resolves env → keyring → file; the documents describe which fallbacks exist, not precedence. §5a states the code's order |
-| 27 | The newest sibling carries the newest shared machinery | Per-component comparison across all six siblings, 2026-09-24 | **Refuted.** Each sibling was newest for some pieces and stale for others. §5a merges them |
-| 28 | A sibling's newest pin is upstream's newest | Upstream release listings, 2026-09-24 | **Refuted** for goreleaser, syft and codeql-action. §5a takes pins from upstream |
-| 29 | A sibling's generated setup page is gated, as its source comments say | The sibling's gates and tests | **Refuted (tier 2).** Nothing read the page. §5a's `staleness` generates and compares it |
-| 30 | The MCP Go SDK version can be a constant in the schema dump | Two siblings' constants against their `go.mod` | **Refuted.** Both constants were a version behind. §5a derives it from build info |
-| 31 | The discovery document the design was verified against is current | `api-diff` on 2026-09-25 fetched revision 20260921; compared with 20260917 excluding `revision` and `etag` | **Confirmed.** No method, parameter, scope or schema changed. The committed snapshot is 20260921 |
-| 32 | A smoke test can reach the newest protocol revision through `initialize` | MCP Go SDK v1.8.0 source, `negotiatedVersion`; the smoke gate against the built binary | **Refuted.** From 2026-07-28 the handshake is deprecated and the SDK caps `initialize` at 2025-11-25; the newest revision is reached through `server/discover`, which the smoke gate now probes and holds to the SDK's newest |
-| 33 | `resultSizeEstimate` is a usable count | Live run, 2026-09-26: a search scoped to a label holding 3 messages, and a draft search matching 2 | **Refuted.** Gmail answered 201 for both. The text no longer states it; the structured field is described as an estimate that is often far off |
-| 34 | A transcript of the driver's own mail carries nothing about the account | Live run, 2026-09-26, reading the transcript | **Refuted.** Gmail stamps inserted mail with `Received: from <number> named unknown by gmailapi.google.com`, and the number is the OAuth client's Cloud project. The transcript redactor now masks bare numbers of ten digits and more |
-| 35 | `messages.insert` with `internalDateSource=receivedTime` records the time of the insert | Discovery document (the parameter's default and enum); spike F live, 2026-09-26 | **Refuted.** `internalDate` was the message's `Date` header, two days earlier, while `after:` matched the message by the time of the insert. So Gmail's search and `internalDate` can disagree for inserted or imported mail; for delivered mail they agree. The tools show `internalDate` |
-| 36 | `filters.get` and `forwardingAddresses.get` add something their lists lack | Discovery document: each `get` returns the schema its `list` returns an array of, at the same unit cost | **Refuted.** Both written off in phase 1; `list_filters` and `get_settings` read the lists. The in-scope floor of `api-coverage` moved with them |
-| 37 | Gmail allows user labels differing only in case, and user labels named like system labels | Spike I live, 2026-09-26 | **Refuted, both.** 409 "Label name exists or conflicts" for the second of `X-Case`/`X-case`; 400 "Invalid label name" for `INBOX` and `Inbox`. §6.2 |
-| 38 | The transcript redactor masks every id the account has | Live run, 2026-09-26, reading the first phase 1 transcript | **Refuted.** History ids are short decimal counters, shaped like any number, and passed through in `list_changes`'s lines and the argument echo. The redactor now masks a number after `history`, `history from`, `history_id=`, `"history_id":` and `startHistoryId=`, and a test runs `list_changes`'s renderer through it so a reworded line fails before a run |
-| 39 | `messages.batchModify` and `sendAs.get` add something their alternatives lack | Discovery document: `batchModify` returns an empty body; `sendAs.get` returns the schema `sendAs.list` returns an array of, at one unit each | **Refuted, both.** `batchModify` cannot report per item what §4.7 requires, and `messages.modify` per id, 5 units, answers with the labels after. `create_draft` reads `sendAs.list` on every call, which makes `get` redundant. Both written off; the in-scope floor of `api-coverage` moved with them |
-| 40 | A reply field can take a message id or a thread id and tell which it was given | Gmail's threads guide; the fake's model; the live driver's thread-id spike, 2026-09-26 | **Refuted.** A thread's id is its first message's id, which three of three inserted threads showed live, so the same string names both, and the server could not know whether the caller meant that message or the thread's newest. `reply_to` takes a message id and `reply_to_thread` a thread id |
-| 41 | Gmail keeps the `Message-ID` a client writes | Live runs, 2026-09-26: `get_draft` after `create_draft`, and spike D's sent original | **Refuted, for the sender.** `drafts.create` and `messages.send` both replaced it. `create_draft` no longer reports the one written, and the fake replaces it on create. Phase 3's settle-by-reading uses the id Gmail assigned (§4.3) |
-| 42 | Gmail needs all three of §2.5's conditions to thread a reply | Spike D live, 2026-09-26, sender side; the maintainer reading the receiving Gmail mailbox, 2026-09-27 | **Split.** For the sender, `threadId` alone decided: replies without the headers, or with another subject, joined its thread. For the receiver, both of those stayed out of the thread. All three are needed between the two, as §4.5 writes them. The fake's `drafts.create` files by `threadId` alone, as the sender's Gmail does, so the reply tests read the headers and subject a draft carries; with `ThreadAsDocumented` it needs all three (row 85) |
-| 43 | A login that does not force consent keeps the refresh token already issued | Spike J, the maintainer's login, 2026-09-27: every scope granted, no `prompt` in the authorization URL | **Refuted.** Google issued a new refresh token, and `login` stored it. Not forcing consent spares a screen, not a token; revoking the replaced one is written off by row 53 |
-| 44 | An ambiguous send can be settled by searching `SENT` for the draft's `Message-ID` | Spikes B and C live, 2026-09-27: one draft sent through `send_draft`, its sent copy read back | **Refuted.** `drafts.send` replaced the `Message-ID` the draft held, and filed the sent copy under a new id, in the draft's thread; `drafts.get` then answered 404. §4.3 now records the thread's message ids before the send and rereads the thread, and the fake replaces the id on send as Gmail does |
-| 45 | Gmail's per-user rate limit is a 429 with `Retry-After` | Spike H live, 2026-09-27: 32 workers reading the run's own message | **Refuted.** After 26,420 units it answered 403, reason `rateLimitExceeded`, "Units per minute per user", with no `Retry-After`. The client already classes that reason as a request-rate limit and backs off without a header; a test holds the shape, and that it is not read as the sending limit |
-| 46 | Every address on a thread's messages is a participant the recipient guard may clear | RFC 5322 §3.6.3 (a reply's audience is the parent's `Reply-To` or `From`, and a copy often goes to its `To` and `Cc`); OWASP's AI Agent Security Cheat Sheet ("treat all external data as untrusted … emails", `send_email` a sensitive action); the 2025 paper *Design Patterns for Securing LLM Agents against Prompt Injections* (untrusted data must not choose a consequential action's arguments); MCP 2025-06-18 tools, security considerations (clients show inputs "to avoid malicious or accidental data exfiltration") — read 2026-09-27 | **Narrowed.** The RFC describes what a mail client offers a person; the other three describe what an agent may do with text a stranger wrote. The guard now clears the senders of the thread's messages and the addresses the account itself sent to, and asks for the rest (§4.2, §17.8) |
-| 47 | Clients send arrays and integers as JSON strings, so the server should decode them leniently | MCP 2025-06-18 tools ("Servers MUST … validate all tool inputs"); RFC 9413 on the robustness principle; three public issues on a widely used MCP client's tracker, May to July 2026; `testdata/schema-baseline.json` — read 2026-09-27 | **Declined for 1.0.** The one issue that stringified every argument is closed. The two still open stringify only a parameter whose schema is empty, or an object declared through `$ref`/`$defs`, and this surface has neither: every parameter has a concrete type and no schema uses `$ref`. RFC 9413 describes how tolerating a peer's error entrenches it. Adding tolerance later is not breaking; removing it would be (§17.7) |
-| 48 | Google's hosted Gmail MCP server now covers what this server is for (§17.6) | Google's MCP reference for `gmailmcp.googleapis.com`, last updated 2026-07-21, read 2026-09-27 | **Not yet.** Developer Preview; eleven tools — drafts, threads, messages, search and labels. No send, trash, delete or attachment download, and no stated read budget. §1's comparison stands for 1.0 |
-| 49 | A client that allows an MCP server's tools by rule runs `send_draft` without asking | `claude -p` 2.1.282 with `--allowed-tools mcp__gmail__*`, the evals run of 2026-09-27 | **Refuted, as intended.** Every `send_draft` call, `dry_run: true` included, was refused with "MCPTool requires permission." before it reached the server, while the other writes ran. The client honors `anthropic/requiresUserInteraction` over an allow rule. So in that client a dry run does not spare the person a prompt: the hint is per tool, and cannot tell a preview from a send. **From 3.0.0 (row 90):** `send_draft` carries no mark, so such a client runs it under an allow rule; the observation, that the mark beats an allow rule, is why `delete_permanently` and `delete_label` carry it |
-| 50 | `https://mail.google.com/` covers every Gmail method, the settings writes included | Discovery document revision 20260921, the `scopes` of `settings.filters.create`, `settings.filters.delete`, `settings.updateVacation` and `settings.sendAs.patch`, read 2026-09-27 | **Refuted.** Each lists only `gmail.settings.basic` (and `sendAs.patch` also `gmail.settings.sharing`). So `GMAIL_ENABLE_SETTINGS` adds that scope in every mode, the destructive one included, and the implication table does not let the full scope satisfy it; a test holds both. The quota page, read the same day, prices the filter and vacation writes at 5 units and does not list `sendAs.patch`, which takes `sendAs.update`'s 100 |
-| 51 | `restrictToDomain` limits a personal Gmail account's vacation reply | Not checked: raised by the phase 5 security review, 2026-09-27. No reference page says what a personal account does with it, and the live driver runs on one account | **Refused until checked.** If Gmail accepted it and answered every sender, that is the audience §17.4 rules out, so `set_vacation` refuses `domain` for `gmail.com` and `googlemail.com` addresses. A live probe on a personal profile would settle it |
-| 52 | Gmail refuses an identical filter, keeps a filter's size as given, and reads an empty HTML vacation body as absent | Phase 5's first live run, 2026-09-27 | **Refuted, all three.** A second filter identical to the first was created, not refused, so `create_filter`'s own check is the only guard against a duplicate. A size of 1,048,576 bytes was stored as 1,000,000, so a filter with a size may not match its own request and a duplicate of it can get through; the rounding rule is unknown and the check does not guess at it. A vacation reply sent with `responseBodyHtml: ""` beside a plain body came back with no body at all; the HTML body is now left out unless it holds something. The run restored the account's own reply after |
-| 53 | `login` can revoke the refresh token it replaces and keep the new one | Google's OAuth 2.0 page for installed apps, "Revoking a token", read 2026-09-27: "Revocation removes all OAuth 2.0 scopes previously granted to a project, invalidating any issued access or refresh tokens for all clients registered under that project" | **Refuted, tier 3.** Revoking the old token ends the grant the new one belongs to, so `login` would sign itself out. §17a's cleanup is written off. `logout` and the runbook already rely on the same rule. Not probed live: the probe revokes the maintainer's grant and needs a new login |
-| 54 | Gmail takes filter writes sent at once, as it takes them one at a time | Observed live 2026-09-28: about eight `create_filter` calls sent in parallel, several refused, the same calls sent one at a time taken. Spike L, the live driver, the same day, five runs: eight `filters.create` at once, each refused one again alone 5 seconds later, then the run's filters deleted back to back | **Refuted, intermittently.** One run answered 6 of 8 creates 500 `backendError`, "Internal error encountered.", which had created nothing; one answered all 8 that way, and of the 8 sent again one at a time, back to back, refused 2 with 400 `failedPrecondition`; two answered 3 of 8 with 400 `failedPrecondition`, "Precondition check failed.", and took each 5 seconds later, and one of those refused 3 of 8 deletes sent back to back, not at once, the same way; one took all 8. The server holds its settings changes to one at a time, paces filter writes 5 seconds apart, the one wait seen to work, and repeats that refusal on a filter write once, without calling it an overlap: the refusal does not say why (§7.9, §11). `sendAs.patch` and `updateVacation` were not probed, so they take the lock and neither the pacing nor the repeat |
-| 55 | After a `create_filter` Google did not confirm, the caller can tell whether it was saved | Observed live 2026-09-28: a 500 "Internal error" answered `[ambiguous_outcome]`, and only a `list_filters` showed that nothing was saved | **Refuted.** The server now reads the list 5 seconds after such a create and gives a verdict, as §4.3 does for a send: `created` naming the new filter, `not_created`, or `unknown`. The create is never repeated. Row 54's 500s are the likeliest cause |
-| 56 | A filter keeps the removed labels it was created with | Observed live 2026-09-28: archiving filters, including ones made in Gmail's settings page, later listed `SPAM` among their removed labels though no write named it; a filter read at once after its create did not, nor 15 seconds and one more filter write later. Gmail's filter guide, read 2026-09-28: `removeLabelIds=['SPAM']` is "Never mark as spam" | **Refuted, cause unknown.** Gmail can add `SPAM` to archiving filters after the fact, not at create time; what triggers it is not known. So `create_filter`'s duplicate check, and the read that settles an unconfirmed create, do not count a stored `SPAM` against a request that archives without it. A request that names `SPAM` is compared as given. The text says "never sends matching mail to spam" rather than naming a label taken off, and `never_spam` reports it. The live driver lists its own archiving filter again after another filter write and reports, without judging, whether `SPAM` appeared |
-| 57 | `budget_chars` bounds a listing's whole reply | Observed live 2026-09-28: `search_messages` and `search_threads` with `max` 100 under a budget of 24,000 returned 70,000 to 106,000 characters, over the client's limit, with rows in `omitted_ids` that were also rows in `messages` and `threads`; the same page of 100 generated in `gmailtest` came to 102,000 and 127,000 | **Refuted, and kept.** It bounds the text; the structured rows carry every result in full, which is the released contract. Bounding them was tried on this branch, first by dropping rows and then by emptying their content, and reverted: both break clients that read the rows. `omitted_ids` no longer repeats a row the text shows, and the search and draft descriptions advise a smaller `max` to a client that limits one result's size (§4.8) |
-| 58 | A server may ask the person to confirm a write through MCP elicitation, and the client's answer tells whether a person confirmed | The specification's client elicitation pages for 2025-06-18, 2025-11-25 and 2026-07-28 (<https://modelcontextprotocol.io/specification/2025-11-25/client/elicitation>), read 2026-09-28 | **Confirmed for asking; refuted for proof.** "Clients that support elicitation MUST declare the `elicitation` capability", and an empty one means form. Servers "MUST NOT use form mode elicitation to request sensitive information such as passwords, API keys, access tokens, or payment credentials"; a yes or no is none of those. Servers "SHOULD NOT include URLs intended to be clickable" in a form, and "MUST handle cases where the user declines or cancels the elicitation, or where the client fails to process the request". `accept` is "User explicitly approved and submitted with data", `decline` "User explicitly declined", `cancel` "User dismissed without making an explicit choice". But nothing says a person must answer: the multi-round-trip step reads "Client gathers the requested information from the user or other sources". §4.13 asks, and reads only an accept as confirmed. **Superseded 2026-10-23 (§4.13, row 89):** the server asks nobody from 3.0.0 |
-| 59 | The Go SDK's `ServerSession.Elicit` works on every protocol this server serves | MCP Go SDK v1.8.0 source, `mcp/server.go` and `mcp/mrtr.go`; the multi-round-trip page of 2026-07-28 (<https://modelcontextprotocol.io/specification/2026-07-28/basic/patterns/mrtr>), read 2026-09-28 | **Refuted.** From 2026-07-28 `Elicit` returns an error: "return an InputRequests map instead". A handler that returns `InputRequests` with a `requestState` works on both: before 2026-07-28 the SDK's middleware asks with `elicitation/create` and calls the handler again in the same request. The SDK does not strip `inputResponses` a client sends on a first call. The page says servers "MUST treat `requestState` as an attacker-controlled input", "MUST protect its integrity (e.g. HMAC or AEAD)" when it influences business logic, and must enforce single use server-side. §4.13 signs, binds and spends it. **Superseded 2026-10-23 (§4.13):** the server no longer elicits |
-| 60 | A client that declares elicitation has a person to answer it | `claude -p` 2.1.284 against a throwaway probe server with one tool that asks, 2026-09-28; Claude Code's headless documentation (<https://code.claude.com/docs/en/headless>) | **Refuted.** On the default handshake it declared `"elicitation":{}` at 2025-11-25 and answered `cancel` about 5 ms after the question. With `MCP_PROTOCOL_NEGOTIATION=auto` it reached 2026-07-28, declared form and URL, retried with the echoed `requestState`, and answered `cancel` in about 15 ms; a permissive permission mode did not accept. The model saw only the tool's final text. The documentation says an elicitation "that no Elicitation hook answers is cancelled". So an unattended run declares the capability and cancels, which §4.13 refuses and §14 accepts. **Superseded 2026-10-23 (§4.13, row 89):** the question this row probed was removed in 3.0.0; the finding is part of why |
-| 61 | An `accept` comes from a person | Claude Code's MCP documentation (<https://code.claude.com/docs/en/mcp>) and changelog (<https://github.com/anthropics/claude-code/blob/main/CHANGELOG.md>, 2.1.76 and 2.1.284), read 2026-09-28 | **Refuted.** Claude Code "displays an interactive dialog and passes your response back to the server", and an `Elicitation` hook can "auto-respond to elicitation requests without showing a dialog"; an `ElicitationResult` hook can change the answer. The Agent SDK's `onElicitation`, left unset, declines. An accept may be a delegation the person configured, like an allow rule, and a decline may be a client's default: so a refusal says "not confirmed by the person", never "declined" (§4.13). The model cannot answer: the question is not a tool call, and `inputResponses` sits outside the arguments. **Superseded 2026-10-23 (§4.13, row 89):** the question was removed in 3.0.0; the finding is part of why |
-| 62 | Claude Desktop asks the person when a server elicits | Issues on Claude Code's tracker (<https://github.com/anthropics/claude-code/issues/96043>, <https://github.com/anthropics/claude-code/issues/89858>) and <https://github.com/anthropics/claude-ai-mcp/issues/153>, read 2026-09-28 | **Tier 3, not probed.** No primary source says the chat app supports it. Reports say its code tab declares no `elicitation` for local servers, that a hosted variant answers `decline` for a question never drawn, and that claude.ai does not support it. §4.13 treats Claude Desktop as a client that cannot ask, where `confirm` stays the guard unless `GMAIL_REQUIRE_PROMPT` is set. A probe of the bundle is owed with the rest of its install check. **Moot from 3.0.0 (§4.13):** the server asks nobody, and `GMAIL_REQUIRE_PROMPT` is gone |
-| 63 | Other clients ask the person when a server elicits | VS Code 1.102 release notes (<https://code.visualstudio.com/updates/v1_102>), "includes support for elicitations"; Cursor 1.5 changelog (<https://cursor.com/changelog/1-5>), "Cursor now supports MCP elicitation"; <https://github.com/anthropics/claude-code/issues/79174>, closed, on an editor extension that declared the capability and declined every question — read 2026-09-28 | **Tier 3, not probed.** Support is announced; whether a person sees each question is not checked here. Either way a refusal is what an unanswered question gets. **Superseded 2026-10-23 (row 89):** the evidence of that date found clients that declare elicitation and do not draw it, or answer with nobody there |
-| 64 | A form elicitation must ask for at least one field, so a confirmation needs a checkbox | The `ElicitRequestFormParams` type in the specification's `schema.ts` for 2025-06-18, 2025-11-25 and 2026-07-28, and the MCP Go SDK v1.8.0's `validateElicitSchema`, read 2026-09-28; the maintainer's check in Claude Code 2.1.284, protocol 2025-11-25, the same day | **Refuted.** `requestedSchema` is `type: "object"` with `properties: {[key: string]: PrimitiveSchemaDefinition}` and `required` optional: an open map with no minimum, so `properties: {}` is valid, and the SDK accepts it. The first build asked for one boolean as well. In the maintainer's check of `delete_draft`, Accept with the box unticked, Esc and Decline were each refused, answered `accept` unconfirmed, `cancel` and `decline`; ticked and Accept deleted the draft; the model never saw the question and did not call again on its own; the log carried no subject or address. A person pressed Accept meaning to confirm and was refused. So the form has no fields and the accept is the answer (§4.13). The second check, on the final build: Decline was refused and a plain Accept deleted the draft, and Claude Code drew the fieldless form with its three buttons. **Superseded 2026-10-23 (§4.13):** the form is gone |
-| 65 | The Gmail API lists every inbox category Gmail shows | `labels.list`, observed live 2026-09-28; news reports of a "Purchases" category in Gmail from September 2025, not found on a Google page | **Refuted, observation only.** The list held the five classic `CATEGORY_*` labels — personal, social, promotions, updates, forums — while Gmail's interface showed a Purchases category. The server cannot see that category or filter by it. Nothing was changed |
-| 66 | A client draws an elicitation question as plain text | VS Code `src/vs/workbench/contrib/mcp/browser/mcpElicitationService.ts` L100 and L173, and `src/vs/base/common/htmlContent.ts` L52-62, `main` at 251bcf5f, read 2026-09-29; the maintainer's check in Claude Code 2.1.284 the same day | **Refuted.** VS Code builds a form question as `new MarkdownString(elicitation.message)`, untrusted: command links are off, but emphasis, link text, code spans and HTML-like text draw, and single line breaks join into one paragraph. Only URL mode escapes the message, with `appendText`. 2.0.0 quoted mail text in double quotes, so a label named in Markdown's link syntax drew as link text, and one in double asterisks as the server's emphasis. Each quoted value is now a code span, which CommonMark draws literally, with backticks folded, and a blank line separates the lines. Backslash escaping was rejected: where a client draws plain text, the backslashes show inside addresses, the datum a send asks the person to check. The maintainer compared both in Claude Code and chose the code span. **Superseded 2026-10-23 (§4.13):** the question is gone; the quoting it describes went with it |
-| 67 | A required choice naming the outcome confirms better than an empty form | Codex `codex-rs/codex-mcp/src/elicitation.rs` L415-458 and L552-571, `main` at c248f6d4, and VS Code `mcpElicitationService.ts` L111-119 and L237-297, read 2026-09-29; the maintainer's check in Claude Code 2.1.284, protocol 2025-11-25, 2026-09-29, against a throwaway probe with three forms of one `delete_label` question | **Declined, for now.** For: Codex accepts a form with no properties by itself under approval policy `never` with full access, and a VS Code chat question the person skips resolves as `accept` with no content. A required choice survives both, since Codex then declines and an answer without the choice is refused. Against: in Claude Code the choice list, "Keep the label" first and no default, took the maintainer 60 seconds, against 8 for the empty form and 10 for a typed name, and they found it confusing. The empty form stays, and both client behaviors are recorded as limits (§4.13). Revisit if either client changes, or a client is shown to draw a choice list clearly. **Superseded 2026-10-23 (§4.13):** the question is gone |
-| 68 | `\b` in a Go regular expression is a word boundary in any script | `go doc regexp/syntax`, Go 1.27.1, read 2026-09-29 | **Refuted.** `\b` is "at ASCII word boundary", and `\w` is `[0-9A-Za-z_]`. So `\b` finds no start inside a Cyrillic domain and none after an underscore. The link shapes in a question are now unanchored: a match starts as far left as its own characters reach, and a class before it would consume a separator the next link needs. A domain's letters may carry combining marks (`\p{M}`). A test holds an underscore, a Cyrillic and a Devanagari domain, a scheme after punctuation, and two links back to back (§4.13) |
-| 69 | A bare domain with nothing after it is drawn as a link | cmark-gfm `extensions/autolink.c`; linkify-it 5.0.0 and 6.1.0 as published on npm, and the markdown-it releases that use each; read 2026-09-30 | **By a fuzzy linkifier, which is common.** GitHub-flavored Markdown links a scheme (`http`, `https`, `ftp`), a `www.` host and an email address, never a bare domain. linkify-it links one when `fuzzyLink` is on, which is its default in 5.x (markdown-it 14) and not in 6.x (markdown-it 15), and then when the last label is two ASCII letters, punycode, or on its default list (biz, com, edu, gov, net, org, pro, web, xxx, aero, asia, coop, info, museum, name, shop, рф); a label is anything but space, punctuation or a control, so a symbol counts. `quoted()` breaks the last dot of exactly those, including one another break left, so `report.pdf` stays and a Markdown file name, a label like Clients.EU or a query naming a domain does not, `.md` and `.eu` being countries' codes. An address is left alone on both sides of its @, since the question means to show it and a client links it as mail at most. A client that loads the full IANA list links newer TLDs this does not break. Tier 1 |
-| 70 | Gmail's trash and restore change only `TRASH`, so a dry run can predict them by adding or removing it | Live, 2026-10-01, the maintainer's own personal mailbox: 438 `messages.trash` calls made while cleaning it up, read back from each result's labels before and after, and one `messages.untrash` probe followed by a `messages.trash` putting the message back | **Refuted for trash.** `messages.trash` adds `TRASH` and removes `INBOX` (86 of 86 messages that had it); `UNREAD`, `IMPORTANT`, the categories and user labels stay. `messages.untrash` removes `TRASH` only and does not restore `INBOX`. The dry-run prediction and `gmailtest` now follow this, and the live driver holds every modify, trash and restore write to its dry run's labels after. Not checked: whether `threads.trash` treats a thread's draft differently, and whether adding `SPAM` through `modify` makes Gmail drop `INBOX`; the prediction assumes neither |
-| 71 | Mail a program writes should be wrapped to 78 columns, or 72 | RFC 5322 §2.1.1, RFC 2045 §6.7, RFC 2046 §4.1.3 and RFC 3676 §3, read at rfc-editor.org 2026-10-06; `internal/mime`'s build test | **Refuted for the text.** RFC 5322's lines "MUST be no more than 998 characters, and SHOULD be no more than 78" are the message's lines, and it is "incumbent upon implementations that display messages to handle an arbitrarily large number of characters in a line". Quoted-printable meets the limit for any text: encoded lines are "no more than 76 characters", and its "soft" line breaks are undone on decoding. The build test sends a paragraph of 2,168 characters in lines of at most 76 and reads it back as one line. Text cut to a width is RFC 3676 §3.2's "embarrassing line wrap": its example is a paragraph wrapped at 72 and shown on a 30-character screen. So a paragraph is one line (§7.4). Against it: RFC 3676 §3.1 (2004) calls paragraph text labeled Text/Plain an error, because some readers then scrolled a long line rather than wrapping it (§3); RFC 5322 (2008) puts wrapping on the reader, as quoted above |
-| 72 | format=flowed (RFC 3676) is the better fix: lines of 72 with soft breaks that readers reflow | RFC 3676 §4.2 and §5; Thunderbird's source (`mailnews/mailnews.js`, `mail/app/StaticPrefList.yaml`); Microsoft Learn KB 287816; Gmail's and Apple Mail's help pages; read 2026-10-06 | **Rejected.** A reader without support "treats flowed lines as normal Text/Plain" (§5) and shows every break, which is the defect itself. Only Thunderbird is documented to support it (`mailnews.send_plaintext_flowed` on by default). Google and Apple document nothing either way; that Gmail, Outlook and Apple Mail ignore it is a 2016 vendor blog's claim, not theirs. Classic Outlook for Windows has "Remove extra line breaks in plain text messages" on by default, a guess its reader can turn off; the server makes no such guess (§4.2). **Tier 3, not probed live:** how Gmail and Apple Mail draw a long plain-text line. A message sent to a second mailbox and opened there would settle it |
-| 73 | Gmail sends a draft the API saved as the API saved it | Found in use 2026-10-06, in the maintainer's own mail: a message sent from Gmail's web composer, from a draft this server saved with each paragraph on one line, read in the receiving mailbox, and its first ARC signature's body hash, written before the mailing list it went through, recomputed over the text. Two public reports from other Gmail API clients, github.com/openclaw/gogcli issue 1058 and github.com/magoz/yolk-sdk pull 186, read 2026-10-06. Live, spike M (§15) | **Refuted for the web composer.** The message left Gmail re-serialized, `charset="UTF-8"` with no quoted-printable where the server writes quoted-printable, and every line over 78 characters was wrapped greedily at 70 while shorter lines were left alone; the body hash matches that wrapped text exactly. Both reports describe the same for a plain-text-only draft a person sends from Gmail web, "around 70 characters"; the second fixed it with "exact text/plain + derived text/html" and saw a paragraph of over 300 characters arrive on one line. Gmail's storage keeps the line whole (spike M). So a draft carries the HTML version made from its text (§7.4), as `<p>` and `<br>`: caniemail's `white-space` tests never tried `pre-wrap`, and classic Outlook ignores `white-space`. Sending services advise both parts, SendGrid's words being "Include both plaintext and HTML versions of your email", and SpamAssassin's `MPART_ALT_DIFF`, "HTML and text parts are different", cannot fire on HTML made from the same words. Checked live after the fix, 2026-10-06: a draft carrying the HTML version, sent by a person from the web composer, arrived as `multipart/alternative`, as Gmail sends any mail it composes, with the HTML part readers show; the plain part was wrapped at 75, which only a reader that cannot show HTML displays. `drafts.send` delivered the same shape, although its copy in Sent kept the line whole. Opened by the maintainer in Gmail's web reader, both showed the paragraph flowing to the window's width |
-| 74 | A model writing mail through the server wraps its text to a width | The session that wrote the drafts of row 73, read 2026-10-06; the evals harness, 18 trials of a task drafting three paragraphs, `claude-opus-5-5` at high effort, on `main`'s descriptions and on these: plain, with notes wrapped at 70 columns in the prompt, and with the maintainer's own instructions loaded | **Refuted.** The drafting session passed paragraphs of 185 to 564 characters on one line, and no trial wrapped. The `body` descriptions still ask for a paragraph per line and a blank line between paragraphs, which the HTML version is made from; the task was not kept, having nothing to catch |
-| 75 | A web address in the HTML version needs no link: readers link it | Microsoft's Outlook help, Apple's WebKit and Mail help, Gmail Help 8260 and 8253, the GFM spec 0.29 §6.9 and cmark-gfm's `extensions/autolink.c`, Mozilla's `mozTXTToHTMLConv.cpp`, RFC 3986 Appendix C, the OWASP XSS Prevention Cheat Sheet, SpamAssassin's `70_phishing.cf` and `HTTPSMismatch.pm`, read 2026-10-06 | **Refuted.** No vendor documents that a reader links a bare address in HTML; Outlook's help covers its composer, "Every time you type a web address, Outlook creates a hyperlink for you", and one report has new Outlook showing such addresses as plain text. So the HTML version links each address itself, with text equal to its target, which SpamAssassin's mismatch rules cannot fire on: they flag a link whose text names another domain. Only `http` and `https`, as OWASP advises ("Allow-list http and HTTPS URLs only"). Where an address starts and ends follows GitHub's autolinks: after a space or one of `( [ < " ' * _ ~`, never inside a word; trailing `? ! . , : * _ ~ '` left out, a `)` or `]` only when unmatched, an entity or `;` at the end left out. It also stops at quotes and angle brackets, which RFC 3986 leaves outside an address, and at any character a reader cannot see; a line holding a bidi control gets no link at all, since an override anywhere before an address can draw its text as another address than its target, which a rendering of such a line in Chromium showed. A fuzz test holds that a line adds no markup but such links and reads back as written |
-| 76 | Every draft can carry an HTML version | The kernel's mailing-list etiquette (subspace.kernel.org/etiquette.html) and email-clients guide, git's `MyFirstContribution`, the Mailman 3 filtering docs, read 2026-10-06 | **Refuted.** "almost all kernel mailing lists will reject HTML email", and "the Git list rejects HTML email"; Mailman can strip an HTML part, but these lists refuse the message. So `plain_only` keeps a draft plain (§17.9). The kernel's guide also says Gmail's web interface "Does not work for sending patches", which row 73 explains: such a draft is better sent with `send_draft` than from Gmail |
-| 77 | A tool the server confirms itself should carry the mark too | The owner's report of 2026-10-09 that one delete asked twice in Claude Code in a sibling server built the same way, and the decision that followed; GitHub's MCP server (`delete_repository`) and Supabase's, which confirm with `destructiveHint` plus a form elicitation; Claude Code's documentation, which scopes the mark to "tools whose permission prompt is itself the point"; rows 49 and 60 | **Refuted, 2026-10-09.** No source recommends two hard gates for one call. Claude Code prompts for the mark even under an allow rule (row 49), and then the server asks. So `tools/list` drops the mark from the tools that ask before every write when the request declares form elicitation (§4.13 item 15); `destructiveHint` stays as the client's soft gate. Unattended, `claude -p` declares elicitation and answers `cancel` (row 60), so a send or delete is still `[blocked]`, though a dry run now reaches the server. An `Elicitation` hook that accepts (row 61) now confirms one alone, where the mark used to refuse the call first. Owed: the maintainer's check that a confirmed `send_draft` asks once in interactive Claude Code. **Superseded 2026-10-23 (§4.13, row 90):** the server asks nobody, and the mark is on `delete_permanently` and `delete_label` alone, for every client |
-| 78 | A search row can name a thread's newest sent or received message, passing over drafts, trash and emoji reactions, with no call beyond the `threads.get` it already makes | Discovery document revision 20261005, `users.threads.get` parameter `format`, read 2026-10-09: `metadata` "Returns only email message IDs, labels, and email headers"; the `DRAFT`, `TRASH` and `SENT` system labels; the live run of 2026-10-09 | **Confirmed for drafts and trash, refuted for reactions.** Labels arrive with every message, so a row passes over a draft or a trashed message and says whether the account sent the latest from `SENT`. A reaction is told only by its `text/vnd.google.email-reaction+json` part, which a headers-only read does not carry, so a row may still name one as the latest. Telling it would cost a full read per thread. Seen live for drafts 2026-10-09: after the run saved a reply draft in two of its threads, each row counted the draft and still named the inserted message as the latest, not sent by the account (step "a thread row passes over the draft in it", transcript lines 472–492) |
-| 79 | A per-user OAuth login can call every settings method its scopes allow | Discovery document revision 20261005, read 2026-10-09: `delegates.create`, `delete`, `get` and `list`, `forwardingAddresses.create` and `delete`, `sendAs.create`, `delete` and `verify`, and `updateAutoForwarding` each say "This method is only available to service account clients that have been delegated domain-wide authority"; `sendAs.update` says "Addresses other than the primary address for the account can only be updated by service account clients that have been delegated domain-wide authority"; `sendAs.patch` says neither | **Refuted for those methods.** Their rows in `testdata/api-coverage.tsv` quote it. The server calls none of them, so none was probed. `sendAs.patch`, behind `update_signature`, names no such limit, yet it changes the resource `update` does. Whether a per-user login can patch the signature of an address other than the primary is unproven, tier 3: the live driver writes only the default address's signature, which is the primary on most accounts. Owed: a live run on an account whose default send-as address is an alias, or a step that saves, sets and restores an alias's signature |
-| 80 | A row can carry `List-Unsubscribe` at no cost, and the header says what it offers | Discovery document revision 20261005, read 2026-10-09: `users.messages.get` and `users.threads.get` parameter `metadataHeaders`, "When given and format is `METADATA`, only include headers specified"; Gmail's quota reference, read 2026-10-09, one cost per method; RFC 2369 §2 and §3.2; RFC 8058 §3.1 and §4; the live run of 2026-10-09 | **Confirmed.** A read costs 20 or 40 units whatever headers it names, so the listing names `List-Unsubscribe` and `List-Unsubscribe-Post` for free. RFC 2369: "The URLs have order of preference from left to right"; a field that does not start with `<`, and the rest of one after an item that is not a bracketed URL, "SHOULD be ignored". RFC 8058 §3.1: `List-Unsubscribe` "MUST contain one HTTPS URI", and the Post header "MUST contain the single key/value pair "List-Unsubscribe=One-Click"". §4 says a receiver SHOULD NOT offer one-click without a DKIM signature covering both headers. The server checks no signature, so `one_click` is the sender's claim and says so. Seen live 2026-10-09: Gmail kept both headers on an inserted message and returned them to the listing's headers-only read, whose row gave the web address as one-click and the mail address (step "a row reads the List-Unsubscribe the driver wrote", transcript lines 127 and 142) |
-| 81 | An invitation's calendar part can be read for the identifiers and times a calendar server finds its event by, for one more read at most | RFC 5545 §3.1 ("implementations need to unfold lines in such a way to properly restore the original sequence"), §3.1.4 ("The default charset for an iCalendar stream is UTF-8"), §3.3.5, §3.3.11, §3.8.4.3 and §3.8.7.4 ("When a calendar component is created, its sequence number is 0"); RFC 5546 §1.4, the eight methods, and §2.1.5, UID then SEQUENCE as the keys; Calendar API discovery document revision 20261005, `events.list` parameter `iCalUID`, "Use this if you want to search for an event by its iCalendar ID"; Gmail's quota reference, `attachments.get` 20 units; all read 2026-10-09; the live runs of 2026-10-09 | **Confirmed from the documents, and live 2026-10-09.** The UID is the key, and the Calendar API looks an event up by it. Unfolding comes before decoding, as §3.1 asks. A time with an IANA `TZID` reads as RFC 3339; a Windows zone name does not, so it stays as written beside its zone. Before this, every part stored apart without a stated method was fetched for its method alone. Live 2026-10-09, the entry for the run's inserted calendar part gave back every field the driver wrote: method, UID, sequence, start and end with their zone, organizer, title and event count (step "an attachment entry reads the invitation the driver wrote", transcript lines 154 and 159). A second run that day printed the read's units: 41, not the 21 of a part kept inline. So Gmail stored the inserted calendar part apart, and reading an invitation from such a part costs one `attachments.get` (same step, that run's transcript line 159) |
-| 82 | A release binary can read any IANA zone on every platform it is built for | `go doc time.LoadLocation` and `go doc time/tzdata`, Go 1.27.2, read 2026-10-09; the release targets in `.goreleaser.yaml`; the Windows, Linux and macOS amd64 builds measured with and without the package the same day | **Refuted before this change.** `LoadLocation` looks in `ZONEINFO`, then "on a Unix system, the system standard installation location", then `$GOROOT/lib/time/zoneinfo.zip`, then "the time/tzdata package, if it was imported". Windows has no standard location, and a person who runs the archive has no `GOROOT`, so every zone was refused there. The main package now imports `time/tzdata`, which the docs say "should normally be imported by a program's main package"; it is read only when the system has no zone files, and it adds 402 KB to the Windows binary, 3%. A test holds the import in each target's build, since a test run reads this machine's zone files whatever the binary carries. Not run on Windows |
-| 83 | An attached message (`message/rfc822`) comes back from `messages.get` with its content inline or behind an `attachmentId`, like any attachment | Discovery document revision 20261005, read 2026-10-09: `MessagePart.parts`, "This only applies to container MIME message parts, for example `multipart/*`"; `MessagePart.body`, "may be empty for container MIME message parts"; `MessagePartBody.attachmentId`, "When not present, the entire content of the message part body is contained in the data field"; RFC 2046 §5, where `message` is a composite type beside `multipart`; the live run of 2026-10-09 | **Confirmed live 2026-10-09.** The document names `multipart/*` as a container and no other, though RFC 2046 makes `message/rfc822` composite too. Gmail served the run's attached messages whole, as one part with its content: `download_attachments` saved the inserted `.eml` as a 421 B file holding its text (transcript lines 282 and 288), and `read_attachment` read it, and the original a forward attached to a draft, as messages (lines 315 and 540). Served as its parts instead, the part would have no data and no `attachmentId`, and a download used to write it as an empty file. Both download tools and `read_attachment` still refuse such a part as `[unsupported]`, now as a guard for a shape not seen, and the fake can serve one so the refusal is tested |
-| 84 | An attachment's content is never put in a tool result | §7.3 as written in phase 1, which recorded no reason; the owner's decision of 2026-10-09; the live run of 2026-10-09 | **Reversed for text.** `read_attachment` reads plain text, CSV, Markdown, JSON, HTML, a calendar file and an attached message into the result, under the boundaries, hidden-text removal and budget a body gets; every other type stays a file to save. §7.3 gives the reasons on both sides. Seen live 2026-10-09: the run's text attachment and its attached message each read back as the driver wrote them (steps "read the run's text attachment" and "read the attached message", transcript lines 298 and 315) |
-| 85 | A forward can attach the original as Gmail stores it, and be filed in its thread | RFC 2046 §5.2.1 ("No encoding other than "7bit", "8bit", or "binary" is permitted for the body of a "message/rfc822" entity"), RFC 2045 §2.7 and §2.8 (lines of "998 octets or less", "no NULs", CR and LF "only as part of CRLF"), RFC 5322 §3.6.3 and §4.5, RFC 3030, all read at rfc-editor.org 2026-10-09; the discovery document's `drafts.create` upload limit (§2.6); the client's 32 MB limit on one answer; row 42; the live runs of 2026-10-09 | **Confirmed from the RFCs for the encoding, and live 2026-10-09.** A part declared `7bit` or `8bit` carries any message whose lines fit and that holds no NUL, and none other. `Bcc` is for addresses "not to be revealed to other recipients", and §4.5 lets "any amount of white space" stand before the colon, so `Bcc :` is left out too. The discovery document's `Message.threadId` (revision 20261005) says that "to add a message or draft to a thread", the `threadId`, RFC 2822 `References` and `In-Reply-To`, and a matching `Subject` "must be met", so the documented answer for a forward is a thread of its own. Gmail did otherwise for `drafts.create` on 2026-10-09: a forward with the original's `threadId` and no `In-Reply-To` or `References` was filed in the original's thread, "Gmail filed the draft in the original's thread" (step "forward an inserted message", transcript line 497), as row 42 saw for `messages.send`. A second run that day saw the same (that run's transcript line 498). Two observations against the document do not make it a rule, so the result still reports what Gmail did each time. The original was the run's 8-bit message, which `messages.insert` took and a read gave back intact (line 111). `drafts.create` accepted it as an `8bit` `message/rfc822` part, and `messages.get` served that part back whole, its headers and its text in four scripts intact (step "read the forwarded original in the draft", lines 524–540; row 83). The fake's `drafts.create` files by thread id alone, as Gmail did, so a forward there joins the original's thread; with `ThreadAsDocumented` it needs all three of §2.5's conditions, so the forward starts a thread of its own, and both answers are tested. No run has seen what `drafts.update` does, so the fake holds it to all three |
-| 86 | A reply's quote can be built from the parent as a read shows it, and an HTML version made from the result | The owner's decision of 2026-10-09; RFC 3676 §4.5 ("the canonical quote indicator (or quote mark) is one or more close angle bracket (">") characters"), read at rfc-editor.org 2026-10-09; §7.4's made HTML, which `update_draft` recognizes by reading it back; the fake's HTML-only, placeholder and stored-apart bodies; the live run of 2026-10-09 | **Confirmed against the fake, and live 2026-10-09 for the plain text.** The quote is the text a read shows, so hidden text and link targets never reach a draft by way of it. `> ` before each line is the plain-text convention; RFC 3676 governs only `format=flowed`, which this server does not write (row 72). Live 2026-10-09, a quoting reply to the run's 8-bit message read back with the body, then `On <date>, <sender> wrote:`, then each of the parent's lines after `> `, its four scripts intact (steps "reply with a quote to an inserted message" and "read the quoted reply back", transcript lines 564 and 586–591). A read shows the plain text, so the HTML version made from it was not seen |
-| 87 | An `rfc822:` id can go into a search without adding a term | Discovery document revision 20261005, read 2026-10-09: `users.messages.list` parameter `q`, "Supports the same query format as the Gmail search box"; RFC 5322 §3.6.4, `msg-id = [CFWS] "<" id-left "@" id-right ">" [CFWS]`, with `id-left` and `id-right` dot-atom text in the current syntax, read at rfc-editor.org 2026-10-09 | **Refuted as built; fixed.** `q` is the search box's language, so `rfc822:<a@b> OR subject:x` searched for either, and a forward or quote could take a message the caller never saw. The id is now held to one msg-id of dot-atom text on both sides, less braces, which the search box reads as a group; the obsolete forms and domain literals are refused, and such a message is still reached by its Gmail id |
-| 88 | An address `get_settings` shows without a signature has none | Issue #29, 2026-10-13: a Workspace account with a signature in Gmail's web UI read with no signature line and an empty name, and an agent took the missing line for "no signature". Discovery document revision 20261005, read 2026-10-13: `SendAs` has one signature field, "An optional HTML signature that is included in messages composed with this alias in the Gmail web UI. This signature is added to new emails only.", and no other field or method of the API names one. The GAM users' group, read 2026-10-13: asked 2022, 2023 and 2026-02-09 whether the "on reply/forward use" choice can be set through the API, answered "There is no API support for this", and in 2026 "No"; the page does not say who answered. GAM's wiki, read 2026-10-13: "If you have a current default signature, the API will update that", and otherwise it adds "a new signature called `My signature`" | **Refuted.** The API's signature is the one for new emails only, and the reply/forward choice is not in the API. So an account whose signature is chosen only for replies, or that has no default for new emails, reads as none. Seen 2026-10-13 on the maintainer's Workspace account: the API returned no signature while the account had none, and returned the signature the maintainer then created in the web settings and chose for new emails. `get_settings` now says `no name set` and `signature: none` rather than leaving the line out, keeps `display_name` and `untrusted_signature` when empty, and sets `signature_set` when the signature holds text, an image or hidden text, so one of images alone, which converts to no text, is not called none, and markup an emptied editor may leave is not called set. The text says a different signature for replies, or one added another way, is not shown. `update_signature` had the same gap: a dry run said "signature before: none" over a signature of images alone, which the write then replaced. It now says the signature is set, adds `before_set` and `after_set`, and says Gmail adds the signature to new emails rather than to all mail written in Gmail. A note that Gmail may save a signature set where there was none as a new one in its list, after GAM's wiki, was built and taken out before release: the live run of 2026-10-13 set and then cleared the signature of an account that had none, and the maintainer found Gmail's list empty afterwards. Whether the set step made a named signature that the clear removed was not seen |
-| 89 | A server should confirm a write with the person itself, through MCP form elicitation, on the writes that send, delete or change a setting | Read 2026-10-23, every quote re-read at its source, for the shared standard's §3: the MCP specification, `server/tools` 2024-11-05 to 2026-07-28 ("there SHOULD always be a human in the loop with the ability to deny tool invocations"), its 2026-07-28 security section ("Clients SHOULD: Prompt for user confirmation on sensitive operations"), its index ("Hosts must obtain explicit user consent before invoking any tool") and `client/elicitation` (the client gathers the answer "from the user or other sources"). 110 servers: the top 100 by public usage and ten first-party servers. Clients: Claude Code's MCP and hooks documentation (an `Elicitation` hook answers "without showing a dialog"), open user reports against Claude Code 2.1.299–2.1.309 (declared and not drawn in the VS Code extension and the Code tab, left hanging in Cowork, the message cut to three lines in the terminal), Codex PR #17164 (an empty form accepted under full access), JetBrains commit `8edf5127f5` ("the same client inside the VS Code extension does not" draw one); Anthropic's report that users approve 93–97% of permission prompts | **Refuted (tier 2: documents and source, not probed live).** The specification gives per-call consent to the host and never makes an elicitation answer consent. 83 of the 91 servers with risky writes never ask the person; the 8 that do pick their own scope. A client may answer, decline, hang or cut the question with nobody looking, and no client's permission rules match it. So from 3.0.0 the server asks nobody; registration, `confirm`, the guards, the witnesses and `dry_run` stay, and where the question showed what an argument meant, the argument carries it (§4.13). Rows 58–67 and 77 describe the question this replaces |
-| 90 | A client prompts for a write from its annotations, and the mark is the one prompt an operator's rules cannot skip | Read 2026-10-23 for the shared standard's §3: Codex source (prompts by `destructiveHint` in its default `auto` tool mode); claude.ai's and ChatGPT's connector documentation (`destructiveHint` decides their prompts); VS Code source (prompts on every tool not marked `readOnlyHint: true`, and never reads `destructiveHint`); Claude Code's MCP documentation and release notes (the mark prompts on every call in every interactive mode from v2.1.199, offers no "don't ask again" from v2.1.246, is denied where no prompt can be drawn, and is "for tools whose permission prompt is itself the point"); every widely used client remembering "always allow" per tool, never per argument value | **Confirmed (tier 2: documents and source, not probed live).** So `destructiveHint` is true on every write that sends, changes a setting or cannot be undone, which puts `send_draft` and `set_vacation` before a person in claude.ai and Codex without the mark; `readOnlyHint` stays on the Read tools alone. The mark goes only where the standard puts it: `delete_permanently`, a delete that skips the trash Gmail offers, and `delete_label`, whose label comes off every message. A risky variant carried as an argument rides along unseen once its tool is always allowed, so `create_filter`'s `trash` became `create_trash_filter` (§4.13, §7.9) |
-| 91 | A bundle's optional setting the person leaves empty reaches the server empty | Read 2026-10-23. anthropics/mcpb at v2.1.2: its manifest specification on `user_config` (defaults "support variable substitution", and arrays are expanded only as separate arguments), `src/shared/config.ts` (variables come from the defaults and the person's values, and `replaceVariables` leaves a variable it does not have as written, and an array in a string unsubstituted) | **Refuted (tier 1, the reference host; Claude Desktop not probed).** An optional key with no default is never a variable, so under the reference host `${user_config.local_dir}` reaches the 3.0.0 server as written when the field is left blank, and the server refuses it as a directory that is not absolute. `client_secret` and `local_dir` now default to `""`, which the server reads as unset, and the `mcpb` gate refuses an env-spent key that is optional with no default, or `multiple` (§5a) |
-| 92 | A bundle install has a second approval behind the server, as Claude Code's ask rules are | Read 2026-10-23. anthropics/mcpb v2.1.2: the manifest specification declares `tools` for display, and its `src/` reads it only in `init`; `src/shared/config.ts` passes a boolean to `env` as "true" or "false". claude.com/docs/connectors/getting-started: "Select Allow once to continue, or Always allow to skip the prompt for that tool from now on". claude.com/docs/connectors/building/review-criteria: readOnlyHint and destructiveHint "determine auto-permissions in Claude". claude.com/docs/third-party/claude-desktop/configuration: admins may turn off persistent approval (`mcpPersistentAlwaysAllowEnabled`) | **Refuted (tier 1, the docs and the reference host; Claude Desktop not probed; no page names desktop extensions).** Claude Desktop approves per tool, driven by the annotations, and a person can always allow a tool; there is no per-call rule like Claude Code's `permissions.ask`. So every switch the bundle asks for defaults to the server's own default, off, and the `mcpb` gate refuses one that does not. The bundle declares no `tools` list, which would be display only and wrong for most installs, since five settings change what registers (§12) |
-| 93 | `privacy_policies` is optional for a bundle | Read 2026-10-23. anthropics/mcpb v2.1.2, the manifest specification: "Required when the extension connects to external services (first- or third-party) that process user data"; added in manifest_version 0.2, and enforced by neither the schema nor `mcpb validate` | **Refuted (tier 1, the specification).** The manifest names Google's privacy policy, https://policies.google.com/privacy, which answered 200 on 2026-10-24, and the `mcpb` gate refuses an empty list |
-| 94 | A platform override adds to `mcp_config`, and a bundle's settings reach the server only through `env` | Read 2026-10-24. anthropics/mcpb at v2.1.2, `src/shared/config.ts`: L114-120 take `platformConfig.args \|\| result.args` and `platformConfig.env \|\| result.env`; L173-177 run `replaceVariables` over the whole result, `args` included; L139-154 set each default first and the person's values over it; L197-222 check a required key against the person's values alone | **Refuted (tier 1, the reference host; Claude Desktop not probed).** An override's `args` or `env` replaces the base's rather than adding to it, and an empty `[]` or `{}` is truthy, so it replaces the base too. An argument such as `--enable-send=true` reaches the server substituted, past every check on `env`. The `mcpb` gate refuses `args` and `env` on an override whenever present, and holds the base `args` to `[]`; the key stays, since no Claude Desktop launch has shown it optional. A required key's default reaches the server whenever the person's form keeps it, so the defaults check substitutes it |
-| 95 | Any `command` the specification shows runs from the bundle | Read 2026-10-24. anthropics/mcpb v2.1.2: MANIFEST.md L497 and L510-515 give a binary the command `server/my-server`, and L532 says `${__dirname}` "is replaced with the absolute path to the extension's directory"; `src/shared/config.ts` L118, L133 and L173-176 substitute variables in `command` and resolve no path | **Refined (tier 1, the specification and the reference host; Claude Desktop not probed).** The specification shows a relative command once and never says what it is resolved against, and the reference host passes it to the spawn as written. `${__dirname}` is the one form whose meaning the specification fixes. The `mcpb` gate requires every command to start with `${__dirname}/`, as the committed manifest's do, and refuses a relative or absolute one; a probe of Claude Desktop's working directory would settle the relative form |
-| 96 | A key repeated in the manifest reads the same to every reader of it | Probed 2026-10-24 with `{"server": {"type": "binary", "env": {"A": "1"}}, "server": {"env": {"B": "2"}}}`: Go's `encoding/json` into a struct gives `type` `binary` and both `A` and `B`, into a map only `B`; Node's `JSON.parse` only `B`. Probed again 2026-10-24 with `{"command": "${__dirname}/server/a", "Command": "/bin/b", "env": {"A": "1"}, "ENV": {"B": "2"}}`: the struct decode gives command `/bin/b` and env `A` and `B`, the map decode and `JSON.parse` keep all four keys apart; a Kelvin-sign `\u212aelvin` fills a field tagged `kelvin` | **Refuted (tier 1 for the decoders; the host's reader not read).** The typed decode the gate's checks read merges a repeated object into the first, and matches a key to a field under Unicode case folding, while the schema validator, which decodes into a map, the packer's stamp and a JavaScript host keep the last and read a key only as spelled. The `mcpb` gate refuses a key repeated in any object of the committed manifest, or two equal under `strings.EqualFold`, before any other check, naming its path |
-| 97 | Gmail's web composer puts the signature in a draft the API saved | Live 2026-10-30, by the maintainer, on a Workspace account whose one address had a signature for new emails, after the API reported it. Draft A was saved through `drafts.create` with no signature. Drafts B and C carried one, B in the shape above a quote. Draft B's HTML part ended in `<div><br clear="all"></div><div><div dir="ltr" class="gmail_signature" data-smartmail="gmail_signature">…</div></div>`, with the signature after a `-- ` line in its plain part. Each was opened in the composer and sent from there to a second mailbox, and arrived with a `Message-ID` at `mail.gmail.com`. Discovery document revision 20261005: the signature is "added to new emails only" | **Refuted.** The composer showed no signature in A, and A arrived with none in either part. It showed one in B, and B arrived with one, which Gmail's reader drew in gray as a signature. The composer rebuilt B's plain part from its HTML, and the `-- ` line the server had written there was gone. Draft C, sent the same way, carried the signature in the shape that ends a message, after `<span class="gmail_signature_prefix">-- </span>` (row 98): the composer showed one signature with its `--` line, and C arrived with one, its rebuilt plain part keeping the `-- ` line. Draft D was written by this server's own `signature: true`, from the 3.2.0 build, with the account's signature as Gmail held it, a logo included: the composer showed one signature with the logo, and D arrived with one, the `-- ` line kept, and the logo as an inline PNG part of 59 KB. The draft was 86 KB, so the signature carries the image inside its HTML, and the composer made it a part when it sent; Gmail also refused that signature written back unchanged through `sendAs.patch`, HTTP 400, twice. So a draft the server writes carries a signature only when the server puts it there, and one it puts there is not doubled. Not seen: whether changing From in the composer swaps a block the API wrote, since the account has one address, tier 3. Owed: an account with two signed send-as addresses |
-| 98 | Gmail's composer writes a signature in one markup | Read 2026-10-30. Raw messages with a `Message-ID` at `mail.gmail.com`, read for their markup alone: rf-peixoto/phishing_pot@80a4867 `email/sample-12514.eml` and `email/sample-12424.eml`, both 2026-10, opened and checked here, and intentionet/netconan@0b05e94 `LICENSE.email`, 2025-01. Gmail's settings label, as stackoverflow.com/q/49375769 quotes it: 'Insert this signature before quoted text in replies and remove the "--" line that precedes it'. Five Gmail API clients that add a signature: openclaw/gogcli@82e7fd6, taylorwilsdon/google_workspace_mcp@b28e1bc, marlinjai/email-mcp@2777049, jasonmlong/gmail-send@354436a and PipedreamHQ/pipedream@7a88158 `components/gmail` | **Two shapes.** Ending a message, the signature follows `<div><br clear="all"></div><div><br></div><span class="gmail_signature_prefix">-- </span><br>` inside `<div dir="ltr" class="gmail_signature" data-smartmail="gmail_signature">`, and the plain part has a `-- ` line. The other wraps it in `<div><br clear="all"></div><div>…</div>`, with no `-- ` in either part. That the setting the label names makes the second shape, and puts the signature above the quote, is inferred from the label, tier 3. Gmail's default reply puts the signature below the quote; every client that adds one puts it above, gogcli "so it stays above it". So the server writes the first shape when the signature ends the draft and the second above a `quote`, where a delimiter would let a reader drop the quote with the signature. Each client fetches `sendAs` and appends, the method here; none is a dependency (rule 10). One skips a body that already holds a `gmail_signature` block, which here is refused |
-| 99 | Gmail keeps a draft as the API wrote it when its HTML carries an image inside it | Live 2026-10-30, by this server's 3.2.0 build on the maintainer's account, whose signature carries its logo as a base64 `data:` URL in the HTML: drafts saved through `drafts.create`, each read back with `format=raw` by the live driver's own client, their MIME headers alone printed | **Refuted.** A draft written as `multipart/alternative` of the plain text and HTML holding the `data:` image was stored as `multipart/mixed` of the HTML, the image now `cid:` to a part of its own with an `ii_` Content-ID, and an inline PNG part; the plain part was gone. `update_draft` then refused a new body as a draft whose only text is HTML, and `send_draft` sent HTML alone, the image beside it as a part the receiving Gmail counted as an attachment. The same signature written with the image already a part, `multipart/alternative` of the plain text and `multipart/related` of the HTML and the image, was stored as written, the plain part, its `-- ` line and the block intact; a new body kept the signature and its part, and `signature: false` took both out. So the server moves such an image into a part itself (§7.4) |
-| 100 | A Gmail MCP server signs a draft only when asked | Read 2026-10-30, in each project's source: taylorwilsdon/google_workspace_mcp@b28e1bc `gmail/gmail_tools.py` lines 2740–2743 and 3397–3400, `include_signature`: "Whether to append the Gmail signature from Settings > Signature when available. Defaults to true."; marlinjai/email-mcp@2777049 `src/tools/sending.ts` line 23, `signature`: "Add the account's signature (default true)", and `src/tools/signature.ts` lines 101–102, a body that already holds one is left as it is (`already_present`); openclaw/gogcli@82e7fd6 `gmail_send_signature.go` line 30, a `--signature` flag | **Refuted for MCP servers.** Both MCP servers sign by default for everyone, with a per-call opt-out, skip a body that already carries one, and report what they did; the CLI signs only when asked. This server matches the skip and the report, and leaves the default to the person running it (§7.4, §14): a default for everyone would change every 3.x caller's drafts, which rule 5 and the standard's §7c make a major release. Neither server's default for replies was taken: the API cannot see the reply signature (row 88) |
-| 101 | `destructiveHint: false` fits a write that changes what is there but can be undone, as trash and a label change can | The MCP schema (2025-11-25), `ToolAnnotations`: "If false, the tool performs only additive updates", and the default is true. Read 2026-10-31 | **Refuted.** `update_draft`, `modify_labels`, `trash`, `restore` and `update_label` change what is there. Write is annotated destructive, the schema's default, and the new Adding kind, for `create_draft` and `create_label`, is the one write that says false. None moves behind a flag or takes confirm. The README's `permissions.ask` example names the five, as the staleness gate holds every destructive tool to it |
-| 102 | Google writes a time it does not have as the Unix epoch | Seen live from another Google API on 2026-10-31, answering `1970-01-01T00:00:00Z` for a time it lacked. Not seen from Gmail, and the discovery document's `internalDate` says only "the internal message creation timestamp (epoch ms)" | **A guard, not a verified convention** (rule 18 asks for a probe Gmail cannot be made to answer). No mail Gmail holds dates from 1970, so an `internalDate` of zero reads as no date, the Date header stands in, and nothing is shown as sent in 1970 |
-| 103 | An unknown date can go out as Go's zero time | Read 2026-10-31: a message with neither an `internalDate` nor a Date header went out as `"date": "0001-01-01T00:00:00Z"` in the structured half while the text said "unknown date", and a thread row's `latest` the same | **Refuted.** Both are left out when unknown, as the settings and search times already were: a breaking change, so 4.0.0, with the module path at `/v4` |
-| 104 | A scope must be on the consent screen to be granted | Google's configure-oauth-consent guide (updated 2026-09-03): "you only need to list scopes for apps used by people outside your Google Workspace organization", and for internal apps "scopes aren't listed on the consent screen". Confirmed live 2026-10-31 on an Internal app, whose token held scopes its Data Access page does not list | **Refined.** The setup page asks for the scope list on External apps only |
-| 105 | A commit footer's token is matched exactly, so `SCHEMA-CHANGE:` must be written in capitals | Read 2026-11-01: Conventional Commits 1.0.0, item 15, "The units of information that make up Conventional Commits MUST NOT be treated as case-sensitive by implementors, with the exception of BREAKING CHANGE which MUST be uppercase"; item 16, "BREAKING-CHANGE MUST be synonymous with BREAKING CHANGE" | **Refuted.** `schema-ack` reads `SCHEMA-CHANGE:` in any case, and `BREAKING CHANGE:` and `BREAKING-CHANGE:` only in capitals |
-| 106 | A commit footer's value is one line, and a paragraph holding a line that is not `Token: value` is not a footer block | Read 2026-11-02: Conventional Commits 1.0.0, item 8, "Each footer MUST consist of a word token, followed by either a `:<space>` or `<space>#` separator"; item 10, "A footer's value MAY contain spaces and newlines, and parsing MUST terminate when the next valid footer token/separator pair is observed" | **Refuted.** `schema-ack` reads a footer paragraph as one whose first line starts a footer, with either separator. Inside it, a line that starts a footer ends the value before it, and any other line continues that value, so a wrapped value counts, and a `Closes #12` footer beside it does not drop it. A `Token #value` footer counts toward the block but acknowledges nothing: item 12 writes `BREAKING CHANGE` with a colon and a space. A wrapped line that itself reads `word: ` starts a new footer, as item 10 says |
-| 107 | The README's `permissions.ask` example names every tool annotated destructive (row 101) | The maintainer asked, 2026-11-02, that a Claude Code session work through the mailbox without a prompt per everyday write. Claude Code's permissions page, read 2026-11-02: "Rules are evaluated in order: deny, then ask, then allow", and `mcp__<server>__*` matches every tool of a server | **Superseded.** The example allows the server's tools and asks for every one that sends, changes a setting or deletes for good. `update_draft`, `modify_labels`, `trash`, `restore` and `update_label`, the Write kind, stay annotated destructive and run unasked under it. `staleness` holds the example to every tool annotated destructive and not of the Write kind. |
+### D-102 A tool resolves a name to an address
+
+A tool could turn a person's name into an address. None does.
+
+Addresses come from the caller or from the message being answered,
+whose own headers give a reply its recipients (D-41). A directory of
+names belongs to a server built on the People API, which
+has its own scopes. A name resolved here would also be a guess the
+person never saw, and a guess is a poor way to choose who receives mail.
+
+Rejected: a contacts lookup that resolves a name to an address.
+Cost: the caller brings every address. A recipient that is only a name
+is `[invalid]`, naming the argument (D-24).
+
+### D-103 `send_message` sends without a draft
+
+A one-shot `send_message` could send mail without a draft. There is
+none, and `messages.send` is written off.
+
+Everything that leaves this server existed first as a draft the person
+could open in Gmail. The draft is where the words can be read before
+they go, and `send_draft` checks the draft against what the call says
+it holds (D-47). A reply drafted first is also where the server threads
+it (D-39). A send with no draft would skip all three.
+
+Rejected: `send_message`, since everything that leaves the server
+exists first as a draft the person could open.
+Cost: a reply that sends is two calls, `create_draft` then
+`send_draft`.
+
+### D-104 The server confirms a write by asking the person through elicitation
+
+Before the writes that cannot be taken back, the server could put a
+form to the person through MCP elicitation and wait for an accept. It
+does not.
+
+The specification gives approval of each call to the client, and never
+makes an elicitation's answer consent (D-65). Most widely used servers
+confirm nothing themselves. Clients answer the question with nobody
+there, as a Claude Code `Elicitation` hook and Codex with full access
+do. Others do not draw it, leave it hanging or cut its message short,
+and no client's allow and ask rules match it. People approve almost
+every permission prompt, and stop reading as the prompts repeat.
+
+`GMAIL_REQUIRE_PROMPT`, which refused those writes on a client that
+could not ask, is removed with the question. A configuration that turns
+it on is refused at start (D-74).
+
+Rejected: a form elicitation before the writes that cannot be taken
+back; `GMAIL_REQUIRE_PROMPT`.
+Cost: a client that runs with nobody watching makes every registered
+write, so the registration switches carry the weight (D-64).
+
+### D-105 Arguments a client stringified are decoded leniently
+
+Some clients send an array or an integer as a JSON string. The server
+could decode those leniently. It does not: an input decodes exactly as
+its schema declares, and a JSON string where an array or integer is
+declared is `[invalid]`.
+
+The MCP specification says servers "MUST validate all tool inputs"
+([tools](https://modelcontextprotocol.io/specification/2025-11-25/server/tools)).
+The client defects still open stringify only a parameter whose schema
+is empty, or an object declared through `$ref`, and this surface has
+neither. [RFC 9413](https://www.rfc-editor.org/rfc/rfc9413) describes
+how tolerating a peer's error entrenches it. The schema stays an exact
+contract.
+
+Rejected: decoding a stringified array or integer, since the defects
+that do it do not reach this surface and tolerance would entrench them.
+Cost: a client that stringifies arrays fails here. Adding tolerance
+later is not a breaking change, so the decision can be revisited.
+
+### D-106 Plain text goes out as `format=flowed`
+
+Plain text could go out as `format=flowed`
+([RFC 3676](https://www.rfc-editor.org/rfc/rfc3676)): lines of 72 with
+soft breaks a reader reflows. It does not.
+
+A reader without support "treats flowed lines as normal Text/Plain", so
+it shows every break, which is the defect the format is meant to fix.
+Only Thunderbird is documented to support it. Google and Apple document
+nothing either way. A paragraph on one line in quoted-printable (D-28)
+and an HTML version beside it (D-29) reach every reader whole.
+
+Rejected: `format=flowed`, since a reader without support shows every
+break.
+Cost: how Gmail and Apple Mail draw a long plain-text line is not
+probed.
+
+### D-107 `login` revokes the refresh token it replaces
+
+`login` could revoke the refresh token it replaces, so stale tokens do
+not pile up toward the cap. It does not.
+
+Google revokes the grant, not one token. Revocation removes "all OAuth
+2.0 scopes previously granted to a project", invalidating "any issued
+access or refresh tokens"
+([revoking a token](https://developers.google.com/identity/protocols/oauth2/native-app#tokenrevoke)).
+Revoking the old token would end the grant the new one belongs to, so
+`login` would sign itself out (D-76).
+
+Rejected: revoking the replaced token at login, which signs the new
+login out.
+Cost: the cap of 100 tokens per client is met only by repeated logins,
+and Google invalidates the oldest past it (D-72).
+
+### D-108 `Kind` splits into an effect and a gate
+
+`Kind` encodes two things: what a tool does to the world, which decides
+its annotations, and which switches it registers behind. Write for good,
+Settings for good and Auto-reply exist because the two combine. An
+effect with a set of switches could replace the vocabulary with two
+fields.
+
+It is declined. Each kind names one combination the surface has, and
+`register` reads one value to decide the annotations, the gating and
+`confirm` (D-63). The split would restructure every registration with
+no change in behavior. Tests already drive every mode, and the smoke
+gate a mode per kind, so a wrong combination fails either way.
+
+The argument for splitting before the kinds grow is fair. It is the one
+to revisit if a kind appears only because effect and switch disagree.
+
+Rejected: splitting `Kind` into an effect and a set of switches.
+Cost: a kind exists for each combination of effect and switch, and the
+vocabulary grows with them.
+
+Next ID: D-109

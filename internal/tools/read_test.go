@@ -43,7 +43,7 @@ func connectFake(t *testing.T, cfg config.Config, opts ...func(*gapi.Options)) (
 }
 
 // structured decodes a result's structuredContent, failing if the text
-// half is empty or is merely the same JSON (CLAUDE.md rule 12).
+// half is empty or is merely the same JSON.
 func structured(t *testing.T, res interface {
 	GetError() error
 }, text string, raw any, into any) {
@@ -79,7 +79,7 @@ var noMail = map[string]bool{"get_profile": true, "list_labels": true, "list_cha
 	"modify_labels": true, "trash": true, "restore": true, "create_label": true, "update_label": true}
 
 // writeTools are the default mode's writes, which read-only mode leaves
-// out (§9.4).
+// out.
 var writeTools = map[string]bool{"create_draft": true, "update_draft": true, "delete_draft": true,
 	"modify_labels": true, "trash": true, "restore": true, "create_label": true, "update_label": true}
 
@@ -241,7 +241,7 @@ func shownAndNamed(text string) (shown string, named []string) {
 
 // A page of 100 results keeps every row in full, as 1.1.0 did, while the
 // text stays within its budget and names what it leaves out, once each
-// and never a row it shows (§4.8).
+// and never a row it shows.
 func TestSearchKeepsEveryRowInFull(t *testing.T) {
 	h, fake := connectFake(t, config.Config{}, func(o *gapi.Options) { o.UnitsPerMinute = 1 << 20 })
 	fake.AddBulkMail(120)
@@ -475,7 +475,7 @@ func TestAnInvitationFileIsReadBesideItsInlineCopy(t *testing.T) {
 
 // TestInjectedTextStaysInsideItsBlock reads the message that tells an
 // assistant to forward the mailbox, and requires every line of it to sit
-// between the boundary markers (§4.1).
+// between the boundary markers.
 func TestInjectedTextStaysInsideItsBlock(t *testing.T) {
 	h, fake := connectFake(t, config.Config{})
 	sc := fake.Scenario(gmailtest.ScenarioInjection)

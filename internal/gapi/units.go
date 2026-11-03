@@ -1,10 +1,10 @@
 package gapi
 
 // unitCost is Google's quota cost per method, in units, from the Gmail
-// quota reference (developers.google.com/workspace/gmail/api/reference/quota,
-// read 2026-09-25). The budget is 6,000 units per user per minute, and
+// quota reference. The budget is 6,000 units per user per minute, and
 // costs differ by 100×, so a request-rate limiter would be wrong by that
-// much (§4.9).
+// much.
+// https://developers.google.com/workspace/gmail/api/reference/quota
 //
 // Keyed by the discovery method id a Call carries. A Call whose id is
 // missing here is refused before it is sent: an unpriced call would
@@ -13,8 +13,7 @@ package gapi
 // The quota page prices neither labels.patch, settings.getLanguage nor
 // settings.sendAs.patch. They take the price of their nearest listed
 // sibling — labels.update, the other settings reads and sendAs.update —
-// until a live run says otherwise. The settings writes were read from
-// the page on 2026-09-27.
+// until a live run says otherwise.
 var unitCost = map[string]int{
 	"gmail.users.drafts.create":                     10,
 	"gmail.users.drafts.delete":                     10,
@@ -83,15 +82,15 @@ func maxUnitCost() int {
 
 // sendIDs are the two methods that deliver mail. Neither is ever
 // retried, for any status: a second attempt whose first landed is a
-// second delivery to every recipient (§4.3).
+// second delivery to every recipient.
 var sendIDs = map[string]bool{
 	"gmail.users.drafts.send":   true,
 	"gmail.users.messages.send": true,
 }
 
-// filterWriteIDs are the writes Gmail was seen refusing, with a 400
-// failedPrecondition before acting, when one overlapped another on the
-// same account (§18 row 54), so that refusal is repeated like a 503.
+// filterWriteIDs are the writes Gmail refuses, with a 400
+// failedPrecondition before acting, when one overlaps another on the
+// same account, so that refusal is repeated like a 503.
 // The other settings writes have no such evidence and are not repeated
 // on it.
 var filterWriteIDs = map[string]bool{

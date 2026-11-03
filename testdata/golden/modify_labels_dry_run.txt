@@ -5,5 +5,5 @@ which is: archive, mark read, star
 message 0000000000000001: would change · labels now: INBOX, UNREAD, Projects/Offsite · after: Projects/Offsite, STARRED
 message 0000000000000002: unchanged, already as asked · labels: Projects/Offsite, STARRED
 thread 0000000000000009: would change · labels now: INBOX · after: STARRED
-message 0000000000000021: failed · [unsupported] message 0000000000000021 is a draft, and Gmail does not label drafts (§2.12)
+message 0000000000000021: failed · [unsupported] message 0000000000000021 is a draft, and Gmail does not label drafts
 message 00000000000fffff: failed · [not_found] Google found nothing at that id (gmail.users.messages.get): Requested entity was not found.

@@ -312,8 +312,8 @@ func (f *fakeClock) Sleep(_ context.Context, d time.Duration) error {
 func (f *fakeClock) options(o *Options) { o.Now, o.Sleep = f.Now, f.Sleep }
 
 // Filter writes are paced: each waits filterPacing after the last one
-// finished, since Gmail refused filter writes sent back to back and took
-// them 5 seconds later (§18 row 54). Other calls are not paced.
+// finished, since Gmail refuses filter writes sent back to back and takes
+// them 5 seconds later. Other calls are not paced.
 func TestFilterWritesArePaced(t *testing.T) {
 	createFilter := Call{ID: "gmail.users.settings.filters.create", Method: http.MethodPost, Path: "settings/filters",
 		Body: map[string]string{"k": "v"}}
@@ -417,7 +417,7 @@ func TestStoppedFilterWrites(t *testing.T) {
 
 // Gmail's generic "Precondition check failed." on a filter write is
 // repeated once, after the pacing wait, then reported with Google's own
-// words and without claiming a cause (§18 row 54). After an attempt that
+// words and without claiming a cause. After an attempt that
 // may have taken effect, it is an ambiguous outcome instead. Any other
 // 400, and the same refusal on a call that is not a filter write, stays
 // invalid and is not repeated.
@@ -530,8 +530,8 @@ func TestRetriesStopAtFourAttempts(t *testing.T) {
 	}
 }
 
-// §4.3 and §11: a POST that may not repeat is never sent twice after a
-// failure that could have followed the write.
+// A POST that may not repeat is never sent twice after a failure that
+// could have followed the write.
 func TestAPostIsNotRepeatedAfterAnAmbiguousFailure(t *testing.T) {
 	for _, status := range []int{500, 502, 504} {
 		f := newFake(t, reply(status, ``))
@@ -656,8 +656,8 @@ func TestRetryAfterUpToTheLimitIsWaitedFor(t *testing.T) {
 	}
 }
 
-// Spike H's answer, as Gmail gave it with the project number replaced:
-// the per-user unit limit is a 403 with no Retry-After, and it is a
+// Gmail's per-user unit limit, as Gmail answers it with the project
+// number replaced, is a 403 with no Retry-After, and it is a
 // request-rate limit to back off from, not the sending limit.
 func TestThePerUserUnitLimitIsRetried(t *testing.T) {
 	body := googleErr(403, "rateLimitExceeded", "Quota exceeded for quota metric 'Total Query Cost' and limit "+
@@ -755,8 +755,8 @@ func TestANeverMadeConnectionIsSafeToRepeat(t *testing.T) {
 	}
 }
 
-// §9.2: a search travels in the query string, and a transport error
-// quotes the URL. Neither the query nor the token may survive.
+// A search travels in the query string, and a transport error quotes
+// the URL. Neither the query nor the token may survive.
 func TestTransportErrorsCarryNoURL(t *testing.T) {
 	const canary = "CANARY-search-term"
 	f := newFake(t, hangUp(t), hangUp(t), hangUp(t), hangUp(t))
@@ -936,8 +936,7 @@ func TestAnInjectedHTTPClientKeepsTheAllowlist(t *testing.T) {
 	}
 }
 
-// §4.9: the budget is units, and a canceled wait for units sends
-// nothing.
+// The budget is units, and a canceled wait for units sends nothing.
 func TestTheUnitBudgetWaitsAndCanBeCanceled(t *testing.T) {
 	f := newFake(t, reply(200, `{}`))
 	c, _ := client(t, f, func(o *Options) { o.UnitsPerMinute = 60 })

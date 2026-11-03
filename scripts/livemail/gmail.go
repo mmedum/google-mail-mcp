@@ -157,11 +157,12 @@ var rateWait = 15 * time.Second
 
 // call sends one request and decodes a successful reply into out. Two
 // refusals are waited out and the call made again, up to rateTries
-// times: a rate limit, since spike H spends the minute's quota and the
-// cleanup after it must still run, and a filter call refused with
-// "Precondition check failed.", since cleanup deletes filters back to
-// back (§18 row 54). A rate limit is a 429, or a 403 whose body names
-// one, as Gmail answered spike H; any other refusal is final.
+// times: a rate limit, since the rate-limit spike spends the minute's
+// quota and the cleanup after it must still run, and a filter call
+// refused with "Precondition check failed.", since cleanup deletes
+// filters back to back. A rate limit is a 429, or a 403 whose body names
+// one, which is how Gmail answers the per-user limit; any other refusal
+// is final.
 func (m *restMailbox) call(ctx context.Context, method, path string, q url.Values, body, out any) error {
 	var (
 		status int
@@ -194,7 +195,7 @@ func rateLimited(status int, body []byte) bool {
 }
 
 // filterOverlap reports a filter write Gmail refused because another
-// was saved too close to it, which it takes seconds later (§18 row 54).
+// was saved too close to it, which it takes seconds later.
 // Cleanup deletes the run's filters back to back, so it repeats these.
 func filterOverlap(path string, status int, body []byte) bool {
 	return strings.HasPrefix(path, "settings/filters") && status == http.StatusBadRequest &&

@@ -58,6 +58,16 @@ func gitIn(t *testing.T, dir string, args ...string) {
 	}
 }
 
+// isolateGit keeps the machine's git configuration from every git the
+// test runs, the gate's own included, so a global ignore file cannot hide
+// a fixture file.
+func isolateGit(t *testing.T) {
+	t.Helper()
+	t.Setenv("GIT_CONFIG_GLOBAL", os.DevNull)
+	t.Setenv("GIT_CONFIG_NOSYSTEM", "1")
+	t.Setenv("XDG_CONFIG_HOME", t.TempDir())
+}
+
 // gitRepo is writeTree's files committed to a fresh repository.
 func gitRepo(t *testing.T, files map[string]string) string {
 	t.Helper()

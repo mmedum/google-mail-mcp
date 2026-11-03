@@ -89,7 +89,7 @@ func registeredOutputs(t *testing.T) []string {
 
 var untrustedType = reflect.TypeFor[model.Untrusted]()
 
-// TestUntrustedFieldsAreNamed holds §4.1's naming both ways over every
+// TestUntrustedFieldsAreNamed holds the naming both ways over every
 // tool's output: a field of type model.Untrusted, or a slice of them, is
 // named untrusted_*, and a field named untrusted_* is of that type.
 func TestUntrustedFieldsAreNamed(t *testing.T) {

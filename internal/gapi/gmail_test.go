@@ -239,7 +239,9 @@ func TestSettingsReads(t *testing.T) {
 }
 
 // rawReply builds a reply to a parent message with the server's MIME
-// builder, dropping whichever of §2.5's conditions the test names.
+// builder, dropping whichever of the three threading conditions (the
+// threadId, the In-Reply-To and References headers, a matching subject)
+// the test names.
 func rawReply(t *testing.T, fake *gmailtest.Server, parentID, drop string, size int) (threadID string, raw []byte) {
 	t.Helper()
 	parent, ok := fake.Message(parentID, "full")
@@ -273,9 +275,9 @@ func rawReply(t *testing.T, fake *gmailtest.Server, parentID, drop string, size 
 	return threadID, raw
 }
 
-// drafts.create files a draft by its threadId alone, as Gmail did live
-// (§18 row 85); with ThreadAsDocumented, only with all three of §2.5's
-// conditions, as Google documents.
+// drafts.create files a draft by its threadId alone, as Gmail does;
+// with ThreadAsDocumented, only with all three threading conditions, as
+// Google documents.
 func TestDraftsThreadByIDOrAsDocumented(t *testing.T) {
 	c, fake := fakeClient(t)
 	ctx := context.Background()

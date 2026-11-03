@@ -212,7 +212,7 @@ func registerAccount(s *mcp.Server, d Deps) {
 			}
 			// Every filter stays a row, and the text has a budget of its own:
 			// filters are the account's own settings, and one that forwards
-			// must never be out of sight (§4.8).
+			// must never be out of sight.
 			r := render.Filters(fs, render.Options{})
 			return FiltersOut{Filters: mapSlice(fs, filter), Forwarding: model.Forwarding(fs), Rendered: readOf(r)}, nil
 		})

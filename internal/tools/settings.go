@@ -14,7 +14,7 @@ import (
 	"github.com/mmedum/google-mail-mcp/v4/internal/service"
 )
 
-// The settings writes, behind GMAIL_ENABLE_SETTINGS (§7.9): a signature
+// The settings writes, behind GMAIL_ENABLE_SETTINGS: a signature
 // and a filter made; with GMAIL_ENABLE_DESTRUCTIVE as well, a filter
 // that trashes made and a filter deleted; and with GMAIL_ENABLE_SEND as
 // well, the vacation reply.
@@ -74,7 +74,7 @@ type CreateTrashFilterIn struct {
 type DeleteFilterIn struct {
 	FilterID string `json:"filter_id" jsonschema:"the filter's id, from list_filters"`
 	// Criteria put what is deleted into the call, where a client's
-	// prompt shows it (§4.13).
+	// prompt shows it.
 	Criteria FilterCriteria `json:"criteria" jsonschema:"the filter's criteria, as list_filters gives them; checked, never changed: the delete is refused as stale if they are not the filter's"`
 	Confirm  bool           `json:"confirm,omitempty" jsonschema:"must be true: a deleted filter cannot be restored"`
 	DryRun   bool           `json:"dry_run,omitempty" jsonschema:"read the filter and report it without deleting it"`

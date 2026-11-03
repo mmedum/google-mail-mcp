@@ -15,7 +15,7 @@ import (
 )
 
 // leaks looks for anything from a real mailbox or account in the files
-// git would commit (docs/architecture.md §9.1).
+// git would commit (D-04).
 //
 // Every rule is an allow-list anchored on a shape the server's generated
 // fields cannot take: an @ with a dotted domain, a Gmail web URL, a
@@ -185,7 +185,7 @@ func leaksArtifact(data []byte) string {
 
 // leaksTree scans what git would commit from root: tracked files and
 // untracked files that are not ignored. The untracked half is where a
-// phase's new files are, before anything else has read them.
+// change's new files are, before anything else has read them.
 func leaksTree(out io.Writer, root string, minFiles int) error {
 	files, err := gitFiles(root)
 	if err != nil {

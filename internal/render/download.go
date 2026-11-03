@@ -44,7 +44,7 @@ func (w *writer) saved(s Saved) {
 }
 
 // MaxDownloads is the most attachments one download_attachments call
-// writes, as a write names at most 100 items (§4.7).
+// writes, as a write names at most 100 items.
 const MaxDownloads = 100
 
 // Reasons download_attachments skips an attachment when the caller
@@ -68,8 +68,8 @@ type Skipped struct {
 	Reason string
 }
 
-// Failed is an attachment that was not written, and why, as the [class]
-// message of §6.5.
+// Failed is an attachment that was not written, and why, as the
+// "[class] message" every tool error carries.
 type Failed struct {
 	PartID  string
 	Class   string

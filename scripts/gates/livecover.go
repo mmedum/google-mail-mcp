@@ -37,8 +37,8 @@ func liveCover(out io.Writer, args []string) error {
 const (
 	liveCoverDriver  = "scripts/livemail"
 	liveCoverWaivers = "testdata/live-waivers.tsv"
-	// liveCoverMinTools is the phase 0 read surface; fewer means the
-	// gate is not looking at the whole dump.
+	// liveCoverMinTools is the smallest read surface the server has
+	// shipped; fewer means the gate is not looking at the whole dump.
 	liveCoverMinTools = 8
 	// liveCoverMaxUndriven is the ceiling on rows that park work a step
 	// could do. It only ever goes down.

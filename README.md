@@ -12,10 +12,51 @@ your client, on your own machine, against your own Google account. There
 is no server to host and no service account: you create a Google OAuth
 client, log in once, and the refresh token stays in your OS keyring.
 
-It works **inside** a mailbox. A calendar invitation's event, a linked
-Drive file and a Chat space belong to servers built on those APIs.
+It is for one person who uses Gmail, on a Workspace or a personal Google
+account, and wants an assistant to search, read, organize and draft mail
+as them. It works **inside** a mailbox: a calendar invitation's event, a
+linked Drive file and a Chat space belong to servers built on those APIs.
 
-## Why google-mail-mcp
+## Goals and non-goals
+
+Goals:
+
+- **Mail never steers the assistant through the server.** It comes back
+  marked as data, hidden text is removed and counted, nothing it links to
+  is fetched, and the writes that redirect mail do not exist.
+- **Nothing reaches another person, or is lost for good, unless you turn
+  it on.** Sending, permanent deletion and settings changes are not
+  registered by default, and removal is trash.
+- **A write changes only what it names.** Writes take explicit ids, never
+  a search, report each item on its own, and take `dry_run`.
+- **Reads are bounded.** Every read has a budget and says what it left
+  out and how to continue.
+- **Act as you, and log nothing about your mail.** Every call runs as the
+  signed-in account, and the logs never carry content or addresses.
+
+Non-goals:
+
+- **Push notifications.** Gmail's `watch` delivers to a Cloud Pub/Sub
+  topic, which a stdio process cannot own. `list_changes` polls instead.
+- **Bulk operations over a search.** No "archive everything from X" and
+  no relabeling by query; a search is a read you have seen first.
+- **Settings that send mail elsewhere.** Auto-forwarding, forwarding
+  addresses, filters that forward, delegation and send-as identities are
+  never written.
+- **Mailbox migration.** Importing or inserting mail that was never sent
+  is out.
+- **Rendering HTML.** HTML becomes text, and nothing is fetched.
+- **A contacts directory.** Addresses come from you or from the message
+  being answered; turning a name into an address belongs to a People API
+  server.
+- **Workspace administration.** No service accounts and no domain-wide
+  delegation.
+- **A hosted service.** It speaks stdio only, so Claude on the web and on
+  mobile cannot reach it.
+- **Asking you before a call.** Your client approves each call; the
+  server asks nothing.
+
+## What makes this one different
 
 Every message was written by somebody other than you, and some of it is
 written to steer an AI assistant. So mail comes back inside blocks marked
@@ -37,6 +78,9 @@ Reads are bounded. A thread comes back newest first within a character
 budget, with quoted replies and signatures collapsed to a line saying how
 much was hidden, and every omission says how to continue. Non-ASCII
 subjects, names and filenames decode in any charset.
+
+The design and the decisions behind it are in
+[`docs/architecture.md`](docs/architecture.md).
 
 ## Install
 
@@ -70,7 +114,7 @@ gives the same bytes.
 
 Every release also carries a `.mcpb` bundle. Open it and Claude Desktop
 installs the server and asks for the settings a client's configuration
-would carry: your OAuth client JSON, the profile, read-only, the four
+would carry: your OAuth client JSON, the profile, read-only, the
 switches and the attachment folder. Sending (`enable_send`), permanent
 deletion (`enable_destructive`) and settings changes (`enable_settings`)
 stay off unless you turn them on, and read-only cannot be combined with
@@ -101,7 +145,8 @@ google-mail-mcp doctor
 
 Every Gmail scope that reads mail is one Google calls restricted. For your
 own use that costs nothing, but an External client in Testing gets refresh
-tokens that expire after seven days; `docs/runbook.md` says what that
+tokens that expire after seven days;
+[`docs/troubleshooting.md`](docs/troubleshooting.md) says what that
 looks like.
 
 ### Logging in over SSH
@@ -134,7 +179,7 @@ Or, in a client config file:
 
 Every setting is a `GMAIL_*` environment variable, listed in
 [`docs/configuration.md`](docs/configuration.md). The ones worth knowing
-now: `GMAIL_READ_ONLY=true` registers only the read tools and asks for
+first: `GMAIL_READ_ONLY=true` registers only the read tools and asks for
 read-only access; `GMAIL_LOCAL_DIR` is the one directory attachments may
 be saved to; `GMAIL_PROFILE` lets one machine hold several accounts.
 
@@ -178,8 +223,8 @@ Searches take Gmail's own search language in `q`, plus `after` and
 midnight Pacific time. Every result states the quota it spent. Every
 write takes `dry_run`, names what it touches by id, and says what it
 changed, read from Gmail's answer. `GMAIL_READ_ONLY=true` leaves the
-writes out. The last eight tools are not registered at all unless their
-settings are on.
+writes out. A tool marked "only with" a setting is not registered at all
+unless that setting is on.
 
 For clients that attach rather than call, `gmail://threads/{id}`,
 `gmail://messages/{id}` and `gmail://labels` carry the same text as
@@ -259,8 +304,9 @@ For clients that attach rather than call, `gmail://threads/{id}`,
 
 Run `google-mail-mcp doctor` first: it checks the client JSON, the token,
 the granted scopes and whether the Gmail API is enabled, and names what
-is missing. [`docs/runbook.md`](docs/runbook.md) covers the common
-surprises. Then open an issue with `doctor`'s output and the version.
+is missing. [`docs/troubleshooting.md`](docs/troubleshooting.md) covers
+the common surprises. Then open an issue with `doctor`'s output and the
+version.
 **Do not paste a tool result**: it is mail, and carries other people's
 words and addresses.
 
@@ -272,18 +318,26 @@ to act on as **Breaking**.
 
 ## Development
 
-```bash
-make check
-```
-
-That is what CI runs. [`docs/development.md`](docs/development.md) says
-what each gate holds and how the live driver works.
+`make check` runs everything CI runs. `make live` drives the built binary
+against a real account, and `make evals` scores a model against the
+tools; both are run by hand. [`CONTRIBUTING.md`](CONTRIBUTING.md) covers
+the gates, the live run and the review flow.
 
 ## Documentation
 
-[`docs/README.md`](docs/README.md) is the index. The design, the platform
-facts behind it and a verdict on every Gmail API method are in
-[`docs/architecture.md`](docs/architecture.md).
+- [`docs/architecture.md`](docs/architecture.md): the request flow, the
+  package layout, and the design decisions a contributor should not
+  undo.
+- [`docs/configuration.md`](docs/configuration.md): every setting, where
+  state is stored, and `status --json`.
+- [`docs/gcp-setup.md`](docs/gcp-setup.md): the Google Cloud project,
+  consent screen and OAuth client, step by step.
+- [`docs/troubleshooting.md`](docs/troubleshooting.md): symptoms and
+  their fixes, then rotating the token, revoking access and handling a
+  suspected exposure.
+- [`docs/security.md`](docs/security.md): the threat model.
+- [`docs/release.md`](docs/release.md): how a release is cut and
+  checked.
 
 ## Contributing
 

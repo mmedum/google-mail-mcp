@@ -22,11 +22,11 @@ import (
 )
 
 // The model never widens its own reach: no tool turns a flag on, names
-// another directory or profile, or changes what the server stored
-// (standard §3). Its settings are the operator's, outside the
-// conversation. So no tool takes an input named after a setting, and
-// driving every tool, its guards set, leaves the environment, the
-// profile directory and the home directory as they were.
+// another directory or profile, or changes what the server stored. Its
+// settings are the operator's, outside the conversation. So no tool
+// takes an input named after a setting, and driving every tool, its
+// guards set, leaves the environment, the profile directory and the home
+// directory as they were.
 func TestNoToolWritesTheServersOwnSettings(t *testing.T) {
 	home, base := t.TempDir(), t.TempDir()
 	t.Setenv("HOME", home)

@@ -79,7 +79,7 @@ func surface(t *testing.T, cfg config.Config) []string {
 	return names
 }
 
-// §9.4 and §8: what each configuration registers.
+// What each configuration registers.
 func TestRegistrationGates(t *testing.T) {
 	tests := []struct {
 		name string
@@ -115,7 +115,7 @@ func TestRegistrationGates(t *testing.T) {
 	}
 }
 
-// The annotations decide each client's prompt (§4.13): claude.ai and
+// The annotations decide each client's prompt: claude.ai and
 // Codex prompt by destructiveHint, VS Code on every tool without
 // readOnlyHint, and Claude Code on every call of a tool with the mark.
 func TestAnnotationsAndMetaComeFromKind(t *testing.T) {
@@ -302,7 +302,7 @@ func registers[In any](k Kind) (ok bool) {
 	return true
 }
 
-// confirm says a write cannot be undone (§4.13), so a tool that takes it
+// confirm says a write cannot be undone, so a tool that takes it
 // is annotated destructive, and a plain Write, which another write
 // undoes, takes none.
 func TestAToolThatTakesConfirmIsAnnotatedDestructive(t *testing.T) {
@@ -315,7 +315,7 @@ func TestAToolThatTakesConfirmIsAnnotatedDestructive(t *testing.T) {
 }
 
 // Every delete, and every kind that cannot be undone, takes confirm: a
-// witness that the caller meant it (§4.13).
+// witness that the caller meant it.
 func TestAKindThatCannotBeUndoneTakesConfirm(t *testing.T) {
 	for _, k := range allKinds {
 		want := k != WriteForGood && k != Destructive && k != SettingsForGood

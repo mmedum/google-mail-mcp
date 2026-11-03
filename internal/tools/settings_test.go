@@ -23,7 +23,7 @@ var (
 	settingsOn  = config.Config{EnableSettings: true}
 	autoReplyOn = config.Config{EnableSettings: true, EnableSend: true}
 	// filterDeletesOn registers delete_filter and create_trash_filter,
-	// which need the destructive flag as well (§7.9).
+	// which need the destructive flag as well.
 	filterDeletesOn = config.Config{EnableSettings: true, EnableDestructive: true}
 )
 
@@ -38,7 +38,7 @@ func connectSettings(t *testing.T, cfg config.Config) (*testutil.Harness, *gmail
 
 // The settings tools exist only with their flag; the filter deletes and
 // the trashing filter only with the destructive flag as well, and the
-// vacation reply only with the send flag as well (§9.4, §17.4).
+// vacation reply only with the send flag as well.
 func TestSettingsToolsRegisterOnlyWithTheirFlags(t *testing.T) {
 	// tools/list is in name order.
 	settings := []string{"create_filter", "create_trash_filter", "delete_filter", "set_vacation", "update_signature"}
@@ -170,8 +170,8 @@ func TestCreateFilter(t *testing.T) {
 	if !strings.Contains(text, "mail already in the mailbox is untouched") {
 		t.Errorf("text:\n%s", text)
 	}
-	// Archiving removes INBOX and nothing else, as Gmail stored it live
-	// (§18 row 56).
+	// Archiving removes INBOX and nothing else, as Gmail stores it at
+	// create time.
 	if !slices.Equal(made.Action.RemoveLabelIDs, []string{"INBOX"}) || out.Filter.NeverSpam || strings.Contains(text, "spam") {
 		t.Errorf("an archiving filter: %+v\n%s", made.Action, text)
 	}
@@ -192,8 +192,8 @@ func TestCreateFilter(t *testing.T) {
 	if !strings.Contains(conflict, out.Filter.ID) {
 		t.Errorf("the conflict does not name the filter: %s", conflict)
 	}
-	// Gmail was seen adding SPAM to archiving filters after the fact
-	// (§18 row 56). The seeded newsletter filter carries it; asking for
+	// Gmail can add SPAM to an archiving filter after the fact. The
+	// seeded newsletter filter carries it; asking for
 	// the same filter without it is still a duplicate. Asking for one
 	// that only never-spams is not the archiving filter.
 	harbor := map[string]any{"from": gmailtest.Harbor.Email, "add_labels": []any{"Newsletters"}, "archive": true}
@@ -214,9 +214,9 @@ func TestCreateFilter(t *testing.T) {
 	refused(t, h, "create_filter", map[string]any{"from": "x@example.com", "star": true, "size": 100}, gapi.ClassInvalid)
 }
 
-// Filter writes sent in parallel all land. Gmail refused a filter write
-// that overlapped another (§18 row 54), and so does the fake; the
-// server holds its settings changes to one at a time.
+// Filter writes sent in parallel all land. Gmail can refuse a filter
+// write that overlaps another, and so does the fake; the server holds
+// its settings changes to one at a time.
 func TestParallelFilterWritesDoNotOverlap(t *testing.T) {
 	h, fake := connectSettings(t, filterDeletesOn)
 	before := len(fake.Settings().Filters)
@@ -259,7 +259,7 @@ func TestParallelFilterWritesDoNotOverlap(t *testing.T) {
 }
 
 // A create Google did not confirm is never repeated. The server reads
-// the filters afterwards and says whether it was made (§4.3's spirit).
+// the filters afterwards and says whether it was made.
 func TestAmbiguousFilterCreateIsSettledByReading(t *testing.T) {
 	const create, list = "gmail.users.settings.filters.create", "gmail.users.settings.filters.list"
 	args := map[string]any{"from": "late@example.org", "archive": true}
@@ -275,8 +275,8 @@ func TestAmbiguousFilterCreateIsSettledByReading(t *testing.T) {
 			"verdict: created", true, false},
 		{"created as the only filter", gmailtest.Failure{Method: create, Status: 500, Reason: "backendError", Message: "Internal error",
 			Served: true}, "verdict: created", true, true},
-		// Gmail was seen adding SPAM to archiving filters after the fact
-		// (§18 row 56); the filter is still the one asked for.
+		// Gmail can add SPAM to an archiving filter after the fact; the
+		// filter is still the one asked for.
 		{"created, SPAM added", gmailtest.Failure{Method: create, Status: 500, Reason: "backendError", Message: "Internal error",
 			Served: true, Then: func(s *gmailtest.Server) {
 				s.UpdateSettings(func(st *gmailtest.Settings) {
@@ -398,7 +398,7 @@ func TestDeleteFilter(t *testing.T) {
 // A delete carries the filter's criteria, so a client's prompt shows
 // which filter goes. Criteria that are not the filter's, every one of
 // them compared, are refused as stale, on a dry run too, and the refusal
-// repeats none of them (§4.13). Spaces around them are not read.
+// repeats none of them. Spaces around them are not read.
 func TestDeleteFilterNeedsItsCriteria(t *testing.T) {
 	h, fake := connectSettings(t, filterDeletesOn)
 	args := map[string]any{"filter_id": gmailtest.FilterReceipts, "confirm": true}
@@ -580,7 +580,7 @@ func TestUpdateSignatureKeepsSpacing(t *testing.T) {
 func TestAmbiguousFilterDeleteIsSettledByReading(t *testing.T) {
 	const del, list = "gmail.users.settings.filters.delete", "gmail.users.settings.filters.list"
 	// A 500 after the delete, then Gmail's generic refusal of the repeat,
-	// is ambiguous (§7.9).
+	// is ambiguous.
 	refusal := gmailtest.Failure{Method: del, Status: 400, Reason: "failedPrecondition", Message: "Precondition check failed."}
 	for _, tc := range []struct {
 		name, want string

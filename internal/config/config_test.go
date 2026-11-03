@@ -115,7 +115,7 @@ func TestEnvironmentSettings(t *testing.T) {
 	}
 }
 
-// §9.4: read-only with an enable flag is refused, naming both.
+// Read-only with an enable flag is refused, naming both.
 func TestReadOnlyWithAnEnableFlagIsRefused(t *testing.T) {
 	isolate(t)
 	for _, flagName := range []string{"GMAIL_ENABLE_SEND", "GMAIL_ENABLE_DESTRUCTIVE", "GMAIL_ENABLE_SETTINGS"} {
@@ -236,7 +236,7 @@ func TestProfileRule(t *testing.T) {
 	}
 }
 
-// GMAIL_REQUIRE_PROMPT went with the server's question (§4.13). Off, its
+// GMAIL_REQUIRE_PROMPT is refused, since the server asks nobody. Off, its
 // old default, still starts; anything else is refused, saying what to
 // do instead, since ignoring it would quietly allow what its owner set
 // it to stop. Its flag is gone.

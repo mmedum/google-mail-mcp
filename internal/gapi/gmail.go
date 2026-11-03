@@ -24,7 +24,7 @@ const (
 
 // ListOptions narrow a message, thread or draft listing.
 type ListOptions struct {
-	// Q is a Gmail search, passed through verbatim (architecture §6.3).
+	// Q is a Gmail search, passed through verbatim.
 	Q string
 	// LabelIDs must all be present on a result.
 	LabelIDs []string
@@ -166,10 +166,16 @@ type HistoryOptions struct {
 	PageToken string
 }
 
-// ListHistory lists the mailbox's change records after a history id. A
-// start older than Gmail keeps is answered 404, which is an expired
-// cursor rather than a missing mailbox (§2.8); the caller tells them
-// apart, since only it knows it asked for history.
+// ListHistory lists the mailbox's change records after a history id.
+//
+// A start older than Gmail keeps is answered 404, as the sync guide
+// says, in the ordinary envelope: reason notFound, "Requested entity was
+// not found.". Nothing in it says the cursor expired. The guide keeps
+// records "typically" a week or more, and says it "might be
+// significantly shorter". The caller tells an expired cursor from a
+// missing mailbox, since only it knows it asked for history.
+// Checked by the live step "changes from an expired cursor".
+// https://developers.google.com/workspace/gmail/api/guides/sync
 func (c *Client) ListHistory(ctx context.Context, o HistoryOptions) (*gmail.ListHistoryResponse, error) {
 	q := url.Values{"startHistoryId": {o.StartHistoryID}}
 	if o.LabelID != "" {
@@ -242,8 +248,8 @@ func (c *Client) SendAs(ctx context.Context) (*gmail.ListSendAsResponse, error) 
 }
 
 // CreateFilter creates a filter. A POST, so it is not repeated after an
-// ambiguous failure: Gmail keeps an identical second filter (§18 row
-// 52), so a repeat could make a duplicate. create_filter settles it by
+// ambiguous failure: Gmail keeps an identical second filter, so a
+// repeat could make a duplicate. create_filter settles it by
 // reading the list instead.
 func (c *Client) CreateFilter(ctx context.Context, f gmail.FilterWrite) (*gmail.Filter, error) {
 	var out gmail.Filter
@@ -284,7 +290,7 @@ func (c *Client) Filters(ctx context.Context) (*gmail.ListFiltersResponse, error
 
 // DownloadAttachment streams a part stored behind an attachment id into
 // w, decoded, and returns how many bytes it wrote. The part is never
-// held whole in memory (§7.3). w is truncated through reset before each
+// held whole in memory. w is truncated through reset before each
 // attempt, so a retried read never appends to a partial one.
 func (c *Client) DownloadAttachment(ctx context.Context, messageID, attachmentID string, reset func() (io.Writer, error)) (int64, error) {
 	var n int64
@@ -302,8 +308,11 @@ func (c *Client) DownloadAttachment(ctx context.Context, messageID, attachmentID
 }
 
 // UploadThreshold is the message size above which a draft is sent as a
-// multipart upload rather than in the JSON raw field. Google recommends
-// the simple path only up to 5 MB (§7.4).
+// multipart upload rather than in the JSON raw field. The uploads guide
+// recommends simple upload only up to 5 MB; Google documents no cap on
+// raw.
+// Checked by the live step "a large draft goes as an upload".
+// https://developers.google.com/workspace/gmail/api/guides/uploads
 const UploadThreshold = 5 << 20
 
 // Uploads reports whether a message of n bytes goes as an upload.
@@ -331,8 +340,11 @@ func (c *Client) CreateDraft(ctx context.Context, threadID string, raw []byte) (
 	return &out, err
 }
 
-// UpdateDraft replaces a draft's message whole: drafts.update is a PUT
-// with no ETag (§2.4), so the caller checks its witness first (§4.4).
+// UpdateDraft replaces a draft's message whole. drafts.update is a PUT,
+// and nothing in gmail/v1 carries an ETag or takes If-Match, so the last
+// writer wins and the caller checks its witness first.
+// Checked by the live step "an update against the old message id is refused".
+// https://developers.google.com/workspace/gmail/api/reference/rest/v1/users.drafts/update
 func (c *Client) UpdateDraft(ctx context.Context, id, threadID string, raw []byte) (*gmail.Draft, error) {
 	var out gmail.Draft
 	err := c.Do(ctx, draftCall(Call{ID: "gmail.users.drafts.update", Method: http.MethodPut, Path: "drafts/{}",
@@ -347,7 +359,7 @@ func (c *Client) DeleteDraft(ctx context.Context, id string) error {
 }
 
 // labelsRepeat is why a label change may be sent twice: applying a label
-// already applied, or removing one already gone, changes nothing (§11).
+// already applied, or removing one already gone, changes nothing.
 const labelsRepeat = "a label added or removed twice ends in the same labels"
 
 // ModifyMessage adds and removes labels on one message and returns the
@@ -370,8 +382,8 @@ func (c *Client) ModifyThread(ctx context.Context, id string, req gmail.ModifyTh
 // trashRepeat is why a trash or untrash may be sent twice.
 const trashRepeat = "trashing what is in the trash, or restoring what is not, leaves it where it is"
 
-// TrashMessage moves a message to the trash, where Gmail keeps it for 30
-// days (§4.6).
+// TrashMessage moves a message to the trash, where Gmail keeps it for
+// 30 days.
 func (c *Client) TrashMessage(ctx context.Context, id string) (*gmail.Message, error) {
 	var out gmail.Message
 	err := c.Do(ctx, Call{ID: "gmail.users.messages.trash", Method: http.MethodPost, Path: "messages/{}/trash",
@@ -412,8 +424,8 @@ func (c *Client) CreateLabel(ctx context.Context, l gmail.Label) (*gmail.Label, 
 	return &out, err
 }
 
-// PatchLabel changes the fields of a label that l sets, and no others
-// (§4.4: labels are patched, never replaced).
+// PatchLabel changes the fields of a label that l sets, and no others:
+// a label is patched, never replaced (D-42).
 func (c *Client) PatchLabel(ctx context.Context, id string, l gmail.Label) (*gmail.Label, error) {
 	var out gmail.Label
 	err := c.Do(ctx, Call{ID: "gmail.users.labels.patch", Method: http.MethodPatch, Path: "labels/{}",
@@ -423,7 +435,7 @@ func (c *Client) PatchLabel(ctx context.Context, id string, l gmail.Label) (*gma
 
 // SendDraft sends a draft as it is stored and returns the sent message.
 // Never repeated, for any failure: Google does not deduplicate a send,
-// so a second attempt whose first landed is a second delivery (§4.3).
+// so a second attempt whose first landed is a second delivery.
 // The client refuses to declare it repeatable.
 func (c *Client) SendDraft(ctx context.Context, id string) (*gmail.Message, error) {
 	var out gmail.Message
@@ -433,7 +445,7 @@ func (c *Client) SendDraft(ctx context.Context, id string) (*gmail.Message, erro
 }
 
 // DeleteMessage deletes a message for good, skipping the trash. Gmail
-// accepts it only under https://mail.google.com/ (§2.10).
+// accepts it only under https://mail.google.com/.
 func (c *Client) DeleteMessage(ctx context.Context, id string) error {
 	return c.Do(ctx, Call{ID: "gmail.users.messages.delete", Method: http.MethodDelete, Path: "messages/{}",
 		Args: []string{id}}, nil)

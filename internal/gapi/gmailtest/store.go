@@ -15,7 +15,7 @@ import (
 )
 
 // systemLabels are the system label ids the fake knows. Google calls
-// its own list "not exhaustive" (§2.12).
+// its own list "not exhaustive".
 var systemLabels = []string{
 	"INBOX", "SENT", "DRAFT", "SPAM", "TRASH", "UNREAD", "STARRED", "IMPORTANT",
 	"CHAT", "CATEGORY_PERSONAL", "CATEGORY_SOCIAL", "CATEGORY_PROMOTIONS",

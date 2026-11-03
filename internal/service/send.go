@@ -13,7 +13,7 @@ import (
 	"github.com/mmedum/google-mail-mcp/v4/internal/model"
 )
 
-// MaxSendRecipients is the most recipients one send may have (§4.2).
+// MaxSendRecipients is the most recipients one send may have.
 // Gmail allows 500; a send to more than 50 from an agent is refused
 // outright, whatever is confirmed.
 const MaxSendRecipients = 50
@@ -34,7 +34,7 @@ var recipientHeaders = []string{"To", "Cc", "Bcc"}
 
 // participantHeaders are the headers a thread's participants are read
 // from: From on the messages the account received, To and Cc on the
-// ones it sent (§4.2).
+// ones it sent.
 var participantHeaders = []string{"From", "To", "Cc"}
 
 // Dispatch is what send_draft was asked for.
@@ -45,7 +45,7 @@ type Dispatch struct {
 	Witness string
 	// Subject and FirstLine are the draft's subject and the first line
 	// of its body that has text, as get_draft shows them. They put what
-	// is sent into the call, where a client's prompt shows it (§4.13),
+	// is sent into the call, where a client's prompt shows it,
 	// and the send is refused if the draft holds others.
 	Subject, FirstLine string
 	// Confirm names the recipients the caller vouches for: every one the
@@ -53,7 +53,7 @@ type Dispatch struct {
 	Confirm []string
 }
 
-// SendDraft sends a draft (§4.2, §4.3). It reads the draft, checks the
+// SendDraft sends a draft. It reads the draft, checks the
 // witness and the recipient guard, and sends once. A dry run stops
 // before the send. A send whose outcome Gmail did not confirm is never
 // repeated: it is [ambiguous_outcome], with the verdict of the reads
@@ -228,19 +228,19 @@ type threadRead struct {
 	// answers counts the messages that are not drafts, spam or trash.
 	answers int
 	// ids are every message in the thread before the send, the draft
-	// included: a sent message is one that was not among them (§4.3).
+	// included: a sent message is one that was not among them.
 	ids map[string]bool
 }
 
 // participants reads who is already in the thread the draft answers,
 // and how many messages it holds. The result shows each recipient's
 // standing, and the guard clears none of them on it: every recipient is
-// confirmed (§4.2). A participant wrote one of its messages, or the
-// account itself sent one of them to that address. The To, Cc and
-// Reply-To of a received message are not read: its sender wrote them
-// (§17.8). A draft is not a participant's message, and neither is spam
-// or trash: a message planted in a thread and then binned does not make
-// its sender look like a participant.
+// confirmed. A participant wrote one of its messages, or the account
+// itself sent one of them to that address. The To, Cc and Reply-To of a
+// received message are not read: its sender wrote them. A draft is not a
+// participant's message, and neither is spam or trash: a message planted
+// in a thread and then binned does not make its sender look like a
+// participant.
 func (s *Service) participants(ctx context.Context, draft model.Message) (threadRead, error) {
 	out := threadRead{seen: map[string]bool{}, ids: map[string]bool{draft.ID: true}}
 	if draft.ThreadID == "" {
@@ -273,10 +273,10 @@ func (s *Service) participants(ctx context.Context, draft model.Message) (thread
 	return out, nil
 }
 
-// validate refuses a send the guard of §4.2 refuses whatever the thread
-// holds: no recipient, more than MaxSendRecipients, or a confirmation of
-// an address the draft does not send to. It runs before the thread is
-// read.
+// validate refuses a send the recipient guard refuses whatever the
+// thread holds: no recipient, more than MaxSendRecipients, or a
+// confirmation of an address the draft does not send to. It runs before
+// the thread is read.
 func validate(out model.SendWrite, confirmed map[string]bool) error {
 	n := len(out.Recipients)
 	switch {
@@ -299,7 +299,7 @@ func validate(out model.SendWrite, confirmed map[string]bool) error {
 	return nil
 }
 
-// unconfirmed is the recipient guard of §4.2: every recipient must be
+// unconfirmed is the recipient guard (D-49): every recipient must be
 // confirmed, the thread's participants included, so the call's own
 // arguments show everyone the send reaches. The refusal names
 // recipients by field and position, never by address: an address can
@@ -322,7 +322,7 @@ func unconfirmed(out model.SendWrite) error {
 }
 
 // settle reads what an ambiguous send left behind and returns the
-// [ambiguous_outcome] error with the verdict (§4.3). It never sends: on
+// [ambiguous_outcome] error with the verdict (D-50). It never sends: on
 // "not sent" as on "unknown", the person decides. before are the
 // thread's message ids read before the send.
 func (s *Service) settle(ctx context.Context, out model.SendWrite, before map[string]bool, cause error) error {
@@ -345,7 +345,7 @@ func (s *Service) settle(ctx context.Context, out model.SendWrite, before map[st
 		"Google did not confirm the send of draft %s, and it was not repeated (verdict: %s). %s.", out.DraftID, verdict, why)
 }
 
-// settleAfter is the scaffolding of every settle-by-reading (§4.3): it
+// settleAfter is the scaffolding of every settle-by-reading: it
 // waits settleDelay, then runs read on a context that outlives the
 // call's own, bounded by settleTimeout. read is skipped when the wait
 // fails. It never writes; read must not either.
@@ -357,11 +357,14 @@ func (s *Service) settleAfter(ctx context.Context, read func(ctx context.Context
 	}
 }
 
-// readBack is the two reads of §4.3: the draft, and its thread for a
-// message in SENT that was not there before the send. Gmail files a
-// sent draft in the draft's thread under a new id, and replaces the
-// Message-ID the draft carried (spikes B and C), so neither the draft's
-// message id nor its Message-ID finds the sent copy.
+// readBack is the two reads that settle a send: the draft, and its
+// thread for a message in SENT that was not there before the send.
+// drafts.send files the sent copy in the draft's thread under a new
+// message id, replaces the Message-ID the draft carried, and leaves
+// drafts.get answering 404, none of which the reference says. So
+// neither the draft's message id nor its Message-ID finds the sent copy.
+// Checked by the live steps "what drafts.send leaves behind" and "the Message-ID drafts.send sends".
+// https://developers.google.com/workspace/gmail/api/reference/rest/v1/users.drafts/send
 func (s *Service) readBack(ctx context.Context, out model.SendWrite, before map[string]bool) (model.Settled, string) {
 	if out.ThreadID == "" {
 		return model.SettledUnknown, ""

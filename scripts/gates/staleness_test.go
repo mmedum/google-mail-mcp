@@ -2,7 +2,7 @@ package main
 
 import (
 	"encoding/json"
-	"fmt"
+	"errors"
 	"slices"
 	"strings"
 	"testing"
@@ -23,72 +23,6 @@ func stalenessNone(t *testing.T, problems []string) {
 	if len(problems) > 0 {
 		t.Errorf("unexpected problems: %q", problems)
 	}
-}
-
-func stalenessSet(paths ...string) func(string) bool {
-	return func(p string) bool { return slices.Contains(paths, p) }
-}
-
-const stalenessClaude = "# x\n\n## Where things go\n\nPlanned.\n\n" +
-	"- `cmd/app/` wiring.\n- `internal/a/` a; `internal/b/` b; `internal/c/` c; `internal/d/` d; `internal/e/` e;\n" +
-	"  `internal/f/` f; `internal/g/` g; `internal/h/` h; `internal/i/` i; `internal/j/` j.\n" +
-	"- `internal/gapi/` client, with\n  `gmailtest/` the fake.\n" +
-	"- `scripts/gates/` gates; `scripts/internal/` shared; `testdata/` data.\n\n## Next\n\n`internal/zzz/`\n"
-
-func TestStalenessPackageMap(t *testing.T) {
-	pkgs := []string{"cmd/app", "internal/a", "internal/b", "internal/c", "internal/d", "internal/e", "internal/f",
-		"internal/g", "internal/h", "internal/i", "internal/j", "internal/gapi", "internal/gapi/gmailtest",
-		"scripts/gates", "scripts/internal/redact"}
-	dirs := append(slices.Clone(pkgs), "scripts/internal", "testdata")
-	hasGo := stalenessSet(pkgs...)
-	n, p := stalenessPackageMap(stalenessClaude, pkgs, stalenessSet(dirs...), hasGo)
-	stalenessNone(t, p)
-	if n != 16 {
-		t.Errorf("read %d listed paths, want 16 (the next section's path is not the map)", n)
-	}
-
-	_, p = stalenessPackageMap(stalenessClaude, append(slices.Clone(pkgs), "internal/version"), stalenessSet(dirs...), hasGo)
-	stalenessHas(t, p, "does not name the package internal/version/")
-
-	_, p = stalenessPackageMap(stalenessClaude, pkgs[1:], stalenessSet(dirs[1:]...), hasGo)
-	stalenessHas(t, p, "lists cmd/app/, which does not exist")
-
-	// A subpackage of a package must be named itself.
-	_, p = stalenessPackageMap(stalenessClaude, append(slices.Clone(pkgs), "internal/a/sub"), stalenessSet(dirs...), hasGo)
-	stalenessHas(t, p, "internal/a/sub/")
-
-	_, p = stalenessPackageMap("## Where things go\n\n- `a/`\n", pkgs, stalenessSet(dirs...), hasGo)
-	stalenessHas(t, p, "the extractor is not reading it")
-}
-
-func TestStalenessPaths(t *testing.T) {
-	var b strings.Builder
-	for i := range 20 {
-		fmt.Fprintf(&b, "See `internal/p%d/file.go`.\n", i)
-	}
-	exists := func(p string) bool {
-		return strings.HasPrefix(p, "internal/p") || p == "docs/other.md" || p == ".github/workflows/ci.yml"
-	}
-	docs := map[string]string{
-		"README.md": b.String(),
-		"docs/x.md": "Read [other](other.md), `ci.yml`, `users/me`, `mail.google.com/mail/u/`, `https://x/y`, `~/a/b`.\n" +
-			"```\ninternal/gone/in-a-fence.go\n```\n",
-	}
-	top := map[string]bool{"internal": true, "docs": true, ".github": true}
-	n, p := stalenessPaths(docs, exists, top)
-	stalenessNone(t, p)
-	if n != 22 {
-		t.Errorf("examined %d, want 22", n)
-	}
-
-	docs["docs/x.md"] += "`internal/gone.go` and [gone](../nowhere.md) and `release.md`\n"
-	_, p = stalenessPaths(docs, exists, top)
-	stalenessHas(t, p, "docs/x.md names internal/gone.go")
-	stalenessHas(t, p, "links to ../nowhere.md")
-	stalenessHas(t, p, "names release.md")
-
-	_, p = stalenessPaths(map[string]string{"README.md": "`internal/x`"}, exists, top)
-	stalenessHas(t, p, "the extractor has stopped reading them")
 }
 
 func TestStalenessEnv(t *testing.T) {
@@ -128,21 +62,7 @@ func TestStalenessGates(t *testing.T) {
 	_, p = stalenessGates("`leaks`", []string{"leaks", "pins"})
 	stalenessHas(t, p, "does not name the pins gate")
 	_, p = stalenessGates("", []string{"leaks"})
-	stalenessHas(t, p, "docs/development.md is missing")
-}
-
-func TestStalenessStatus(t *testing.T) {
-	const designOnly = "**Status: design only. Nothing is built or tagged.** More."
-	stalenessNone(t, stalenessStatus(designOnly, "", "", false))
-	stalenessHas(t, stalenessStatus(designOnly, "", "", true), "says nothing is built")
-	stalenessHas(t, stalenessStatus("**Status: phase 0 in progress.**", "", "", true), "does not say so")
-	stalenessHas(t, stalenessStatus("**Status: v0.1.0 released.**", "", "", true), "nothing is tagged or released")
-	stalenessNone(t, stalenessStatus("**Status: v0.1.0 released.**", "", "0.1.0", true))
-	// The release commit writes the heading before the tag exists.
-	stalenessNone(t, stalenessStatus("**Status: v0.2.0 released.**", "## [0.2.0] - x\n## [0.1.0]", "0.1.0", true))
-	stalenessHas(t, stalenessStatus("**Status: v0.1.0 released.**", "", "0.2.0", true), "the newest release is 0.2.0")
-	stalenessHas(t, stalenessStatus(designOnly, "", "0.1.0", false), "says nothing is tagged")
-	stalenessHas(t, stalenessStatus("no status", "", "", false), "no **Status")
+	stalenessHas(t, p, "CONTRIBUTING.md is missing")
 }
 
 func TestStalenessNoVersionInProse(t *testing.T) {
@@ -150,77 +70,15 @@ func TestStalenessNoVersionInProse(t *testing.T) {
 		"README.md":            "[![release](https://img/v1.2.3)](x)\nInstall `v1.2.3` with go.\n```\ngo install x@v1.2.3\n```\n",
 		"CONTRIBUTING.md":      "ok",
 		"docs/security.md":     "ok",
-		"docs/architecture.md": "Phase 0 (v0.1.0)",
+		"docs/architecture.md": "A client from v2.1.199 asks first.",
+		"CHANGELOG.md":         "- Fixed in v4.0.2.",
+		"CLAUDE.md":            "Pin golangci-lint v2.5.0.",
 	}
 	_, p := stalenessNoVersionInProse(docs)
 	stalenessNone(t, p)
 	docs["docs/security.md"] = "Fixed in v0.3.1."
 	_, p = stalenessNoVersionInProse(docs)
 	stalenessHas(t, p, "docs/security.md:1 writes v0.3.1")
-}
-
-const stalenessToolTable = "## 8. Tool surface\n\nFour tools: three by default, two in read-only mode, one\nfewer in each when `X` is unset.\n\n" +
-	"| Tool | Kind | Registered | Scope |\n|---|---|---|---|\n" +
-	"| `get_a` | Read | always | r |\n| `get_b` | Read | always | r |\n| `get_c` | Read | always | r |\n" +
-	"| `get_d` | Read | always | r |\n| `get_e` | Read | always | r |\n| `get_f` | Read | always | r |\n" +
-	"| `dl` | Read | `GMAIL_LOCAL_DIR` set | r |\n| `w` | Write | not read-only | m |\n| `s` | Send | `GMAIL_ENABLE_SEND` | m |\n" +
-	"\n### 8a. Every\n\n| `x_y` | nope | nope |\n"
-
-func TestStalenessToolCounts(t *testing.T) {
-	good := strings.Replace(stalenessToolTable, "Four tools: three by default, two in read-only mode",
-		"Nine tools: eight by default, seven in read-only mode", 1)
-	n, p := stalenessToolCounts(good, []string{"get_a", "dl"}, nil)
-	stalenessNone(t, p)
-	if n != 9 {
-		t.Errorf("read %d rows, want 9", n)
-	}
-	_, p = stalenessToolCounts(stalenessToolTable, nil, nil)
-	stalenessHas(t, p, `§8 says "Four" tools; the table says 9`)
-	stalenessHas(t, p, `"two" in read-only mode; the table says 7`)
-	_, p = stalenessToolCounts(good, []string{"secret"}, nil)
-	stalenessHas(t, p, "registers secret, which §8's table does not list")
-	_, p = stalenessToolCounts(good, nil, fmt.Errorf("no build"))
-	stalenessHas(t, p, "could not be read")
-}
-
-func TestStalenessVerdictCounts(t *testing.T) {
-	var verdicts []string
-	for i := range 60 {
-		verdicts = append(verdicts, []string{"Used: x", "Gated: y", "Deferred (§17): z", "Written off: w"}[i%4])
-	}
-	docs := map[string]string{
-		"docs/architecture.md": "### 8a. Every published method, with a verdict\n\nAll 60 methods of the discovery document.\n\n" +
-			"Fifteen used, fifteen gated, fifteen deferred to §17, fifteen written off.\n",
-		"CLAUDE.md": "All sixty are in §8a.",
-	}
-	n, p := stalenessVerdictCounts(docs, verdicts, 60)
-	stalenessNone(t, p)
-	if n != 60 {
-		t.Errorf("read %d", n)
-	}
-	_, p = stalenessVerdictCounts(docs, verdicts, 61)
-	stalenessHas(t, p, "testdata/api-surface.json has 61 methods")
-	verdicts[0] = "Maybe: x"
-	_, p = stalenessVerdictCounts(docs, verdicts, 60)
-	stalenessHas(t, p, "starting with none of")
-	stalenessHas(t, p, `"Fifteen" used`)
-	// The table, while it exists, wins over the record.
-	docs["docs/architecture.md"] += "| `a.b` | GET | Used: x |\n"
-	_, p = stalenessVerdictCounts(docs, verdicts, 60)
-	stalenessHas(t, p, "§8a's table holds 1 verdicts")
-}
-
-func TestStalenessNumber(t *testing.T) {
-	for s, want := range map[string]int{"79": 79, "Twenty-three": 23, "twelve": 12, "thirty": 30, "Seventy-nine": 79} {
-		if got, ok := stalenessNumber(s); !ok || got != want {
-			t.Errorf("%s = %d, %v", s, got, ok)
-		}
-	}
-	for _, s := range []string{"the", "ten-one", "twenty-twelve"} {
-		if _, ok := stalenessNumber(s); ok {
-			t.Errorf("%s read as a number", s)
-		}
-	}
 }
 
 func TestStalenessScopeBlock(t *testing.T) {
@@ -278,15 +136,24 @@ func TestStalenessScopeSourceIsWired(t *testing.T) {
 func TestStalenessReadmeToolsBothWays(t *testing.T) {
 	readme := "# x\n\n## Tools\n\n| Tool | What |\n|---|---|\n| `get_profile` | a |\n| `list_labels` | b |\n\n## Safety\n" +
 		"\n```json\n{\"permissions\": {\"ask\": [\"mcp__google-mail__get_profile\"]}}\n```\n"
-	if n, p := stalenessReadmeTools(readme, []string{"get_profile", "list_labels"}, []string{"get_profile"}); n != 2 || len(p) != 0 {
+	if n, p := stalenessReadmeTools(readme, []string{"get_profile", "list_labels"}, []string{"get_profile"}, nil); n != 2 || len(p) != 0 {
 		t.Errorf("an agreeing table: %d rows, %v", n, p)
 	}
-	_, p := stalenessReadmeTools(readme, []string{"get_profile", "get_thread"}, []string{"get_profile"})
+	_, p := stalenessReadmeTools(readme, []string{"get_profile", "get_thread"}, []string{"get_profile"}, nil)
 	if len(p) != 2 || !strings.Contains(strings.Join(p, "\n"), "get_thread") || !strings.Contains(strings.Join(p, "\n"), "list_labels") {
 		t.Errorf("a table missing one tool and listing another: %v", p)
 	}
-	if _, p := stalenessReadmeTools("# x\n", []string{"get_profile"}, nil); len(p) != 1 {
+	if _, p := stalenessReadmeTools("# x\n", []string{"get_profile"}, nil, nil); len(p) != 1 {
 		t.Errorf("no table at all: %v", p)
+	}
+	// A binary that could not be read holds the table to nothing, and says so.
+	_, p = stalenessReadmeTools(readme, nil, nil, errors.New("no build"))
+	if want := []string{"the built binary's tools could not be read: no build"}; !slices.Equal(p, want) {
+		t.Errorf("an unreadable binary: %q, want %q", p, want)
+	}
+	_, p = stalenessReadmeTools("# x\n", nil, nil, errors.New("no build"))
+	if len(p) != 2 {
+		t.Errorf("no table and an unreadable binary: %q", p)
 	}
 }
 
@@ -297,26 +164,26 @@ func TestStalenessReadmePermissionRules(t *testing.T) {
 	table := "# x\n\n## Tools\n\n| Tool | What |\n|---|---|\n| `get_profile` | a |\n| `send_draft` | b |\n"
 	tools := []string{"get_profile", "send_draft"}
 	_, p := stalenessReadmeTools(table+"\n{\"ask\": [\"mcp__google-mail__send_draft\", \"mcp__google-mail__send_drafts\"]}\n",
-		tools, []string{"send_draft"})
+		tools, []string{"send_draft"}, nil)
 	if len(p) != 1 || p[0] != "README.md gives a permission rule for send_drafts, which the binary does not register" {
 		t.Errorf("a rule for no tool: %q", p)
 	}
-	_, p = stalenessReadmeTools(table+"\n{\"ask\": [\"mcp__google-mail__get_profile\"]}\n", tools, []string{"send_draft"})
+	_, p = stalenessReadmeTools(table+"\n{\"ask\": [\"mcp__google-mail__get_profile\"]}\n", tools, []string{"send_draft"}, nil)
 	if len(p) != 1 || p[0] != "README.md's permissions.ask block has no rule for send_draft, which sends, changes a setting or deletes for good" {
 		t.Errorf("a must-ask tool left out: %q", p)
 	}
-	_, p = stalenessReadmeTools(table+"\n{\"allow\": [\"mcp__google-mail__send_draft\"]}\n", tools, []string{"send_draft"})
+	_, p = stalenessReadmeTools(table+"\n{\"allow\": [\"mcp__google-mail__send_draft\"]}\n", tools, []string{"send_draft"}, nil)
 	if len(p) != 1 || p[0] != "README.md's permissions.ask block has no rule for send_draft, which sends, changes a setting or deletes for good" {
 		t.Errorf("a must-ask tool allowed rather than asked: %q", p)
 	}
 	_, p = stalenessReadmeTools(table+"\n{\"ask\": [\n  \"mcp__google-mail__get_profile\",\n  \"mcp__google-mail__send_draft\"\n]}\n",
-		tools, []string{"send_draft"})
+		tools, []string{"send_draft"}, nil)
 	if len(p) != 0 {
 		t.Errorf("an ask list over lines: %q", p)
 	}
-	_, p = stalenessReadmeTools(table+"\n\"mcp__google-mail__send_draft\"\n", tools, nil)
+	_, p = stalenessReadmeTools(table+"\n\"mcp__google-mail__send_draft\"\n", tools, nil, nil)
 	stalenessHas(t, p, "registers no tool the README must ask about")
-	_, p = stalenessReadmeTools(table, tools, []string{"send_draft"})
+	_, p = stalenessReadmeTools(table, tools, []string{"send_draft"}, nil)
 	stalenessHas(t, p, "README.md gives no Claude Code permission rule")
 }
 

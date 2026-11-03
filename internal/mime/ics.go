@@ -22,9 +22,9 @@ type Invitation struct {
 	// UID is the event's UID; "" when it is missing or over maxICSID,
 	// since a cut UID finds nothing.
 	UID string
-	// Sequence is the event's revision; 0 when it gives none (RFC 5545
-	// §3.8.7.4: "When a calendar component is created, its sequence
-	// number is 0").
+	// Sequence is the event's revision; 0 when it gives none
+	// (RFC 5545 §3.8.7.4: "When a calendar component is created, its
+	// sequence number is 0").
 	Sequence int
 	// RecurrenceID is set when the event is one occurrence of a
 	// repeating event, written as Start is, in RecurrenceTimeZone when
@@ -40,8 +40,8 @@ type Invitation struct {
 	// TimeZone is the TZID the start names, as written.
 	TimeZone string
 	// EndTimeZone and RecurrenceTimeZone are the TZIDs the end and the
-	// recurrence id name, as written, when not the start's (RFC 5545
-	// §3.2.19 lets each time name its own).
+	// recurrence id name, as written, when not the start's
+	// (RFC 5545 §3.2.19 lets each time name its own).
 	EndTimeZone, RecurrenceTimeZone string
 	// AllDay is set when the start is a date.
 	AllDay bool
@@ -344,8 +344,8 @@ func cutRunes(s string, n int) string {
 	return string([]rune(s)[:n]) + "…"
 }
 
-// icsOrganizer is the address of a mailto: ORGANIZER (RFC 5545
-// §3.8.4.3), or "" for anything else.
+// icsOrganizer is the address of a mailto: ORGANIZER
+// (RFC 5545 §3.8.4.3), or "" for anything else.
 func icsOrganizer(v string) string {
 	const scheme = "mailto:"
 	v = strings.TrimSpace(v)
@@ -363,10 +363,10 @@ func icsOrganizer(v string) string {
 	return a.Address
 }
 
-// icsTime writes a DTSTART, DTEND or RECURRENCE-ID value (RFC 5545
-// §3.3.4, §3.3.5): a date as YYYY-MM-DD, a UTC time or one whose TZID is
-// an IANA zone as RFC 3339, and anything else as written. date reports
-// a date.
+// icsTime writes a DTSTART, DTEND or RECURRENCE-ID value
+// (RFC 5545 §3.3.4–3.3.5): a date as YYYY-MM-DD, a UTC time or one whose
+// TZID is an IANA zone as RFC 3339, and anything else as written. date
+// reports a date.
 func icsTime(p icsProp) (text string, date bool) {
 	v := strings.TrimSpace(p.value)
 	if v == "" || len(v) > maxICSTime {

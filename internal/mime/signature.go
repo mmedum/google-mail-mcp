@@ -12,14 +12,20 @@ import (
 )
 
 // A send-as signature goes below a draft's body as Gmail's web composer
-// puts one there (§7.4, §18 row 98): in the HTML version, as Gmail holds
-// it, inside the markup the composer writes around a signature, and in
-// the plain text as that HTML reads. A signature that ends the message
-// starts with the delimiter line "-- " (RFC 3676 §4.3); one above a
-// quote has none, as Gmail writes it there, since a reader that drops
-// what follows the delimiter would drop the quote too. EditRaw carries a
-// signature over to a new body by finding that markup, and finds its
-// text in the plain part by reading the HTML again.
+// puts one there: in the HTML version, as Gmail holds it, inside the
+// markup the composer writes around a signature, and in the plain text
+// as that HTML reads. The composer adds none to a draft the API saved,
+// so the server writes it.
+//
+// A signature that ends the message starts with the delimiter line "-- "
+// (RFC 3676 §4.3); one above a quote has none, as Gmail writes it there,
+// since a reader that drops what follows the delimiter would drop the
+// quote too. Google documents neither shape; both are read from messages
+// Gmail's composer wrote. EditRaw carries a signature over to a new body
+// by finding that markup, and finds its text in the plain part by
+// reading the HTML again.
+// Checked by the live step "read the signed draft back".
+// https://developers.google.com/workspace/gmail/api/reference/rest/v1/users.settings.sendAs#SendAs
 
 // sigShape is the markup around a signature: lead, then open, which
 // starts the div whose close ends the block, the signature, and close.
@@ -74,7 +80,7 @@ type InlineImage struct {
 	Content   []byte
 }
 
-// Bodies is a message's plain text and HTML version (§7.4): text, the
+// Bodies is a message's plain text and HTML version: text, the
 // signature sig below it as Gmail's composer puts one, and quote below
 // that. The HTML is h with the signature, or with h nil the version
 // HTMLFromText makes of the text and the quote with the signature
@@ -108,9 +114,11 @@ var dataImage = regexp.MustCompile(`(?i)(<img\b[^>]*?\ssrc\s*=\s*)(["'])data:(im
 // inlineImages moves each image sig carries as a base64 data URL into a
 // part of its own, its src becoming cid:, as Gmail's composer sends one.
 // Gmail does the same to such an image when a draft is saved, and drops
-// the plain-text version as it does (§18 row 99), so the server does it
-// first. The Content-ID is made from the image, so the same image gets
-// the same one. Anything else stays as written.
+// the plain-text version as it does, which the drafts reference does not
+// say. So the server does it first. The Content-ID is made from the
+// image, so the same image gets the same one. Anything else stays as
+// written. Checked by the live step "read the signed draft back".
+// https://developers.google.com/workspace/gmail/api/reference/rest/v1/users.drafts/create
 func inlineImages(sig string) (string, []InlineImage) {
 	var imgs []InlineImage
 	seen := map[string]bool{}

@@ -1,7 +1,7 @@
 // Package model is the server's view of a mailbox: messages, threads,
 // drafts, labels, the profile and changes, built from the wire types of
 // internal/gmail and the parse of internal/mime, with label ids resolved
-// to names (§3.9).
+// to names.
 //
 // Everything a sender wrote stays data here. The model decodes and
 // cleans; it never interprets.
@@ -20,7 +20,7 @@ import (
 )
 
 // Untrusted is text a sender wrote: a subject, a snippet, a header
-// value, an address. It is data (§4.1), and the type keeps it apart from
+// value, an address. It is data, and the type keeps it apart from
 // the server's own strings: render has no way to write one outside a
 // block, and the tools put one only in a field named untrusted_*.
 type Untrusted string
@@ -53,7 +53,7 @@ type LabelRef struct {
 
 // LabelIndex resolves label ids to names. Build one per call from
 // labels.list: a label renamed between two calls must not resolve to its
-// old name (§6.2).
+// old name.
 type LabelIndex struct {
 	byID map[string]gmail.Label
 }
@@ -161,7 +161,11 @@ type Message struct {
 	HistoryID string
 	// Date is Gmail's internalDate: when Gmail received the message, on
 	// Google's clock. The sender's Date header is DateHeader, and can say
-	// anything.
+	// anything. Mail added by messages.insert with
+	// internalDateSource=receivedTime is the exception: Gmail records its
+	// Date header here, while a search's after: matches the insert time.
+	// Checked by the live step "the date messages.insert records".
+	// https://developers.google.com/workspace/gmail/api/reference/rest/v1/users.messages/insert
 	Date         time.Time
 	DateHeader   Untrusted
 	SizeEstimate int
@@ -241,7 +245,7 @@ func IsReactionPart(a mime.Attachment) bool {
 
 // Answerable reports whether the message was sent or received and can
 // be answered: it is not a draft, not in the trash and not an emoji
-// reaction (§3.2).
+// reaction.
 func (m Message) Answerable() bool {
 	return !m.HasLabel("DRAFT") && !m.HasLabel("TRASH") && !m.IsReaction()
 }
@@ -376,7 +380,7 @@ func NewThread(g *gmail.Thread, labels LabelIndex, fetched map[string]map[string
 }
 
 // SplitDrafts parts the thread's messages into what was sent or received
-// and the drafts, each in the thread's order (§17.2).
+// and the drafts, each in the thread's order.
 func (t Thread) SplitDrafts() (said, drafts []Message) {
 	for _, m := range t.Messages {
 		if m.HasLabel("DRAFT") {
@@ -482,7 +486,7 @@ func (t Thread) count(label string) int {
 }
 
 // Draft is an unsent message. A draft has two ids, the draft's and its
-// message's; every rendering names both (§6.1).
+// message's; every rendering names both.
 type Draft struct {
 	ID      string
 	Message Message

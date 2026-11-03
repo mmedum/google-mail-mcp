@@ -11,10 +11,11 @@ import (
 	"golang.org/x/oauth2"
 )
 
-// ErrReauthorize means the stored refresh token no longer works: it was
-// revoked, it expired (seven days for a client in Testing status,
-// §2.11), or Google invalidated it as the oldest of too many. Only a new
-// login fixes it; nothing the server retries will.
+// ErrReauthorize means the stored refresh token does not work: it was
+// revoked, it expired (seven days for a client in Testing status), or
+// Google invalidated it as the oldest of too many. Only a new login
+// fixes it; nothing the server retries will.
+// https://developers.google.com/identity/protocols/oauth2#expiration
 var ErrReauthorize = errors.New("auth: the stored credentials are no longer valid; run `google-mail-mcp login`")
 
 // TokenSource returns a caching token source backed by the refresh

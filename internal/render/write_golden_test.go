@@ -128,7 +128,7 @@ func TestGoldenItemsWrites(t *testing.T) {
 			{ID: "0000000000000009", Kind: model.KindThread, Outcome: model.Changed,
 				Before: []model.LabelRef{inbox}, After: []model.LabelRef{starred}},
 			{ID: "0000000000000021", Kind: model.KindMessage, Outcome: model.Failed, Class: "unsupported",
-				Error: "message 0000000000000021 is a draft, and Gmail does not label drafts (§2.12)"},
+				Error: "message 0000000000000021 is a draft, and Gmail does not label drafts"},
 			{ID: "00000000000fffff", Kind: model.KindMessage, Outcome: model.Failed, Class: "not_found",
 				Error: "Google found nothing at that id (gmail.users.messages.get): Requested entity was not found."},
 		}}

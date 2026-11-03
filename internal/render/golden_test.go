@@ -21,7 +21,7 @@ import (
 //	go test ./internal/render -update
 //
 // A golden file makes a change to how mail reads show up as a diff
-// somebody has to look at (§13). Regenerating is one flag; reading the
+// somebody has to look at. Regenerating is one flag; reading the
 // diff is the part that cannot be automated.
 var update = flag.Bool("update", false, "rewrite the golden files")
 
@@ -163,7 +163,7 @@ func TestGoldenThreads(t *testing.T) {
 }
 
 // A thread's drafts follow the conversation; over the budget they are
-// listed by id, and a continued read does not repeat them (§17.2).
+// listed by id, and a continued read does not repeat them.
 func TestThreadDraftsFollowTheConversation(t *testing.T) {
 	b := newBox(t)
 	th := b.thread(gmailtest.ScenarioDraftReply, "full")

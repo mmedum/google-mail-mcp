@@ -11,7 +11,7 @@ import (
 
 // MaxAttachmentBytes bounds one attachment written to disk. Gmail
 // accepts at most 25 MB attached to a message it delivers and 35 MB
-// through the API (§2.6); twice the larger leaves room for what another
+// through the API; twice the larger leaves room for what another
 // system delivered, and stops a body that never ends.
 const MaxAttachmentBytes = 64 << 20
 

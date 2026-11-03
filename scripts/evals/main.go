@@ -2,7 +2,7 @@
 
 // Command evals scores whether a model reading only this server's tool
 // descriptions can do a task through them, and whether mail written to
-// steer it does (docs/architecture.md §13).
+// steer it does.
 //
 // It serves the real server against the in-memory mailbox of gmailtest
 // only, and gives each task to a model through `claude -p`, signed in as

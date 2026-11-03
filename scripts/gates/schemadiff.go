@@ -586,7 +586,7 @@ func schemaDiffUndeclared(breaking []change, changelog, baseline string) ([]stri
 		if !strings.Contains(line, "**Breaking:**") {
 			continue
 		}
-		for _, m := range stalenessCodeSpan.FindAllStringSubmatch(line, -1) {
+		for _, m := range codeSpan.FindAllStringSubmatch(line, -1) {
 			named[m[1]] = true
 		}
 	}

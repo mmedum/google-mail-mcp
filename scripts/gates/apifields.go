@@ -16,11 +16,13 @@ import (
 
 // api-fields is api-coverage one level down: every field a judged
 // schema publishes is modeled by internal/gmail or left out with a
-// reason, and every field internal/gmail models is one Google publishes.
+// reason, and every field internal/gmail models is one Google publishes
+// (D-07).
 //
-// A judged schema is one §8b names or one internal/gmail declares a
-// struct for. Structs match schemas by name, and a struct with no schema
-// of its name fails, so a rename cannot take a type out of the check.
+// A judged schema is one apiFieldsRequired names or one internal/gmail
+// declares a struct for. Structs match schemas by name, and a struct
+// with no schema of its name fails, so a rename cannot take a type out
+// of the check.
 
 const (
 	apiFieldsRecordPath = "testdata/api-fields.tsv"
@@ -34,8 +36,8 @@ const (
 	apiFieldsMinModeled = 120
 )
 
-// apiFieldsRequired is §8b's list: judged whether or not a struct
-// models them yet.
+// apiFieldsRequired are the schemas the server reads or writes: judged
+// whether or not a struct models them yet.
 var apiFieldsRequired = []string{
 	"Message", "MessagePart", "MessagePartHeader", "MessagePartBody", "Thread", "Draft", "Label",
 	"LabelColor", "History", "HistoryMessageAdded", "HistoryMessageDeleted", "HistoryLabelAdded",
@@ -99,7 +101,7 @@ func apiFieldsCheck(root string, floor apiFieldsLimits, out io.Writer) error {
 	for _, schema := range slices.Sorted(maps.Keys(judged)) {
 		fields, ok := published[schema]
 		if !ok {
-			problems = append(problems, fmt.Sprintf("§8b names %s and the snapshot publishes no such schema", schema))
+			problems = append(problems, fmt.Sprintf("the judged list names %s and the snapshot publishes no such schema", schema))
 			continue
 		}
 		for _, f := range fields {
@@ -146,7 +148,7 @@ func apiFieldsRow(r tsvRow, published map[string][]string, judged map[string]boo
 		return false, []string{fmt.Sprintf("%s: %s is not a published field; remove the row", at, key)}
 	}
 	if !judged[schema] {
-		problems = append(problems, fmt.Sprintf("%s: %s is not a judged schema; §8b does not name it "+
+		problems = append(problems, fmt.Sprintf("%s: %s is not a judged schema; the judged list does not name it "+
 			"and no struct models it", at, schema))
 	}
 	top, _, _ := strings.Cut(field, ".")

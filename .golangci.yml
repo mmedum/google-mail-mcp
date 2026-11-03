@@ -11,6 +11,7 @@ linters:
   default: none
   enable:
     - bodyclose
+    - depguard
     - errcheck
     - errorlint
     - forbidigo
@@ -44,10 +45,20 @@ linters:
         - pattern: ^os\.Stdout$
           msg: "only main names the process's streams; take an io.Writer instead"
         # The server asks the person nothing; per-call approval is the
-        # client's (docs/architecture.md §4.13).
+        # client's (D-65).
         - pattern: ^mcp\.(\*?ServerSession\.Elicit|CallToolResult\.InputRequests|InputRequest(Map)?|ElicitParams)$
           pkg: ^github\.com/modelcontextprotocol/go-sdk/mcp$
-          msg: "the server asks the person nothing; per-call approval is the client's (§4.13)"
+          msg: "the server asks the person nothing; per-call approval is the client's"
+    depguard:
+      rules:
+        # Own wire types over raw REST (D-06). Check the message text when
+        # verifying this works: a settings block that fails to load
+        # leaves depguard on its default rule, which refuses every
+        # import outside the standard library with a message of its own.
+        own-wire-types:
+          deny:
+            - pkg: "google.golang.org/api"
+              desc: "it drags in gRPC and telemetry for the subset of the API this repository hand-writes in internal/gapi and internal/gmail (D-06)"
     gocyclo:
       min-complexity: 25
     gosec:

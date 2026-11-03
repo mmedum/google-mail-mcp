@@ -168,8 +168,8 @@ func TestLoginRejectsAStateMismatch(t *testing.T) {
 	}
 }
 
-// TestNoBrowserPrintsThePortToForward: the SSH case, which the standard
-// says to give people rather than let them discover.
+// TestNoBrowserPrintsThePortToForward: the SSH case. The login prints
+// the port to forward rather than leave people to discover it.
 func TestNoBrowserPrintsThePortToForward(t *testing.T) {
 	ln, err := net.Listen("tcp", "127.0.0.1:0")
 	if err != nil {
@@ -295,9 +295,9 @@ func fakeGoogle(t *testing.T, tokenBody string) (*oauth2.Config, net.Listener, f
 	return cfg, ln, browser, seen
 }
 
-// §10: consent is forced only when the scope set is not already
-// granted, because each forced consent mints a refresh token and an
-// account holds only 100 per client.
+// Consent is forced only when the scope set is not already granted.
+// It spares the person a screen; a login mints a refresh token either
+// way, toward the 100 an account holds per client.
 func TestConsentOnlyWhenScopesGrow(t *testing.T) {
 	tests := []struct {
 		name    string

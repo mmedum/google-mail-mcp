@@ -29,19 +29,18 @@ const (
 	apiCoverageMinReason = 20
 	// apiCoverageMinMethods is the published count on 2026-09-25.
 	apiCoverageMinMethods = 79
-	// apiCoverageMinInScope is §8a's used plus gated. Moving a method
-	// out is an argued decision, so it moves this floor too: 38, less
-	// filters.get and forwardingAddresses.get in phase 1 (§18 row 36),
-	// less messages.batchModify and sendAs.get in phase 2 (§18 row 39).
+	// apiCoverageMinInScope is the record's Used plus Gated verdicts.
+	// Moving a method out is an argued decision, written as the row's
+	// verdict, so it lowers this floor too.
 	apiCoverageMinInScope = 34
-	// apiCoverageMinCalls rises as each phase lands its client calls:
-	// twenty at the end of phase 1, thirty-one at the end of phase 2.
+	// apiCoverageMinCalls rises as each method put in use lands its
+	// client call.
 	apiCoverageMinCalls = 31
 )
 
 // apiCoverageStates are the record's states. A used row has a client
-// call; a planned row names the §16 phase that builds it; an out row is
-// deferred or written off and says why.
+// call; a planned row names the delivery phase that builds it; an out
+// row is deferred or written off and says why.
 var apiCoverageStates = map[string][]string{
 	"used":    {"Used", "Gated"},
 	"planned": {"Used", "Gated"},
@@ -389,7 +388,7 @@ func apiCoverageRequestable(dir string) (map[string]bool, error) {
 // apiCoverageHeading is a released version heading in the CHANGELOG.
 var apiCoverageHeading = regexp.MustCompile(`^## \[(\d+)\.(\d+)\.\d+\]`)
 
-// apiCoveragePhase is the §16 phase under way, read from the newest
+// apiCoveragePhase is the delivery phase under way, read from the newest
 // released CHANGELOG heading: phase N ships as v0.(N+1).0 and phase 4 as
 // v1.0.0. No released heading is phase 0.
 func apiCoveragePhase(changelog string) int {

@@ -66,7 +66,7 @@ func cmdLogin(args []string, stdout, stderr io.Writer, env func(string) string) 
 	outf(stdout, "\n")
 
 	// What was granted before decides whether the consent screen is
-	// shown again (§10). It counts only while a refresh token is still
+	// shown again. It counts only while a refresh token is still
 	// stored: without one, a new one is needed and only consent mints it.
 	_, storedSource, storedErr := p.Store.ResolveStored()
 	var granted []string
@@ -84,8 +84,10 @@ func cmdLogin(args []string, stdout, stderr io.Writer, env func(string) string) 
 		return fail(stderr, "login failed: %v", err)
 	}
 
-	// Which of the three happened is spike J's question (§15), so the
-	// login says it.
+	// A login that skips the consent screen still gets a new refresh
+	// token, which Google's guides do not say. Each counts toward the 100
+	// per account per client, past which the oldest stops working.
+	// https://developers.google.com/identity/protocols/oauth2#expiration
 	src := storedSource
 	switch {
 	case tok.RefreshToken != "":
@@ -154,8 +156,9 @@ func cmdLogout(args []string, stdout, stderr io.Writer, env func(string) string)
 	}
 	// Google revokes the grant, not one token, and the grant covers every
 	// client in the Cloud project, so another profile of the same account
-	// in that project is signed out too (§18 row 53). Read now, while this
-	// profile's record exists, and said only once a revoke happened.
+	// in that project is signed out too. Read now, while this profile's
+	// record exists, and said only once a revoke happened.
+	// https://developers.google.com/identity/protocols/oauth2/native-app#tokenrevoke
 	others, _ := cfg.ConfigDir.SharingGrant(cfg.Profile)
 
 	token, _, err := p.Store.ResolveStored()
