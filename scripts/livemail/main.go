@@ -3,20 +3,22 @@
 // Command livemail drives the built server against a real mailbox, to
 // check that Gmail agrees with it.
 //
-// It reads only what it wrote (docs/architecture.md §9.1). A run creates
+// It reads only what it wrote. A run creates
 // a label named for itself, inserts its own synthetic messages under it
 // with messages.insert, constrains every read to that label, and at the
 // end trashes what it inserted and deletes the label, unless -keep is
 // set. Everything it prints goes through the redacting transcript, which
 // `gates transcript` holds.
 //
-//	go run -tags live ./scripts/livemail -profile NAME [-keep] [-run PATTERN] [-send-to ADDRESS] [-spikes-de] [-spike-h] [-spike-l]
+//	go run -tags live ./scripts/livemail -profile NAME [-keep] [-run PATTERN] [-send-to ADDRESS]
+//		[-sending-spikes] [-rate-limit] [-filters-at-once]
 //
 // Nothing is sent unless -send-to names the maintainer's second address;
-// then one send_draft step sends to it, and spikes D and E too with
-// -spikes-de, and to nothing else. The server runs with sending and permanent deletion registered;
-// the delete steps run only when the profile's login granted
-// https://mail.google.com/, and are skipped, saying so, otherwise.
+// then one send_draft step sends to it, and with -sending-spikes the two
+// spikes that send mail do too, and to nothing else. The server runs
+// with sending and permanent deletion registered; the delete steps run
+// only when the profile's login granted https://mail.google.com/, and
+// are skipped, saying so, otherwise.
 package main
 
 import (
@@ -49,18 +51,19 @@ type options struct {
 	run     *regexp.Regexp
 	raw     bool
 	seed    int
-	// sendTo is the one address spikes D and E and the send step may
+	// sendTo is the one address the send step and the sending spikes may
 	// send to: the maintainer's second address, given on the command line
-	// and never committed (§14). Without it, nothing is sent.
+	// and never committed. Without it, nothing is sent.
 	sendTo string
-	// spikeH floods the run's own message with reads until Gmail rate
-	// limits them, for spike H.
-	spikeH bool
-	// spikeL sends filter writes at once to see how Gmail refuses them,
-	// for spike L.
-	spikeL bool
-	// spikesDE sends spikes D and E again; they were answered in phase 2.
-	spikesDE bool
+	// rateLimit floods the run's own message with reads until Gmail rate
+	// limits them, for the spike "the per-user rate limit".
+	rateLimit bool
+	// filtersAtOnce sends filter writes at once to see how Gmail refuses
+	// them, for the spike "filter creates sent at once".
+	filtersAtOnce bool
+	// sendingSpikes lets the two spikes that send mail run; their answer is
+	// settled, so they do not run by default.
+	sendingSpikes bool
 	// clean names a stranded run whose drafts and messages to remove,
 	// instead of running.
 	clean string
@@ -113,11 +116,11 @@ func parseOptions(args []string) (options, *transcript.Transcript, error) {
 	fs.StringVar(&pattern, "run", "", "only steps whose name matches this regular expression")
 	fs.BoolVar(&o.raw, "raw", false, "turn redaction off, for a terminal nobody else sees")
 	fs.IntVar(&o.seed, "seed", 3, "how many synthetic messages to insert")
-	fs.StringVar(&o.sendTo, "send-to", "", "the maintainer's second address, which spikes D and E and the send step send to; none sends without it")
+	fs.StringVar(&o.sendTo, "send-to", "", "the maintainer's second address, which the send step and the sending spikes send to; none sends without it")
 	fs.StringVar(&o.clean, "clean", "", "remove the drafts and messages a stranded run left, by its name, and exit")
-	fs.BoolVar(&o.spikesDE, "spikes-de", false, "send spikes D and E again, to -send-to; answered in phase 2")
-	fs.BoolVar(&o.spikeH, "spike-h", false, "read the run's own message until Gmail rate limits the reads, for spike H")
-	fs.BoolVar(&o.spikeL, "spike-l", false, "send eight filter creates at once, for spike L; answered 2026-09-28")
+	fs.BoolVar(&o.sendingSpikes, "sending-spikes", false, "send the spikes \"what threads a sent reply\" and \"four scripts sent and read back\" again, to -send-to")
+	fs.BoolVar(&o.rateLimit, "rate-limit", false, "read the run's own message until Gmail rate limits the reads, for the spike \"the per-user rate limit\"")
+	fs.BoolVar(&o.filtersAtOnce, "filters-at-once", false, "send eight filter creates at once, for the spike \"filter creates sent at once\"")
 	if err := fs.Parse(args); err != nil {
 		return o, nil, err
 	}
@@ -217,8 +220,8 @@ func drive(ctx context.Context, o options, tr *transcript.Transcript, box mailbo
 	defer session.Close()
 	e := &env{ctx: ctx, session: session, tr: tr, seed: seed, localDir: localDir, sendTo: o.sendTo, full: box.FullScope(),
 		settings: box.SettingsScope(), signatureAddress: kept.saved.address, signatureSkip: kept.signatureSkip}
-	// The driver can be asked, and the server asks nobody (§4.13): a
-	// question is declined, and fails the step that drew it.
+	// The driver can be asked, and the server asks nobody: a question is
+	// declined, and fails the step that drew it.
 	session.OnElicit(func() { e.asked++ })
 	protocol, tools, err := session.Initialize("livemail")
 	if err != nil {
@@ -248,8 +251,8 @@ func drive(ctx context.Context, o options, tr *transcript.Transcript, box mailbo
 		tr.Sayf("ok   %s", s.name)
 	}
 
-	runSpikes(ctx, spikeRun{box: box, s: seed, sendTo: o.sendTo, account: e.account, draftSide: e.spikeE, full: e.full,
-		sent: e.sent, spikeH: o.spikeH, spikeL: o.spikeL, spikesDE: o.spikesDE}, tr)
+	runSpikes(ctx, spikeRun{box: box, s: seed, sendTo: o.sendTo, account: e.account, draftSide: e.fourScriptsDraft, full: e.full,
+		sent: e.sent, rateLimit: o.rateLimit, filtersAtOnce: o.filtersAtOnce, sendingSpikes: o.sendingSpikes}, tr)
 
 	believed, srcErr := livecover.FromSource(driverDir, session.Options())
 	if srcErr != nil {

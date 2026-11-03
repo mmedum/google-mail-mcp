@@ -1,8 +1,7 @@
 // Package render turns the model into the text a person and a model
 // read.
 //
-// Two rules run through everything here (docs/architecture.md §4.1,
-// §4.8):
+// Two rules run through everything here:
 //
 //   - Mail content is data. Every field a sender wrote — subject, names,
 //     addresses, body, snippet, attachment names, parameters — is printed
@@ -30,7 +29,7 @@ import (
 
 // DefaultBudget is the character budget of a read when none is given.
 // About 6,000 tokens: a thread read leaves room in a client capped at
-// 25,000 (§3.8).
+// 25,000.
 const DefaultBudget = 24000
 
 // MinBudget keeps a tiny budget from producing a read with no content.
@@ -54,7 +53,7 @@ type Options struct {
 	Tokens TokenSource
 	// Location renders dates; nil means UTC.
 	Location *time.Location
-	// AllHeaders shows every header rather than the fixed set (§7.2).
+	// AllHeaders shows every header rather than the fixed set.
 	AllHeaders bool
 	// ShowQuoted keeps quoted text and signatures instead of collapsing
 	// them.

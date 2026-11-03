@@ -237,7 +237,7 @@ const (
 // reports a closed connection as JSON-RPC -32004 or -32003 with the EOF
 // only as message text, so errors.Is(err, io.EOF) misses it and the
 // process would exit non-zero, which hosts log as a crash. The code is
-// matched, never the text (standard §11).
+// matched, never the text, which the SDK does not promise to keep.
 func isDisconnect(err error) bool {
 	if errors.Is(err, context.Canceled) || errors.Is(err, io.EOF) {
 		return true

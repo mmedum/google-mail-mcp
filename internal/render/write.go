@@ -12,7 +12,7 @@ import (
 )
 
 // The writes' renderings say what the write produced, from Gmail's
-// answer (§4.12). A dry run says so on its first line and speaks in
+// answer. A dry run says so on its first line and speaks in
 // "would". A draft's headers, recipients and file names are text a
 // sender may have shaped — a reply's recipients come from the parent, a
 // file in GMAIL_LOCAL_DIR may carry a name download_attachment took from
@@ -94,7 +94,7 @@ func (w *writer) draftCreated(d model.DraftWrite) {
 }
 
 // signatureLines say what a write did with the send-as signature below
-// the body, and what it shows, never what it says (§7.4).
+// the body, and what it shows, never what it says.
 func (w *writer) signatureLines(s *model.DraftSignature) {
 	if s == nil {
 		return
@@ -434,7 +434,7 @@ func (w *writer) labelDeleted(lw model.LabelWrite) {
 	w.say("look: %s", labelLook(b))
 }
 
-// SendDraft renders a sent draft, or what a dry run would send (§4.2):
+// SendDraft renders a sent draft, or what a dry run would send:
 // every recipient, whether it is confirmed, the subject, the files
 // and the thread. Addresses, the subject and file names are in a block,
 // one recipient per line under its field and position, which is how the

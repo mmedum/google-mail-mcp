@@ -1,189 +1,152 @@
-# Security
+# Security model
 
-## What this server talks to
+The threat model and the invariants the code holds.
+[`SECURITY.md`](../SECURITY.md) says how to report a vulnerability.
 
-Only Google, over HTTPS: `gmail.googleapis.com`, `www.googleapis.com`,
-`oauth2.googleapis.com` and `accounts.google.com`. The allow-list is
-checked **with the port** before any credential is attached, and again on
-every redirect, so neither a redirect nor a misconfigured base URL can
-send an access token somewhere else. There is no telemetry and no update
-check. Nothing a message links to or embeds is ever fetched.
+It applies to one binary, running as a subprocess of your MCP client, on
+your machine, with your own OAuth client and your own token (D-01). There
+is no network listener except while `login` waits for the browser, no
+shared deployment, no telemetry and no update check.
 
-## Scopes
+## Trust boundaries
 
-| Mode | Scope |
-|---|---|
-| `GMAIL_READ_ONLY=true` | `gmail.readonly` |
-| default | `gmail.modify` |
-| `GMAIL_ENABLE_SEND=true` | `gmail.modify` — unchanged |
-| `GMAIL_ENABLE_DESTRUCTIVE=true` | `https://mail.google.com/` |
-| `GMAIL_ENABLE_SETTINGS=true` | adds `gmail.settings.basic` |
+| Boundary | Crosses | Assumption |
+|---|---|---|
+| MCP client ↔ this server | An OS pipe | Both run as the same OS user, with no authentication between them. A process that can write to the server's stdin can already read its memory. |
+| This server ↔ Google | TLS | Only Google's API and OAuth origins. The allow-list is checked with the port before a credential is attached, and again on every redirect (D-81). |
+| This server ↔ disk | The file system | The profile directory under `GMAIL_CONFIG_DIR`, which must be inside your home directory, and `GMAIL_LOCAL_DIR` for attachments (D-25). Nothing else is read or written. |
+| Browser ↔ the login listener | The loopback interface, on a random port | Alive only while `login` waits. PKCE and `state` are checked on the callback (D-71). |
+| Correspondents ↔ the model | Mail content | Written by someone else, sometimes to steer an assistant (D-09). |
 
-`docs/gcp-setup.md` carries the same sets, generated from the code.
+## What is worth stealing
 
-**The default token can send mail.** Google has no scope that allows
-drafts but not sending: `gmail.compose` and `gmail.modify` both reach
-`drafts.send` and `messages.send`. This server withholds sending by not
-registering `send_draft` unless `GMAIL_ENABLE_SEND=true`. That stops
-*this server* from sending. It does not stop anything else holding the
-token, which is why the token lives in the OS keyring and never in a
-place a tool can read.
+- **The refresh token.** Long-lived, and it carries every scope you
+  granted. The default scope, `gmail.modify`, can send mail: Google has
+  no scope that writes drafts but cannot send. It lives in the OS
+  keyring where there is one, and in an owner-only file where there is
+  not.
+- **The access token in flight.** Short-lived, with the same scopes.
+- **Mail.** Other people's words and addresses. It passes through tool
+  results to your client, and nowhere else.
+- **Your OAuth client secret.** Google treats a Desktop client's secret
+  as public, which is why the loopback flow uses PKCE. It is still yours.
 
-**`https://mail.google.com/` is requested only for permanent deletion.**
-It is the only scope Google accepts for `messages.delete` and
-`threads.delete`, so asking for it by default would make the destructive
-flag a label rather than a limit. Turning the flag on needs a new
-`login`; `doctor` says so.
+## Adversaries
 
-A missing scope is `[auth]`, naming the scope and saying to run `login`.
+**A correspondent writing to steer your assistant.** Anyone can mail you,
+and the server cannot stop a model being persuaded. So it limits what
+persuasion reaches. Mail is marked as data inside a per-call boundary,
+and never speaks in the server's voice (D-09, D-10). Text a reader would
+not see is removed and counted (D-11). Nothing a message links to or
+embeds is fetched (D-12). The writes that redirect mail, such as
+forwarding, delegation and send-as, do not exist (D-13).
 
-## Where the token lives
+**A malicious MCP client, or a persuaded model driving an honest one.**
+It can call any registered tool under your credentials. A client may
+ignore tool annotations, so registration is the control. Sending,
+permanent deletion and settings writes register only with their switches
+(D-48, D-52, D-55). A write that cannot be undone takes `confirm` and
+repeats what it acts on (D-47, D-66); those are witnesses the model
+writes, never your approval. An address a message talked into a draft is
+one the model has to type again in `confirm_recipients` (D-49). Past
+that, Google's per-scope authorization is the bound, and
+`GMAIL_READ_ONLY` is yours.
 
-The refresh token goes to the OS keyring — Secret Service on Linux,
-Keychain on macOS, Credential Manager on Windows. With no keyring, it goes
-to a file under the profile directory restricted to the current user
-(`0600` on Unix, an ACL on Windows, where `0600` protects nothing), and
-the server warns on **every use**, not once. `GMAIL_REFRESH_TOKEN`
-overrides both, for CI.
+**A co-resident process on your machine.** It cannot take the login
+socket, and the token file is readable by your account alone.
 
-`logout` revokes the token at Google and then deletes the local copy. It
-leaves an environment-provided token alone.
+## Invariants the code holds
 
-## Mail is untrusted input
+A test or a gate holds each of these. A way to break one is a
+vulnerability.
 
-Every subject, body, header, snippet, attachment and attachment name
-was written by somebody other than the person using the server, and
-some of it is written to steer an AI agent. The server cannot stop a
-model being persuaded. It does four things instead:
+- **Stdout carries only JSON-RPC.** Logs go to stderr; forbidigo and the
+  smoke test hold it (D-02).
+- **Logs never carry the payload**, at any level, and ids are cut to six
+  characters. A transport error loses its URL, which carries the query.
+  `TestLogsNeverCarryThePayload` and `TestTransportErrorsCarryNoURL` hold
+  it (D-03).
+- **A credential goes only to Google's origins**, checked on every
+  redirect. `TestARedirectOffTheAllowlistIsRefused` holds it (D-81).
+- **Mail stays inside its block.** `TestInjectedTextStaysInsideItsBlock`
+  and `TestSenderTextNeverReachesTheServersVoice` hold it (D-09, D-10).
+- **The gated tools are absent without their switches.**
+  `TestGatedToolsRegisterOnlyWithTheirFlag` holds it (D-64).
+- **A send goes only through a draft, names every recipient, and is
+  never repeated.** Over 50 recipients is refused.
+  `TestSendDraftRecipientGuard` and `TestASendIsNeverRepeated` hold it
+  (D-49, D-50).
+- **Writes take explicit ids, at most 100, never a query** (D-44).
+- **A dry run writes nothing.**
+  `TestWithoutWritesRefusesEveryWriteBeforeTheNetwork` holds it (D-43).
+- **A filter cannot forward.** Its write type has no field for it, and
+  `TestAFilterCannotForward` holds it (D-56).
+- **Files move only through `GMAIL_LOCAL_DIR`**, never over an existing
+  file, and unset means none (D-25).
+- **No tool changes the server's own settings.**
+  `TestNoToolWritesTheServersOwnSettings` holds it (D-69).
+- **The server asks the person nothing** (D-65). The
+  `requiresUserInteraction` mark (D-68) is a hint, never the control.
+- **Read-only mode asks for `gmail.readonly` only**, so Google refuses a
+  write too (D-70).
+- **The token file is written only when the keyring was unavailable**,
+  owner-only, and every use of it warns (D-71).
+- **`logout` revokes at Google before deleting locally** (D-76).
+- **Nothing in the repository identifies a real mailbox or person**
+  (D-04). Fixtures are generated, never recorded (D-05), and the live
+  driver reads only what it wrote (D-87).
 
-- **Marks it.** Mail content is returned inside a delimited block naming
-  its sender and message id, with a boundary token generated for each
-  call so the content cannot close the block itself.
-- **Shows what was hidden.** HTML is converted to text by the server.
-  Text a person reading the mail would not see — hidden styles,
-  zero-size text, zero-width and bidirectional control characters,
-  comments — is removed, and the result says how much was removed.
-  Legitimate mail rarely hides much; the count is the signal.
-- **Fetches nothing.** No images, stylesheets, tracking pixels or links.
-  A link whose visible text names a different host from its target is
-  flagged.
-- **Removes the writes that would make persuasion catastrophic.**
-  Auto-forwarding, forwarding addresses, filters that forward and
-  delegation are not implemented at all. Sending is absent unless
-  enabled, and even then goes only through a draft, and every recipient
-  not already in the thread must be named again in the send call.
+## Not a vulnerability
 
-No tool description or server instruction tells the model to act on
-what a message says.
+Do not report these as vulnerabilities. Open an ordinary issue if one
+surprises you.
 
-## What gets logged
+- **The client did not prompt.** Annotations and marks are hints. A tool
+  registered while its switch is off is a vulnerability.
+- **What runs as you can act as you.** Any process running as you can
+  read the token and use it, with or without this server.
+- **A tool doing what its registration allows.** A client or a model
+  calling a registered tool under your credentials is the design. The
+  controls are `GMAIL_READ_ONLY`, `GMAIL_ENABLE_SEND`,
+  `GMAIL_ENABLE_DESTRUCTIVE`, `GMAIL_ENABLE_SETTINGS` and
+  `GMAIL_LOCAL_DIR`.
+- **A model following instructions in a message.** That is the client's
+  concern. A message that makes the server itself break an invariant is
+  a vulnerability.
+- **Mail in a tool result.** A result is your mail, unmasked. Pasting
+  one into a public issue discloses other people's words, so the issue
+  form asks you not to.
+- **Your Workspace administrator reading your mail.** They can, with or
+  without this server.
+- **Someone else's code.** A flaw in Google's OAuth service or APIs goes
+  to Google, and one in a dependency, such as the MCP Go SDK, to that
+  project. We will help route it.
 
-Logs go to stderr through `slog`. Stdout carries JSON-RPC frames and
-nothing else, held by a smoke test.
+## Dependency vulnerabilities
 
-A log line carries the method, the tool name, the outcome, the duration,
-the quota units spent and an id **truncated to six characters**. It
-carries no address, subject, snippet, body, attachment name, label name
-or search query. A Gmail search travels in a request URL's `q=`, so
-requests are logged by operation rather than URL, and a transport
-error's text — which names the URL — is replaced with the kind of failure
-it was.
+`govulncheck` runs in `make check` and in CI on every pull request and
+push to `main`. It fails when this server's code can reach a vulnerable
+symbol.
 
-A test drives every registered tool at debug level with arguments that
-are words existing nowhere else, and fails if any of them reaches the
-log. That is what makes it safe to ask for a debug log in a bug report.
+A CVE in a dependency is a vulnerability here only when `govulncheck`
+reports it reachable. It is then fixed in a release whose CHANGELOG entry
+names the CVE or GHSA. Otherwise the dependency is updated in the normal
+course, and a report about it is not a vulnerability.
 
-`doctor` and `status` mask the account address, the client-secret path
-and the OAuth client id, for the same reason.
+## What you are responsible for
 
-## What a tool result carries
-
-Mail, which is what you asked for. A result is not masked: the server
-holds your own token, and you can read the same mail in Gmail. The risk
-that is real is the **paste path** — a result copied into a public issue
-carries other people's addresses and words. The issue form says to
-describe a result rather than paste it; the three artifacts meant to be
-pasted — a debug log, `doctor` and `status` — are the ones that mask.
-
-## What the server refuses to do
-
-- **Send** unless `GMAIL_ENABLE_SEND=true`, and then only a draft, never
-  retried on an ambiguous failure. Every recipient, the thread's own
-  participants included, must be written out in `confirm_recipients`,
-  so an address a message talked into a draft is one the model has to
-  type itself, and the call your client shows names everyone the send
-  reaches; over 50 recipients is refused outright. The draft is sent as
-  it is stored, and refused as `[stale]` if it changed since it was read.
-- **Delete permanently** unless `GMAIL_ENABLE_DESTRUCTIVE=true`, and then
-  only with `confirm: true` on the call. Removal is otherwise trash, which
-  Gmail keeps for 30 days. The one exception registered by default is
-  `delete_draft`: Gmail deletes a draft for good, so it too takes
-  `confirm: true` and the message the draft holds, is refused as
-  `[stale]` if the draft changed since it was read, and can only ever
-  remove an unsent draft.
-- **Change a setting** unless `GMAIL_ENABLE_SETTINGS=true`, and then only
-  a signature, a filter or the vacation reply. A filter cannot forward:
-  the type it is written as has no field for it. A filter that trashes
-  matching mail hides it as it arrives, so it is its own tool,
-  `create_trash_filter`, which like `delete_filter` also needs
-  `GMAIL_ENABLE_DESTRUCTIVE=true` and `confirm: true`. The vacation
-  reply answers other people, so it also needs `GMAIL_ENABLE_SEND=true`;
-  it answers only contacts or the account's domain, never every sender,
-  and turning it on needs `confirm: true`. Forwarding, delegation and
-  send-as identities are never written.
-- **Change its own settings.** No tool turns a setting on, names another
-  directory or profile, or writes the server's stored configuration; a
-  test drives every tool and holds this.
-- **Overwrite or delete a draft it did not read.** `update_draft`,
-  `send_draft` and `delete_draft` take the message id `get_draft`
-  returned, read the draft again, and refuse with `[stale]` if it
-  changed. Gmail offers no lock, so a change landing between that read
-  and the write can still be lost; the window is one round trip.
-- **Send or delete what the call does not show.** `send_draft` takes
-  the draft's subject and the first line of its body, and
-  `delete_filter` the filter's criteria, and each is refused with
-  `[stale]` when it is not what Gmail holds. A client that shows a call's
-  arguments before it runs so shows what goes, not only an id.
-- **Act on a query.** Writes take explicit ids, at most 100 per call.
-- **Read or write files outside `GMAIL_LOCAL_DIR`.** Unset means no file
-  transfer at all.
-- **Change where mail goes.** Forwarding settings, delegation and send-as
-  identities are read-only or absent, and a filter cannot forward.
-  `create_draft` can attach one message to a draft, which reaches nobody
-  until it is sent, and leaves the original's `Bcc` out of the copy.
-
-The server asks you nothing; your client approves each call. `confirm`
-and `confirm_recipients` are arguments the model writes, and a model
-persuaded by a message writes them too, so they are witnesses that the
-caller meant the call, never your approval. Tool annotations are set
-for the client's prompt: every write but the ones that only add is
-marked destructive, which claude.ai and Codex prompt for, and VS Code
-prompts for every tool that writes.
-`delete_permanently` and `delete_label` carry `requiresUserInteraction`,
-so Claude Code prompts on every call of either whatever your rules say.
-These are hints: a host in an auto-approve mode runs a tool without
-asking. Every control above is server-side, and client-side approval is
-not counted as one of them.
-
-## What is in this repository
-
-Nothing deployer-specific: no message, thread, draft or label ids, no
-account or correspondent addresses, no Cloud project ids, no OAuth client
-ids or secrets, and no subject, body, header or attachment name from a
-real mailbox.
-
-**gitleaks** covers credentials, in the pre-commit hook and in CI.
-**`go run ./scripts/gates leaks`** covers identifiers, which a credential
-scanner passes untouched; every rule in it is an allow-list anchored on a
-shape the server's own generated values cannot take.
-
-A mailbox's content is ordinary words, and no pattern separates an
-invented subject from a real one. So that half is structural: **fixtures
-are generated, never recorded**, and **the live driver reads only
-messages it inserted itself**, under a label it created for the run.
-
-## Reporting a vulnerability
-
-Open a [private security
-advisory](https://github.com/mmedum/google-mail-mcp/security/advisories/new)
-rather than an issue. Please do not include anything from a real mailbox.
+- **Your own OAuth client and Cloud project.** Each person creates their
+  own, so nobody else's rollout can revoke your access.
+  [`docs/troubleshooting.md`](troubleshooting.md#tasks) says how to rotate
+  the secret, revoke access and handle a suspected exposure.
+- **The switches you turn on.** `GMAIL_ENABLE_SEND`,
+  `GMAIL_ENABLE_DESTRUCTIVE` and `GMAIL_ENABLE_SETTINGS` arm tools that
+  reach other people or cannot be taken back. Leave them off for a
+  client that runs with nobody watching, and use `GMAIL_READ_ONLY=true`
+  where reading is enough.
+- **The scopes you grant.** A tool whose scope you declined fails with
+  `[auth]` naming it. That is a supported state, not a broken one.
+- **Where the token lives.** Keep a keyring available, keep
+  `GMAIL_CONFIG_DIR` somewhere only you can read, and keep
+  `GMAIL_REFRESH_TOKEN` out of shared shells and logs.
+- **Keeping the client secret file out of version control.**

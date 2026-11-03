@@ -42,7 +42,7 @@ func apiCoverageFixture(t *testing.T, edit func(files map[string]string)) string
 			"gmail.users.x1.get\tplanned\t0\tUsed: `list_x`\n" +
 			"gmail.users.x2.get\tplanned\t1\tGated: `delete_x`\n" +
 			"gmail.users.x3.get\tout\t-\t" + out + "\n" +
-			"gmail.users.x4.get\tout\t-\tDeferred (§17): a reason long enough\n" +
+			"gmail.users.x4.get\tout\t-\tDeferred: a reason long enough\n" +
 			"gmail.users.x5.get\tout\t-\t" + out + "\n",
 		"internal/scopes/scopes.go": "package scopes\n\nconst Readonly = \"" + apiCoverageTestReadonly + "\"\n",
 		"internal/gapi/client.go": "package gapi\n\nimport \"net/http\"\n\nfunc get(id string) Call {\n" +
@@ -84,7 +84,7 @@ func TestAPICoverageFailures(t *testing.T) {
 		edit func(map[string]string)
 		want string
 	}{
-		{"published method with no row", apiCoverageReplace("gmail.users.x4.get\tout\t-\tDeferred (§17): a reason long enough\n", ""),
+		{"published method with no row", apiCoverageReplace("gmail.users.x4.get\tout\t-\tDeferred: a reason long enough\n", ""),
 			"gmail.users.x4.get (GET gmail/v1/users/{userId}/x4/{id}) has no row"},
 		{"row for a method that is gone", apiCoverageReplace("# comment\n", "gmail.users.gone.get\tout\t-\tWritten off: long enough reason here\n"),
 			"gmail.users.gone.get is not a published method"},
@@ -107,7 +107,7 @@ func TestAPICoverageFailures(t *testing.T) {
 		}, "gmail.users.x1.get was planned for phase 0 and the CHANGELOG says phase 1 has begun"},
 		{"planned without a phase", apiCoverageReplace("planned\t1\t", "planned\t-\t"),
 			`a planned row names its phase, 0 to 4; got "-"`},
-		{"out with a short reason", apiCoverageReplace("Deferred (§17): a reason long enough", "Deferred"),
+		{"out with a short reason", apiCoverageReplace("Deferred: a reason long enough", "Deferred"),
 			"gmail.users.x4.get is out with a reason of 8 characters"},
 		{"verdict contradicting the state", apiCoverageReplace("out\t-\tDeferred", "out\t-\tUsed, deferred"),
 			"a out row's verdict starts with one of Written off, Deferred"},

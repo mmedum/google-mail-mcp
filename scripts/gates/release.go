@@ -179,7 +179,7 @@ func releaseCheckFloors(targets []releaseTarget, files []mcpbStaged, fail func(f
 		}
 	}
 	if platforms < 6 {
-		fail("%s builds %d platform targets and §12 promises six archives", releaseGoreleaser, platforms)
+		fail("%s builds %d platform targets and a release ships six archives", releaseGoreleaser, platforms)
 	}
 	if releaseGlobCount(files) < 4 {
 		fail("the packer stages %d binaries; that is not the bundle", releaseGlobCount(files))

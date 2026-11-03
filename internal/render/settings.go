@@ -20,7 +20,7 @@ const sendAsReserve = 3 * maxSettingText
 const maxSettingText = 2000
 
 // Settings renders the account's settings, forwarding first: whether
-// mail is leaving the account is the reason to read them (§7.7).
+// mail is leaving the account is the reason to read them.
 func Settings(st model.Settings, o Options) Result {
 	return render(o, func(w *writer) Result {
 		res := Result{Budget: o.budget()}
@@ -127,7 +127,8 @@ func (w *writer) settingText(what phrase, text string) {
 }
 
 // signature writes a signature in a block, or says it has none or no
-// text, so a missing line is never read as "no signature" (§18 row 88).
+// text, so a missing line is never read as "no signature". The API
+// holds only the signature for new emails, so "none" is said of that one.
 func (w *writer) signature(what phrase, s model.SettingText) {
 	switch {
 	case s.Text != "":

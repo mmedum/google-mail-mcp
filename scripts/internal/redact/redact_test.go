@@ -136,7 +136,7 @@ func TestHistoryIDsAreMasked(t *testing.T) {
 // The history-id positions follow list_changes's wording, so the test
 // runs the renderer itself: rewording one of its lines without the
 // redactor fails here, before a live transcript carries the account's
-// ids again (architecture §18 row 38).
+// ids.
 func TestHistoryIDsInTheRenderedChangesAreMasked(t *testing.T) {
 	const start, current, record = "7390001", "7390099", "7390042"
 	change := []model.Change{{HistoryID: record, Kind: model.ChangeAdded, MessageID: "0000000000000001",

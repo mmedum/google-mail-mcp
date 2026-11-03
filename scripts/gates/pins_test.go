@@ -1,6 +1,7 @@
 package main
 
 import (
+	"slices"
 	"strings"
 	"testing"
 )
@@ -28,11 +29,6 @@ func pinsFixture() map[string]string {
 			"GITLEAKS ?= github.com/zricethezav/gitleaks/v8@v8.30.1\n" +
 			"ACTIONLINT ?= github.com/rhysd/actionlint/cmd/actionlint@v1.7.12\n" +
 			"GORELEASER ?= github.com/goreleaser/goreleaser/v2@v2.18.2\n",
-		"docs/architecture.md": "# x\n\n| Tool | Version |\n|---|---|\n| Go | 1.27.1 (`go.mod`) |\n" +
-			"| MCP Go SDK | v1.8.0 |\n| golangci-lint | v2.13.2 |\n| goreleaser | v2.18.2 |\n" +
-			"| cosign | v3.1.3 |\n| syft | v1.52.0 |\n| mcp-publisher | v1.8.1 |\n| gitleaks | v8.30.1 |\n" +
-			"| govulncheck | v1.8.0 |\n| go-licenses | §17.3 |\n| actionlint | v1.7.12 |\n" +
-			"| codeql-action | v4.38.1 |\n| mcpb manifest schema | v2.1.2 tag |\n\nAfter.\n",
 		".github/workflows/ci.yml": "on: [push]\njobs:\n  test:\n    steps:\n" + pinsTestSteps +
 			"      - name: test\n        run: make test\n",
 		".github/workflows/codeql.yml": "on: [push]\njobs:\n  analyze:\n    steps:\n" + pinsTestSteps +
@@ -50,17 +46,34 @@ func pinsFixture() map[string]string {
 	}
 }
 
+// pinsFixturePlaces is how many pins the fixture writes: go.mod two, the
+// Makefile six, codeql.yml two, release.yml four and publish-mcp.yml two.
+const pinsFixturePlaces = 16
+
 func TestPinsPassesOnAPinnedRepository(t *testing.T) {
-	r, err := pinsCheck(writeTree(t, pinsFixture()))
+	r, err := pinsCheck(writeTree(t, pinsFixture()), pinsFixturePlaces)
 	if err != nil {
 		t.Fatal(err)
 	}
 	if len(r.problems) > 0 {
 		t.Fatalf("problems on a clean fixture:\n%s", strings.Join(r.problems, "\n"))
 	}
-	if r.installers != 4 || r.docRows != 13 || len(r.tools) != len(pinsTools) {
-		t.Errorf("read %d installers, %d doc rows, %d tools; want 4, 13, %d",
-			r.installers, r.docRows, len(r.tools), len(pinsTools))
+	if r.installers != 4 || r.places != pinsFixturePlaces || len(r.tools) != len(pinsTools) {
+		t.Errorf("read %d installers, %d places, %d tools; want 4, %d, %d",
+			r.installers, r.places, len(r.tools), pinsFixturePlaces, len(pinsTools))
+	}
+}
+
+// Every pin a reader finds counts toward the floor, so one pin less is
+// one under it: a reader that stops seeing its file cannot pass.
+func TestPinsHoldsTheReadersToAFloor(t *testing.T) {
+	r, err := pinsCheck(writeTree(t, pinsFixture()), pinsFixturePlaces+1)
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := []string{"read 16 pins across the workflows, Makefile and go.mod, want at least 17; a reader is not seeing its file"}
+	if !slices.Equal(r.problems, want) {
+		t.Errorf("problems %q, want %q", r.problems, want)
 	}
 }
 
@@ -86,16 +99,19 @@ func TestPinsRefuses(t *testing.T) {
 			"goreleaser is"},
 		{"gitleaks differs between the hook's source and CI", ".github/workflows/ci.yml", "        run: make test\n",
 			"        run: go run github.com/zricethezav/gitleaks/v8@v8.29.0 dir .\n", "gitleaks is"},
-		{"a pin that differs from §5a", "docs/architecture.md", "| cosign | v3.1.3 |", "| cosign | v3.1.4 |",
-			"and §5a says v3.1.4"},
-		{"a §5a row the gate does not know", "docs/architecture.md", "| Go |", "| Rust | 1.0.0 |\n| Go |",
-			`names "Rust"`},
+		{"cosign differs between the release and the publish", ".github/workflows/publish-mcp.yml",
+			"cosign-release: v3.1.3", "cosign-release: v3.1.4", "cosign is v3.1.4 at"},
+		{"a Go version that is not one exact version", "go.mod", "go 1.27.1", "go 1.27",
+			`go is pinned to "1.27", which is not one exact version`},
 		{"a tool pinned nowhere", ".github/workflows/publish-mcp.yml", "PUBLISHER_VERSION: v1.8.1", "X: y",
 			"mcp-publisher is pinned nowhere"},
 		{"an unknown version env", ".github/workflows/ci.yml", "        run: make test\n",
 			"        env:\n          THING_VERSION: v1.0.0\n        run: make test\n", "THING_VERSION"},
-		{"a floor on the pin table", "docs/architecture.md", "| govulncheck | v1.8.0 |\n| go-licenses | §17.3 |\n" +
-			"| actionlint | v1.7.12 |\n| codeql-action | v4.38.1 |\n", "", "read 9 rows"},
+		// A shape the reader does not parse hides the file's steps, and
+		// with them every pin in it.
+		{"a workflow whose pins the reader stops seeing", ".github/workflows/publish-mcp.yml",
+			"  publish:\n    steps:\n", "  publish:\n    stages:\n",
+			".github/workflows/publish-mcp.yml: no pins read, though it pins a tool"},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
@@ -104,7 +120,7 @@ func TestPinsRefuses(t *testing.T) {
 				t.Fatalf("the fixture's %s has no %q to break", tc.file, tc.old)
 			}
 			files[tc.file] = strings.Replace(files[tc.file], tc.old, tc.new, 1)
-			r, err := pinsCheck(writeTree(t, files))
+			r, err := pinsCheck(writeTree(t, files), pinsFixturePlaces)
 			if err != nil {
 				t.Fatal(err)
 			}
@@ -119,7 +135,7 @@ func TestPinsRefuses(t *testing.T) {
 func TestPinsNamesAMissingWorkflow(t *testing.T) {
 	files := pinsFixture()
 	delete(files, ".github/workflows/codeql.yml")
-	r, err := pinsCheck(writeTree(t, files))
+	r, err := pinsCheck(writeTree(t, files), pinsFixturePlaces)
 	if err != nil {
 		t.Fatal(err)
 	}

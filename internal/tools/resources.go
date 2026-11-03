@@ -13,7 +13,7 @@ import (
 	"github.com/mmedum/google-mail-mcp/v4/internal/service"
 )
 
-// Resource URIs (§8). A thread or message resource carries the same
+// Resource URIs. A thread or message resource carries the same
 // text as get_thread or get_message at the default budget, boundaries
 // included; the labels resource carries list_labels.
 const (
@@ -101,7 +101,7 @@ func textResource(uri, text string) *mcp.ReadResourceResult {
 }
 
 // resourceError is the protocol's not-found for a missing thread or
-// message, and the "[class] message" of §6.5 for anything else.
+// message, and the "[class] message" tool error for anything else.
 func resourceError(uri string, err error) error {
 	if c, ok := gapi.ClassOf(err); ok && c == gapi.ClassNotFound {
 		return mcp.ResourceNotFoundError(uri)

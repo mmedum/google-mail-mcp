@@ -311,12 +311,12 @@ func TestTheGuardHoldsWritesToTheRun(t *testing.T) {
 func TestSendingSpikesNeedASecondAddress(t *testing.T) {
 	s := &seeded{label: newRunLabel(time.Now())}
 	for _, x := range []spikeRun{
-		{box: &fakeMailbox{}, s: s, account: "reader@example.com", spikesDE: true},
-		{box: &fakeMailbox{}, s: s, account: "reader@example.com", sendTo: "Reader@example.com", spikesDE: true},
-		{box: &fakeMailbox{}, s: s, sendTo: "second@example.org", spikesDE: true},
+		{box: &fakeMailbox{}, s: s, account: "reader@example.com", sendingSpikes: true},
+		{box: &fakeMailbox{}, s: s, account: "reader@example.com", sendTo: "Reader@example.com", sendingSpikes: true},
+		{box: &fakeMailbox{}, s: s, sendTo: "second@example.org", sendingSpikes: true},
 		{box: &fakeMailbox{}, s: s, account: "reader@example.com", sendTo: "second@example.org"},
 	} {
-		for _, ask := range []func(context.Context, spikeRun) string{spikeD, spikeE} {
+		for _, ask := range []func(context.Context, spikeRun) string{whatThreadsASentReply, fourScriptsSentAndReadBack} {
 			if got := ask(context.Background(), x); !strings.Contains(got, "not run") {
 				t.Errorf("sendTo %q account %q: %s", x.sendTo, x.account, got)
 			}
@@ -398,17 +398,23 @@ func TestTheGuardHoldsSendsToSendTo(t *testing.T) {
 	}
 }
 
-// Spike G is not asked under a scope that deletes, and B, C, H and L do
-// not run without what they need.
-func TestPhaseThreeSpikesNeedTheirInputs(t *testing.T) {
+// The messages.delete spike is not asked under a scope that deletes, and
+// the spikes after a send and the filter spike do not run without what
+// they need.
+func TestSpikesNeedTheirInputs(t *testing.T) {
 	s := &seeded{label: newRunLabel(time.Now()), messages: []string{"0000000000000001"}}
 	x := spikeRun{box: &fakeMailbox{}, s: s, full: true}
+	asked := false
 	for _, sp := range spikes {
-		if strings.HasPrefix(sp.name, "G") {
+		if sp.name == "messages.delete under gmail.modify" {
+			asked = true
 			if got := sp.ask(context.Background(), x); !strings.HasPrefix(got, "not run") {
-				t.Errorf("spike G under the full scope: %s", got)
+				t.Errorf("spike %q under the full scope: %s", sp.name, got)
 			}
 		}
+	}
+	if !asked {
+		t.Error(`no spike is named "messages.delete under gmail.modify"`)
 	}
 	for _, sp := range slices.Concat(sendSpikes, settingsSpikes) {
 		if got := sp.ask(context.Background(), x); !strings.HasPrefix(got, "not run") {
@@ -526,7 +532,7 @@ func TestTheGuardHoldsTheSettingsSteps(t *testing.T) {
 }
 
 // Cleanup deletes the run's filters back to back, which Gmail can refuse
-// as overlapping (§18 row 54); each refused delete is waited out and
+// as overlapping; each refused delete is waited out and
 // made again, so no synthetic filter is left on the account.
 func TestCleanupRepeatsOverlappingFilterDeletes(t *testing.T) {
 	saved := rateWait

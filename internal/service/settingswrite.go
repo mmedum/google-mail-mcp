@@ -15,9 +15,9 @@ import (
 	"github.com/mmedum/google-mail-mcp/v4/internal/model"
 )
 
-// The settings writes, registered only with GMAIL_ENABLE_SETTINGS
-// (§7.9). Each reads what it changes first, so its result says what was
-// there before, and a dry run stops after that read.
+// The settings writes, registered only with GMAIL_ENABLE_SETTINGS. Each
+// reads what it changes first, so its result says what was there before,
+// and a dry run stops after that read.
 
 // MaxSignature is the longest signature Gmail keeps, in characters of
 // its HTML.
@@ -62,9 +62,9 @@ func (s *Service) UpdateSignature(ctx context.Context, sendAs, text string) (mod
 
 // lockSettings holds the client's settings lock for a change that will
 // write, from its first read to its write, so two changes sent at once
-// neither overlap at Gmail, which refuses that (§18 row 54), nor read
-// what the other is replacing. A dry run writes nothing and waits for
-// nothing.
+// neither overlap at Gmail, which can refuse filter writes sent together,
+// nor read what the other is replacing. A dry run writes nothing and
+// waits for nothing.
 func (s *Service) lockSettings(ctx context.Context, dryRun bool) (unlock func(), err error) {
 	if dryRun {
 		return func() {}, nil
@@ -119,8 +119,8 @@ var (
 
 // CreateFilter creates a filter. It acts on mail that arrives from now
 // on; mail already in the mailbox is untouched, which is why a filter is
-// not a write that takes a query (§4.7). It can never forward: the wire
-// type it writes has no such field (§17.5).
+// not a write that takes a query. It can never forward: the wire type it
+// writes has no such field.
 func (s *Service) CreateFilter(ctx context.Context, sp FilterSpec) (model.FilterWrite, error) {
 	out := model.FilterWrite{Op: "create", DryRun: gapi.WritesForbidden(ctx)}
 	c := trimmed(sp.Criteria)
@@ -222,7 +222,10 @@ func filterLabels(all []gmail.Label, names, refused []string, field string) ([]s
 }
 
 // duplicate refuses w when an existing filter already does it. Gmail
-// keeps duplicates (§18 row 52), so this check is the only guard.
+// creates a second filter identical to the first, and filters.create says
+// nothing of duplicates, so this check is the only guard.
+// Checked by the live step "an identical filter is refused".
+// https://developers.google.com/workspace/gmail/api/reference/rest/v1/users.settings.filters/create
 func duplicate(existing []gmail.Filter, w gmail.FilterWrite) error {
 	for _, f := range existing {
 		if !sameFilter(f, w, false) {
@@ -240,10 +243,15 @@ func duplicate(existing []gmail.Filter, w gmail.FilterWrite) error {
 
 // sameFilter reports whether an existing filter matches and acts as w
 // would, labels in any order. A forward makes it different: w has none.
-// With anySize, a size is not compared: Gmail rounds it (§18 row 52).
-// A stored SPAM removal does not tell apart a filter w archives into:
-// Gmail was seen adding it to every archiving filter some time after a
-// filter write (§18 row 56).
+// With anySize, a size is not compared: Gmail can store a size rounded,
+// 1,048,576 bytes as 1,000,000, by a rule it does not document.
+//
+// A stored SPAM removal does not tell apart a filter w archives into.
+// Gmail can add SPAM to an archiving filter's removed labels some time
+// after a filter write, for no known cause; the filter guide reads that
+// removal as "Never mark as spam".
+// Checked by the live steps "the same archiving filter is refused" and "does the archiving filter list SPAM later".
+// https://developers.google.com/workspace/gmail/api/guides/filter_settings
 func sameFilter(f gmail.Filter, w gmail.FilterWrite, anySize bool) bool {
 	if f.Criteria == nil || f.Action == nil || f.Action.Forward != "" {
 		return false
@@ -266,8 +274,9 @@ func sameFilter(f gmail.Filter, w gmail.FilterWrite, anySize bool) bool {
 }
 
 // settleFilter reads the filters after a create Google did not confirm
-// and returns the [ambiguous_outcome] error with what it found, in the
-// spirit of §4.3: the create is never repeated, and the caller learns
+// and returns the [ambiguous_outcome] error with what it found. Gmail
+// can answer a create with a 500 and save nothing, so only a read tells.
+// As for a send, the create is never repeated, and the caller learns
 // whether to make it again without listing the filters itself. before
 // is the list read before the create.
 func (s *Service) settleFilter(ctx context.Context, w gmail.FilterWrite, before []gmail.Filter, cause error) error {
@@ -284,7 +293,7 @@ func (s *Service) settleFilter(ctx context.Context, w gmail.FilterWrite, before 
 			} else {
 				again := "create_filter refuses it as a conflict if it has appeared by then"
 				if w.Criteria.Size != 0 {
-					// Gmail rounds a size (§18 row 52), which the duplicate
+					// Gmail can store a size rounded, which the duplicate
 					// check compares exactly, so it could let a late one by.
 					again = "run list_filters first: Gmail rounds a size, so create_filter may not see a late one as a duplicate"
 				}
@@ -301,8 +310,8 @@ func (s *Service) settleFilter(ctx context.Context, w gmail.FilterWrite, before 
 // is. The filter is read from the list first, so the result says what it
 // did; filters.get is written off, since the list returns the same.
 // criteria are the filter's criteria as list_filters gives them. They put
-// what is deleted into the call, where a client's prompt shows it
-// (§4.13), and the delete is refused if the filter's are others.
+// what is deleted into the call, where a client's prompt shows it, and
+// the delete is refused if the filter's are others.
 func (s *Service) DeleteFilter(ctx context.Context, id string, criteria gmail.FilterCriteria, confirm bool) (model.FilterWrite, error) {
 	out := model.FilterWrite{Op: "delete", DryRun: gapi.WritesForbidden(ctx)}
 	id = strings.TrimSpace(id)
@@ -374,7 +383,7 @@ type VacationSpec struct {
 	// Subject and Body are the reply, sent exactly as given.
 	Subject, Body string
 	// Audience is who is answered: contacts or domain. Required when
-	// enabling: an auto-reply to every sender is not offered (§17.4).
+	// enabling: an auto-reply to every sender is not offered.
 	Audience string
 	// Start and End bound the reply, RFC 3339; either may be empty.
 	Start, End string
@@ -446,10 +455,13 @@ func (s *Service) SetVacation(ctx context.Context, sp VacationSpec) (model.Vacat
 // have no domain of their own for restrictToDomain to mean.
 var consumerDomains = []string{"gmail.com", "googlemail.com"}
 
-// workspaceOnly refuses audience domain on a personal account. Whether
-// Gmail refuses it there, or accepts it and answers every sender, has
-// not been checked live, and the second would be the audience §17.4
-// rules out; so the server does not ask. It costs one profile read.
+// workspaceOnly refuses audience domain on a personal account. The
+// reference says restrictToDomain is "only available for Google
+// Workspace users", not what a personal account does with it. If Gmail
+// accepted it and answered every sender, the reply would reach the
+// audience the server never offers, so the server does not ask. It costs
+// one profile read.
+// https://developers.google.com/workspace/gmail/api/reference/rest/v1/VacationSettings
 func workspaceOnly(address string) error {
 	_, domain, _ := strings.Cut(strings.ToLower(address), "@")
 	if slices.Contains(consumerDomains, domain) {

@@ -93,7 +93,7 @@ func TestLeaksAllowListHasReasons(t *testing.T) {
 		t.Errorf("%d allow-list entries, want 5; a new one is an argued decision", entries)
 	}
 	if len(leaksRules) < 8 {
-		t.Errorf("%d rules; the §9.1 shapes need at least 8", len(leaksRules))
+		t.Errorf("%d rules; the shapes a real mailbox leaks need at least 8", len(leaksRules))
 	}
 }
 

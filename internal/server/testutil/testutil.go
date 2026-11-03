@@ -38,9 +38,8 @@ func Connect(t *testing.T, register func(*mcp.Server)) *Harness {
 // ConnectServer connects a client to a server the caller built — the
 // real one from internal/server, say — and closes both when the test
 // ends. The client can ask the person, and the server asks nobody
-// (docs/architecture.md §4.13): every tool is called through such a
-// client, so a question from any of them fails the test that made the
-// call.
+// (D-65): every tool is called through such a client, so a question
+// from any of them fails the test that made the call.
 func ConnectServer(t *testing.T, server *mcp.Server) *Harness {
 	t.Helper()
 	ctx := context.Background()

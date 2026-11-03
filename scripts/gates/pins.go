@@ -12,10 +12,11 @@ import (
 )
 
 // The pins gate holds every third-party tool to one exact version, the
-// same version everywhere it is named, and the version docs/architecture.md
-// §5a says was checked against upstream.
+// same version everywhere it is named (D-95). The pins are the workflows,
+// the Makefile and go.mod, compared with each other; no document copies
+// one.
 //
-// Five ways a version floats, each a rule:
+// Four ways a version floats, each a rule:
 //   - an action used by tag or branch rather than a 40-hex commit SHA,
 //     or a SHA with no comment saying which version it is;
 //   - an action that installs a tool without naming the tool's version:
@@ -23,22 +24,31 @@ import (
 //   - a version input, env value or `go run module@v` that is a range, a
 //     major line or `latest`;
 //   - one tool pinned to two versions in two files, so a rehearsal or a
-//     pre-commit scan runs something other than CI;
-//   - a pin that differs from the §5a table, which then misdescribes
-//     what ships.
+//     pre-commit scan runs something other than CI.
 //
 // Every action is classified as an installer or not, and an unknown one
 // fails: being unclassified is how an unpinned tool slips through.
 
 const (
-	pinsMakefile     = "Makefile"
-	pinsGoMod        = "go.mod"
-	pinsArchitecture = "docs/architecture.md"
+	pinsMakefile = "Makefile"
+	pinsGoMod    = "go.mod"
+	// pinsMinPlaces is the fewest pins the readers may find in all.
+	// pinsSources names a file read as empty; this catches a reader that
+	// drops part of what a file pins.
+	pinsMinPlaces = 16
 )
 
 // pinsRequiredWorkflows must exist; a gate that counted files would
 // pass with the wrong two.
 var pinsRequiredWorkflows = []string{"ci.yml", "codeql.yml", "release.yml", "publish-mcp.yml"}
+
+// pinsSources are the files that pin a tool, each held to at least one
+// pin read. A total alone passes when one file reads as empty and the
+// others make up the count.
+var pinsSources = []string{
+	workflowDir + "/codeql.yml", workflowDir + "/release.yml", workflowDir + "/publish-mcp.yml",
+	pinsMakefile, pinsGoMod,
+}
 
 // pinsTool is one tool this repository runs, and every way it can be
 // named.
@@ -88,12 +98,6 @@ var pinsNotInstallers = map[string]string{
 	"github/codeql-action/analyze":    "uploads results",
 }
 
-// pinsDocOnly are §5a pin-table rows no workflow or Makefile names, each
-// with the gate that holds them instead.
-var pinsDocOnly = map[string]string{
-	"mcpb manifest schema": "the mcpb gate holds the manifest's $schema URL to its tag",
-}
-
 var (
 	pinsUsesLine  = regexp.MustCompile(`^\s*-?\s*uses:\s*([^\s#]+)\s*(#.*)?$`)
 	pinsSHA       = regexp.MustCompile(`^[0-9a-f]{40}$`)
@@ -109,7 +113,7 @@ type pinsFound struct {
 }
 
 func pins(out io.Writer, _ []string) error {
-	report, err := pinsCheck(".")
+	report, err := pinsCheck(".", pinsMinPlaces)
 	if err != nil {
 		return err
 	}
@@ -117,8 +121,8 @@ func pins(out io.Writer, _ []string) error {
 		return err
 	}
 	_, _ = fmt.Fprintf(out, "pins ok: %d workflows, %d actions by SHA, %d installers name their tool, "+
-		"%d tools pinned in %d places, %d §5a rows held\n",
-		report.workflows, report.actions, report.installers, len(report.tools), report.places, report.docRows)
+		"%d tools pinned in %d places\n",
+		report.workflows, report.actions, report.installers, len(report.tools), report.places)
 	return nil
 }
 
@@ -126,12 +130,14 @@ func pins(out io.Writer, _ []string) error {
 type pinsReport struct {
 	problems                               []string
 	workflows, actions, installers, places int
-	docRows                                int
 	tools                                  map[string][]pinsFound
+	// placesIn counts the pins read from each file.
+	placesIn map[string]int
 }
 
-// pinsCheck runs every rule over the repository at root.
-func pinsCheck(root string) (*pinsReport, error) {
+// pinsCheck runs every rule over the repository at root, held to finding
+// at least minPlaces pins.
+func pinsCheck(root string, minPlaces int) (*pinsReport, error) {
 	flows, err := readWorkflows(root)
 	if err != nil {
 		return nil, err
@@ -144,18 +150,18 @@ func pinsCheck(root string) (*pinsReport, error) {
 	if err != nil {
 		return nil, err
 	}
-	doc, err := os.ReadFile(filepath.Join(root, pinsArchitecture))
-	if err != nil {
-		return nil, err
-	}
 
-	r := &pinsReport{tools: map[string][]pinsFound{}, workflows: len(flows)}
-	add := func(tool, version, at string) {
-		r.tools[tool] = append(r.tools[tool], pinsFound{version, at})
-		r.places++
-		if !pinsExact.MatchString(version) {
-			r.problems = append(r.problems, fmt.Sprintf("%s: %s is pinned to %q, which is not one exact version",
-				at, tool, version))
+	r := &pinsReport{tools: map[string][]pinsFound{}, placesIn: map[string]int{}, workflows: len(flows)}
+	// addIn records the pins read from one file.
+	addIn := func(file string) func(tool, version, at string) {
+		return func(tool, version, at string) {
+			r.tools[tool] = append(r.tools[tool], pinsFound{version, at})
+			r.places++
+			r.placesIn[file]++
+			if !pinsExact.MatchString(version) {
+				r.problems = append(r.problems, fmt.Sprintf("%s: %s is pinned to %q, which is not one exact version",
+					at, tool, version))
+			}
 		}
 	}
 
@@ -165,10 +171,10 @@ func pinsCheck(root string) (*pinsReport, error) {
 		}
 	}
 	for _, w := range flows {
-		pinsWorkflow(w, r, add)
+		pinsWorkflow(w, r, addIn(w.path))
 	}
-	pinsMakefileVars(mk, r, add)
-	pinsGoModVersions(string(gomod), add)
+	pinsMakefileVars(mk, r, addIn(pinsMakefile))
+	pinsGoModVersions(string(gomod), addIn(pinsGoMod))
 
 	for _, t := range pinsTools {
 		found := r.tools[t.name]
@@ -184,8 +190,6 @@ func pinsCheck(root string) (*pinsReport, error) {
 			}
 		}
 	}
-	r.problems = append(r.problems, pinsAgainstDoc(string(doc), r)...)
-
 	// Floors: zero findings and zero inputs look the same otherwise.
 	if r.actions < 10 {
 		r.problems = append(r.problems, fmt.Sprintf("read only %d action references; the reader is not "+
@@ -194,6 +198,16 @@ func pinsCheck(root string) (*pinsReport, error) {
 	if r.installers < 4 {
 		r.problems = append(r.problems, fmt.Sprintf("found %d tool-installing steps, want at least 4 "+
 			"(goreleaser, cosign, syft and cosign again for publishing)", r.installers))
+	}
+	for _, f := range pinsSources {
+		if r.placesIn[f] == 0 {
+			r.problems = append(r.problems, fmt.Sprintf("%s: no pins read, though it pins a tool; "+
+				"its reader is not seeing it", f))
+		}
+	}
+	if r.places < minPlaces {
+		r.problems = append(r.problems, fmt.Sprintf("read %d pins across the workflows, %s and %s, want at least %d; "+
+			"a reader is not seeing its file", r.places, pinsMakefile, pinsGoMod, minPlaces))
 	}
 	return r, nil
 }
@@ -363,72 +377,6 @@ func pinsGoModVersions(gomod string, add func(tool, version, at string)) {
 			}
 		}
 	}
-}
-
-// pinsAgainstDoc holds the §5a pin table to what the files pin.
-func pinsAgainstDoc(doc string, r *pinsReport) []string {
-	rows := pinsDocTable(doc)
-	if len(rows) < 10 {
-		return []string{fmt.Sprintf("%s: read %d rows of the §5a pin table, want at least 10", pinsArchitecture, len(rows))}
-	}
-	byDoc := map[string]string{
-		"go": "go", "mcp go sdk": "mcp-go-sdk", "golangci-lint": "golangci-lint", "goreleaser": "goreleaser",
-		"cosign": "cosign", "syft": "syft", "mcp-publisher": "mcp-publisher", "gitleaks": "gitleaks",
-		"govulncheck": "govulncheck", "go-licenses": "go-licenses", "actionlint": "actionlint",
-		"codeql-action": "codeql-action",
-	}
-	var problems []string
-	for _, row := range rows {
-		if _, ok := pinsDocOnly[row.tool]; ok {
-			r.docRows++
-			continue
-		}
-		tool, ok := byDoc[strings.ToLower(row.tool)]
-		if !ok {
-			problems = append(problems, fmt.Sprintf("%s: the §5a pin table names %q, which the pins gate "+
-				"does not know", pinsArchitecture, row.tool))
-			continue
-		}
-		r.docRows++
-		want := pinsSemverIn.FindString(row.version)
-		if want == "" {
-			continue // a row that defers its version, such as go-licenses to §17
-		}
-		for _, f := range r.tools[tool] {
-			if pinsNormal(f.version) != pinsNormal(want) {
-				problems = append(problems, fmt.Sprintf("%s pins %s %s and §5a says %s", f.at, tool, f.version, want))
-			}
-		}
-	}
-	return problems
-}
-
-// pinsDocRow is one row of the §5a pin table.
-type pinsDocRow struct{ tool, version string }
-
-// pinsDocTable reads the table whose header is `| Tool | Version |`.
-func pinsDocTable(doc string) []pinsDocRow {
-	var rows []pinsDocRow
-	inside := false
-	for line := range strings.SplitSeq(doc, "\n") {
-		t := strings.TrimSpace(line)
-		if t == "| Tool | Version |" {
-			inside = true
-			continue
-		}
-		if !inside {
-			continue
-		}
-		if !strings.HasPrefix(t, "|") {
-			break
-		}
-		cells := strings.Split(strings.Trim(t, "|"), "|")
-		if len(cells) != 2 || strings.HasPrefix(strings.TrimSpace(cells[0]), "---") {
-			continue
-		}
-		rows = append(rows, pinsDocRow{strings.TrimSpace(cells[0]), strings.TrimSpace(cells[1])})
-	}
-	return rows
 }
 
 func pinsToolByModule(module string) string {

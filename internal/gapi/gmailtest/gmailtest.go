@@ -1,13 +1,13 @@
 // Package gmailtest is an in-memory Gmail, served over HTTP at the REST
 // paths the client calls, for tests.
 //
-// Everything in it is GENERATED (docs/architecture.md §9.1). Nothing
-// was recorded from a real mailbox, and nothing may be: a fixture copied
-// from a live response is itself the leak, whatever a scanner says. The
-// names come from a fixed invented list, addresses are at example.com,
-// example.org and .invalid, bodies come from templates, and ids come
-// from a counter formatted as 16 lowercase hex digits, so every id the
-// fake hands out starts with a run of zeros no real Gmail id has.
+// Everything in it is GENERATED. Nothing was recorded from a real
+// mailbox, and nothing may be: a fixture copied from a live response is
+// itself the leak, whatever a scanner says. The names come from a fixed
+// invented list, addresses are at example.com, example.org and
+// .invalid, bodies come from templates, and ids come from a counter
+// formatted as 16 lowercase hex digits, so every id the fake hands out
+// starts with a run of zeros no real Gmail id has.
 //
 // The fake builds each message once as a MIME tree and derives both
 // views from it — the raw RFC 5322 bytes of format=raw and the payload
@@ -50,7 +50,7 @@ import (
 // Account is the mailbox owner's address.
 const Account = "reader@example.com"
 
-// unitCost is Google's quota cost per method (§2.1). The fake keeps its
+// unitCost is Google's quota cost per method. The fake keeps its
 // own table rather than importing the client's, so a test can hold the
 // client's accounting against an independent one.
 var unitCost = map[string]int{
@@ -142,7 +142,7 @@ type Server struct {
 	historyID uint64
 	// HistoryFloor is the oldest history id still kept: a
 	// history.list starting before it is 404, as Google answers a
-	// cursor that has expired (§2.8).
+	// cursor that has expired.
 	HistoryFloor uint64
 
 	// EmptyFirstPage makes the first page of every listing come back
@@ -153,7 +153,7 @@ type Server struct {
 
 	// FullScope is whether the token holds https://mail.google.com/.
 	// Without it, a permanent delete is refused 403, as Gmail refuses it
-	// under gmail.modify (spike G).
+	// under gmail.modify.
 	FullScope bool
 
 	// ProfileAddress, when set, is the address getProfile answers in
@@ -161,11 +161,15 @@ type Server struct {
 	ProfileAddress string
 
 	// ThreadAsDocumented makes drafts.create file a draft in the thread
-	// it names only with all three of §2.5's conditions, as Google
-	// documents. Without it, drafts.create files the draft there whatever
-	// its headers and subject say, as the live run of 2026-10-09 saw for
-	// a forward (§18 row 85) and spike D saw messages.send do (row 42).
-	// drafts.update always needs all three: no run has seen it.
+	// it names only with all three threading conditions, as Google
+	// documents: the threadId, In-Reply-To and References, and a matching
+	// subject. Without it, drafts.create files the draft there whatever
+	// its headers and subject say, as Gmail does for the sender, for a
+	// reply and a forward alike. The receiver's Gmail still threads by
+	// the headers and the subject. drafts.update always needs all three:
+	// no run has seen it.
+	// Checked by the live step "forward an inserted message".
+	// https://developers.google.com/workspace/gmail/api/reference/rest/v1/users.messages#Message
 	ThreadAsDocumented bool
 
 	// SettingsScope is whether the token holds gmail.settings.basic.
@@ -421,11 +425,11 @@ func (s *Server) record(id string, r *http.Request) {
 	s.units += cost
 }
 
-// filterWrites are the writes Gmail refused live when one overlapped
-// another on the same account (§18 row 54): 400 failedPrecondition,
-// "Precondition check failed.", taken seconds later. The fake refuses
-// them the same way, and spends filterWriteTime on each outside its
-// lock, so writes sent together do overlap.
+// filterWrites are the writes Gmail refuses when one overlaps another
+// on the same account: 400 failedPrecondition, "Precondition check
+// failed.", taken seconds later. The fake refuses them the same way, and
+// spends filterWriteTime on each outside its lock, so writes sent
+// together do overlap.
 var filterWrites = map[string]bool{
 	"gmail.users.settings.filters.create": true,
 	"gmail.users.settings.filters.delete": true,

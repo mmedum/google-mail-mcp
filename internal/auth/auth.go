@@ -136,9 +136,10 @@ type LoginOptions struct {
 	Listener net.Listener
 	// Granted is what the previous login of this profile was granted,
 	// from its stored config. When it already covers the scopes asked
-	// for, the consent screen is not forced again (§10): every forced
-	// consent mints a new refresh token, and Google keeps only 100 per
-	// client per account, invalidating the oldest.
+	// for, the consent screen is not forced again. That spares the
+	// person a screen, not a token: Google issues a new refresh token on
+	// every login, and keeps only 100 per client per account,
+	// invalidating the oldest.
 	Granted []string
 	// ForceConsent shows the consent screen whatever was granted before.
 	ForceConsent bool
@@ -269,9 +270,9 @@ func Login(ctx context.Context, cfg *oauth2.Config, opts LoginOptions) (*oauth2.
 	if tok.RefreshToken == "" && consent {
 		return nil, ErrNoRefreshToken
 	}
-	// Without a forced consent Google may keep the refresh token it
-	// already issued rather than minting another; the caller keeps the
-	// stored one then. Spike J (§15) checks this behavior.
+	// Google issues a new refresh token on every login, consent forced
+	// or not. If an unforced login comes back without one, the caller
+	// keeps the stored one.
 	return tok, nil
 }
 
@@ -374,9 +375,9 @@ func Inspect(ctx context.Context, client *http.Client, accessToken string) (*Tok
 		// transport failure stringifies the whole URL: client.Do returns
 		// a *url.Error whose Error() is `Get "https://…?access_token=ya29.…":
 		// dial tcp …`. That reaches `doctor`, which is the output a user
-		// pastes into a bug report — so the URL never survives the error
-		// (§9.2). internal/gapi strips its own for the same reason, on
-		// search terms rather than on credentials.
+		// pastes into a bug report — so the URL never survives the error.
+		// internal/gapi strips its own for the same reason, on search
+		// terms rather than on credentials.
 		return nil, fmt.Errorf("auth: tokeninfo: %w", withoutURL(err))
 	}
 	defer func() { _ = resp.Body.Close() }()

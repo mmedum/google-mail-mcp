@@ -397,7 +397,7 @@ func fixedList(ss []string, known map[string]bool) part {
 	return part{strings.Join(out, ", ")}
 }
 
-// classShape is an error class of §6.5: lowercase words and underscores.
+// classShape is an error class's shape: lowercase words and underscores.
 var classShape = regexp.MustCompile(`^[a-z_]{1,32}$`)
 
 // failure is one item's error, "[class] message". The message is this

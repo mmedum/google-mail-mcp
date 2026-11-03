@@ -68,8 +68,8 @@ func TestChangesNameLabelsAndFilterByOne(t *testing.T) {
 	}
 }
 
-// §7.6: an expired cursor is said, with the id to restart from, and is
-// never an empty list.
+// An expired cursor is said, with the id to restart from, and is never an
+// empty list.
 func TestAnExpiredCursorIsReportedNotEmpty(t *testing.T) {
 	s, fake := newService(t)
 	c, err := s.Changes(context.Background(), service.ChangesQuery{HistoryID: "5"})

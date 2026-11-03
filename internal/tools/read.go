@@ -26,7 +26,7 @@ const invitationNote = " A calendar invitation's attachment entry carries invita
 	"server finds the event by, its sequence, times, organizer and title. An invitation Gmail stored apart costs one " +
 	"more read of 20 units, at most one per message."
 
-// maxBudget is the largest budget a read accepts (§4.8); the smallest
+// maxBudget is the largest budget a read accepts; the smallest
 // is render.MinBudget.
 const maxBudget = 100000
 
@@ -57,8 +57,9 @@ func readOf(r render.Result) Rendered {
 		NextCursor: r.NextCursor, NextOffset: r.NextOffset, Omitted: omitted}
 }
 
-// What omitted_ids means for each listing (§4.8). The structured rows
-// carry every item in full whatever the text shows.
+// What omitted_ids means for each listing. The structured rows carry
+// every item in full whatever the text shows: the budget bounds the text
+// alone.
 const (
 	omittedThreads  = "threads the text leaves out for its budget; each is still a full row in threads"
 	omittedMessages = "messages the text leaves out for its budget; each is still a full row in messages"
@@ -157,7 +158,7 @@ type GetThreadIn struct {
 }
 
 // ThreadOut is one thread: every message's headers, and as many bodies
-// as the budget allows, newest first. Drafts come last (§17.2).
+// as the budget allows, newest first. Drafts come last.
 type ThreadOut struct {
 	ID       string        `json:"id"`
 	Messages []MessageMeta `json:"messages"`
@@ -308,7 +309,7 @@ func registerRead(s *mcp.Server, d Deps) {
 			if err != nil {
 				return ThreadOut{}, err
 			}
-			// Drafts follow what was said, as the rendering shows them (§17.2).
+			// Drafts follow what was said, as the rendering shows them (D-18).
 			said, drafts := t.SplitDrafts()
 			return ThreadOut{ID: t.ID, Messages: mapSlice(slices.Concat(said, drafts), messageMeta),
 				Rendered: readOf(render.Thread(t, o))}, nil

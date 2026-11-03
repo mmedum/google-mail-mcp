@@ -106,6 +106,8 @@ jobs:
         run: make schema-diff
       - name: docs match the code
         run: make staleness
+      - name: docs references resolve
+        run: make docs
       - name: definition of done
         run: make checklist
       - name: CHANGELOG links

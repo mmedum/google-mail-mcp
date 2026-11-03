@@ -1,14 +1,14 @@
 // Package mime parses email: RFC 5322 headers and addresses, MIME
 // structure (RFC 2045–2047), RFC 2231 parameters, every part's charset
 // and transfer encoding, and the choice and conversion of the body a
-// person reads (docs/architecture.md §4.10, §7.2).
+// person reads.
 //
 // It reads two sources — a Gmail payload tree and raw RFC 5322 bytes —
 // through one internal representation, so the two cannot disagree. It
 // never touches the network and never panics on input: every step is
 // lenient, keeping what it can read of a malformed message.
 //
-// Mail content is data (§4.1). This package removes what a reader would
+// Mail content is data. This package removes what a reader would
 // not see and counts it; it does not judge or act on what remains.
 package mime
 
@@ -72,7 +72,7 @@ type Message struct {
 	NeedsFetch []PartRef
 }
 
-// Body is the text a person reads, chosen per §7.2.
+// Body is the text a person reads, and which version it came from.
 type Body struct {
 	Text string
 	// Source is SourcePlain, SourceHTML, SourceBoth, or "" when the
@@ -140,8 +140,12 @@ type Attachment struct {
 	Alternative bool
 	// ContentMissing is set when Gmail gave neither the part's content
 	// nor an attachment id to fetch it by, though the part has parts of
-	// its own or a size. An attached message Gmail serves as its parts
-	// would read this way (§18 row 83); an empty part does not.
+	// its own or a size; an empty part does not. Gmail serves an
+	// attached message whole, as one part with its content. The reference
+	// calls only multipart/* a container, though RFC 2046 §5 makes
+	// message/rfc822 one too, so a message served as its parts would read
+	// this way. Checked by the live step "read the attached message".
+	// https://developers.google.com/workspace/gmail/api/reference/rest/v1/users.messages#MessagePart
 	ContentMissing bool
 	// Hidden counts invisible characters removed from MimeType and
 	// CalendarMethod, which are the sender's Content-Type values.
@@ -332,7 +336,7 @@ func (n *node) isCalendar() bool {
 
 // calendarFetch picks the one calendar part, of those Gmail stored
 // behind an attachment id, whose content is worth a fetch: an
-// invitation's details, and often its method, are only there (§7.2). It
+// invitation's details, and often its method, are only there. It
 // prefers a part whose Content-Type does not state the method, as an
 // invite.ics attachment often does not, and then the first. Nothing is
 // fetched once one of them has its content, or for a part over

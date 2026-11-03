@@ -22,12 +22,12 @@ import (
 	"github.com/mmedum/google-mail-mcp/v4/internal/tools"
 )
 
-// minTools is the floor on how many tools this test drives: the whole
-// phase 1 surface, so a test that drives nothing cannot pass for one
-// that drives everything (standard, preamble). Raise it with the surface.
+// minTools is the floor on how many tools this test drives, so a test
+// that drives nothing cannot pass for one that drives everything. Raise
+// it with the surface.
 var minTools = 12
 
-// The rule (§9.2): a log line says when a call happened, what it was
+// The rule: a log line says when a call happened, what it was
 // and how it ended. It never carries an address, a subject, a body, a
 // snippet, a file name, a label name, a query, a token, or a whole id.
 const (

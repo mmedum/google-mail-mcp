@@ -11,13 +11,14 @@ import (
 	"github.com/mmedum/google-mail-mcp/v4/internal/render"
 )
 
-// rfc822Prefix marks an id given as an RFC 5322 Message-ID (§6.1).
+// rfc822Prefix marks an id given as an RFC 5322 Message-ID.
 const rfc822Prefix = "rfc822:"
 
 // msgIDShape is one Message-ID as a header writes it, `<local@domain>`
 // (RFC 5322 §3.6.4), each side dot-atom text. It goes into a search, so
 // it holds no space, quote, parenthesis, brace or colon: nothing after
 // it can be read as another search term.
+// Checked by the live step "read an inserted message by its Message-ID".
 var msgIDShape = regexp.MustCompile("^<[A-Za-z0-9!#$%&'*+/=?^_`|~.-]+@[A-Za-z0-9!#$%&'*+/=?^_`|~.-]+>$")
 
 // Profile reads the account.
@@ -262,7 +263,7 @@ func (s *Service) Drafts(ctx context.Context, q string, max int, pageToken strin
 }
 
 // Draft reads one draft whole. The id of the message inside it is the
-// witness update_draft will require (§4.4).
+// witness update_draft will require.
 func (s *Service) Draft(ctx context.Context, id string) (model.Draft, error) {
 	ls, g, err := withLabels(ctx, s, func(ctx context.Context) (*gmail.Draft, error) {
 		return s.client.GetDraft(ctx, id, gapi.FormatFull)

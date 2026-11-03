@@ -14,12 +14,11 @@ var classesFixtureNames = []string{"invalid", "not_found", "auth", "stale"}
 // three files, one planned. edit changes it before it is written.
 func classesFixture(t *testing.T, edit func(files map[string]string)) string {
 	t.Helper()
-	var consts, list, table strings.Builder
+	var consts, list strings.Builder
 	for _, v := range classesFixtureNames {
 		name := "Class" + strings.ReplaceAll(v, "_", "")
 		fmt.Fprintf(&consts, "\t%s Class = %q\n", name, v)
 		fmt.Fprintf(&list, "%s, ", name)
-		fmt.Fprintf(&table, "| `%s` | means | do |\n", v)
 	}
 	files := map[string]string{
 		"internal/gapi/errors.go": "package gapi\n\ntype Class string\n\nconst (\n" + consts.String() + ")\n\n" +
@@ -31,7 +30,6 @@ func classesFixture(t *testing.T, edit func(files map[string]string)) string {
 		"internal/service/c.go":      "package service\n\nimport \"x/gapi\"\n\nfunc c() any { return gapi.Classauth }\n",
 		"internal/service/c_test.go": "package service\n\nimport \"x/gapi\"\n\nvar _ = gapi.Classstale\n",
 		"scripts/x/x.go":             "package x\n\nimport \"x/gapi\"\n\nvar _ = gapi.Class(\"made_up\")\n",
-		"docs/architecture.md":       "# A\n\n### 6.5 Error classes\n\n| Class | Means | Do |\n|---|---|---|\n" + table.String() + "\n## 7\n\n| `nope` | x | y |\n",
 	}
 	if edit != nil {
 		edit(files)
@@ -69,12 +67,6 @@ func TestClassesFailures(t *testing.T) {
 		{"planned phase has begun", func(f map[string]string) {
 			f["CHANGELOG.md"] = "# Changelog\n\n## [Unreleased]\n\n## [0.3.0] - 2026-01-01\n"
 		}, nil, `"stale" was planned for phase 2 and phase 3 has begun`},
-		{"missing from §6.5", func(f map[string]string) {
-			f["docs/architecture.md"] = strings.Replace(f["docs/architecture.md"], "| `auth` | means | do |\n", "", 1)
-		}, nil, `"auth" is declared and §6.5 does not tabulate it`},
-		{"extra in §6.5", func(f map[string]string) {
-			f["docs/architecture.md"] = strings.Replace(f["docs/architecture.md"], "\n## 7", "| `gone` | x | y |\n\n## 7", 1)
-		}, nil, `§6.5 tabulates "gone" and the code declares no such class`},
 		{"listed twice, not adjacent", func(f map[string]string) {
 			f["internal/gapi/errors.go"] = strings.Replace(f["internal/gapi/errors.go"],
 				"var Classes = []Class{", "var Classes = []Class{Classauth, ", 1)

@@ -24,7 +24,7 @@ func TestForMode(t *testing.T) {
 	}
 }
 
-// The send flag must not change the scope set: §2.10, the default scope
+// The send flag must not change the scope set: the default scope
 // already sends.
 func TestModesSendChangesNothing(t *testing.T) {
 	modes := Modes()
@@ -44,7 +44,7 @@ func TestModesSendChangesNothing(t *testing.T) {
 	if !slices.Equal(byName["destructive"].Scopes, []string{Full}) {
 		t.Errorf("destructive mode requests %v", byName["destructive"].Scopes)
 	}
-	// Only destructive asks for the full scope (§4.6).
+	// Only destructive asks for the full scope.
 	for _, m := range modes {
 		if m.Name != "destructive" && slices.Contains(m.Scopes, Full) {
 			t.Errorf("mode %s requests %s", m.Name, Full)

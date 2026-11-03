@@ -10,7 +10,7 @@ import (
 	"strings"
 )
 
-// Edit is a change to an existing message (§4.4): only what it names is
+// Edit is a change to an existing message: only what it names is
 // changed, and every other header and part is written back as it was
 // read, byte for byte.
 type Edit struct {
@@ -37,7 +37,7 @@ type Edit struct {
 }
 
 // HTMLMode is what new plain text, given without HTML, does to the
-// HTML version HTMLFromText makes of a message's text (§7.4).
+// HTML version HTMLFromText makes of a message's text.
 type HTMLMode int
 
 const (
@@ -527,8 +527,8 @@ func swapHTML(root, html *entity, htm string, inline []InlineImage) *entity {
 // A part declared an attachment stays whatever its Content-ID. A
 // signature dropped or replaced takes its images so, and HTML replaced
 // in Gmail's own layout, which keeps the images beside the plain and
-// HTML pair, its images; left, Gmail shows each as an attachment (§18
-// row 99). A related left with the HTML alone stays: it reads the same.
+// HTML pair, its images; left, Gmail shows each as an attachment. A
+// related left with the HTML alone stays: it reads the same.
 // It returns how many parts went, besides those named in signature.
 func pruneUnshown(root *entity, shown, signature map[string]bool) int {
 	n := 0

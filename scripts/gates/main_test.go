@@ -32,7 +32,7 @@ func TestEveryCommandDeclaresWhereItRuns(t *testing.T) {
 }
 
 // A floor, so the registry cannot be emptied and still pass the test
-// above. The number is the §5a gate list plus the helpers beside it.
+// above. The number is every gate plus the helpers beside them.
 func TestRegistryFloor(t *testing.T) {
 	if n := len(commands); n < 27 {
 		t.Errorf("the registry has %d commands, want at least 27", n)

@@ -54,16 +54,10 @@ ACL on Windows — and the server warns on stderr every time it uses it.
 
 ## Scopes
 
-| Configuration | Requested at login |
-|---|---|
-| `GMAIL_READ_ONLY=true` | `https://www.googleapis.com/auth/gmail.readonly` |
-| default | `https://www.googleapis.com/auth/gmail.modify` |
-| `GMAIL_ENABLE_SEND=true` | unchanged |
-| `GMAIL_ENABLE_DESTRUCTIVE=true` | `https://mail.google.com/` |
-| `GMAIL_ENABLE_SETTINGS=true` | adds `https://www.googleapis.com/auth/gmail.settings.basic` to the above |
-| `GMAIL_DRAFT_SIGNATURE=true` | unchanged |
-
-All are restricted scopes; `docs/gcp-setup.md` says what that means for
+The scopes each configuration requests at login are listed in
+[`docs/gcp-setup.md`](gcp-setup.md#2-oauth-consent-screen), generated
+from the code. `GMAIL_ENABLE_SEND` and `GMAIL_DRAFT_SIGNATURE` change
+none. All are restricted scopes, and that page says what that means for
 your consent screen.
 
 ## Logging in
@@ -114,13 +108,13 @@ server's tools allowed, makes every write that is registered. Leave
 
 ## Removed settings
 
-`GMAIL_REQUIRE_PROMPT` went with the server's question, and its
-flag `--require-prompt` is gone, so a flag left in your client's
-arguments stops the server from starting. The variable is still read,
-only to refuse it: set to anything but `false`, its old default, the
-server refuses to start, because ignoring it would quietly allow what
-you set it to stop. Unset it, and leave the `ENABLE_` settings off for a
-client that runs with nobody watching.
+`GMAIL_REQUIRE_PROMPT` is read only to refuse it. Set to anything but
+`false`, the server refuses to start, because ignoring it would quietly
+allow what it was set to stop. The server asks the person nothing, and
+your client's approval decides each call. Its flag, `--require-prompt`,
+is not accepted, so a flag left in your client's arguments stops the
+server from starting too. Unset both, and leave the `ENABLE_` settings
+off for a client that runs with nobody watching.
 
 ## Reading the setup from a script
 

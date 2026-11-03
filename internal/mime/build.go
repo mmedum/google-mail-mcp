@@ -21,7 +21,7 @@ import (
 )
 
 // MaxRawBytes is the largest message drafts.create and drafts.update
-// accept: the discovery document's mediaUpload.maxSize, 35 MB (§2.6).
+// accept: the discovery document's mediaUpload.maxSize, 35 MB.
 const MaxRawBytes = 36700160
 
 // Line lengths of RFC 5322 §2.1.1: a header line should stay within 78
@@ -33,7 +33,7 @@ const (
 	maxWordChars = 75
 )
 
-// Outgoing is a message this server writes (§7.4). Addresses and text
+// Outgoing is a message this server writes. Addresses and text
 // are as the caller gave them; Build does the encoding.
 type Outgoing struct {
 	// From is the sender, or nil to let Gmail fill in the default.
@@ -49,10 +49,11 @@ type Outgoing struct {
 	// beside it in multipart/related (RFC 2387).
 	Inline      []InlineImage
 	Attachments []OutAttachment
-	// MessageID is the Message-ID header, with its brackets. Required:
-	// it is what a send is settled by (§4.3).
+	// MessageID is the Message-ID header, with its brackets. Required,
+	// though Gmail writes its own in its place when it saves or sends
+	// the message.
 	MessageID string
-	// InReplyTo and References thread a reply (§4.5).
+	// InReplyTo and References thread a reply.
 	InReplyTo  string
 	References []string
 	// Date is the Date header; zero means now.
@@ -84,8 +85,9 @@ var ErrAttachedLines = errors.New("an attached message has a line over 998 octet
 // Build writes an outgoing message as RFC 5322 bytes: headers encoded
 // per RFC 2047, filenames per RFC 2231, text as quoted-printable UTF-8,
 // attachments as base64 and an attached message as written, every line
-// ending CRLF. What it writes, Parse reads back to the same fields
-// (§4.10); the fuzz tests hold that.
+// ending CRLF. What it writes, Parse reads back to the same fields; the
+// fuzz tests hold that. Gmail keeps it intact, in four scripts.
+// Checked by the live step "compose a draft in four scripts".
 func Build(o Outgoing) ([]byte, error) {
 	if !ValidMessageID(o.MessageID) {
 		return nil, fmt.Errorf("message id %q is not <local@domain>", o.MessageID)
@@ -409,11 +411,14 @@ func textEntity(subtype, text string) *entity {
 // line break for each line break inside one, each line as LineHTML
 // writes it.
 // It is "" for text with nothing to show. Gmail's web composer opens a
-// draft with no HTML part as plain text and wraps it at about 70
-// columns when the person sends it; an HTML part keeps each paragraph
-// whole (§7.4, §18 row 73). EditRaw recognizes what this writes by
-// reading it back (madeText), so any markup it ever writes must stay
-// among what madeText accepts.
+// draft with no HTML part as plain text and, when the person sends it,
+// wraps each line over 78 characters at about 70 columns; an HTML part
+// keeps each paragraph whole. Gmail's storage keeps the line whole, and
+// the reference says nothing of the composer's wrap. EditRaw recognizes
+// what this writes by reading it back (madeText), so any markup it ever
+// writes must stay among what madeText accepts.
+// Checked by the live step "a long line in a saved draft".
+// https://developers.google.com/workspace/gmail/api/reference/rest/v1/users.drafts/create
 func HTMLFromText(text string) string {
 	var b strings.Builder
 	var para []string
@@ -470,7 +475,10 @@ func writeText(b *strings.Builder, s string, prev rune) {
 
 // linkStart finds where a web address may begin, as GitHub's autolinks
 // allow: at the start of a line, after a space, or after one of ( [ < "
-// ' * _ ~. Only http and https are linked (§18 row 75).
+// ' * _ ~. No mail reader documents linking a bare address in HTML, so
+// the made HTML links it itself. Only http and https are linked, as the
+// OWASP XSS Prevention Cheat Sheet advises.
+// https://github.github.com/gfm/#autolinks-extension-
 var linkStart = regexp.MustCompile(`(?i)(^|[\s\p{Zs}(\[<"'*_~])(https?://)[\pL\pN]`)
 
 // nextLink returns the first web address in l as l[start:end], or
@@ -492,7 +500,7 @@ func nextLink(l string) (start, end int) {
 // endsLink reports whether r ends a web address: RFC 3986 Appendix C
 // leaves quotes, angle brackets and space outside one, and a character a
 // reader cannot see, a bidi control among them, could make a link read
-// as another (§4.1.2).
+// as another.
 func endsLink(r rune) bool {
 	return unicode.IsSpace(r) || unicode.IsControl(r) || strings.ContainsRune(`<>"`, r) || isInvisible(r)
 }
@@ -659,7 +667,10 @@ func attachmentEntity(a OutAttachment) (*entity, error) {
 // messageBody is an attached message as RFC 2046 §5.2.1 lets it go: as
 // written, with its line endings made CRLF, and declared 7bit when every
 // octet is ASCII, else 8bit. A message with a line over 998 octets or a
-// NUL is ErrAttachedLines (RFC 2045 §2.7, §2.8).
+// NUL is ErrAttachedLines (RFC 2045 §2.7–2.8). Gmail's drafts.create
+// takes an 8bit message/rfc822 part, and messages.get serves it back
+// whole. Checked by the live step "read the forwarded original in the draft".
+// https://developers.google.com/workspace/gmail/api/reference/rest/v1/users.drafts/create
 func messageBody(b []byte) (cte string, body []byte, err error) {
 	body = withCRLF(b)
 	for line := range bytes.SplitSeq(body, []byte("\r\n")) {
@@ -700,7 +711,7 @@ func withCRLF(b []byte) []byte {
 	return out
 }
 
-// ForwardCopy is a message as a forward attaches it (§7.4): its line
+// ForwardCopy is a message as a forward attaches it: its line
 // endings made CRLF, and its Bcc and Resent-Bcc headers left out. The
 // sender's own copy of a sent message keeps its Bcc, and a forward would
 // show the blind recipients to everyone it reaches. bccRemoved reports

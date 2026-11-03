@@ -19,15 +19,14 @@ import (
 )
 
 // mailbox is what the driver does to the mailbox itself, outside the
-// server: the fixture it reads from. It is the §9.1 contract, and these
-// calls are all of it:
+// server: the fixture it reads from. These calls are all of it:
 //
 //   - CreateLabel makes the run's label. Every read a step makes is
 //     constrained to it.
 //
 //   - Insert puts one synthetic RFC 5322 message under that label with
 //     messages.insert, which plants mail without delivering it. The server
-//     never calls insert (§8a); only this driver does.
+//     never calls insert; only this driver does.
 //
 //   - Trash moves one inserted message to the trash.
 //
@@ -41,14 +40,17 @@ import (
 //     so cleanup can remove it.
 //
 //   - UpdateDraft and DraftMessageID save a run draft again and read which
-//     message it holds, for spike A.
+//     message it holds, for the spike "the message id drafts.update
+//     gives".
 //
 //   - Send and Label send one message the run built, to the address the
 //     maintainer passed as -send-to and nowhere else, and put it under the
-//     run's label so cleanup trashes it. Only spikes D and E send (§15).
+//     run's label so cleanup trashes it. Only the two spikes that send
+//     mail use them.
 //
 //   - SentCopy reads back a message the run sent: its thread, and its
-//     bytes for spike E. Header reads one header of it, for spike D.
+//     bytes for the spike "four scripts sent and read back". Header reads
+//     one header of it, for the spike "what threads a sent reply".
 //
 //   - Account reads the signed-in address, which a spike's Message-ID
 //     and a create_draft step's from take their domain and value from.
@@ -73,7 +75,8 @@ type mailbox interface {
 	Probe(ctx context.Context, method, path string, q url.Values, body any) probeResult
 	HistoryID(ctx context.Context) (string, error)
 	// InternalDate reads the date Gmail recorded for a message the run
-	// inserted, in milliseconds, for spike F.
+	// inserted, in milliseconds, for the spike "the date messages.insert
+	// records".
 	InternalDate(ctx context.Context, messageID string) (int64, error)
 	UpdateDraft(ctx context.Context, draftID string, raw []byte) (messageID string, err error)
 	DraftMessageID(ctx context.Context, draftID string) (string, error)
@@ -119,7 +122,8 @@ type probeResult struct {
 	status          int
 	reason, message string
 	id              string
-	// retryAfter is the Retry-After header, for spike H.
+	// retryAfter is the Retry-After header, for the spike "the per-user
+	// rate limit".
 	retryAfter string
 }
 
@@ -376,5 +380,6 @@ func syntheticDraft(r runLabel, i int) []byte {
 }
 
 // syntheticDateHeader is every inserted message's Date header, fixed and
-// in the past, so spike F can tell it from the time of the insert.
+// in the past, so the spike "the date messages.insert records" can tell
+// it from the time of the insert.
 const syntheticDateHeader = "Thu, 24 Sep 2026 10:00:00 +0000"

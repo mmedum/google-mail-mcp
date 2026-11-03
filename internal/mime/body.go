@@ -12,7 +12,7 @@ import (
 )
 
 // placeholders are what a plain part says when it only points at the
-// HTML version (§3.7). Matched on short plain parts only.
+// HTML version. Matched on short plain parts only.
 var placeholders = regexp.MustCompile(`(?i)(view (this|the) (e-?mail|message|newsletter)? ?(in|with) (your|a) (web )?browser|` +
 	`(html|web) version|` +
 	`does ?n[o']t support html|not support html|` +
@@ -194,7 +194,7 @@ func ReadAs(mediaType string) string {
 }
 
 // PartText reads the content of one part of a payload as a body part is
-// read (§4.1): its charset decoded and the characters a reader would not
+// read: its charset decoded and the characters a reader would not
 // see removed and counted. Plain text also has format=flowed undone and
 // its quotes and signature found; HTML is converted, its hidden text
 // dropped and its links read. Any other type keeps every line as
@@ -229,7 +229,7 @@ func PartText(p *gmail.MessagePart, data []byte) Body {
 }
 
 // bodyText is a text/plain or text/html part's text as a body part is
-// read (§4.1): HTML converted, its hidden text dropped and its links
+// read: HTML converted, its hidden text dropped and its links
 // read; plain text, already decoded by plainText, with invisible
 // characters removed. What was removed is counted into hidden.
 func bodyText(n *node, plain string, hidden map[string]int) (string, []Link) {

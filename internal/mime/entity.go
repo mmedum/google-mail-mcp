@@ -14,7 +14,7 @@ import (
 //
 // An entity read from existing bytes keeps those bytes. Until something
 // inside it changes it is written back exactly as it was read, so an
-// edit leaves every part it does not touch as Gmail stored it (§4.4).
+// edit leaves every part it does not touch as Gmail stored it (D-42).
 type entity struct {
 	partID string
 	// headers are the header lines, each whole with its folding kept.

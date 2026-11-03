@@ -142,9 +142,9 @@ func (s *Server) needsSettings(w http.ResponseWriter) bool { return needsScope(w
 
 // createFilter models filters.create: a criterion and an action are
 // required and every label must exist. An identical filter is kept, as
-// Gmail kept one live (§18 row 52), and the filter is stored with the
-// labels sent, as Gmail answers a create (§18 row 56). The seeded
-// newsletter filter carries the SPAM Gmail was seen adding later.
+// Gmail keeps one, and the filter is stored with the labels sent, as
+// Gmail answers a create. The seeded newsletter filter carries the SPAM
+// Gmail can add later.
 func (s *Server) createFilter(w http.ResponseWriter, r *http.Request, _ []string) {
 	if s.needsSettings(w) {
 		return
@@ -219,7 +219,7 @@ func (s *Server) updateVacation(w http.ResponseWriter, r *http.Request, _ []stri
 		return
 	}
 	// An HTML body sent empty beside a plain one leaves the reply with no
-	// body at all, as Gmail answered live (§18 row 52).
+	// body at all, as Gmail does.
 	if html, ok := fields["responseBodyHtml"]; ok && string(html) == `""` {
 		in.ResponseBodyPlainText = ""
 	}

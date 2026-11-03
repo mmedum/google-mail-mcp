@@ -16,7 +16,7 @@ import (
 const dryRunNote = " dry_run shows what the call would do and changes nothing."
 
 // signatureNote says, in create_draft's description, whether this server
-// signs a new draft when the call leaves signature out (§7.4), so the
+// signs a new draft when the call leaves signature out, so the
 // model knows not to write the signature itself.
 func signatureNote(c config.Config) string {
 	if !c.DraftSignature {
@@ -36,7 +36,7 @@ type CreateDraftIn struct {
 	BodyHTML  string   `json:"body_html,omitempty" jsonschema:"an HTML version of the body, saved beside the plain text in place of the one made from body; needs body"`
 	PlainOnly bool     `json:"plain_only,omitempty" jsonschema:"true saves the body as plain text alone, with no HTML version: for a mailing list that refuses HTML. Gmail's web composer wraps such a draft at 70 columns when a person sends it"`
 	// Attachments are base names, never paths: the directory is the
-	// person's choice, not the caller's (§3.15).
+	// person's choice, not the caller's.
 	Attachments   []string `json:"attachments,omitempty" jsonschema:"names of files in the person's GMAIL_LOCAL_DIR to attach; a name, never a path"`
 	From          string   `json:"from,omitempty" jsonschema:"one of the addresses the account sends as (get_settings lists them); default the account's default"`
 	ReplyTo       string   `json:"reply_to,omitempty" jsonschema:"a message id to reply to, or rfc822: followed by its Message-ID"`
@@ -51,7 +51,7 @@ type CreateDraftIn struct {
 // UpdateDraftIn changes a draft. A field left out stays as it is.
 type UpdateDraftIn struct {
 	DraftID string `json:"draft_id" jsonschema:"the draft to change"`
-	// MessageID is the witness of §4.4.
+	// MessageID is the draft's witness.
 	MessageID string   `json:"message_id" jsonschema:"the message_id get_draft or the last create_draft or update_draft returned; the update is refused as stale if the draft changed since"`
 	To        []string `json:"to,omitempty" jsonschema:"replaces the To recipients; [] clears them; left out, they stay"`
 	Cc        []string `json:"cc,omitempty" jsonschema:"replaces the Cc recipients; [] clears them; left out, they stay"`
@@ -70,7 +70,7 @@ type UpdateDraftIn struct {
 // DeleteDraftIn deletes a draft.
 type DeleteDraftIn struct {
 	DraftID string `json:"draft_id" jsonschema:"the draft to delete"`
-	// MessageID is the witness of §4.4, held for a delete as for an update.
+	// MessageID is the draft's witness, held for a delete as for an update.
 	MessageID string `json:"message_id" jsonschema:"the message_id get_draft or the last create_draft or update_draft returned; the delete is refused as stale if the draft changed since"`
 	Confirm   bool   `json:"confirm,omitempty" jsonschema:"must be true: a deleted draft is gone for good and does not go to the trash"`
 	DryRun    bool   `json:"dry_run,omitempty" jsonschema:"read the draft and report what would be deleted"`

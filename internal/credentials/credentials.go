@@ -231,7 +231,7 @@ func (s *Store) writeFile(token string) error {
 	}
 	// Writing the refresh token is what this function is for. It lands
 	// in a 0600 file, only when the keyring was unavailable, and every
-	// read of it warns (§10).
+	// read of it warns.
 	data, err := json.Marshal(tokenFile{RefreshToken: token, SavedAt: time.Now().UTC()}) //nolint:gosec // the token file, by design
 	if err != nil {
 		return fmt.Errorf("credentials: encode token file: %w", err)

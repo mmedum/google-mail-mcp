@@ -20,8 +20,7 @@ type ChangeList struct {
 
 // Changes renders changes since a history id. Nothing in a change was
 // written by a sender: ids, kinds and the account's label names. An
-// expired cursor is said plainly and never shown as an empty page
-// (§7.6).
+// expired cursor is said plainly and never shown as an empty page.
 func Changes(l ChangeList, o Options) Result {
 	if l.Expired {
 		return render(o, func(w *writer) Result {

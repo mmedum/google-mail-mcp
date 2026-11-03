@@ -10,7 +10,7 @@ import (
 // but a model reads: zero-width characters, bidi controls, the word
 // joiner family, the byte-order mark, soft hyphen and fillers, and the
 // Unicode tag and supplementary variation-selector blocks, which carry
-// text no font draws (§4.1.2).
+// text no font draws.
 func isInvisible(r rune) bool {
 	switch {
 	case r >= 0x200B && r <= 0x200F: // zero-width space, joiners, LRM, RLM

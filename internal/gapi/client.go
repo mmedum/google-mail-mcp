@@ -196,7 +196,7 @@ func New(o Options) *Client {
 	c.http = hc
 	// A stream is bounded by how long it goes without progress rather
 	// than by how long it takes: a large attachment on a slow link must
-	// finish, and a stalled one must not hang (§3.16).
+	// finish, and a stalled one must not hang (D-80).
 	streaming := *hc
 	streaming.Timeout = 0
 	c.streamHTTP, c.idleTimeout = &streaming, hc.Timeout
@@ -324,7 +324,7 @@ func isWrite(call Call) bool { return call.Method != http.MethodGet }
 
 // policy is how one call may be repeated. Do decides it once, from the
 // call's method and id, and everything after reads it from here: this
-// is the one place that says a send is never repeated (§4.3).
+// is the one place that says a send is never repeated (D-50).
 type policy struct {
 	// send marks messages.send and drafts.send, which a 429 with no rate
 	// reason is read against as Gmail's sending limit.
@@ -359,11 +359,16 @@ func (c *Client) policyFor(call Call) (policy, error) {
 }
 
 // LockSettings waits until no other settings change through this client
-// is in progress, or ctx ends, and returns the unlock. Gmail refuses a
-// filter write that overlaps another on the same account (§18 row 54);
-// the other settings writes are held too, and a change reads what it
+// is in progress, or ctx ends, and returns the unlock.
+//
+// Gmail can refuse filter writes that overlap on one account: a 500
+// backendError that created nothing, or a 400 failedPrecondition,
+// "Precondition check failed.". The reference says nothing of either.
+// The other settings writes are held too, and a change reads what it
 // replaces first, so the whole read and write is held. Filter writes are
 // also paced, whether or not the lock is held: see pace.
+// Checked by the live step "filter creates sent at once".
+// https://developers.google.com/workspace/gmail/api/reference/rest/v1/users.settings.filters/create
 func (c *Client) LockSettings(ctx context.Context) (unlock func(), err error) {
 	select {
 	case c.settings <- struct{}{}:
@@ -374,8 +379,8 @@ func (c *Client) LockSettings(ctx context.Context) (unlock func(), err error) {
 }
 
 // filterPacing is how long a filter write waits after the last one
-// finished. Gmail refused filter writes sent back to back and took the
-// same writes 5 seconds later; no shorter wait was tried (§18 row 54).
+// finished. Gmail takes, 5 seconds apart, filter writes it refuses back
+// to back; no shorter wait is known to work.
 const filterPacing = 5 * time.Second
 
 // pace waits, for a filter write, until filterPacing has passed since
@@ -886,11 +891,10 @@ func classifyStatus(call Call, p policy, status int, header http.Header, body []
 	case status == http.StatusServiceUnavailable:
 		return transient(ifTurnedAway, "retry shortly", ClassUnavailable, "Gmail is not serving right now (%s)", call.ID)
 	case status == http.StatusBadRequest && filterWriteIDs[call.ID] && isGenericPrecondition(env):
-		// Gmail refused filter writes sent close together this way and
-		// took them seconds later (§18 row 54), but the refusal does not
-		// say why, and a limit or a policy may answer the same. So it is
-		// repeated once, after the pacing wait, and never called an
-		// overlap.
+		// Gmail refuses filter writes sent close together this way and
+		// takes them seconds later, but the refusal does not say why, and
+		// a limit or a policy may answer the same. So it is repeated
+		// once, after the pacing wait, and never called an overlap.
 		f := transient(ifTurnedAway, "Gmail has refused filter writes sent close together this way; if it persists, "+
 			"the cause is something else", ClassUnavailable, "Gmail refused %s without saying why", call.ID)
 		f.once = true
@@ -922,16 +926,21 @@ func neverSent(err error) bool {
 // Google's reasons, compared across its two spellings (camelCase in the
 // older envelope, UPPER_SNAKE in an ErrorInfo detail).
 var (
+	// rateReasons mark a request-rate limit. Gmail's per-user unit limit
+	// answers 403 rateLimitExceeded, "Units per minute per user", with no
+	// Retry-After, so the client backs off on its own schedule.
+	// Checked by the live step "the per-user rate limit".
+	// https://developers.google.com/workspace/gmail/api/guides/handle-errors
 	rateReasons  = []string{"rateLimitExceeded", "userRateLimitExceeded"}
 	quotaReasons = []string{"dailyLimitExceeded", "quotaExceeded"}
 	scopeReasons = []string{"insufficientPermissions", "ACCESS_TOKEN_SCOPE_INSUFFICIENT"}
 	// scopeMessages catch the refusal where no reason is set.
 	scopeMessages = []string{"insufficient authentication scopes", "insufficient permission"}
 	// sendingLimitMarkers are how a sending-limit refusal is told from
-	// a request-rate one. Spike H (§15) records the real shape; until
-	// then the match is deliberately wide, because reading a rate limit
-	// as a sending limit costs one call a retry, while the reverse
-	// retries against a wait of hours.
+	// a request-rate one. The sending limit's shape is unseen, since
+	// provoking it blocks the account for up to a day, so the match is
+	// wide: reading a rate limit as a sending limit costs one call a
+	// retry, while the reverse retries against a wait of hours.
 	sendingLimitMarkers = []string{"sending limit", "mail sending", "sendinglimit", "daily user sending", "sending quota"}
 )
 
@@ -946,9 +955,9 @@ func matches(reason string, want []string) bool {
 }
 
 // isGenericPrecondition is Google's generic refusal, reason
-// failedPrecondition, "Precondition check failed.", which Gmail gave
-// filter writes sent close together (§18 row 54). Another
-// failedPrecondition, such as "A draft cannot be labeled.", is not it.
+// failedPrecondition, "Precondition check failed.", which Gmail gives
+// filter writes sent close together. Another failedPrecondition, such
+// as "A draft cannot be labeled.", is not it.
 func isGenericPrecondition(env envelope) bool {
 	return matches(env.reason, []string{"failedPrecondition"}) &&
 		strings.Contains(strings.ToLower(env.message), "precondition check failed")
@@ -967,10 +976,11 @@ func isMissingScope(env envelope) bool {
 	return false
 }
 
-// isSendingLimit reports Gmail's per-account sending limit. It arrives
-// as 429 (§2.2), and is matched by what Google says rather than by
-// which call met it, because the limit can surface minutes late on a
-// call that is not a send.
+// isSendingLimit reports Gmail's per-account sending limit. The error
+// guide says it arrives as 429, possibly minutes late, so it is matched
+// by what Google says rather than by which call met it: the call that
+// meets it may not be a send.
+// https://developers.google.com/workspace/gmail/api/guides/handle-errors
 func isSendingLimit(p policy, status int, env envelope) bool {
 	if status != http.StatusTooManyRequests && status != http.StatusForbidden {
 		return false
@@ -1067,7 +1077,7 @@ func sleepCtx(ctx context.Context, d time.Duration) error {
 
 // withoutURL strips the request URL from a transport error. net/http
 // wraps every transport failure in a *url.Error whose text renders the
-// whole URL, and a search travels in its query string (§9.2).
+// whole URL, and a search travels in its query string (D-03).
 func withoutURL(err error) error {
 	var ue *url.Error
 	if errors.As(err, &ue) && ue.Err != nil {

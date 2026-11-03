@@ -5,50 +5,63 @@ import (
 	"fmt"
 )
 
-// Class is the closed error vocabulary of docs/architecture.md §6.5.
+// Class is the closed error vocabulary (D-77).
 //
 // Closed means both directions, and `scripts/gates classes` asserts
 // both: every class the code emits is in Classes, and every class in
 // Classes is emitted somewhere.
 type Class string
 
-// The twelve classes. The standard names six; the other six are forced
-// by this API and each is argued in §6.5.
+// The classes. Each asks the caller for a different next step; a failure
+// that needs a step none of them names gets a class of its own.
 const (
-	// ClassInvalid: malformed or under-specified arguments, or a message
-	// larger than Google accepts.
+	// ClassInvalid: malformed or under-specified arguments, such as a
+	// write naming no ids or too many (D-44), or a message larger than
+	// Google accepts. The caller fixes the arguments.
 	ClassInvalid Class = "invalid"
-	// ClassNotFound: no such message, thread, draft or label.
+	// ClassNotFound: no such message, thread, draft or label. The caller
+	// checks the id.
 	ClassNotFound Class = "not_found"
-	// ClassAuth: not signed in, the token was revoked or expired, or a
-	// scope is missing. The caller runs login.
+	// ClassAuth: not signed in, the token was revoked or expired (D-01),
+	// or a scope is missing (D-73). The caller runs login.
 	ClassAuth Class = "auth"
 	// ClassForbidden: signed in, but the account or its organization
-	// refuses this.
+	// refuses this. The caller asks an administrator.
 	ClassForbidden Class = "forbidden"
 	// ClassConflict: the mailbox state refuses the operation — a label
-	// name already taken, SENT applied by hand.
+	// name already taken, SENT applied by hand. The caller reads and
+	// reconsiders.
 	ClassConflict Class = "conflict"
-	// ClassStale: the draft moved since its witness was read (§4.4).
-	// Kept apart from conflict because it asks for a re-read.
+	// ClassStale: the draft moved since its witness was read (D-42), or a
+	// witness the call carries is not what Gmail holds (D-47). The caller
+	// re-reads and retries, which is why it is kept apart from conflict.
 	ClassStale Class = "stale"
 	// ClassAmbiguous: a label name or rfc822 id matched more than one.
+	// The caller passes an id.
 	ClassAmbiguous Class = "ambiguous"
-	// ClassBlocked: a guard refused what the API would have allowed.
+	// ClassBlocked: a guard refused what the API would have allowed
+	// (D-49), or a write that cannot be undone came without confirm: true
+	// (D-66). The caller passes the override, or does not; it passes
+	// confirm only when the person asked for that write.
 	ClassBlocked Class = "blocked"
-	// ClassRateLimited: a per-user, project or sending limit (§2.2).
+	// ClassRateLimited: a per-user, project or sending limit (D-78, D-79).
+	// The caller waits as long as the message says. The message tells the
+	// sending limit from the request limits: a minute is not a day.
 	ClassRateLimited Class = "rate_limited"
-	// ClassUnavailable: a transient upstream failure.
+	// ClassUnavailable: a transient upstream failure. The caller retries.
 	ClassUnavailable Class = "unavailable"
-	// ClassUnsupported: the API cannot do this (§2).
+	// ClassUnsupported: the API cannot do this. The caller reads the
+	// message, which says what Gmail cannot do.
 	ClassUnsupported Class = "unsupported"
-	// ClassAmbiguousOutcome: a send, a filter create or a filter delete
-	// may or may not have happened (§4.3, §7.9). Never retried; the result carries the
-	// read that tries to settle it.
+	// ClassAmbiguousOutcome: a write that is not safe to repeat failed
+	// without a clear answer, so it may or may not have happened. Never
+	// retried. A send and a filter write settle it with a read and report
+	// the verdict (D-50, D-58); any other write leaves the caller to read
+	// before trying again.
 	ClassAmbiguousOutcome Class = "ambiguous_outcome"
 )
 
-// Classes is the vocabulary, in the order §6.5 tabulates it.
+// Classes is the vocabulary, each class once.
 var Classes = []Class{
 	ClassInvalid, ClassNotFound, ClassAuth, ClassForbidden,
 	ClassConflict, ClassStale, ClassAmbiguous, ClassBlocked,

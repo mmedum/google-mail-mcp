@@ -295,8 +295,8 @@ func splitAddressList(v string) []string {
 	return append(parts, cur.String())
 }
 
-// quoteState follows a header value's quoted strings and comments (RFC
-// 5322 §3.2.2, §3.2.4) one byte at a time.
+// quoteState follows a header value's comments (RFC 5322 §3.2.2) and
+// quoted strings (RFC 5322 §3.2.4) one byte at a time.
 type quoteState struct {
 	quoted, escaped bool
 	comment         int

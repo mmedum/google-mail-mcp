@@ -101,7 +101,7 @@ func TestAPIFieldsFloors(t *testing.T) {
 	if err == nil {
 		t.Fatal("passed below the floors")
 	}
-	out.mustSay(t, "§8b names Missing and the snapshot publishes no such schema")
+	out.mustSay(t, "the judged list names Missing and the snapshot publishes no such schema")
 	out.mustSay(t, "4 published fields judged, below the floor of 5")
 	out.mustSay(t, "2 fields modeled, below the floor of 3")
 }

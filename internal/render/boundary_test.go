@@ -223,11 +223,11 @@ var testLabels = []gmail.Label{
 	{ID: "Label_1", Name: "Receipts", Type: "user", Color: &gmail.LabelColor{TextColor: "#ffffff", BackgroundColor: "#16a766"}},
 }
 
-// TestSenderTextNeverReachesTheServersVoice is the property §4.1 rests
-// on: hostile mail with a unique marker in every header, parameter,
-// file name, link, address, display name, subject, snippet and body,
-// through every renderer at budgets from the smallest up, and no marker
-// ever appears outside a block.
+// TestSenderTextNeverReachesTheServersVoice holds that mail stays data:
+// hostile mail with a unique marker in every header, parameter, file
+// name, link, address, display name, subject, snippet and body, through
+// every renderer at budgets from the smallest up, and no marker ever
+// appears outside a block.
 func TestSenderTextNeverReachesTheServersVoice(t *testing.T) {
 	labels := model.NewLabelIndex(testLabels)
 	checked := 0

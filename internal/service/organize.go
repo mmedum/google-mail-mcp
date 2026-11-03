@@ -11,9 +11,10 @@ import (
 	"github.com/mmedum/google-mail-mcp/v4/internal/model"
 )
 
-// MaxWriteIDs is the most ids one write names (§4.7): far below Google's
-// 1,000, because a write names what it touches and a person reads the
-// list.
+// MaxWriteIDs is the most ids one write names (D-44): far below the 1,000
+// batchModify accepts, because a write names what it touches and a
+// person reads the list. Each id is its own call, never a batch.
+// https://developers.google.com/workspace/gmail/api/reference/rest/v1/users.messages/batchModify
 const MaxWriteIDs = 100
 
 // Targets are the ids a multi-id write names.
@@ -48,7 +49,7 @@ func (t Targets) list() ([]target, error) {
 	}
 	switch {
 	case len(out) == 0:
-		return nil, gapi.Errf(gapi.ClassInvalid, "name at least one message_ids or thread_ids entry; a write never takes a search (§4.7)")
+		return nil, gapi.Errf(gapi.ClassInvalid, "name at least one message_ids or thread_ids entry; a write never takes a search")
 	case len(out) > MaxWriteIDs:
 		return nil, gapi.Errf(gapi.ClassInvalid, "%d ids is more than the %d one call may name; split the list", len(out), MaxWriteIDs)
 	}
@@ -62,10 +63,10 @@ type Relabel struct {
 }
 
 // ModifyLabels adds and removes labels on each message and thread named,
-// one item at a time, and reports each item's labels before and after
-// (§4.7, §4.12). An item already in the state asked for is not written
-// and is reported unchanged; one that fails is reported with its class
-// while the rest go on.
+// one item at a time, and reports each item's labels before and after.
+// An item already in the state asked for is not written and is reported
+// unchanged; one that fails is reported with its class while the rest go
+// on.
 func (s *Service) ModifyLabels(ctx context.Context, in Relabel) (model.ItemsWrite, error) {
 	out := model.ItemsWrite{Op: "modify_labels", DryRun: gapi.WritesForbidden(ctx)}
 	targets, err := in.list()
@@ -94,7 +95,9 @@ func (s *Service) ModifyLabels(ctx context.Context, in Relabel) (model.ItemsWrit
 }
 
 // relabelIDs resolves add and remove to label ids, refusing what Gmail
-// sets itself and what trash and restore are for.
+// sets itself and what trash and restore are for. Gmail applies SENT and
+// DRAFT itself and refuses either by hand, as its labels guide says.
+// https://developers.google.com/workspace/gmail/api/guides/labels
 func relabelIDs(all []gmail.Label, addNames, removeNames []string) (add, remove []string, err error) {
 	if add, err = resolveLabels(all, dedupe(addNames)); err != nil {
 		return nil, nil, err
@@ -143,8 +146,11 @@ func needs(labels, add, remove []string) (a, r []string) {
 
 // relabel is modify_labels' item write. A message sends only the part of
 // the change it needs; a thread sends the whole change, which Gmail
-// applies to each of its messages, once any one needs it. Drafts are
-// refused, or skipped inside a thread (§2.12).
+// applies to each of its messages, once any one needs it. A draft is
+// refused, or skipped inside a thread: the labels guide says "You can't
+// apply labels to draft messages."
+// Checked by the live step "labeling a draft is refused for that item".
+// https://developers.google.com/workspace/gmail/api/guides/labels
 func (s *Service) relabel(add, remove []string) itemWrite {
 	return itemWrite{
 		check: func(t target, labels map[string][]string) (bool, error) {
@@ -152,7 +158,7 @@ func (s *Service) relabel(add, remove []string) itemWrite {
 			for id, ls := range labels {
 				if slices.Contains(ls, "DRAFT") {
 					if t.kind == model.KindMessage {
-						return false, gapi.Errf(gapi.ClassUnsupported, "message %s is a draft, and Gmail does not label drafts (§2.12)", id)
+						return false, gapi.Errf(gapi.ClassUnsupported, "message %s is a draft, and Gmail does not label drafts", id)
 					}
 					continue
 				}
@@ -185,9 +191,9 @@ type Move struct {
 	Restore bool
 }
 
-// Trash moves each message and thread named into the trash, or out of it
-// (§4.6). What is already where it was asked to go is reported
-// unchanged, "already in the trash", and not written.
+// Trash moves each message and thread named into the trash, or out of
+// it. What is already where it was asked to go is reported unchanged,
+// "already in the trash", and not written.
 func (s *Service) Trash(ctx context.Context, in Move) (model.ItemsWrite, error) {
 	op := "trash"
 	if in.Restore {
@@ -238,8 +244,11 @@ func (s *Service) move(restore bool) itemWrite {
 				return m.LabelIDs, err
 			}
 		},
-		// Gmail's trash takes a message out of the inbox, and its restore
-		// does not put it back (§18 row 70).
+		// Gmail's trash adds TRASH and takes INBOX off; its restore takes
+		// TRASH off and does not put INBOX back. Other labels stay. The
+		// reference says only that each moves the message.
+		// Checked by the live steps "trash" and "restore".
+		// https://developers.google.com/workspace/gmail/api/reference/rest/v1/users.messages/trash
 		predict: func(labels map[string][]string) []string {
 			if restore {
 				return applied(labels, nil, []string{"TRASH"}, false)
@@ -257,7 +266,7 @@ type Purge struct {
 }
 
 // DeletePermanently deletes each message and thread named for good,
-// skipping the trash (§4.6). Each item is read first, so the result
+// skipping the trash. Each item is read first, so the result
 // shows the labels it had; a draft's message is refused for that item
 // and points to delete_draft.
 func (s *Service) DeletePermanently(ctx context.Context, in Purge) (model.ItemsWrite, error) {

@@ -58,8 +58,8 @@ type ChangesQuery struct {
 type Changes struct {
 	Changes []model.Change
 	// Expired is set when Gmail no longer holds history from HistoryID
-	// on (§2.8). Changes is then empty because they are lost, not
-	// because there were none.
+	// on. Changes is then empty because they are lost, not because there
+	// were none.
 	Expired bool
 	// HistoryID is where the next call starts: the mailbox's current
 	// history id. It is safe to use once no page is left; while
@@ -72,7 +72,7 @@ type Changes struct {
 	Start string
 }
 
-// Changes lists what changed after a history id (§7.6). A 404 is an
+// Changes lists what changed after a history id. A 404 is an
 // expired cursor, reported with the current history id to restart from,
 // never as an empty list.
 func (s *Service) Changes(ctx context.Context, q ChangesQuery) (Changes, error) {

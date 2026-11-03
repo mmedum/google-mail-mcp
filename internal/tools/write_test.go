@@ -280,7 +280,7 @@ func TestCreateDraftReplies(t *testing.T) {
 }
 
 // A reply's In-Reply-To and References are built from the parent's own
-// headers (§4.5): its References with its Message-ID appended, or its
+// headers: its References with its Message-ID appended, or its
 // one In-Reply-To when it has no References, kept to 40 ids. A parent
 // with no Message-ID gives neither header, and the reply says so.
 func TestCreateDraftReplyThreadingHeaders(t *testing.T) {
@@ -340,7 +340,7 @@ func TestCreateDraftReplyThreadingHeaders(t *testing.T) {
 }
 
 // A quote puts the parent's text below the body, after a line naming its
-// Date header as written and its sender, each line after "> " (§7.4).
+// Date header as written and its sender, each line after "> ".
 // The HTML version is made from the whole text, quote included.
 func TestCreateDraftQuotes(t *testing.T) {
 	h, fake := connectFake(t, config.Config{})
@@ -451,7 +451,7 @@ func TestCreateDraftQuoteReadsTextStoredApart(t *testing.T) {
 
 // A forward attaches the original as Gmail stored it, named after its
 // subject, under a subject of its own, and asks for the original's
-// thread with no threading headers (§7.4).
+// thread with no threading headers.
 func TestCreateDraftForwards(t *testing.T) {
 	h, fake := connectFake(t, config.Config{})
 	plain := fake.Scenario(gmailtest.ScenarioPlainThread)
@@ -475,8 +475,8 @@ func TestCreateDraftForwards(t *testing.T) {
 		t.Fatalf("stored: attachments %+v, body %q, in-reply-to %v, references %v, original whole %v",
 			m.Attachments, m.Body.Text, m.InReplyTo, m.References, bytes.Contains(raw, orig))
 	}
-	// Gmail filed a forward in the original's thread by its threadId
-	// alone when tested live (§18 row 85), and the fake does the same.
+	// Gmail files a forward in the original's thread by its threadId
+	// alone, and the fake does the same.
 	if out.ThreadID != plain.ThreadID || !strings.Contains(text, "forward of message "+id+" in thread "+plain.ThreadID) ||
 		!strings.Contains(text, "\nGmail filed the draft in the original's thread.\n") || strings.Contains(text, "a new thread") {
 		t.Errorf("thread %s; text:\n%s", out.ThreadID, text)
@@ -851,7 +851,7 @@ func TestDeleteDraft(t *testing.T) {
 	refused(t, h, "delete_draft", with(args, "confirm", true), gapi.ClassNotFound)
 }
 
-// The draft's message_id is the witness, as for an update (§4.4): a
+// The draft's message_id is the witness, as for an update: a
 // draft changed since it was read is not deleted, and a dry run says so
 // too, so what is deleted is what the caller read.
 func TestDeleteDraftNeedsItsWitness(t *testing.T) {
@@ -1328,8 +1328,8 @@ func TestTheSignatureStaysInTheDraft(t *testing.T) {
 }
 
 // A signature's image goes as a part of its own beside the HTML, never
-// inside it, since Gmail would move it on save and drop the plain text
-// (§18 row 99). A new body keeps the part, and a signature taken out
+// inside it, since Gmail would move it on save and drop the plain text.
+// A new body keeps the part, and a signature taken out
 // takes its part with it.
 func TestTheSignaturesImageIsAPartOfItsOwn(t *testing.T) {
 	h, fake := connectFake(t, config.Config{})
@@ -1423,7 +1423,7 @@ func TestTheServerSignsNewDraftsWhenSetTo(t *testing.T) {
 
 // New body_html would drop a signature the draft's HTML holds and cannot
 // carry, which the caller cannot see: refused unless signature says what
-// to do (standard §3, never destroy what the caller cannot see).
+// to do. A write never destroys what the caller cannot see.
 func TestUpdateDraftWillNotDropASignatureUnsaid(t *testing.T) {
 	h, fake := connectFake(t, config.Config{})
 	var d tools.DraftWriteOut

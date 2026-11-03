@@ -31,7 +31,8 @@ GATES     ?= $(GO) run ./scripts/gates
 # refuses this module and reports it as "can't load config".
 GOLANGCI_LINT ?= github.com/golangci/golangci-lint/v2/cmd/golangci-lint@v2.14.0
 GOVULNCHECK   ?= golang.org/x/vuln/cmd/govulncheck@v1.8.0
-# v1.6.0 until docs/architecture.md §17.3 settles v1 against v2.
+# v1.6.0, not v2: no dependency here carries MIT-0, the license that
+# needs v2. Move to v2 when one does.
 GOLICENSES    ?= github.com/google/go-licenses@v1.6.0
 # The module path is zricethezav: the project moved organization and the
 # module path did not follow.
@@ -46,7 +47,7 @@ GORELEASER    ?= github.com/goreleaser/goreleaser/v2@v2.18.2
 all: check
 
 .PHONY: check
-check: fmt vet tidy lint cover vuln licenses secrets leaks pins classes api-coverage api-fields schema-diff smoke staleness checklist changelog-links transcript live-cover outcomes evals-check mcpb release server-json actionlint goreleaser-check parity
+check: fmt vet tidy lint cover vuln licenses secrets leaks pins classes api-coverage api-fields schema-diff smoke staleness docs checklist changelog-links transcript live-cover outcomes evals-check mcpb release server-json actionlint goreleaser-check parity
 
 # --- build ---------------------------------------------------------------
 
@@ -162,6 +163,10 @@ smoke: build ## Drive the binary over stdio
 staleness: build ## The docs match the code
 	$(GATES) staleness $(BIN)
 
+.PHONY: docs
+docs: ## Every decision ID, citation, link, codemap entry, path and live step resolves
+	$(GATES) docs
+
 .PHONY: checklist
 checklist: ## CLAUDE.md's definition of done against `check`
 	$(GATES) checklist
@@ -229,7 +234,7 @@ release-rehearse: ## Build the whole release locally, unsigned (manual)
 # --- by hand -------------------------------------------------------------
 
 .PHONY: live
-live: build ## Drive the built binary against a real account (docs/development.md)
+live: build ## Drive the built binary against a real account (CONTRIBUTING.md#the-live-run)
 	$(GO) run -tags=live ./scripts/livemail -binary $(BIN) -profile $(or $(GMAIL_PROFILE),default)
 
 # Not in `check`: it spends money and is not deterministic. Its

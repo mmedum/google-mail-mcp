@@ -15,8 +15,7 @@ import (
 )
 
 // outcomes holds the rule that a result states what happened, never what
-// was asked for (docs/architecture.md §4.12), to the one shape of it a
-// machine can check.
+// was asked for (D-46), to the one shape of it a machine can check.
 //
 // The shape: a branch tests a boolean field of the request and then
 // states, in prose, what is now true, without consulting Gmail. The
@@ -168,9 +167,8 @@ func outcomesWriteSpecs(files []outcomesFile) int {
 }
 
 // outcomesRequestType names a tool's input type: this repository's
-// FooIn, or FooInput as the shared standard writes it. The gate read
-// nothing until it knew the first spelling, which its floor caught the
-// day the first write tool was registered.
+// FooIn, or FooInput as the sibling servers write it. A gate that knows
+// neither spelling reads nothing, which its floor catches.
 func outcomesRequestType(name string) bool {
 	return strings.HasSuffix(name, "In") || strings.HasSuffix(name, "Input")
 }

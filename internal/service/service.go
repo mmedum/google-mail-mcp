@@ -16,16 +16,19 @@ import (
 	"github.com/mmedum/google-mail-mcp/v4/internal/model"
 )
 
-// Page sizes for listings (architecture §7.1). The default is small on
-// purpose: every row of a thread listing is a threads.get at 40 units.
+// Page sizes for listings. The default is small on purpose: every row of
+// a thread listing is a threads.get at 40 units.
 const (
 	DefaultMax = 20
 	MaxMax     = 100
 )
 
 // listingHeaders are what a listing reads per row with format=metadata.
-// Content-Type is how a metadata read infers attachments. A read costs
-// the same whatever headers it names (§18 row 80).
+// Content-Type is how a metadata read infers attachments. The quota page
+// prices a read by its format and never by metadataHeaders, so the
+// List-Unsubscribe headers cost nothing.
+// Checked by the live step "a row reads the List-Unsubscribe the driver wrote".
+// https://developers.google.com/workspace/gmail/api/reference/quota
 var listingHeaders = []string{"From", "To", "Cc", "Subject", "Date", "Message-ID", "Content-Type",
 	"List-Unsubscribe", "List-Unsubscribe-Post"}
 
@@ -50,7 +53,7 @@ type Search struct {
 }
 
 // Searched is the query a search actually ran, so the result can state
-// it: after and before become epoch seconds appended to q (§6.3).
+// it: after and before become epoch seconds appended to q.
 type Searched struct {
 	Q      string
 	After  time.Time
@@ -65,7 +68,7 @@ type labelSet struct {
 
 // labels reads the label list. It is read per call, never cached across
 // calls, so a label renamed in the web UI is never resolved to its old
-// name (§6.2). It costs one unit.
+// name. It costs one unit.
 func (s *Service) labels(ctx context.Context) (labelSet, error) {
 	res, err := s.client.ListLabels(ctx)
 	if err != nil {
@@ -126,12 +129,14 @@ func pageSizeOf(max, def, limit int) (int, error) {
 	return max, nil
 }
 
-// resolveLabels turns ids or names into ids (§6.2): a system label by
-// its id in any case, a user label by id, exact name, or name in any
-// case. A name that matches nothing is not_found. Gmail refuses two
-// labels differing only in case (spike I), so two case-insensitive
-// matches should not happen; if a label list ever has them, the answer
-// is ambiguous rather than a guess.
+// resolveLabels turns ids or names into ids (D-23): a system label by its
+// id in any case, a user label by id, exact name, or name in any case. A
+// name that matches nothing is not_found. System labels come from the
+// list Gmail returns, never a fixed set, since the labels guide says its
+// own list "isn't exhaustive". Gmail refuses two labels differing only
+// in case, so two case-insensitive matches should not happen; if a label
+// list ever has them, the answer is ambiguous rather than a guess.
+// https://developers.google.com/workspace/gmail/api/guides/labels
 func resolveLabels(all []gmail.Label, wanted []string) ([]string, error) {
 	out := make([]string, 0, len(wanted))
 	for _, w := range wanted {
@@ -173,7 +178,9 @@ func resolveLabel(all []gmail.Label, w string) (string, error) {
 
 // query builds q from the search and its after and before bounds, which
 // are sent as epoch seconds because Gmail reads a date in q as midnight
-// Pacific (§2.9).
+// Pacific, as its filtering guide says.
+// Checked by the live step "search threads in the run label, first page".
+// https://developers.google.com/workspace/gmail/api/guides/filtering
 func query(in Search) (Searched, error) {
 	out := Searched{Q: strings.TrimSpace(in.Q)}
 	loc := in.Location

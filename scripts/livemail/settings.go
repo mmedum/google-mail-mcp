@@ -276,7 +276,7 @@ var settingsSteps = []step{
 
 	// The signature is the one the run just set, so the draft that takes
 	// it holds only what the run wrote. Gmail must keep the markup around
-	// it as written, or the update cannot find it to carry over (§7.4).
+	// it as written, or the update cannot find it to carry over.
 	{name: "a draft takes the address's signature", tool: "create_draft", needs: needRunSignature,
 		args: func(e *env) map[string]any {
 			// No from: the draft goes from the default address, whose
@@ -363,7 +363,7 @@ var settingsSteps = []step{
 		}},
 
 	// A filter that trashes is its own tool, behind the destructive flag
-	// too, which the run turns on (§7.9).
+	// too, which the run turns on.
 	{name: "a trashing filter without confirm is refused", tool: "create_trash_filter", refuses: "blocked", needs: needSettings,
 		args: func(e *env) map[string]any {
 			return map[string]any{"from": filterSender(e.seed.label), "query": "trash"}
@@ -392,7 +392,7 @@ var settingsSteps = []step{
 		}},
 
 	// Gmail keeps a second identical filter, so the server's check is the
-	// only one. This filter has no size, which Gmail rounds (§18 row 52).
+	// only one. This filter has no size, which Gmail rounds.
 	{name: "an identical filter is refused", tool: "create_trash_filter", refuses: "conflict", needs: needSettings,
 		args: func(e *env) map[string]any {
 			return map[string]any{"from": filterSender(e.seed.label), "query": "trash", "confirm": true}
@@ -401,7 +401,7 @@ var settingsSteps = []step{
 
 	// An archiving filter with no size, read back at once with the labels
 	// sent and no more, and found as a duplicate when asked for again.
-	// Gmail was seen adding SPAM to such filters later (§18 row 56).
+	// Gmail can add SPAM to such a filter later.
 	{name: "create an archiving filter", tool: "create_filter", needs: needSettings,
 		args: func(e *env) map[string]any {
 			return map[string]any{"from": filterSender(e.seed.label), "query": "archive", "archive": true}
@@ -436,7 +436,7 @@ var settingsSteps = []step{
 		}},
 
 	// Report only: after another filter write and a pause, whether Gmail
-	// has added SPAM to the run's archiving filter (§18 row 56). The list
+	// has added SPAM to the run's archiving filter. The list
 	// is the whole account's, so only that one fact is printed. It is read
 	// from the structured rows, which carry every filter.
 	{name: "does the archiving filter list SPAM later", tool: "list_filters", quiet: true, needs: needSettings,
@@ -608,16 +608,17 @@ func (e *env) guardSettings(tool string, args map[string]any) error {
 // settingsSpikes run after the steps. Their filters match only the run's
 // own sender, and each deletes what it made; cleanup deletes any left.
 var settingsSpikes = []spike{
-	{name: "L", question: "How does Gmail answer filters.create calls sent at once, and does it take the refused " +
-		"ones sent again one at a time?", ask: spikeL},
+	{name: "filter creates sent at once", question: "How does Gmail answer filters.create calls sent at once, and does it take the refused " +
+		"ones sent again one at a time?", ask: filterCreatesSentAtOnce},
 }
 
-// spikeL sends eight filter creates at once, waits, sends each refused
-// one again alone, then reads the list for the run's filters and
-// deletes every one, one at a time. It reports each phase's answers.
-func spikeL(ctx context.Context, x spikeRun) string {
-	if !x.spikeL {
-		return "not run: answered 2026-09-28 (§18 row 54); -spike-l sends the filter writes again"
+// filterCreatesSentAtOnce sends eight filter creates at once, waits,
+// sends each refused one again alone, then reads the list for the run's
+// filters and deletes every one, one at a time. It reports each round's
+// answers.
+func filterCreatesSentAtOnce(ctx context.Context, x spikeRun) string {
+	if !x.filtersAtOnce {
+		return "not run: its answer is settled; -filters-at-once sends the filter writes again"
 	}
 	if !x.box.SettingsScope() {
 		return "not run: the profile's login did not grant gmail.settings.basic"

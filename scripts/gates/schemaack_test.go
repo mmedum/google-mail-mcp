@@ -4,7 +4,6 @@ import (
 	"errors"
 	"fmt"
 	"io"
-	"os"
 	"path/filepath"
 	"slices"
 	"strings"
@@ -363,8 +362,7 @@ type dumpRepo struct{ t *testing.T }
 
 func newDumpRepo(t *testing.T) *dumpRepo {
 	t.Helper()
-	t.Setenv("GIT_CONFIG_GLOBAL", os.DevNull)
-	t.Setenv("GIT_CONFIG_NOSYSTEM", "1")
+	isolateGit(t)
 	t.Chdir(t.TempDir())
 	r := &dumpRepo{t}
 	r.git("init", "--quiet", "-b", "main")

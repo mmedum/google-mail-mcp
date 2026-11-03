@@ -1,13 +1,13 @@
 # One verdict per published field of every judged schema. Held by `go run ./scripts/gates api-fields`.
-# A judged schema is one docs/architecture.md §8b names or one internal/gmail declares a struct for.
+# A judged schema is one apiFieldsRequired in scripts/gates/apifields.go lists, or one internal/gmail declares a struct for.
 # Columns: Schema.field (dotted for an inline object), verdict (modeled | out), reason (- when modeled).
 AutoForwarding.disposition	modeled	-
 AutoForwarding.emailAddress	modeled	-
 AutoForwarding.enabled	modeled	-
-BatchModifyMessagesRequest.addClassificationLabels	out	Workspace classification is read and shown, never written: changing it is an administrator decision (§8b)
+BatchModifyMessagesRequest.addClassificationLabels	out	Workspace classification is read and shown, never written: changing it is an administrator decision
 BatchModifyMessagesRequest.addLabelIds	modeled	-
 BatchModifyMessagesRequest.ids	modeled	-
-BatchModifyMessagesRequest.removeClassificationLabelIds	out	Workspace classification is read and shown, never written: changing it is an administrator decision (§8b)
+BatchModifyMessagesRequest.removeClassificationLabelIds	out	Workspace classification is read and shown, never written: changing it is an administrator decision
 BatchModifyMessagesRequest.removeLabelIds	modeled	-
 ClassificationLabelFieldValue.fieldId	modeled	-
 ClassificationLabelFieldValue.selection	modeled	-
@@ -19,7 +19,7 @@ Filter.action	modeled	-
 Filter.criteria	modeled	-
 Filter.id	modeled	-
 FilterAction.addLabelIds	modeled	-
-FilterAction.forward	modeled	read and flagged, never written (§7.7, §8b)
+FilterAction.forward	modeled	read and flagged, never written
 FilterAction.removeLabelIds	modeled	-
 FilterCriteria.excludeChats	modeled	-
 FilterCriteria.from	modeled	-
@@ -77,7 +77,7 @@ ListSendAsResponse.sendAs	modeled	-
 ListThreadsResponse.nextPageToken	modeled	-
 ListThreadsResponse.resultSizeEstimate	modeled	-
 ListThreadsResponse.threads	modeled	-
-Message.classificationLabelValues	modeled	read and shown, never written (§8b)
+Message.classificationLabelValues	modeled	read and shown, never written
 Message.historyId	modeled	-
 Message.id	modeled	-
 Message.internalDate	modeled	-
@@ -98,9 +98,9 @@ MessagePartBody.data	modeled	-
 MessagePartBody.size	modeled	-
 MessagePartHeader.name	modeled	-
 MessagePartHeader.value	modeled	-
-ModifyMessageRequest.addClassificationLabels	out	Workspace classification is read and shown, never written: changing it is an administrator decision (§8b)
+ModifyMessageRequest.addClassificationLabels	out	Workspace classification is read and shown, never written: changing it is an administrator decision
 ModifyMessageRequest.addLabelIds	modeled	-
-ModifyMessageRequest.removeClassificationLabelIds	out	Workspace classification is read and shown, never written: changing it is an administrator decision (§8b)
+ModifyMessageRequest.removeClassificationLabelIds	out	Workspace classification is read and shown, never written: changing it is an administrator decision
 ModifyMessageRequest.removeLabelIds	modeled	-
 ModifyThreadRequest.addLabelIds	modeled	-
 ModifyThreadRequest.removeLabelIds	modeled	-
@@ -116,7 +116,7 @@ SendAs.isPrimary	modeled	-
 SendAs.replyToAddress	modeled	-
 SendAs.sendAsEmail	modeled	-
 SendAs.signature	modeled	-
-SendAs.smtpMsa	out	SMTP relay settings for a send-as alias; identity administration, written off with sendAs.patch (§8a)
+SendAs.smtpMsa	out	SMTP relay settings for a send-as address, password included; `update_signature` writes the signature alone
 SendAs.treatAsAlias	modeled	-
 SendAs.verificationStatus	modeled	-
 Thread.historyId	modeled	-

@@ -158,7 +158,7 @@ func (s *Server) hasLabelNamed(m *message, v string) bool {
 }
 
 // parseWhen reads an epoch in seconds, or yyyy/mm/dd as UTC midnight.
-// (Gmail reads a date as Pacific midnight, §2.9; the fake does not model
+// (Gmail reads a date as Pacific midnight; the fake does not model
 // that, and the server sends epochs.)
 func parseWhen(v string) (time.Time, bool) {
 	if n, err := strconv.ParseInt(v, 10, 64); err == nil {

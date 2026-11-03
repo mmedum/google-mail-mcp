@@ -41,7 +41,7 @@ type Download struct {
 	SHA256   string
 }
 
-// DownloadAttachment writes one attachment of a message into dir (§7.3).
+// DownloadAttachment writes one attachment of a message into dir.
 // It reads the message to find the part and its name, then streams the
 // content into a new file: the name is the part's safe base name, a
 // taken name gets a numeric suffix, and nothing is ever overwritten.
@@ -88,9 +88,9 @@ func failed(partID string, err error) render.Failed {
 	return f
 }
 
-// DownloadAttachments writes several attachments of one message into dir
-// (§7.3), one at a time, as DownloadAttachment writes one. partIDs names
-// them; with none, every attachment is written but those Skipped names,
+// DownloadAttachments writes several attachments of one message into dir,
+// one at a time, as DownloadAttachment writes one. partIDs names them;
+// with none, every attachment is written but those Skipped names,
 // and inline parts are written when includeInline is set. A part that
 // fails is reported in Failed and leaves no file; the files written
 // before it stay.
@@ -145,10 +145,10 @@ func (s *Service) DownloadAttachments(ctx context.Context, dir, messageID string
 }
 
 // MaxReadBytes is the largest attachment read_attachment reads into a
-// result (§7.3). A larger one is refused before it is read.
+// result. A larger one is refused before it is read.
 const MaxReadBytes = 5 << 20
 
-// ReadAttachment reads one attachment of a message as text (§7.3): plain
+// ReadAttachment reads one attachment of a message as text: plain
 // text, CSV, Markdown, JSON, HTML, a calendar or an attached message.
 // Any other type, a part over MaxReadBytes and a part whose content Gmail
 // did not give are refused before it is read.
@@ -349,7 +349,7 @@ func (s *Service) writeFile(ctx context.Context, root *os.Root, dir, messageID s
 	return out, nil
 }
 
-// messageID resolves an id given as "rfc822:<Message-ID>" (§6.1).
+// messageID resolves an id given as "rfc822:<Message-ID>".
 func (s *Service) messageID(ctx context.Context, id string) (string, error) {
 	if rest, ok := strings.CutPrefix(id, rfc822Prefix); ok {
 		return s.byRFC822ID(ctx, rest)
