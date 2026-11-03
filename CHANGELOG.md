@@ -15,6 +15,8 @@ lifted verbatim.
 
 ## [Unreleased]
 
+## [4.0.2] - 2026-11-03
+
 ### Changed
 
 - Refusal messages state their reason instead of pointing at a section of the design document.
@@ -311,7 +313,8 @@ lifted verbatim.
 - Repository gates run by `make check` and CI: leaks, pins, error classes, API coverage, schema diff, smoke, staleness and more.
 - Signed release archives for six platforms with SBOMs, build provenance, a Claude Desktop bundle and an MCP registry entry.
 
-[Unreleased]: https://github.com/mmedum/google-mail-mcp/compare/v4.0.1...HEAD
+[Unreleased]: https://github.com/mmedum/google-mail-mcp/compare/v4.0.2...HEAD
+[4.0.2]: https://github.com/mmedum/google-mail-mcp/compare/v4.0.1...v4.0.2
 [4.0.1]: https://github.com/mmedum/google-mail-mcp/compare/v4.0.0...v4.0.1
 [4.0.0]: https://github.com/mmedum/google-mail-mcp/compare/v3.3.0...v4.0.0
 [3.3.0]: https://github.com/mmedum/google-mail-mcp/compare/v3.2.0...v3.3.0
