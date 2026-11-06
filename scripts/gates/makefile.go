@@ -10,8 +10,9 @@ import (
 
 // A reader for the parts of the Makefile the gates ask about: variables,
 // targets, their prerequisites and their recipes. It is not make. It
-// knows `NAME ?= v`, `NAME = v`, `NAME := v`, `target: prereqs`, and
-// recipe lines starting with a TAB, which is all this repository writes.
+// knows `NAME = v` with `?=`, `:=` or `+=`, after `export` or `override`,
+// `target: prereqs`, and recipe lines starting with a TAB, read as make
+// reads them.
 
 // makefile is a parsed Makefile.
 type makefile struct {
@@ -27,7 +28,7 @@ type makefileTarget struct {
 }
 
 var (
-	makefileVarLine    = regexp.MustCompile(`^([A-Za-z_][A-Za-z0-9_]*)\s*(\?=|:=|=)\s*(.*)$`)
+	makefileVarLine    = regexp.MustCompile(`^(?:(?:export|override)[ \t]+)*([A-Za-z_][A-Za-z0-9_]*)[ \t]*([:?+]?=)[ \t]*(.*)$`)
 	makefileTargetLine = regexp.MustCompile(`^([A-Za-z0-9_.\-]+)\s*:([^=].*)?$`)
 	makefileVarRef     = regexp.MustCompile(`\$\(([A-Za-z_][A-Za-z0-9_]*)\)`)
 )
@@ -41,9 +42,20 @@ func readMakefile(path string) (*makefile, error) {
 	return parseMakefile(string(data)), nil
 }
 
+// parseMakefile reads a Makefile as make does: a # starts a comment in an
+// assignment, a later `=` or `:=` replaces a value, `?=` sets only a
+// variable not yet set, and `+=` appends after a space
+// (https://www.gnu.org/software/make/manual/html_node/Setting.html,
+// https://www.gnu.org/software/make/manual/html_node/Appending.html). A
+// target's rules merge their prerequisites, and the last recipe is the
+// one that runs
+// (https://www.gnu.org/software/make/manual/html_node/Multiple-Rules.html).
 func parseMakefile(text string) *makefile {
 	m := &makefile{vars: map[string]string{}, targets: map[string]*makefileTarget{}}
 	var current *makefileTarget
+	// fresh is whether the current rule has yet to give its first recipe
+	// line, which replaces any recipe an earlier rule gave.
+	fresh := false
 	var pending string
 	for raw := range strings.SplitSeq(text, "\n") {
 		raw = strings.TrimRight(raw, "\r")
@@ -57,8 +69,13 @@ func parseMakefile(text string) *makefile {
 		}
 		if strings.HasPrefix(raw, "\t") {
 			if current != nil {
-				line := strings.TrimSpace(raw)
+				// @, - and + tell make how to run a command and are not
+				// part of it (https://www.gnu.org/software/make/manual/html_node/Recipe-Syntax.html).
+				line := strings.TrimLeft(strings.TrimSpace(raw), "@-+ \t")
 				if line != "" && !strings.HasPrefix(line, "#") {
+					if fresh {
+						current.recipe, fresh = nil, false
+					}
 					current.recipe = append(current.recipe, line)
 				}
 			}
@@ -70,8 +87,16 @@ func parseMakefile(text string) *makefile {
 		}
 		if v := makefileVarLine.FindStringSubmatch(line); v != nil {
 			current = nil
-			value, _, _ := strings.Cut(v[3], " #")
-			m.vars[v[1]] = strings.TrimSpace(value)
+			value, _, _ := strings.Cut(v[3], "#")
+			value = strings.TrimSpace(value)
+			old, set := m.vars[v[1]]
+			switch {
+			case v[2] == "?=" && set:
+				continue
+			case v[2] == "+=" && old != "":
+				value = old + " " + value
+			}
+			m.vars[v[1]] = value
 			continue
 		}
 		if t := makefileTargetLine.FindStringSubmatch(line); t != nil {
@@ -82,8 +107,15 @@ func parseMakefile(text string) *makefile {
 			}
 			prereqs, _, _ := strings.Cut(t[2], "##")
 			prereqs, _, _ = strings.Cut(prereqs, "#")
-			current = &makefileTarget{name: name, prereqs: strings.Fields(prereqs)}
-			m.targets[name] = current
+			if m.targets[name] == nil {
+				m.targets[name] = &makefileTarget{name: name}
+			}
+			current, fresh = m.targets[name], true
+			for _, p := range strings.Fields(prereqs) {
+				if !slices.Contains(current.prereqs, p) {
+					current.prereqs = append(current.prereqs, p)
+				}
+			}
 			continue
 		}
 		current = nil

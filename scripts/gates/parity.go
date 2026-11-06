@@ -2,8 +2,13 @@ package main
 
 import (
 	"fmt"
+	"go/ast"
+	"go/build/constraint"
+	"go/parser"
+	"go/token"
 	"io"
 	"maps"
+	"math/bits"
 	"os"
 	"path/filepath"
 	"regexp"
@@ -20,7 +25,8 @@ import (
 // command is the target's recipe. A step's `name:` is not a command and
 // is not read. Makefile variables are expanded before anything is
 // compared, so `$(GATES) pins` and `go run ./scripts/gates pins` are the
-// same line.
+// same line. The vet passes are held to the build tags the tree's files
+// need, read from their //go:build lines.
 
 const (
 	parityMakefile = "Makefile"
@@ -48,8 +54,9 @@ var parityReleaseOnly = map[string]string{
 var parityReleaseFiles = []string{".goreleaser.yaml", ".github/workflows/release.yml", ".github/workflows/publish-mcp.yml"}
 
 var (
-	parityGateCall = regexp.MustCompile(`go run \./scripts/gates\s+([a-z][a-z0-9-]*)`)
-	parityVetTags  = regexp.MustCompile(`-tags[= ]([A-Za-z0-9_,]+)`)
+	// parityGateName is the gates command at the start of the word after
+	// ./scripts/gates.
+	parityGateName = regexp.MustCompile(`^[a-z][a-z0-9-]*`)
 )
 
 func parity(out io.Writer, _ []string) error {
@@ -61,7 +68,7 @@ func parity(out io.Writer, _ []string) error {
 		return err
 	}
 	_, _ = fmt.Fprintf(out, "parity ok: %d check prerequisites, %d CI command lines, %d gates in check, "+
-		"%d vet tag sets, %d CI-only and %d release-only entries excused\n",
+		"%d build tag sets vetted on both sides, %d CI-only and %d release-only entries excused\n",
 		r.prereqs, r.ciLines, r.checkGates, r.vetTags, len(parityCIOnly), len(parityReleaseOnly))
 	return nil
 }
@@ -72,7 +79,8 @@ type parityReport struct {
 	prereqs, ciLines, checkGates, vetTags int
 }
 
-// parityCheck compares the repository at root with a registry.
+// parityCheck compares the repository at root with a registry. A
+// checkout git cannot list is a gate that could not run.
 func parityCheck(root string, registry map[string]command) (*parityReport, error) {
 	mk, err := readMakefile(filepath.Join(root, parityMakefile))
 	if err != nil {
@@ -89,6 +97,14 @@ func parityCheck(root string, registry map[string]command) (*parityReport, error
 	ci, ok := workflowNamed(flows, parityCI)
 	if !ok {
 		return nil, fmt.Errorf("%s/%s does not exist", workflowDir, parityCI)
+	}
+	files, err := gitFiles(root)
+	if err != nil {
+		return nil, couldNotRun{err}
+	}
+	tags, err := parityTreeTags(root, files)
+	if err != nil {
+		return nil, err
 	}
 
 	r := &parityReport{prereqs: len(check.prereqs)}
@@ -112,11 +128,14 @@ func parityCheck(root string, registry map[string]command) (*parityReport, error
 		ciClosure:    mk.closure(slices.Sorted(maps.Keys(ciTargets))...),
 		checkClosure: mk.closure("check"),
 	}
+	p.checkRecipes = parityLines(mk, p.checkClosure, nil)
+	p.ciAll = parityLines(mk, p.ciClosure, ciCommands)
 
 	r.checkPrereqs(p, check.prereqs)
 	r.checkCITargets(p)
 	r.checkGatesRun(root, p, registry)
-	r.checkVetTags(p)
+	r.checkVetTags(p, tags)
+	r.checkGoRuns(p)
 	r.checkFloors()
 	return r, nil
 }
@@ -127,6 +146,9 @@ type parityPipelines struct {
 	ciTargets               map[string]bool
 	ciCommands              []string
 	ciClosure, checkClosure []string
+	// checkRecipes are the expanded recipe lines `make check` runs, and
+	// ciAll CI's command lines with the recipes of the targets it runs.
+	checkRecipes, ciAll []string
 }
 
 func (r *parityReport) fail(format string, a ...any) {
@@ -182,12 +204,9 @@ type parityGateSites struct {
 // does, and that the pre-commit hook runs the precommit gate.
 func (r *parityReport) checkGatesRun(root string, p parityPipelines, registry map[string]command) {
 	sites := parityGateSites{
-		check:   parityGatesIn(p.mk, p.checkClosure, nil),
-		ci:      parityGatesIn(p.mk, p.ciClosure, p.ciCommands),
-		release: map[string]bool{},
-	}
-	for _, m := range parityGateCall.FindAllStringSubmatch(parityReadAll(root, parityReleaseFiles), -1) {
-		sites.release[m[1]] = true
+		check:   parityGatesIn(p.checkRecipes),
+		ci:      parityGatesIn(p.ciAll),
+		release: parityGatesIn(strings.Split(parityReadAll(root, parityReleaseFiles), "\n")),
 	}
 	hook, _ := os.ReadFile(filepath.Join(root, parityHook)) //nolint:gosec // a repository path
 	for _, name := range slices.Sorted(maps.Keys(registry)) {
@@ -242,20 +261,42 @@ func (r *parityReport) checkGate(name string, c command, sites parityGateSites) 
 	}
 }
 
-// checkVetTags holds every vet build tag both ways: a tag vetted only
-// locally leaves tagged code compiling only on a maintainer's laptop.
-func (r *parityReport) checkVetTags(p parityPipelines) {
-	checkTags := parityVetTagsIn(p.mk, p.checkClosure, nil)
-	ciTags := parityVetTagsIn(p.mk, p.ciClosure, p.ciCommands)
-	r.vetTags = len(checkTags)
-	for tag := range checkTags {
-		if !ciTags[tag] {
-			r.fail("`make check` vets with -tags=%s and %s does not", tag, parityCI)
+// checkVetTags holds what each tagged file needs to a vet pass on both
+// sides that compiles it: a file behind build tags compiles only in a pass
+// with them, and one vetted only locally compiles only on a maintainer's
+// laptop.
+func (r *parityReport) checkVetTags(p parityPipelines, needs []parityTagNeed) {
+	checkPasses := parityVetPasses(p.checkRecipes)
+	ciPasses := parityVetPasses(p.ciAll)
+	r.vetTags = len(needs)
+	for _, need := range needs {
+		if !need.vetted(checkPasses) {
+			r.fail("%s builds only with %s and `make check` vets no such pass; a contributor cannot see it break",
+				need.file, need)
+		}
+		if !need.vetted(ciPasses) {
+			r.fail("%s builds only with %s and %s vets no such pass; it compiles only on a maintainer's machine",
+				need.file, need, parityCI)
 		}
 	}
-	for tag := range ciTags {
-		if !checkTags[tag] {
-			r.fail("%s vets with -tags=%s and `make check` does not", parityCI, tag)
+}
+
+// checkGoRuns is the other direction for a tool CI runs itself rather
+// than through make: `make check` runs the same module at the same
+// version, or a contributor cannot reproduce what CI ran.
+func (r *parityReport) checkGoRuns(p parityPipelines) {
+	ran := map[string]bool{}
+	for _, line := range p.checkRecipes {
+		for _, run := range goRunsIn(line) {
+			ran[run.pkg] = true
+		}
+	}
+	for _, line := range p.ciCommands {
+		for _, run := range goRunsIn(line) {
+			if strings.Contains(run.pkg, "@") && !ran[run.pkg] {
+				r.fail("%s runs `go run %s` and no target `make check` runs does; a contributor cannot reproduce it",
+					parityCI, run.pkg)
+			}
 		}
 	}
 }
@@ -272,7 +313,8 @@ func (r *parityReport) checkFloors() {
 		r.fail("the registry has %d gates in check, want at least 15", r.checkGates)
 	}
 	if r.vetTags < 2 {
-		r.fail("`make check` vets %d build tags, want at least 2 (live and evals)", r.vetTags)
+		r.fail("the tree's //go:build lines need %d -tags lists, want at least 2 (live and evals); "+
+			"the tree is not being read", r.vetTags)
 	}
 }
 
@@ -299,7 +341,6 @@ func parityRecipeInCI(recipe, ciCommands []string) bool {
 		return false
 	}
 	for _, line := range recipe {
-		line = strings.TrimLeft(line, "@-")
 		if !slices.Contains(ciCommands, line) {
 			return false
 		}
@@ -317,30 +358,217 @@ func parityLines(mk *makefile, targets, extra []string) []string {
 	return append(slices.Concat(recipes...), extra...)
 }
 
-// parityGatesIn are the gates the targets' recipes and the extra
-// command lines call.
-func parityGatesIn(mk *makefile, targets, extra []string) map[string]bool {
+// parityGatesIn are the gates command lines call.
+func parityGatesIn(lines []string) map[string]bool {
 	found := map[string]bool{}
-	for _, line := range parityLines(mk, targets, extra) {
-		for _, m := range parityGateCall.FindAllStringSubmatch(line, -1) {
-			found[m[1]] = true
+	for _, line := range lines {
+		for _, run := range goRunsIn(line) {
+			if run.pkg != "./scripts/gates" || len(run.args) == 0 {
+				continue
+			}
+			if name := parityGateName.FindString(run.args[0]); name != "" {
+				found[name] = true
+			}
 		}
 	}
 	return found
 }
 
-// parityVetTagsIn are the build tags `go vet` runs with.
-func parityVetTagsIn(mk *makefile, targets, extra []string) map[string]bool {
-	found := map[string]bool{}
-	for _, line := range parityLines(mk, targets, extra) {
-		if !strings.Contains(line, " vet") {
-			continue
-		}
-		for _, m := range parityVetTags.FindAllStringSubmatch(line, -1) {
-			found[m[1]] = true
+// parityVetPasses is the tags of each `go vet` in lines that sets any,
+// from its -tags flag wherever it sits among the arguments: -tags=a,b or
+// -tags a,b, with one dash or two (https://pkg.go.dev/flag#hdr-Command_line_flag_syntax).
+func parityVetPasses(lines []string) [][]string {
+	var passes [][]string
+	for _, line := range lines {
+		for _, args := range goCommands(line, "vet") {
+			for i, arg := range args {
+				name, value, inline := strings.Cut(strings.TrimLeft(arg, "-"), "=")
+				if !strings.HasPrefix(arg, "-") || name != "tags" {
+					continue
+				}
+				if !inline && i+1 < len(args) {
+					value = args[i+1]
+				}
+				if value != "" {
+					passes = append(passes, strings.Split(value, ","))
+				}
+			}
 		}
 	}
-	return found
+	return passes
+}
+
+// parityTagNeed is what a tagged file needs from a vet pass: one that sets
+// every tag of any one of its lists. file is the first file that needs it.
+type parityTagNeed struct {
+	file  string
+	lists []string
+}
+
+func (n parityTagNeed) String() string { return "-tags=" + strings.Join(n.lists, " or -tags=") }
+
+// vetted reports whether one of the passes compiles the file.
+func (n parityTagNeed) vetted(passes [][]string) bool {
+	return slices.ContainsFunc(n.lists, func(list string) bool {
+		return slices.ContainsFunc(passes, func(pass []string) bool {
+			return !slices.ContainsFunc(strings.Split(list, ","), func(tag string) bool { return !slices.Contains(pass, tag) })
+		})
+	})
+}
+
+// parityTreeTags is what each //go:build line under root needs, once per
+// need and in file order: a file that builds with tags and not without
+// them, which an untagged vet never compiles. files are slash-separated
+// and relative to root.
+func parityTreeTags(root string, files []string) ([]parityTagNeed, error) {
+	fset := token.NewFileSet()
+	var needs []parityTagNeed
+	for _, rel := range files {
+		if !strings.HasSuffix(rel, ".go") || docsInTestdata(rel) {
+			continue
+		}
+		src, err := os.ReadFile(filepath.Join(root, filepath.FromSlash(rel))) //nolint:gosec // a path git lists
+		if err != nil {
+			return nil, err
+		}
+		f, err := parser.ParseFile(fset, rel, src, parser.PackageClauseOnly|parser.ParseComments)
+		if err != nil {
+			return nil, err
+		}
+		lists := parityRequiredTags(f)
+		if lists != nil && !slices.ContainsFunc(needs, func(n parityTagNeed) bool { return slices.Equal(n.lists, lists) }) {
+			needs = append(needs, parityTagNeed{file: rel, lists: lists})
+		}
+	}
+	return needs, nil
+}
+
+// parityGoBuildExpr is a file's //go:build expression, or nil when it has
+// none or the line does not parse
+// (https://pkg.go.dev/cmd/go#hdr-Build_constraints).
+func parityGoBuildExpr(f *ast.File) constraint.Expr {
+	for _, group := range f.Comments {
+		if group.Pos() >= f.Package {
+			break
+		}
+		for _, c := range group.List {
+			if !constraint.IsGoBuild(c.Text) {
+				continue
+			}
+			expr, err := constraint.Parse(c.Text)
+			if err != nil {
+				return nil
+			}
+			return expr
+		}
+	}
+	return nil
+}
+
+// parityRequiredTags is the -tags lists that compile a file's //go:build
+// line: none when it builds with no custom tag, and otherwise each minimal
+// set of custom tags it builds with, joined by commas, any one of which
+// is enough. A tag the go command sets for a target or a toolchain is free
+// to be either value, so `e2e && linux` needs e2e, `a && b` needs one pass
+// that sets both, and `a || b` a pass that sets either.
+func parityRequiredTags(f *ast.File) []string {
+	expr := parityGoBuildExpr(f)
+	if expr == nil {
+		return nil
+	}
+	var free, custom []string
+	// Eval calls its function for every tag, even past a decided result.
+	expr.Eval(func(tag string) bool {
+		switch {
+		// ignore keeps a file out of every build, so no -tags can need it.
+		case tag == "ignore" || slices.Contains(free, tag) || slices.Contains(custom, tag):
+		case parityToolchainTag(tag):
+			free = append(free, tag)
+		default:
+			custom = append(custom, tag)
+		}
+		return false
+	})
+	slices.Sort(custom)
+	if parityBuildsWith(expr, free, nil) {
+		return nil
+	}
+	var found []int
+	var lists []string
+	for size := 1; size <= len(custom); size++ {
+		for set := range 1 << len(custom) {
+			// A set holding one that builds is not minimal.
+			if bits.OnesCount(uint(set)) != size || slices.ContainsFunc(found, func(f int) bool { return set&f == f }) {
+				continue
+			}
+			var with []string
+			for i, tag := range custom {
+				if set&(1<<i) != 0 {
+					with = append(with, tag)
+				}
+			}
+			if parityBuildsWith(expr, free, with) {
+				found = append(found, set)
+				lists = append(lists, strings.Join(with, ","))
+			}
+		}
+	}
+	return lists
+}
+
+// parityBuildsWith reports whether a file builds with the custom tags in
+// with, and no other, for some value of each free tag.
+func parityBuildsWith(expr constraint.Expr, free, with []string) bool {
+	for set := range 1 << len(free) {
+		if expr.Eval(func(tag string) bool {
+			if i := slices.Index(free, tag); i >= 0 {
+				return set&(1<<i) != 0
+			}
+			return slices.Contains(with, tag)
+		}) {
+			return true
+		}
+	}
+	return false
+}
+
+// parityKnownOS and parityKnownArch are the GOOS and GOARCH values
+// go/build knows, as https://go.dev/src/internal/syslist/syslist.go lists
+// them.
+var (
+	parityKnownOS = map[string]bool{
+		"aix": true, "android": true, "darwin": true, "dragonfly": true, "freebsd": true,
+		"hurd": true, "illumos": true, "ios": true, "js": true, "linux": true, "nacl": true,
+		"netbsd": true, "openbsd": true, "plan9": true, "solaris": true, "wasip1": true,
+		"windows": true, "zos": true,
+	}
+	parityKnownArch = map[string]bool{
+		"386": true, "amd64": true, "amd64p32": true, "arm": true, "armbe": true, "arm64": true,
+		"arm64be": true, "loong64": true, "mips": true, "mipsle": true, "mips64": true,
+		"mips64le": true, "mips64p32": true, "mips64p32le": true, "ppc": true, "ppc64": true,
+		"ppc64le": true, "riscv": true, "riscv64": true, "s390": true, "s390x": true,
+		"sparc": true, "sparc64": true, "wasm": true,
+	}
+	// parityOtherTags are set by the go command for a target and a
+	// toolchain, and race, msan and asan by -race, -msan and -asan
+	// (https://github.com/golang/go/blob/go1.27.3/src/cmd/go/internal/work/init.go#L212).
+	parityOtherTags = map[string]bool{
+		"unix": true, "cgo": true, "gc": true, "gccgo": true, "race": true, "msan": true, "asan": true,
+	}
+	// parityReleaseTag is a release tag, such as go1.22, set for each
+	// release up to the toolchain's own.
+	parityReleaseTag = regexp.MustCompile(`^go1\.\d+$`)
+)
+
+// parityToolchainTag reports whether a build tag is one no -tags flag
+// needs to name: an OS, an architecture or one of its features, such as
+// amd64.v2, or a tag the go command sets
+// (https://pkg.go.dev/cmd/go#hdr-Build_constraints). A goexperiment tag
+// is GOEXPERIMENT's to set (https://pkg.go.dev/internal/goexperiment).
+func parityToolchainTag(tag string) bool {
+	arch, _, _ := strings.Cut(tag, ".")
+	return parityKnownOS[tag] || parityKnownArch[arch] || parityOtherTags[tag] || parityReleaseTag.MatchString(tag) ||
+		strings.HasPrefix(tag, "goexperiment.")
 }
 
 // parityReadAll joins the files that exist; a missing one is the

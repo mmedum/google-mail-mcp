@@ -11,6 +11,7 @@ import (
 	"go/token"
 	"os"
 	"os/exec"
+	"path"
 	"path/filepath"
 	"regexp"
 	"runtime"
@@ -301,4 +302,124 @@ func markdownSection(text, heading string) string {
 		offset += len(line)
 	}
 	return rest
+}
+
+// goRun is one `go run` command: the package it runs, such as
+// golang.org/x/vuln/cmd/govulncheck@v1.8.0 or ./scripts/gates, and the
+// words after it.
+type goRun struct {
+	pkg  string
+	args []string
+}
+
+// goRunValueFlags are the flags `go run` reads its next word for: the
+// build flags that take a value, and run's own -exec
+// (https://pkg.go.dev/cmd/go#hdr-Compile_packages_and_dependencies).
+var goRunValueFlags = map[string]bool{
+	"C": true, "p": true, "covermode": true, "coverpkg": true, "asmflags": true, "buildmode": true,
+	"compiler": true, "gccgoflags": true, "gcflags": true, "installsuffix": true, "ldflags": true,
+	"mod": true, "modfile": true, "overlay": true, "pgo": true, "pkgdir": true, "tags": true,
+	"toolexec": true, "exec": true,
+}
+
+// goRunsIn is each `go run` a command line holds, its flags skipped, so
+// `go run -mod=mod tool@v1` runs tool@v1.
+func goRunsIn(line string) []goRun {
+	var runs []goRun
+	for _, words := range goCommands(line, "run") {
+		i := 0
+		for i < len(words) && strings.HasPrefix(words[i], "-") {
+			name, _, inline := strings.Cut(strings.TrimLeft(words[i], "-"), "=")
+			if i++; !inline && goRunValueFlags[name] {
+				i++
+			}
+		}
+		if i < len(words) {
+			runs = append(runs, goRun{pkg: words[i], args: words[i+1:]})
+		}
+	}
+	return runs
+}
+
+// goCommands is the arguments of each `go <sub>` on a command line, to the
+// end of its command.
+func goCommands(line, sub string) [][]string {
+	words := shellWords(line)
+	var out [][]string
+	for i := 0; i+1 < len(words); i++ {
+		// The go command by any path, such as $GOROOT/bin/go.
+		if path.Base(words[i]) != "go" || words[i+1] != sub {
+			continue
+		}
+		end := i + 2
+		for end < len(words) && !shellOperator(words[end]) {
+			end++
+		}
+		out = append(out, words[i+2:end])
+		i = end
+	}
+	return out
+}
+
+// shellOperator reports whether a word shellWords gives is a run of ;, &
+// or |, which ends a command.
+func shellOperator(word string) bool {
+	return word != "" && strings.Trim(word, ";&|") == ""
+}
+
+// shellWords splits a command line into words as a POSIX shell does,
+// expanding nothing: blanks separate words, quotes group and are dropped,
+// a backslash outside single quotes keeps the next character, and a run
+// of ;, & or | is a word of its own, which ends a command
+// (https://pubs.opengroup.org/onlinepubs/9799919799/utilities/V3_chap02.html#tag_19_03).
+func shellWords(line string) []string {
+	var words []string
+	var word strings.Builder
+	inWord := false
+	flush := func() {
+		if inWord {
+			words = append(words, word.String())
+			word.Reset()
+			inWord = false
+		}
+	}
+	quote := byte(0)
+	for i := 0; i < len(line); i++ {
+		c := line[i]
+		switch {
+		case quote == '\'':
+			if c == '\'' {
+				quote = 0
+			} else {
+				word.WriteByte(c)
+			}
+		case c == '\\' && i+1 < len(line) && (quote == 0 || strings.IndexByte("\"\\$`", line[i+1]) >= 0):
+			i++
+			word.WriteByte(line[i])
+			inWord = true
+		case quote == '"':
+			if c == '"' {
+				quote = 0
+			} else {
+				word.WriteByte(c)
+			}
+		case c == '\'' || c == '"':
+			quote, inWord = c, true
+		case c == ' ' || c == '\t':
+			flush()
+		case strings.IndexByte(";&|", c) >= 0:
+			flush()
+			j := i
+			for j+1 < len(line) && line[j+1] == c {
+				j++
+			}
+			words = append(words, line[i:j+1])
+			i = j
+		default:
+			word.WriteByte(c)
+			inWord = true
+		}
+	}
+	flush()
+	return words
 }

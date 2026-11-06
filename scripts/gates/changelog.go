@@ -27,7 +27,9 @@ var changelogWatched = []string{"cmd/", "internal/", "packaging/", "go.mod"}
 
 var (
 	changelogVersionHeading = regexp.MustCompile(`(?m)^## \[(\d+\.\d+\.\d+(?:-[0-9A-Za-z.]+)?)\]`)
-	changelogLinkDefinition = regexp.MustCompile(`(?m)^\[([^\]]+)\]:\s*(\S+)`)
+	// changelogLinkDefinition is a link reference, its URL on its own line:
+	// \s would take an empty definition's URL from the next line.
+	changelogLinkDefinition = regexp.MustCompile(`(?m)^\[([^\]]+)\]:[ \t]*(\S+)`)
 )
 
 func changelog(out io.Writer, args []string) error {

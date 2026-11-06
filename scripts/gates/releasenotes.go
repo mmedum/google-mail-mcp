@@ -4,6 +4,8 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"regexp"
+	"slices"
 	"strings"
 )
 
@@ -32,27 +34,10 @@ func releaseNotes(out io.Writer, args []string) error {
 }
 
 // releaseNotesSection is the text under `## [version]`, blank lines at
-// either end removed. It stops at the next h2 and at the link-reference
-// footer, and reads nothing inside a fenced block as either.
+// either end removed.
 func releaseNotesSection(changelog, version string) string {
-	want := "## [" + version + "]"
-	var body []string
-	inside, fenced := false, false
-	for line := range strings.SplitSeq(changelog, "\n") {
-		line = strings.TrimRight(line, "\r")
-		if !inside {
-			if strings.HasPrefix(line, want) {
-				inside = true
-			}
-			continue
-		}
-		if strings.HasPrefix(strings.TrimSpace(line), "```") {
-			fenced = !fenced
-		} else if !fenced && (strings.HasPrefix(line, "## ") || changelogLinkDefinition.MatchString(line)) {
-			break
-		}
-		body = append(body, line)
-	}
+	lines, from, to := changelogSection(changelog, version)
+	body := lines[from:to]
 	for len(body) > 0 && strings.TrimSpace(body[0]) == "" {
 		body = body[1:]
 	}
@@ -60,6 +45,32 @@ func releaseNotesSection(changelog, version string) string {
 		body = body[:len(body)-1]
 	}
 	return strings.Join(body, "\n")
+}
+
+// changelogFooter is a link-reference line of the footer, with its URL
+// or not yet: either ends a section.
+var changelogFooter = regexp.MustCompile(`^\[[^\]]+\]:`)
+
+// changelogSection is a changelog's lines, CRLF read as LF, and the range
+// of them under `## [version]`, empty when there is no such heading. It
+// stops at the next h2 and at the link-reference footer, and reads nothing
+// inside fenced code as either. The docs gate scans the [Unreleased] range
+// it gives, so the scan reads what a release note will say.
+func changelogSection(changelog, version string) (lines []string, from, to int) {
+	lines = strings.Split(strings.ReplaceAll(changelog, "\r\n", "\n"), "\n")
+	want := "## [" + version + "]"
+	start := slices.IndexFunc(lines, func(l string) bool { return strings.HasPrefix(l, want) })
+	if start < 0 {
+		return lines, 0, 0
+	}
+	var fence docsFence
+	for to = start + 1; to < len(lines); to++ {
+		line := lines[to]
+		if !fence.code(line) && (strings.HasPrefix(line, "## ") || changelogFooter.MatchString(line)) {
+			break
+		}
+	}
+	return lines, start + 1, to
 }
 
 // releaseNotesHasContent reports whether a section says anything beyond

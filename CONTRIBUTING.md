@@ -60,7 +60,7 @@ runs one.
 | `smoke` | the built binary over stdio, signed out, at two protocol revisions, and a clean exit on an abrupt disconnect | check |
 | `schema-diff` | the tool and resource surface against `testdata/schema-baseline.json` | check |
 | `staleness` | the docs against the code: the README's tool table, the settings, the scope block in `docs/gcp-setup.md`, and no version in prose | check |
-| `docs` | the decision index, every `D-` citation and doc anchor, the paths and targets a doc names, the codemap and the live steps comments name | check |
+| `docs` | the decision index, every `D-` citation and doc anchor, the paths and targets a doc names, the codemap, and the live steps comments, docs and records name | check |
 | `checklist` | `CLAUDE.md`'s definition of done against `make check` | check |
 | `changelog-links` | every CHANGELOG version heading has its link | check |
 | `pins` | actions pinned to SHAs, and every tool pinned to one exact version wherever it is named | check |
