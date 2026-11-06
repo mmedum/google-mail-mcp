@@ -130,6 +130,10 @@ func TestReleaseRefuses(t *testing.T) {
 		{"a space-separated subject path", "flow", `"dist/*.tar.gz,dist/*.zip,dist/*.mcpb,dist/checksums.txt"`,
 			`"dist/*.tar.gz dist/*.zip dist/*.mcpb dist/checksums.txt"`, "separates with a space"},
 		{"the bundle not attested", "flow", ",dist/*.mcpb", "", "does not name .mcpb"},
+		{"the Windows archives not attested", "flow", ",dist/*.zip", "", "does not name .zip"},
+		{"a signature attested in the bundle's place", "flow", ",dist/*.mcpb,", ",dist/*.mcpb.sigstore.json,", "does not name .mcpb"},
+		{"the checksum file not attested", "flow", ",dist/checksums.txt", ",dist/checksums.txt.bundle", "does not name checksums.txt"},
+		{"no checksum name", "config", "  name_template: checksums.txt\n", "", "checksum.name_template is empty"},
 		{"one reproducible build", "flow", "build --single-target --snapshot --clean --output b",
 			"build --snapshot --clean --output b", "builds one target 1 time(s)"},
 		{"no release notes passed", "flow", "--release-notes=notes.md", "", "does not pass --release-notes"},
@@ -150,6 +154,27 @@ func TestReleaseRefuses(t *testing.T) {
 			joined := strings.Join(releaseTestRun(t, config, flow, releaseTestStaged(), releaseTestOut), "\n")
 			if !strings.Contains(joined, tc.want) {
 				t.Errorf("want %q, got:\n%s", tc.want, joined)
+			}
+		})
+	}
+}
+
+// The action splits subject-path at commas and newlines and trims each
+// glob, so space around an entry is not a separator.
+func TestReleaseAcceptsASubjectList(t *testing.T) {
+	const old = `subject-path: "dist/*.tar.gz,dist/*.zip,dist/*.mcpb,dist/checksums.txt"`
+	for name, subjects := range map[string]string{
+		"commas and a space after each": `subject-path: "dist/*.tar.gz, dist/*.zip, dist/*.mcpb, dist/checksums.txt"`,
+		"a block, one glob with a trailing space": "subject-path: |\n            dist/*.tar.gz \n            dist/*.zip\n" +
+			"            dist/*.mcpb\n            dist/checksums.txt",
+	} {
+		t.Run(name, func(t *testing.T) {
+			flow := strings.Replace(releaseTestWorkflow, old, subjects, 1)
+			if flow == releaseTestWorkflow {
+				t.Fatalf("no %q to replace", old)
+			}
+			if p := releaseTestRun(t, releaseTestConfig, flow, releaseTestStaged(), releaseTestOut); len(p) > 0 {
+				t.Errorf("problems:\n%s", strings.Join(p, "\n"))
 			}
 		})
 	}

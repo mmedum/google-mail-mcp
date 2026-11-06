@@ -34,6 +34,10 @@ type workflow struct {
 		Env   map[string]string `yaml:"env"`
 		Uses  string            `yaml:"uses"`
 		Steps []workflowStep    `yaml:"steps"`
+		// Container and each service are an image, or a mapping with
+		// an image: key.
+		Container yaml.Node            `yaml:"container"`
+		Services  map[string]yaml.Node `yaml:"services"`
 	} `yaml:"jobs"`
 }
 
@@ -114,6 +118,28 @@ func (w workflow) triggersOnTag(prefix string) bool {
 		}
 	}
 	return strings.HasPrefix(tags.Value, prefix)
+}
+
+// workflowImage is the image a job's container or service names, or empty
+// when there is none.
+func workflowImage(node *yaml.Node) string {
+	node = workflowResolve(node)
+	if node != nil && node.Kind == yaml.MappingNode {
+		node = workflowResolve(workflowMappingValue(node, "image"))
+	}
+	if node == nil || node.Kind != yaml.ScalarNode {
+		return ""
+	}
+	return strings.TrimSpace(node.Value)
+}
+
+// workflowResolve is the node an alias such as *img stands for, or node
+// itself when it is not an alias.
+func workflowResolve(node *yaml.Node) *yaml.Node {
+	for node != nil && node.Kind == yaml.AliasNode {
+		node = node.Alias
+	}
+	return node
 }
 
 // workflowMappingValue reads one key out of a YAML mapping node.

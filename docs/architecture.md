@@ -452,10 +452,10 @@ README, [configuration.md](configuration.md) and
 | D-89 | A write-path change counts only after a live run whose transcript is read | accepted | live-cover, TestLiveCoverReadsTheRealDriver, live |
 | D-90 | Evals score the calls and the mailbox, with planted instructions | accepted | evals-check, TestScoreCatchesAnInjectionByToolAndByMarker, TestSelfCheckPasses, TestTheFenceIsOnTheCommandLine |
 | D-91 | A rule is made to fail: a test, a list derived from the code, a floor | accepted | TestRegistryFloor, TestClassesFloors, TestAPICoverageFloors, TestSchemaDiffFloor, review |
-| D-92 | `make check` and CI run the same set of gates | accepted | parity, checklist, TestParityRefuses, TestChecklist, TestEveryCommandDeclaresWhereItRuns |
+| D-92 | `make check` and CI run the same set of gates | accepted | parity, checklist, TestParityRefuses, TestParityHoldsTheTreesTagsToAVetPass, TestChecklist, TestEveryCommandDeclaresWhereItRuns |
 | D-93 | A release is reproducible, signed, attested, and refused unless CI is green | accepted | release, goreleaser-check, TestReleaseRefuses, live |
 | D-94 | The registry entry's hash is read only after the checksum signature verifies | accepted | server-json, TestServerJSONCheckRefusesTheWorkflow, TestServerJSONPublish |
-| D-95 | Every tool is pinned to one exact version everywhere it is named | accepted | pins, TestPinsRefuses, TestPinsPassesOnAPinnedRepository |
+| D-95 | Every tool is pinned to one exact version everywhere it is named | accepted | pins, TestPinsRefuses, TestPinsNamesEachProblem, TestPinsPassesOnAPinnedRepository |
 | D-96 | The bundle defaults every switch off and passes settings through `env` alone | accepted | mcpb, TestMcpbRefusalsTurnASwitchOnWhateverItsDefault, TestMcpbAsksForEverySettingNotLeftOut, TestMcpbRefusesEachBreak |
 | D-97 | The bundle manifest is held to its vendored schema and read once | accepted | mcpb, TestMcpbRefusesARepeatedKey, TestVendorManifestSchemaChosenByVersion, TestMcpbStampIsHeldToTheSchema, TestMcpbPackRunsTheRepositoryChecks |
 | D-98 | `watch` pushes changes through Cloud Pub/Sub | rejected | — |
@@ -2438,8 +2438,10 @@ or in the release. A missing declaration is refused.
 The two lists live in different files, and a contributor edits one of
 them. `parity` maps each Makefile target to the CI step that runs it by
 its recipe, with Makefile variables expanded and `run: |` blocks read. A
-step's name is not counted as running it. Every `vet -tags=` must appear
-in both, so tagged code compiles in CI and not only on a laptop.
+step's name is not counted as running it. Each build tag a `//go:build`
+line needs has a `go vet` pass on both sides, so tagged code compiles in
+CI and not only on a laptop. A tool `ci.yml` runs with `go run` is one
+`make check` runs at the same version.
 `checklist` holds the definition of done in `CLAUDE.md` to the `check:`
 prerequisites, both ways.
 
@@ -2489,14 +2491,16 @@ step.
 
 Every tool the build, CI and the release run is pinned to one exact
 version, and each action to a full commit SHA with its version in a
-trailing comment. The Go version comes from `go.mod`.
+trailing comment, and each container image to its digest. The Go version
+comes from `go.mod`, its toolchain line before its go line, as setup-go
+reads it.
 
 A tool named in two places at two versions passes in one and fails in
 the other. The `pins` gate parses the workflows as YAML and classes every
 action as an installer or not, failing on one it does not know. An
-installer's tool pin is required. The Makefile's goreleaser pin must
-equal the workflow's, and the pre-commit and CI gitleaks versions must
-match. Each pin is checked against upstream when it is set.
+installer's tool pin is required. A Makefile variable that pins a tool
+is the one its recipe runs. The Makefile's goreleaser pin must equal the
+workflow's, and the pre-commit and CI gitleaks versions must match. Each pin is checked against upstream when it is set.
 
 Rejected: a pin copied from another project, which trailed upstream.
 Cost: a version bump touches every file that names the tool, in one

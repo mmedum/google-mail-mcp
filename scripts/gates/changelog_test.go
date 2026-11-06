@@ -25,6 +25,9 @@ func TestChangelogLinks(t *testing.T) {
 		{"Unreleased compares from an old tag", "## [Unreleased]\n## [0.2.0]\n## [0.1.0]\n" +
 			"[Unreleased]: https://h/compare/v0.1.0...HEAD\n[0.2.0]: https://h\n[0.1.0]: https://h\n",
 			"it should compare from v0.2.0..."},
+		{"an empty definition, which does not take the next line's URL", "## [Unreleased]\n## [0.2.0]\n## [0.1.0]\n" +
+			"[Unreleased]: https://h/compare/v0.2.0...HEAD\n[0.2.0]:\n[0.1.0]: https://h\n",
+			"## [0.2.0] has no [0.2.0]: link reference"},
 		{"a link with no heading", "## [Unreleased]\n[Unreleased]: https://h/compare/x...HEAD\n[0.9.0]: https://h\n",
 			"[0.9.0]: is a link reference with no heading"},
 	}
@@ -143,6 +146,16 @@ func TestReleaseNotes(t *testing.T) {
 		if err := releaseNotes(&out, []string{v, path}); err == nil {
 			t.Errorf("an empty or missing section %s was accepted", v)
 		}
+	}
+}
+
+// A footer line with no URL yet still ends the section above it.
+func TestReleaseNotesStopAtAnEmptyFooterLine(t *testing.T) {
+	text := "## [Unreleased]\n\n## [1.0.0]\n\n- b\n\n[Unreleased]:\n[1.0.0]: https://h\n"
+	path := filepath.Join(writeTree(t, map[string]string{"CHANGELOG.md": text}), "CHANGELOG.md")
+	var out sink
+	if err := releaseNotes(&out, []string{"1.0.0", path}); err != nil || out.String() != "- b\n" {
+		t.Errorf("notes = %q, %v; want %q", out.String(), err, "- b\n")
 	}
 }
 

@@ -5,6 +5,7 @@ import (
 	"io"
 	"maps"
 	"os"
+	"path"
 	"path/filepath"
 	"regexp"
 	"slices"
@@ -16,13 +17,17 @@ import (
 // the Makefile and go.mod, compared with each other; no document copies
 // one.
 //
-// Four ways a version floats, each a rule:
+// The ways a version floats, each a rule:
 //   - an action used by tag or branch rather than a 40-hex commit SHA,
-//     or a SHA with no comment saying which version it is;
+//     or a SHA with no comment saying which version it is, and a
+//     container image, a step's, a job's or a service's, without its
+//     sha256 digest;
 //   - an action that installs a tool without naming the tool's version:
 //     a SHA pins the wrapper, not the tool;
 //   - a version input, env value or `go run module@v` that is a range, a
 //     major line or `latest`;
+//   - a Makefile variable that pins a tool no recipe runs with `go run`,
+//     so the tool runs from the PATH;
 //   - one tool pinned to two versions in two files, so a rehearsal or a
 //     pre-commit scan runs something other than CI.
 //
@@ -63,15 +68,15 @@ type pinsTool struct {
 	// commentOf reads the version from the trailing comment on these
 	// actions' SHA pins, for an action that is the tool itself.
 	commentOf []string
-	// fromGoMod reads the version from go.mod: "go" or a module path.
+	// fromGoMod reads the version from go.mod: "go" or a module path. The
+	// go row's action input names go.mod rather than a version.
 	fromGoMod string
 }
 
 var pinsTools = []pinsTool{
-	{name: "go", fromGoMod: "go"},
+	{name: "go", fromGoMod: "go", actions: map[string]string{"actions/setup-go": "go-version-file"}},
 	{name: "mcp-go-sdk", fromGoMod: "github.com/modelcontextprotocol/go-sdk"},
-	{name: "golangci-lint", modules: []string{"golangci-lint"},
-		actions: map[string]string{"golangci/golangci-lint-action": "version"}},
+	{name: "golangci-lint", modules: []string{"golangci-lint"}},
 	{name: "goreleaser", modules: []string{"github.com/goreleaser/goreleaser"}, envKeys: []string{"GORELEASER_VERSION"},
 		actions: map[string]string{"goreleaser/goreleaser-action": "version"}},
 	{name: "cosign", actions: map[string]string{"sigstore/cosign-installer": "cosign-release"}},
@@ -92,19 +97,26 @@ var pinsNotInstallers = map[string]string{
 	"actions/upload-artifact":         "uploads, installs nothing",
 	"actions/download-artifact":       "downloads, installs nothing",
 	"actions/attest-build-provenance": "calls the attestation API",
-	"actions/setup-go":                "installs Go from go-version-file, which is go.mod: the pin is the file",
 	"github/codeql-action/init":       "CodeQL's bundle is GitHub's to manage; the action's own version is held by comment",
 	"github/codeql-action/autobuild":  "builds with the Go already installed",
 	"github/codeql-action/analyze":    "uploads results",
 }
 
 var (
-	pinsUsesLine  = regexp.MustCompile(`^\s*-?\s*uses:\s*([^\s#]+)\s*(#.*)?$`)
+	// pinsUsesLine is a `uses:` line, its value read without the quotes
+	// YAML allows around it.
+	pinsUsesLine  = regexp.MustCompile(`^\s*-?\s*uses:\s*["']?([^\s#"']+)["']?\s*(#.*)?$`)
 	pinsSHA       = regexp.MustCompile(`^[0-9a-f]{40}$`)
 	pinsExact     = regexp.MustCompile(`^v?\d+\.\d+\.\d+$`)
 	pinsModuleAt  = regexp.MustCompile(`([A-Za-z0-9_.\-]+(?:/[A-Za-z0-9_.\-]+)+)@(\S+)`)
 	pinsSemverIn  = regexp.MustCompile(`v?\d+\.\d+\.\d+`)
 	pinsVersionEn = regexp.MustCompile(`_VERSION$`)
+	// pinsImageDigest is a container image pinned by its content digest.
+	pinsImageDigest = regexp.MustCompile(`^[^@\s]+@sha256:[0-9a-f]{64}$`)
+	// pinsGoModToolchain and pinsGoModGo are setup-go's own patterns for
+	// the toolchain directive and the go line.
+	pinsGoModToolchain = regexp.MustCompile(`(?m)^toolchain go(1\.\d+(?:\.\d+|rc\d+)?)`)
+	pinsGoModGo        = regexp.MustCompile(`(?m)^go (\d+(?:\.\d+)*)`)
 )
 
 // pinsFound is one place a tool's version is written.
@@ -133,6 +145,8 @@ type pinsReport struct {
 	tools                                  map[string][]pinsFound
 	// placesIn counts the pins read from each file.
 	placesIn map[string]int
+	// installed names each tool a workflow step installs.
+	installed map[string]bool
 }
 
 // pinsCheck runs every rule over the repository at root, held to finding
@@ -151,7 +165,8 @@ func pinsCheck(root string, minPlaces int) (*pinsReport, error) {
 		return nil, err
 	}
 
-	r := &pinsReport{tools: map[string][]pinsFound{}, placesIn: map[string]int{}, workflows: len(flows)}
+	r := &pinsReport{tools: map[string][]pinsFound{}, placesIn: map[string]int{}, installed: map[string]bool{},
+		workflows: len(flows)}
 	// addIn records the pins read from one file.
 	addIn := func(file string) func(tool, version, at string) {
 		return func(tool, version, at string) {
@@ -171,9 +186,10 @@ func pinsCheck(root string, minPlaces int) (*pinsReport, error) {
 		}
 	}
 	for _, w := range flows {
-		pinsWorkflow(w, r, addIn(w.path))
+		pinsWorkflow(string(gomod), w, r, addIn(w.path))
 	}
-	pinsMakefileVars(mk, r, addIn(pinsMakefile))
+	pinnedBy := pinsMakefileVars(mk, r, addIn(pinsMakefile))
+	pinsMakefileRecipes(mk, pinnedBy, r, addIn(pinsMakefile))
 	pinsGoModVersions(string(gomod), addIn(pinsGoMod))
 
 	for _, t := range pinsTools {
@@ -195,9 +211,14 @@ func pinsCheck(root string, minPlaces int) (*pinsReport, error) {
 		r.problems = append(r.problems, fmt.Sprintf("read only %d action references; the reader is not "+
 			"seeing the workflows", r.actions))
 	}
-	if r.installers < 4 {
-		r.problems = append(r.problems, fmt.Sprintf("found %d tool-installing steps, want at least 4 "+
-			"(goreleaser, cosign, syft and cosign again for publishing)", r.installers))
+	// A floor per installer, not a count of steps: one installer used in
+	// every job would meet a count alone.
+	for _, t := range pinsTools {
+		if len(t.actions) > 0 && !r.installed[t.name] {
+			r.problems = append(r.problems, fmt.Sprintf("no workflow step installs %s through %s; the reader "+
+				"is not seeing the step, or the table names an installer nothing uses",
+				t.name, strings.Join(slices.Sorted(maps.Keys(t.actions)), " or ")))
+		}
 	}
 	for _, f := range pinsSources {
 		if r.placesIn[f] == 0 {
@@ -212,8 +233,9 @@ func pinsCheck(root string, minPlaces int) (*pinsReport, error) {
 	return r, nil
 }
 
-// pinsWorkflow applies the workflow rules to one file.
-func pinsWorkflow(w workflow, r *pinsReport, add func(tool, version, at string)) {
+// pinsWorkflow applies the workflow rules to one file, with gomod the
+// repository's go.mod.
+func pinsWorkflow(gomod string, w workflow, r *pinsReport, add func(tool, version, at string)) {
 	pinsUsesLines(w, r, add)
 
 	// The structure, for which input belongs to which step.
@@ -223,14 +245,40 @@ func pinsWorkflow(w workflow, r *pinsReport, add func(tool, version, at string))
 	}
 	for _, s := range w.steps() {
 		envs = append(envs, s.Env)
-		if s.Uses == "" || strings.HasPrefix(s.Uses, "./") {
+		// An image is held here, on the parse, which sees a `uses:` in
+		// every shape YAML allows; the line scan does not.
+		if strings.HasPrefix(s.Uses, "docker://") && !pinsImageDigest.MatchString(s.Uses) {
+			r.problems = append(r.problems, fmt.Sprintf("%s: job %s: %s is a container image with no sha256 digest, "+
+				"so the image it runs can change", w.path, s.job, s.Uses))
+		}
+		if s.Uses == "" || strings.HasPrefix(s.Uses, "./") || strings.HasPrefix(s.Uses, "docker://") {
 			pinsRunLines(s.Run, w.path, r, add)
 			continue
 		}
-		pinsStep(w, s, r, add)
+		pinsStep(gomod, w, s, r, add)
 	}
 	for _, env := range envs {
 		pinsEnv(w.path, env, r, add)
+	}
+	pinsJobImages(w, r)
+}
+
+// pinsJobImages holds each job's container and service images to a
+// sha256 digest, as a step's docker:// image is held
+// (https://docs.github.com/en/actions/reference/workflows-and-actions/workflow-syntax#jobsjob_idcontainer).
+func pinsJobImages(w workflow, r *pinsReport) {
+	for _, id := range slices.Sorted(maps.Keys(w.Jobs)) {
+		job := w.Jobs[id]
+		images := map[string]string{"the container": workflowImage(&job.Container)}
+		for name, service := range job.Services {
+			images["the service "+name] = workflowImage(&service)
+		}
+		for _, what := range slices.Sorted(maps.Keys(images)) {
+			if image := images[what]; image != "" && !pinsImageDigest.MatchString(image) {
+				r.problems = append(r.problems, fmt.Sprintf("%s: job %s runs %s from %s, which has no sha256 digest, "+
+					"so the image it runs can change", w.path, id, what, image))
+			}
+		}
 	}
 }
 
@@ -251,6 +299,9 @@ func pinsUsesLines(w workflow, r *pinsReport, add func(tool, version, at string)
 			continue
 		}
 		r.actions++
+		if strings.HasPrefix(m[1], "docker://") {
+			continue
+		}
 		action, ref, ok := strings.Cut(m[1], "@")
 		comment := strings.TrimSpace(strings.TrimPrefix(strings.TrimSpace(m[2]), "#"))
 		switch {
@@ -276,7 +327,7 @@ func pinsUsesLines(w workflow, r *pinsReport, add func(tool, version, at string)
 // pinsStep checks one step that uses an action: an installer sets the
 // input that pins its tool, any other action is classified, and every
 // version input names one exact version.
-func pinsStep(w workflow, s workflowStep, r *pinsReport, add func(tool, version, at string)) {
+func pinsStep(gomod string, w workflow, s workflowStep, r *pinsReport, add func(tool, version, at string)) {
 	action := s.action()
 	at := w.path + ": " + action
 	installer := false
@@ -287,11 +338,20 @@ func pinsStep(w workflow, s workflowStep, r *pinsReport, add func(tool, version,
 		}
 		installer = true
 		r.installers++
+		r.installed[t.name] = true
 		v, set := s.input(key)
 		if !set {
 			r.problems = append(r.problems, fmt.Sprintf("%s is pinned by SHA and does not set %s, so the "+
 				"tool it installs is whatever is current that morning", at, key))
 			continue
+		}
+		if t.fromGoMod == "go" {
+			version, problem := pinsGoVersionFile(v, gomod)
+			if problem != "" {
+				r.problems = append(r.problems, fmt.Sprintf("%s sets %s to %q, %s", at, key, v, problem))
+				continue
+			}
+			v = version
 		}
 		add(t.name, w.resolveEnv(v), at)
 	}
@@ -328,29 +388,64 @@ func pinsEnv(path string, env map[string]string, r *pinsReport, add func(tool, v
 // pinsRunLines reads `go run module@version` out of a run block.
 func pinsRunLines(run, path string, r *pinsReport, add func(tool, version, at string)) {
 	for _, line := range workflowRunLines(run) {
-		if !strings.Contains(line, "go run") {
-			continue
-		}
-		for _, m := range pinsModuleAt.FindAllStringSubmatch(line, -1) {
-			if tool := pinsToolByModule(m[1]); tool != "" {
-				add(tool, m[2], path+": go run "+m[1])
-			} else {
-				r.problems = append(r.problems, fmt.Sprintf("%s: go run %s@%s names a tool pinsTools does not know",
-					path, m[1], m[2]))
+		for _, gr := range goRunsIn(line) {
+			module, version, ok := strings.Cut(gr.pkg, "@")
+			switch tool := pinsToolByModule(module); {
+			case !ok:
+			case tool != "":
+				add(tool, version, path+": go run "+module)
+			default:
+				r.problems = append(r.problems, fmt.Sprintf("%s: go run %s names a tool pinsTools does not know",
+					path, gr.pkg))
 			}
 		}
 	}
 }
 
-// pinsMakefileVars reads every `module@version` variable.
-func pinsMakefileVars(mk *makefile, r *pinsReport, add func(tool, version, at string)) {
+// pinsGoVersionFile is the Go version a go-version-file gives, read as
+// setup-go reads a go.mod, or why it gives none. gomod is the
+// repository's go.mod, the one file the Go version is held to
+// (https://github.com/actions/setup-go/blob/b7ad1dad31e06c5925ef5d2fc7ad053ef454303e/src/installer.ts#L645,
+// setup-go v7.0.0).
+func pinsGoVersionFile(file, gomod string) (version, problem string) {
+	if path.Clean(file) != pinsGoMod {
+		return "", "which is not the repository's " + pinsGoMod
+	}
+	if v := pinsGoVersion(gomod); v != "" {
+		return v, ""
+	}
+	return "", "which names no Go version"
+}
+
+// pinsGoVersion is the Go a go.mod runs: its toolchain directive, or
+// else its go line. setup-go installs that, and the go
+// command switches to it.
+func pinsGoVersion(gomod string) string {
+	if m := pinsGoModToolchain.FindStringSubmatch(gomod); m != nil {
+		return m[1]
+	}
+	if m := pinsGoModGo.FindStringSubmatch(gomod); m != nil {
+		return m[1]
+	}
+	return ""
+}
+
+// pinsMakefileVars reads every `module@version` variable, and returns the
+// variable that names each module@version.
+func pinsMakefileVars(mk *makefile, r *pinsReport, add func(tool, version, at string)) map[string]string {
+	pinnedBy := map[string]string{}
 	for _, name := range slices.Sorted(maps.Keys(mk.vars)) {
-		value := mk.vars[name]
+		// Recipes are read expanded, so a version kept in another
+		// variable is compared as the recipe runs it.
+		value := mk.expand(mk.vars[name])
+		m := pinsModuleAt.FindStringSubmatch(value)
+		if m != nil {
+			pinnedBy[m[0]] = name
+		}
 		if strings.Contains(value, "@latest") {
 			r.problems = append(r.problems, fmt.Sprintf("%s: %s is pinned to @latest", pinsMakefile, name))
 			continue
 		}
-		m := pinsModuleAt.FindStringSubmatch(value)
 		if m == nil {
 			continue
 		}
@@ -362,14 +457,53 @@ func pinsMakefileVars(mk *makefile, r *pinsReport, add func(tool, version, at st
 		}
 		add(tool, m[2], pinsMakefile+": "+name)
 	}
+	return pinnedBy
 }
 
-// pinsGoModVersions reads the Go directive and required modules.
+// pinsMakefileRecipes holds what the recipes run with `go run`. A module
+// written into a recipe is a pin of its own, and a variable in pinnedBy
+// that no recipe runs pins nothing: the tool then runs from the PATH.
+func pinsMakefileRecipes(mk *makefile, pinnedBy map[string]string, r *pinsReport, add func(tool, version, at string)) {
+	ran := map[string]bool{}
+	for _, target := range slices.Sorted(maps.Keys(mk.targets)) {
+		for _, line := range mk.recipe(target) {
+			for _, gr := range goRunsIn(line) {
+				module, version, ok := strings.Cut(gr.pkg, "@")
+				if !ok {
+					continue
+				}
+				ran[gr.pkg] = true
+				if _, named := pinnedBy[gr.pkg]; named {
+					continue
+				}
+				if tool := pinsToolByModule(module); tool != "" {
+					add(tool, version, pinsMakefile+": "+target)
+				} else {
+					r.problems = append(r.problems, fmt.Sprintf("%s: %s runs go run %s, a tool pinsTools does not know",
+						pinsMakefile, target, gr.pkg))
+				}
+			}
+		}
+	}
+	for _, module := range slices.Sorted(maps.Keys(pinnedBy)) {
+		if !ran[module] {
+			r.problems = append(r.problems, fmt.Sprintf("%s: %s pins %s and no recipe runs it with go run, "+
+				"so the tool runs from the PATH", pinsMakefile, pinnedBy[module], module))
+		}
+	}
+}
+
+// pinsGoModVersions reads the Go a go.mod runs and its required modules.
 func pinsGoModVersions(gomod string, add func(tool, version, at string)) {
+	for _, t := range pinsTools {
+		if t.fromGoMod == "go" {
+			add(t.name, pinsGoVersion(gomod), pinsGoMod+": go")
+		}
+	}
 	for line := range strings.SplitSeq(gomod, "\n") {
 		fields := strings.Fields(strings.TrimSpace(strings.TrimPrefix(strings.TrimSpace(line), "require")))
 		for _, t := range pinsTools {
-			if t.fromGoMod == "" || len(fields) < 2 {
+			if t.fromGoMod == "" || t.fromGoMod == "go" || len(fields) < 2 {
 				continue
 			}
 			if fields[0] == t.fromGoMod {

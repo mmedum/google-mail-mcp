@@ -152,12 +152,12 @@ func mcpbPackSource(dist string, f mcpbStaged) (string, error) {
 	}
 	switch len(matches) {
 	case 0:
-		return "", fmt.Errorf("%s: nothing matches %s", f.path, pattern)
+		return "", fmt.Errorf("%s: nothing matches %s", f.path, filepath.ToSlash(pattern))
 	case 1:
 		return matches[0], nil
 	}
-	return "", fmt.Errorf("%s: %s matches %d files (%s); exactly one is packed", f.path, pattern,
-		len(matches), strings.Join(matches, ", "))
+	return "", fmt.Errorf("%s: %s matches %d files (%s); exactly one is packed", f.path, filepath.ToSlash(pattern),
+		len(matches), filepath.ToSlash(strings.Join(matches, ", ")))
 }
 
 // mcpbPackHostVersion runs the staged binary for this host and requires

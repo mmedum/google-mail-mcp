@@ -112,6 +112,13 @@ func TestStalenessSectionStopsAtSameLevel(t *testing.T) {
 	if got := stalenessUnreleased("## [Unreleased]\n- x\n\n[Unreleased]: http://x\n"); strings.Contains(got, "http") {
 		t.Errorf("link references kept: %q", got)
 	}
+	if got, want := stalenessUnreleased("## [Unreleased]\r\n- x\r\n\r\n[Unreleased]: https://h\r\n"), "- x\n"; got != want {
+		t.Errorf("stalenessUnreleased of a CRLF changelog = %q, want %q", got, want)
+	}
+	fenced := "## [Unreleased]\n- x\n```\n## not a heading\n```\n- y\n\n## [1.0.0]\n- z\n"
+	if got, want := stalenessUnreleased(fenced), "- x\n```\n## not a heading\n```\n- y\n"; got != want {
+		t.Errorf("stalenessUnreleased = %q, want %q: a heading in a fence ends nothing", got, want)
+	}
 }
 
 // The wiring to internal/scopes is live, and the modes carry scopes.

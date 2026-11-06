@@ -228,7 +228,7 @@ func TestMcpbPackRefuses(t *testing.T) {
 			if err := os.RemoveAll(filepath.Join(dist, "google-mail-mcp_linux_arm64_v8.0")); err != nil {
 				t.Fatal(err)
 			}
-		}, want: "nothing matches"},
+		}, want: "/*_linux_arm64*/" + binaryName},
 		{name: "glob matches two", version: "1.2.3", setup: func(t *testing.T, _, dist string) {
 			extra := filepath.Join(dist, "google-mail-mcp_linux_amd64_v3", binaryName)
 			if err := os.MkdirAll(filepath.Dir(extra), 0o750); err != nil {

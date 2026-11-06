@@ -369,15 +369,23 @@ func releaseWorkflowProblems(cfg releaseConfig, flow workflow) []string {
 func releaseSubjectProblems(subjects, checksum string) []string {
 	var problems []string
 	parts := strings.FieldsFunc(subjects, func(r rune) bool { return r == ',' || r == '\n' })
-	for _, p := range parts {
-		if strings.ContainsAny(strings.TrimSpace(p), " \t") {
-			problems = append(problems, fmt.Sprintf("subject-path %q separates with a space, which is read as one "+
-				"glob; separate with commas or newlines", subjects))
-			break
-		}
+	for i, p := range parts {
+		parts[i] = strings.TrimSpace(p)
 	}
+	if slices.ContainsFunc(parts, func(p string) bool { return strings.ContainsAny(p, " \t") }) {
+		problems = append(problems, fmt.Sprintf("subject-path %q separates with a space, which is read as one "+
+			"glob; separate with commas or newlines", subjects))
+	}
+	// Without a name_template goreleaser names the checksum file for the
+	// project and version, which a fixed subject-path does not match.
+	if checksum == "" {
+		problems = append(problems, "checksum.name_template is empty, so nothing holds the subject-path to the "+
+			"file every other artifact is verified through")
+	}
+	// An entry ends with the file it covers: dist/*.mcpb.sigstore.json
+	// attests a signature, not the bundle.
 	has := func(want string) bool {
-		return slices.ContainsFunc(parts, func(p string) bool { return strings.Contains(p, want) })
+		return slices.ContainsFunc(parts, func(p string) bool { return strings.HasSuffix(p, want) })
 	}
 	for _, want := range []string{".tar.gz", ".zip", ".mcpb", checksum} {
 		if want != "" && !has(want) {

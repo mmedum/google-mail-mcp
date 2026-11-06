@@ -199,13 +199,11 @@ func stalenessCodeEnv(root string) ([]string, error) {
 	return slices.Sorted(maps.Keys(seen)), nil
 }
 
+// stalenessUnreleased is the [Unreleased] section, the lines the next
+// release note lifts.
 func stalenessUnreleased(changelog string) string {
-	s := markdownSection(changelog, "## [Unreleased]")
-	// The link references sit under no heading.
-	if i := strings.Index(s, "\n["); i >= 0 {
-		s = s[:i]
-	}
-	return s
+	lines, from, to := changelogSection(changelog, "Unreleased")
+	return strings.Join(lines[from:to], "\n")
 }
 
 var stalenessEnvRef = regexp.MustCompile(`\bGMAIL_[A-Z0-9_]*[A-Z0-9]\b`)
