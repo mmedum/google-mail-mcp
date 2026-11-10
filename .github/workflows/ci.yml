@@ -142,6 +142,14 @@ jobs:
       - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
         with:
           go-version-file: go.mod
+          # A cache of its own, keyed by the Makefile that pins gitleaks too.
+          # The other jobs share go.sum's key and save a cache without
+          # gitleaks, and setup-go saves nothing over a hit on its key, so on
+          # that key gitleaks is built from source on every run.
+          # https://github.com/actions/setup-go/blob/b7ad1dad31e06c5925ef5d2fc7ad053ef454303e/src/cache-save.ts#L75-L80
+          cache-dependency-path: |
+            go.sum
+            Makefile
       - name: gitleaks
         run: make secrets
       - name: leak scan over history
