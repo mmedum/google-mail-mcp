@@ -66,7 +66,7 @@ func changelogSection(changelog, version string) (lines []string, from, to int) 
 	var fence docsFence
 	for to = start + 1; to < len(lines); to++ {
 		line := lines[to]
-		if !fence.code(line) && (strings.HasPrefix(line, "## ") || changelogFooter.MatchString(line)) {
+		if !fence.code(line) && (docsEndsSection(line, 2) || changelogFooter.MatchString(line)) {
 			break
 		}
 	}

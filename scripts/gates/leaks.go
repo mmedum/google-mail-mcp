@@ -86,7 +86,9 @@ var leaksRules = []leaksRule{
 		// text. It never decides whether a URL may be fetched, which is
 		// what an anchor would guard.
 		name: "a Gmail web link to a mailbox",
-		re:   regexp.MustCompile(`mail\.google\.com/mail/u/[0-9]+`),
+		// A host is read in any case (RFC 4343), so this rule and the
+		// client id's match their host in any case.
+		re: regexp.MustCompile(`(?i:mail\.google\.com)/mail/u/[0-9]+`),
 	},
 	{
 		// A keyword and a separator, then 16 hex digits. The keyword is
@@ -101,7 +103,7 @@ var leaksRules = []leaksRule{
 	},
 	{
 		name: "an OAuth client id",
-		re:   regexp.MustCompile(`\b[0-9]{6,}-[a-z0-9]{20,}\.apps\.googleusercontent\.com\b`),
+		re:   regexp.MustCompile(`\b[0-9]{6,}-[a-z0-9]{20,}(?i:\.apps\.googleusercontent\.com)\b`),
 	},
 	{
 		name: "an OAuth client secret",

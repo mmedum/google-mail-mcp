@@ -17,11 +17,41 @@ import (
 	"io"
 	"maps"
 	"os"
+	"path/filepath"
 	"slices"
 	"strings"
 )
 
-func main() { os.Exit(run(os.Args[1:], os.Stdout, os.Stderr)) }
+func main() {
+	// Every command reads the repository from its root, so it runs the same
+	// from any directory under it.
+	root, err := moduleRoot()
+	if err == nil {
+		err = os.Chdir(root)
+	}
+	if err != nil {
+		_, _ = fmt.Fprintf(os.Stderr, "gates: %v\n", err)
+		os.Exit(2)
+	}
+	os.Exit(run(os.Args[1:], os.Stdout, os.Stderr))
+}
+
+// moduleRoot walks up from the working directory to the directory
+// holding go.mod, which main runs every command from.
+func moduleRoot() (string, error) {
+	cwd, err := os.Getwd()
+	if err != nil {
+		return "", err
+	}
+	for dir := cwd; ; dir = filepath.Dir(dir) {
+		if _, err := os.Stat(filepath.Join(dir, "go.mod")); err == nil {
+			return dir, nil
+		}
+		if filepath.Dir(dir) == dir {
+			return "", fmt.Errorf("no go.mod in %s or above it", cwd)
+		}
+	}
+}
 
 // command is one thing this program does.
 type command struct {

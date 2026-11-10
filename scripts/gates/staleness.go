@@ -288,17 +288,13 @@ func stalenessProseDocs(docs map[string]string) []string {
 	return out
 }
 
-var (
-	stalenessProseVersion = regexp.MustCompile(`\bv\d+\.\d+\.\d+\b`)
-	stalenessFence        = regexp.MustCompile("(?ms)^```.*?^```")
-)
+var stalenessProseVersion = regexp.MustCompile(`\bv\d+\.\d+\.\d+\b`)
 
 func stalenessNoVersionInProse(docs map[string]string) (int, []string) {
 	names := stalenessProseDocs(docs)
 	var problems []string
 	for _, name := range names {
-		text := stalenessFence.ReplaceAllString(docs[name], "")
-		for i, line := range strings.Split(text, "\n") {
+		for i, line := range docsProse(docs[name]) {
 			t := strings.TrimSpace(line)
 			if strings.HasPrefix(t, "[!") || strings.HasPrefix(t, "|") || strings.Contains(t, "://") {
 				continue

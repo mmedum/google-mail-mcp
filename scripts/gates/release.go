@@ -3,7 +3,7 @@ package main
 import (
 	"fmt"
 	"io"
-	"os"
+	"maps"
 	"path"
 	"path/filepath"
 	"slices"
@@ -59,7 +59,11 @@ type releaseConfig struct {
 		} `yaml:"hooks"`
 	} `yaml:"universal_binaries"`
 	Archives []struct {
-		IDs []string `yaml:"ids"`
+		IDs             []string `yaml:"ids"`
+		Formats         []string `yaml:"formats"`
+		FormatOverrides []struct {
+			Formats []string `yaml:"formats"`
+		} `yaml:"format_overrides"`
 	} `yaml:"archives"`
 	Checksum struct {
 		NameTemplate string             `yaml:"name_template"`
@@ -117,14 +121,11 @@ func releaseGate(out io.Writer, _ []string) error {
 
 // releaseRead loads the three files the gate compares.
 func releaseRead(root string) (releaseConfig, workflow, string, error) {
-	var cfg releaseConfig
-	data, err := os.ReadFile(filepath.Join(root, releaseGoreleaser))
+	g, err := readGoreleaser(root)
 	if err != nil {
-		return cfg, workflow{}, "", err
+		return releaseConfig{}, workflow{}, "", err
 	}
-	if err := yaml.Unmarshal(data, &cfg); err != nil {
-		return cfg, workflow{}, "", fmt.Errorf("%s is not valid YAML: %w", releaseGoreleaser, err)
-	}
+	cfg := g.cfg
 	flow, err := readWorkflow(filepath.Join(root, workflowDir, releaseWorkflow), workflowDir+"/"+releaseWorkflow)
 	if err != nil {
 		return cfg, workflow{}, "", err
@@ -164,7 +165,7 @@ func releaseValidate(cfg releaseConfig, files []mcpbStaged, mcpbOut string, flow
 	if cfg.Changelog != nil {
 		fail("there is a changelog block; `disable` skips the pipe that reads --release-notes, so delete it")
 	}
-	problems = append(problems, releaseWorkflowProblems(cfg, flow)...)
+	problems = append(problems, releaseWorkflowProblems(cfg, flow, mcpbOut)...)
 	slices.Sort(problems)
 	return problems, targets
 }
@@ -303,8 +304,11 @@ func releaseCheckBuilds(cfg releaseConfig, fail func(format string, a ...any)) {
 	}
 }
 
-// releaseWorkflowProblems holds release.yml to the config.
-func releaseWorkflowProblems(cfg releaseConfig, flow workflow) []string {
+// releaseWorkflowProblems holds release.yml to the config, and its
+// attestation to the files the release writes, in the job that writes
+// them: dist/ exists only in the job that ran goreleaser, so an attest
+// step in another job attests nothing.
+func releaseWorkflowProblems(cfg releaseConfig, flow workflow, mcpbOut string) []string {
 	var problems []string
 	fail := func(format string, a ...any) { problems = append(problems, fmt.Sprintf(format, a...)) }
 	if !flow.triggersOnTag("v") {
@@ -312,6 +316,11 @@ func releaseWorkflowProblems(cfg releaseConfig, flow workflow) []string {
 	}
 	var tested, writesNotes, passesNotes, cosign, syft bool
 	repro, attested := 0, false
+	released, attestIn := releaseJobs(flow), map[string]bool{}
+	if cfg.Checksum.NameTemplate == "" {
+		fail("checksum.name_template is empty, so nothing holds the subject-path to the file every other " +
+			"artifact is verified through")
+	}
 	for _, s := range flow.steps() {
 		lines := strings.Join(workflowRunLines(s.Run), "\n")
 		if strings.Contains(lines, "go test") && !passesNotes {
@@ -334,11 +343,16 @@ func releaseWorkflowProblems(cfg releaseConfig, flow workflow) []string {
 				repro++
 			}
 		case a == "actions/attest-build-provenance":
-			attested = true
+			attested, attestIn[s.job] = true, true
+			if !released[s.job] {
+				fail("%s: job %s attests, and runs no goreleaser; dist/ is the goreleaser job's, so it attests nothing",
+					flow.path, s.job)
+			}
 			subjects, _ := s.input("subject-path")
-			problems = append(problems, releaseSubjectProblems(subjects, cfg.Checksum.NameTemplate)...)
+			problems = append(problems, releaseSubjectProblems(subjects, releaseWrites(cfg, mcpbOut))...)
 		}
 	}
+	problems = append(problems, releaseAttestJobs(flow, released, attestIn)...)
 	if !tested {
 		fail("%s runs no `go test` before goreleaser signs", flow.path)
 	}
@@ -363,10 +377,37 @@ func releaseWorkflowProblems(cfg releaseConfig, flow workflow) []string {
 	return problems
 }
 
-// releaseSubjectProblems holds the attestation's subject-path: a comma-
-// or newline-separated list naming the archives, the checksum file and
-// the bundle. A space-separated value is one literal glob.
-func releaseSubjectProblems(subjects, checksum string) []string {
+// releaseAttestJobs holds each job that runs goreleaser to an attest step
+// of its own and the scopes that step writes with. A job's permissions
+// block replaces the workflow's.
+func releaseAttestJobs(flow workflow, released, attestIn map[string]bool) []string {
+	var problems []string
+	for _, job := range slices.Sorted(maps.Keys(released)) {
+		if !attestIn[job] {
+			problems = append(problems, fmt.Sprintf("%s: job %s runs goreleaser and attests nothing it wrote", flow.path, job))
+		}
+		perms := flow.Jobs[job].Permissions
+		if perms.Kind == 0 {
+			perms = flow.Permissions
+		}
+		for _, scope := range []string{"id-token", "attestations"} {
+			if !releaseGrants(&perms, scope) {
+				problems = append(problems, fmt.Sprintf("%s: job %s does not grant %s: write, which the attest step needs",
+					flow.path, job, scope))
+			}
+		}
+	}
+	return problems
+}
+
+// releaseSubjectProblems holds the attestation's subject-path, a comma-
+// or newline-separated list of globs, to the files the release writes:
+// each matched by an entry, and each entry matching one of them. An entry
+// ending in another file, such as dist/*.mcpb.sigstore.json, attests a
+// signature rather than the bundle, and one in another directory matches
+// nothing, which the action skips. A space-separated value is one literal
+// glob.
+func releaseSubjectProblems(subjects string, files []string) []string {
 	var problems []string
 	parts := strings.FieldsFunc(subjects, func(r rune) bool { return r == ',' || r == '\n' })
 	for i, p := range parts {
@@ -376,24 +417,94 @@ func releaseSubjectProblems(subjects, checksum string) []string {
 		problems = append(problems, fmt.Sprintf("subject-path %q separates with a space, which is read as one "+
 			"glob; separate with commas or newlines", subjects))
 	}
-	// Without a name_template goreleaser names the checksum file for the
-	// project and version, which a fixed subject-path does not match.
-	if checksum == "" {
-		problems = append(problems, "checksum.name_template is empty, so nothing holds the subject-path to the "+
-			"file every other artifact is verified through")
+	matches := func(glob, file string) bool {
+		ok, err := path.Match(path.Clean(glob), file)
+		return err == nil && ok
 	}
-	// An entry ends with the file it covers: dist/*.mcpb.sigstore.json
-	// attests a signature, not the bundle.
-	has := func(want string) bool {
-		return slices.ContainsFunc(parts, func(p string) bool { return strings.HasSuffix(p, want) })
+	for _, f := range files {
+		if !slices.ContainsFunc(parts, func(p string) bool { return matches(p, f) }) {
+			problems = append(problems, fmt.Sprintf("subject-path %q names nothing matching %s, which the release "+
+				"writes, so it carries no attestation", subjects, f))
+		}
 	}
-	for _, want := range []string{".tar.gz", ".zip", ".mcpb", checksum} {
-		if want != "" && !has(want) {
-			problems = append(problems, fmt.Sprintf("subject-path %q does not name %s, so it carries no attestation",
-				subjects, want))
+	for _, p := range parts {
+		if !strings.ContainsAny(p, " \t") && !slices.ContainsFunc(files, func(f string) bool { return matches(p, f) }) {
+			problems = append(problems, fmt.Sprintf("subject-path entry %q matches no file the release writes", p))
 		}
 	}
 	return problems
+}
+
+// releaseSample is the version the sample file names are written for.
+const releaseSample = "1.2.3"
+
+// releaseWrites is one file of each kind the release writes to dist/: an
+// archive of each format the config names, goreleaser's tar.gz when it
+// names none
+// (https://github.com/goreleaser/goreleaser/blob/v2.18.2/internal/pipe/archive/archive.go#L67),
+// the bundle and the checksum file.
+func releaseWrites(cfg releaseConfig, mcpbOut string) []string {
+	formats := map[string]bool{}
+	for _, a := range cfg.Archives {
+		if len(a.Formats) == 0 {
+			formats["tar.gz"] = true
+		}
+		for _, f := range a.Formats {
+			formats[f] = true
+		}
+		for _, o := range a.FormatOverrides {
+			for _, f := range o.Formats {
+				formats[f] = true
+			}
+		}
+	}
+	var out []string
+	for _, f := range slices.Sorted(maps.Keys(formats)) {
+		out = append(out, fmt.Sprintf("dist/%s_%s_linux_amd64.%s", cfg.ProjectName, releaseSample, f))
+	}
+	out = append(out, path.Clean(strings.ReplaceAll(mcpbOut, "$(VERSION)", releaseSample)))
+	if cfg.Checksum.NameTemplate != "" {
+		out = append(out, path.Join("dist", cfg.Checksum.NameTemplate))
+	}
+	return out
+}
+
+// releaseJobs are the jobs of the release workflow that run goreleaser,
+// by goreleaser-action with any inputs, by name on a run line, or by
+// go run or go install of its module: goreleaser publishes with or without
+// a release subcommand, so any job that runs it is held.
+func releaseJobs(flow workflow) map[string]bool {
+	jobs := map[string]bool{}
+	for _, s := range flow.steps() {
+		if s.action() == "goreleaser/goreleaser-action" {
+			jobs[s.job] = true
+		}
+		for _, line := range workflowRunLines(s.Run) {
+			for _, w := range shellSplit(line) {
+				if path.Base(w.text) == "goreleaser" {
+					jobs[s.job] = true
+				}
+			}
+			for _, gr := range pinsGoRuns(line) {
+				if module, _, _ := strings.Cut(gr.pkg, "@"); pinsToolByModule(module) == "goreleaser" {
+					jobs[s.job] = true
+				}
+			}
+		}
+	}
+	return jobs
+}
+
+// releaseGrants reports whether a permissions block grants scope write: by
+// the scope, or by write-all
+// (https://docs.github.com/en/actions/reference/workflows-and-actions/workflow-syntax#permissions).
+func releaseGrants(perms *yaml.Node, scope string) bool {
+	perms = workflowResolve(perms)
+	if perms.Kind == yaml.ScalarNode {
+		return perms.Value == "write-all"
+	}
+	v := workflowMappingValue(perms, scope)
+	return v != nil && workflowResolve(v).Value == "write"
 }
 
 // releaseSigns holds the signing block, which no rehearsal exercises:

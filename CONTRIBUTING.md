@@ -237,6 +237,8 @@ Every user-visible change gets an entry under `## [Unreleased]` in
 `CHANGELOG.md`, in the same pull request that makes the change. Leave out
 changes only contributors see, unless they must act on them.
 
+- **An entry is a bullet at the margin.** The `changelog` gate counts
+  nothing else, and nothing in fenced code.
 - **Sections** are the [Keep a Changelog](https://keepachangelog.com/en/1.1.0/)
   set and nothing else: Added, Changed, Deprecated, Removed, Fixed and
   Security, in that order.
