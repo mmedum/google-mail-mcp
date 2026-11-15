@@ -668,7 +668,7 @@ var (
 	}
 	// parityOtherTags are set by the go command for a target and a
 	// toolchain, and race, msan and asan by -race, -msan and -asan
-	// (https://github.com/golang/go/blob/go1.27.3/src/cmd/go/internal/work/init.go#L212).
+	// (https://github.com/golang/go/blob/go1.27.4/src/cmd/go/internal/work/init.go#L212).
 	parityOtherTags = map[string]bool{
 		"unix": true, "cgo": true, "gc": true, "gccgo": true, "race": true, "msan": true, "asan": true,
 	}
