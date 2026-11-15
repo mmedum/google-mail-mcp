@@ -15,6 +15,10 @@ lifted verbatim.
 
 ## [Unreleased]
 
+### Changed
+
+- `--dump-schemas` carries every wording a tool description takes under other settings, labeled by the fewest settings that give it.
+
 ### Security
 
 - Built with Go 1.27.4, which fixes GO-2026-6859 (CVE-2026-97054) in `net/http`, which `govulncheck` found reachable: an HTTP/1 server could crash on a header race.

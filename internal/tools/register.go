@@ -210,6 +210,9 @@ func register[In any, Out Renderer](s *mcp.Server, d Deps, sp Spec, h Handler[In
 	if d.kinds != nil {
 		d.kinds[sp.Name] = sp.Kind.String()
 	}
+	if d.descriptions != nil {
+		d.descriptions[sp.Name] = sp.Description
+	}
 	if d.namesOnly {
 		return
 	}
