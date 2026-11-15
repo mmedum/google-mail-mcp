@@ -4,6 +4,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"testing"
 )
@@ -75,11 +76,17 @@ func gitIn(t *testing.T, dir string, args ...string) {
 // isolateGit keeps the machine's git configuration from every git the
 // test runs, the gate's own included, so a global ignore file cannot hide
 // a fixture file, and turns automatic maintenance off as gitQuiet does.
+// It turns Go telemetry off too, for the gates' go commands under it.
 func isolateGit(t *testing.T) {
 	t.Helper()
 	t.Setenv("GIT_CONFIG_GLOBAL", os.DevNull)
 	t.Setenv("GIT_CONFIG_NOSYSTEM", "1")
-	t.Setenv("XDG_CONFIG_HOME", t.TempDir())
+	config := t.TempDir()
+	// A gate's go command keeps telemetry under XDG_CONFIG_HOME on Linux and
+	// can still be writing when the temporary directory is removed; mode
+	// "off" stops it (https://go.dev/doc/telemetry#config).
+	writeFiles(t, config, map[string]string{"go/telemetry/mode": "off"})
+	t.Setenv("XDG_CONFIG_HOME", config)
 	for _, kv := range gitQuiet {
 		k, v, _ := strings.Cut(kv, "=")
 		t.Setenv(k, v)
@@ -94,4 +101,21 @@ func gitRepo(t *testing.T, files map[string]string) string {
 	gitIn(t, root, "add", "-A")
 	gitIn(t, root, "commit", "-qm", "first")
 	return root
+}
+
+// TestIsolateGitTurnsGoTelemetryOff holds that the go command reads the
+// mode file where isolateGit writes it; a moved file would leave telemetry
+// writing into the temporary directory while a test removes it.
+func TestIsolateGitTurnsGoTelemetryOff(t *testing.T) {
+	isolateGit(t)
+	if dir, err := os.UserConfigDir(); err != nil || dir != os.Getenv("XDG_CONFIG_HOME") {
+		t.Skip("the go command does not read its config from XDG_CONFIG_HOME on " + runtime.GOOS)
+	}
+	out, err := exec.Command("go", "telemetry").CombinedOutput()
+	if err != nil {
+		t.Fatalf("go telemetry: %v\n%s", err, out)
+	}
+	if got := strings.TrimSpace(string(out)); got != "off" {
+		t.Errorf("go telemetry under isolateGit = %q, want %q", got, "off")
+	}
 }
