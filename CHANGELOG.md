@@ -15,6 +15,10 @@ lifted verbatim.
 
 ## [Unreleased]
 
+### Security
+
+- Built with Go 1.27.4, which fixes GO-2026-6859 (CVE-2026-97054) in `net/http`, which `govulncheck` found reachable: an HTTP/1 server could crash on a header race.
+
 ## [4.0.2] - 2026-11-03
 
 ### Changed
