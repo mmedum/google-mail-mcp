@@ -30,6 +30,10 @@ universal_binaries:
 archives:
   - id: archive
     ids: [google-mail-mcp]
+    formats: [tar.gz]
+    format_overrides:
+      - goos: windows
+        formats: [zip]
 checksum:
   name_template: checksums.txt
   extra_files:
@@ -52,6 +56,10 @@ const releaseTestWorkflow = `on:
     tags: ["v*.*.*"]
 jobs:
   goreleaser:
+    permissions:
+      contents: write
+      id-token: write
+      attestations: write
     steps:
       - name: Test
         run: go test ./...
@@ -129,10 +137,23 @@ func TestReleaseRefuses(t *testing.T) {
 		{"a short matrix", "config", "goarch: [amd64, arm64]", "goarch: [amd64]", "builds 3 platform targets"},
 		{"a space-separated subject path", "flow", `"dist/*.tar.gz,dist/*.zip,dist/*.mcpb,dist/checksums.txt"`,
 			`"dist/*.tar.gz dist/*.zip dist/*.mcpb dist/checksums.txt"`, "separates with a space"},
-		{"the bundle not attested", "flow", ",dist/*.mcpb", "", "does not name .mcpb"},
-		{"the Windows archives not attested", "flow", ",dist/*.zip", "", "does not name .zip"},
-		{"a signature attested in the bundle's place", "flow", ",dist/*.mcpb,", ",dist/*.mcpb.sigstore.json,", "does not name .mcpb"},
-		{"the checksum file not attested", "flow", ",dist/checksums.txt", ",dist/checksums.txt.bundle", "does not name checksums.txt"},
+		{"the bundle not attested", "flow", ",dist/*.mcpb", "", "names nothing matching dist/google-mail-mcp_1.2.3.mcpb"},
+		{"the Windows archives not attested", "flow", ",dist/*.zip", "",
+			"names nothing matching dist/google-mail-mcp_1.2.3_linux_amd64.zip"},
+		{"a signature attested in the bundle's place", "flow", ",dist/*.mcpb,", ",dist/*.mcpb.sigstore.json,",
+			`entry "dist/*.mcpb.sigstore.json" matches no file the release writes`},
+		{"the bundle attested in another directory", "flow", ",dist/*.mcpb,", ",dist/unused/*.mcpb,",
+			"names nothing matching dist/google-mail-mcp_1.2.3.mcpb"},
+		{"the checksum file not attested", "flow", ",dist/checksums.txt", ",dist/checksums.txt.bundle",
+			"names nothing matching dist/checksums.txt"},
+		{"the attest step in a job of its own", "flow", "      - uses: actions/attest-build-provenance@x\n",
+			"  attest:\n    permissions:\n      id-token: write\n      attestations: write\n    steps:\n" +
+				"      - uses: actions/attest-build-provenance@x\n",
+			"job attest attests, and runs no goreleaser"},
+		{"no attestations scope", "flow", "      attestations: write\n", "", "job goreleaser does not grant attestations: write"},
+		{"a second job running goreleaser bare", "flow", "dist/checksums.txt\"\n",
+			"dist/checksums.txt\"\n  nightly:\n    steps:\n      - run: goreleaser --clean\n",
+			"job nightly runs goreleaser and attests nothing it wrote"},
 		{"no checksum name", "config", "  name_template: checksums.txt\n", "", "checksum.name_template is empty"},
 		{"one reproducible build", "flow", "build --single-target --snapshot --clean --output b",
 			"build --snapshot --clean --output b", "builds one target 1 time(s)"},
@@ -202,6 +223,37 @@ func TestReleaseRefusesABadGlob(t *testing.T) {
 			joined := strings.Join(releaseTestRun(t, releaseTestConfig, releaseTestWorkflow, staged, releaseTestOut), "\n")
 			if !strings.Contains(joined, tc.want) {
 				t.Errorf("want %q, got:\n%s", tc.want, joined)
+			}
+		})
+	}
+}
+
+// A job's permissions block replaces the workflow's, and write-all grants
+// every scope.
+func TestReleaseReadsTheJobsPermissions(t *testing.T) {
+	const jobBlock = "    permissions:\n      contents: write\n      id-token: write\n      attestations: write\n"
+	for name, tc := range map[string]struct {
+		workflowLevel, jobLevel string
+		want                    []string
+	}{
+		"write-all at the workflow": {"permissions: write-all\n", "", nil},
+		"the job's block replaces write-all": {"permissions: write-all\n", "    permissions:\n      contents: write\n",
+			[]string{"does not grant attestations: write", "does not grant id-token: write"}},
+	} {
+		t.Run(name, func(t *testing.T) {
+			flow := strings.Replace(releaseTestWorkflow, jobBlock, tc.jobLevel, 1)
+			flow = strings.Replace(flow, "jobs:\n", tc.workflowLevel+"jobs:\n", 1)
+			if flow == releaseTestWorkflow {
+				t.Fatal("no permissions to replace")
+			}
+			joined := strings.Join(releaseTestRun(t, releaseTestConfig, flow, releaseTestStaged(), releaseTestOut), "\n")
+			for _, want := range tc.want {
+				if !strings.Contains(joined, want) {
+					t.Errorf("want %q, got:\n%s", want, joined)
+				}
+			}
+			if tc.want == nil && joined != "" {
+				t.Errorf("problems:\n%s", joined)
 			}
 		})
 	}

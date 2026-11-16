@@ -33,7 +33,7 @@ func smoke(out io.Writer, args []string) error {
 		return err
 	}
 	defer cleanup()
-	return smokeRun(out, bin)
+	return smokeRun(out, bin, mcp.SupportedProtocolVersions())
 }
 
 const (
@@ -56,10 +56,6 @@ const (
 	// signed out it must answer [auth].
 	smokeProbeTool = "get_profile"
 )
-
-// smokeSupported is the linked SDK's list, a variable so a test can
-// replace it.
-var smokeSupported = mcp.SupportedProtocolVersions
 
 // JSON-RPC codes the SDK uses when a connection closes with a request in
 // flight. Matched by code, never by message text.
@@ -120,10 +116,12 @@ func (m smokeMode) environ(base []string, localDir string) []string {
 	return env
 }
 
-func smokeRun(out io.Writer, bin string) error {
-	if !slices.Contains(smokeSupported(), smokeCurrentRevision) {
+// smokeRun drives bin. supported is the protocol revisions the linked SDK
+// speaks, which must hold the current one.
+func smokeRun(out io.Writer, bin string, supported []string) error {
+	if !slices.Contains(supported, smokeCurrentRevision) {
 		return fmt.Errorf("the linked MCP SDK supports %v, which lacks the current revision %s",
-			smokeSupported(), smokeCurrentRevision)
+			supported, smokeCurrentRevision)
 	}
 	if len(smokeModes) < smokeMinModes {
 		return fmt.Errorf("%d modes in the table, want at least %d", len(smokeModes), smokeMinModes)

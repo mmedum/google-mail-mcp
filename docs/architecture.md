@@ -452,10 +452,10 @@ README, [configuration.md](configuration.md) and
 | D-89 | A write-path change counts only after a live run whose transcript is read | accepted | live-cover, TestLiveCoverReadsTheRealDriver, live |
 | D-90 | Evals score the calls and the mailbox, with planted instructions | accepted | evals-check, TestScoreCatchesAnInjectionByToolAndByMarker, TestSelfCheckPasses, TestTheFenceIsOnTheCommandLine |
 | D-91 | A rule is made to fail: a test, a list derived from the code, a floor | accepted | TestRegistryFloor, TestClassesFloors, TestAPICoverageFloors, TestSchemaDiffFloor, review |
-| D-92 | `make check` and CI run the same set of gates | accepted | parity, checklist, TestParityRefuses, TestParityHoldsTheTreesTagsToAVetPass, TestChecklist, TestEveryCommandDeclaresWhereItRuns |
-| D-93 | A release is reproducible, signed, attested, and refused unless CI is green | accepted | release, goreleaser-check, TestReleaseRefuses, live |
+| D-92 | `make check` and CI run the same set of gates | accepted | parity, checklist, TestParityRefuses, TestParityHoldsTheTreesTagsToAVetPass, TestParityHoldsCheckToWhatAPushRuns, TestParityReadsEveryRuleOfATarget, TestShellSwallowed, TestChecklist, TestEveryCommandDeclaresWhereItRuns |
+| D-93 | A release is reproducible, signed, attested, and refused unless CI is green | accepted | release, goreleaser-check, TestReleaseRefuses, TestReleaseReadsTheJobsPermissions, live |
 | D-94 | The registry entry's hash is read only after the checksum signature verifies | accepted | server-json, TestServerJSONCheckRefusesTheWorkflow, TestServerJSONPublish |
-| D-95 | Every tool is pinned to one exact version everywhere it is named | accepted | pins, TestPinsRefuses, TestPinsNamesEachProblem, TestPinsPassesOnAPinnedRepository |
+| D-95 | Every tool is pinned to one exact version everywhere it is named | accepted | pins, TestPinsRefuses, TestPinsNamesEachProblem, TestPinsPassesOnAPinnedRepository, TestPinsReadsAnInputInAnyCase, TestPinsPassesALocalCallsContext, TestReadWorkflowRefusesAStrayLineBreak |
 | D-96 | The bundle defaults every switch off and passes settings through `env` alone | accepted | mcpb, TestMcpbRefusalsTurnASwitchOnWhateverItsDefault, TestMcpbAsksForEverySettingNotLeftOut, TestMcpbRefusesEachBreak |
 | D-97 | The bundle manifest is held to its vendored schema and read once | accepted | mcpb, TestMcpbRefusesARepeatedKey, TestVendorManifestSchemaChosenByVersion, TestMcpbStampIsHeldToTheSchema, TestMcpbPackRunsTheRepositoryChecks |
 | D-98 | `watch` pushes changes through Cloud Pub/Sub | rejected | — |
@@ -567,8 +567,8 @@ generated fields cannot take. It flags an `@` before a dotted domain
 outside the example and invalid set, a Gmail web URL, a keyword such as
 `message` before a hex id outside the fixture range, and the Google
 OAuth shapes. `make leaks-history` reads every blob, commit message and tag.
-A tracked binary is a finding. gitleaks covers credentials, through
-`make secrets`.
+A tracked binary is a finding. gitleaks covers credentials in the tree
+and in HEAD's history, through `make secrets`.
 
 Rejected: a credential scanner alone, which passes identifiers
 untouched.
@@ -2442,6 +2442,12 @@ step's name is not counted as running it. Each build tag a `//go:build`
 line needs has a `go vet` pass on both sides, so tagged code compiles in
 CI and not only on a laptop. A tool `ci.yml` runs with `go run` is one
 `make check` runs at the same version.
+Only what a push to `main` runs counts: a job or step a pull request
+alone runs, or whose failure passes, does not. CI calls a gate through
+its make target, so both sides run one recipe. A recipe or a CI line
+that lets a failure pass is refused: a `-` prefix, `.IGNORE`, `|| true`,
+a last `; true`, `&`, `!` or `set +e`. The Makefile is read as make
+reads it, and a line the reader does not read is refused by name.
 `checklist` holds the definition of done in `CLAUDE.md` to the `check:`
 prerequisites, both ways.
 
@@ -2464,6 +2470,9 @@ trusting the page it came from.
 
 The `release` gate holds `.goreleaser.yaml` against the release workflow
 on every commit, and `make goreleaser-check` validates the config. The
+attest step sits in each job that runs goreleaser, in any form, and that
+job grants `id-token` and `attestations` write. Its subject-path names
+each file the release writes, and nothing else. The
 steps are in [release.md](release.md).
 
 Rejected: trusting a tag alone, with no check that its commit passed CI.
@@ -2500,7 +2509,18 @@ the other. The `pins` gate parses the workflows as YAML and classes every
 action as an installer or not, failing on one it does not know. An
 installer's tool pin is required. A Makefile variable that pins a tool
 is the one its recipe runs. The Makefile's goreleaser pin must equal the
-workflow's, and the pre-commit and CI gitleaks versions must match. Each pin is checked against upstream when it is set.
+workflow's, and the pre-commit and CI gitleaks versions must match.
+It reads every `uses:` off the parse, wherever YAML lets one sit, input
+and env version names in any case, and a version a reusable workflow is
+given. A `go-version` beside `go-version-file` is refused, and every
+level of a workflow runs bash. A known tool's module@version is a pin on
+any line of the workflows, the Makefile, the git hook,
+`.goreleaser.yaml` and the Go under `scripts/`. A recipe or the hook
+that runs a known tool from the PATH, or fetches whatever release is
+newest, is refused. The goreleaser config's commands are read as
+goreleaser renders them, by a reader checked against the version the
+release runs. A line break YAML parsers do not all read alike is
+refused. Each pin is checked against upstream when it is set.
 
 Rejected: a pin copied from another project, which trailed upstream.
 Cost: a version bump touches every file that names the tool, in one

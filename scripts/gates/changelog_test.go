@@ -30,6 +30,12 @@ func TestChangelogLinks(t *testing.T) {
 			"## [0.2.0] has no [0.2.0]: link reference"},
 		{"a link with no heading", "## [Unreleased]\n[Unreleased]: https://h/compare/x...HEAD\n[0.9.0]: https://h\n",
 			"[0.9.0]: is a link reference with no heading"},
+		{"a heading in fenced code, which is an example", "## [Unreleased]\n\n```\n## [9.9.9]\n```\n\n" +
+			"[Unreleased]: https://h/compare/abc...HEAD\n", ""},
+		{"a version semver does not allow", "## [Unreleased]\n## [1.2.3-rc..1]\n[Unreleased]: https://h/compare/abc...HEAD\n",
+			"## [1.2.3-rc..1] is not a semver version"},
+		{"a version with a leading zero", "## [Unreleased]\n## [1.02.3]\n[Unreleased]: https://h/compare/abc...HEAD\n",
+			"## [1.02.3] is not a semver version"},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
@@ -62,6 +68,27 @@ func TestChangelogAddedUnderUnreleased(t *testing.T) {
 	first := "@@ -0,0 +1,6 @@\n+# Changelog\n+## [Unreleased]\n+\n+## [1.0.0] - 2026-01-01\n+- a tool\n+- another\n"
 	if n := changelogAddedUnderUnreleased(first); n != 2 {
 		t.Errorf("the first release counted %d", n)
+	}
+}
+
+// Only a bullet at the margin is an entry, and nothing in fenced code is
+// a heading or an entry.
+func TestChangelogCountsOnlyEntries(t *testing.T) {
+	for name, tc := range map[string]struct {
+		diff string
+		want int
+	}{
+		"a subheading alone":   {"@@ -1,3 +1,4 @@\n ## [Unreleased]\n+### Fixed\n ## [0.1.0]\n", 0},
+		"a line of prose":      {"@@ -1,3 +1,4 @@\n ## [Unreleased]\n+Fixed the thing.\n ## [0.1.0]\n", 0},
+		"an indented bullet":   {"@@ -1,3 +1,4 @@\n ## [Unreleased]\n+  - nested\n ## [0.1.0]\n", 0},
+		"a bullet with a star": {"@@ -1,3 +1,4 @@\n ## [Unreleased]\n+* a fix\n ## [0.1.0]\n", 1},
+		"a bullet in a fence":  {"@@ -1,3 +1,6 @@\n ## [Unreleased]\n+```\n+- not an entry\n+```\n ## [0.1.0]\n", 0},
+		"a heading in a fence": {"@@ -1,3 +1,6 @@\n ## [Unreleased]\n ## [0.1.0]\n+```\n+## [Unreleased]\n+```\n" +
+			"+- slipped in\n", 0},
+	} {
+		if got := changelogAddedUnderUnreleased(tc.diff); got != tc.want {
+			t.Errorf("%s: counted %d, want %d", name, got, tc.want)
+		}
 	}
 }
 

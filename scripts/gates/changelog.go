@@ -26,7 +26,16 @@ const changelogFile = "CHANGELOG.md"
 var changelogWatched = []string{"cmd/", "internal/", "packaging/", "go.mod"}
 
 var (
-	changelogVersionHeading = regexp.MustCompile(`(?m)^## \[(\d+\.\d+\.\d+(?:-[0-9A-Za-z.]+)?)\]`)
+	// changelogVersionHeading is a release heading. The version is semver,
+	// prerelease identifiers included, as semver.org gives its grammar
+	// (https://semver.org/spec/v2.0.0.html#is-there-a-suggested-regular-expression-regex-to-check-a-semver-string).
+	changelogVersionHeading = regexp.MustCompile(`(?m)^## \[((?:0|[1-9]\d*)\.(?:0|[1-9]\d*)\.(?:0|[1-9]\d*)` +
+		`(?:-(?:0|[1-9]\d*|\d*[A-Za-z-][0-9A-Za-z-]*)(?:\.(?:0|[1-9]\d*|\d*[A-Za-z-][0-9A-Za-z-]*))*)?)\]`)
+	// changelogAnyHeading is a section heading with a label in brackets.
+	changelogAnyHeading = regexp.MustCompile(`(?m)^## \[([^\]]*)\]`)
+	// changelogEntry is an entry: a bullet at the margin. A subheading or
+	// a line of prose under [Unreleased] tells a reader nothing changed.
+	changelogEntry = regexp.MustCompile(`^[-*+][ \t]+\S`)
 	// changelogLinkDefinition is a link reference, its URL on its own line:
 	// \s would take an empty definition's URL from the next line.
 	changelogLinkDefinition = regexp.MustCompile(`(?m)^\[([^\]]+)\]:[ \t]*(\S+)`)
@@ -131,16 +140,27 @@ func changelogTouched(files []string, shipped map[string]bool) []string {
 // the first release the whole file is new, and there is none to remove.
 // A heading already released is context, never added, so an entry
 // slipped in under it still counts nothing.
+//
+// The diff's context is the whole file, so the new file's lines, context
+// and added, are read with their fenced code skipped, as a heading or an
+// entry there is an example.
 func changelogAddedUnderUnreleased(diff string) int {
 	count, inHunk, inside := 0, false, false
+	var fence docsFence
 	for line := range strings.SplitSeq(diff, "\n") {
-		switch {
-		case strings.HasPrefix(line, "@@"):
+		if strings.HasPrefix(line, "@@") {
 			inHunk = true
-		case !inHunk:
-		case strings.HasPrefix(line, "+## [") || strings.HasPrefix(line, " ## ["):
-			inside = strings.Contains(line, "[Unreleased]") || strings.HasPrefix(line, "+## [")
-		case inside && strings.HasPrefix(line, "+") && strings.TrimSpace(line[1:]) != "":
+			continue
+		}
+		if !inHunk || line == "" || (line[0] != '+' && line[0] != ' ') {
+			continue
+		}
+		text := line[1:]
+		switch {
+		case fence.code(text):
+		case docsHeadingLevel(text) == 2 && strings.HasPrefix(text, "## ["):
+			inside = strings.Contains(text, "[Unreleased]") || line[0] == '+'
+		case inside && line[0] == '+' && changelogEntry.MatchString(text):
 			count++
 		}
 	}
@@ -164,9 +184,15 @@ func changelogLinks(out io.Writer, _ []string) error {
 // Before the first release there are no version headings, and
 // [Unreleased] must still be there and linked.
 func changelogLinkProblems(text string) (int, []string) {
+	text = changelogProse(text)
 	var problems []string
 	if !strings.Contains(text, "\n## [Unreleased]") && !strings.HasPrefix(text, "## [Unreleased]") {
 		problems = append(problems, "there is no ## [Unreleased] heading, so there is nowhere for the next entry")
+	}
+	for _, m := range changelogAnyHeading.FindAllStringSubmatch(text, -1) {
+		if m[1] != "Unreleased" && !changelogVersionHeading.MatchString(m[0]) {
+			problems = append(problems, fmt.Sprintf("## [%s] is not a semver version, so no release reads it", m[1]))
+		}
 	}
 	headings := changelogVersionHeading.FindAllStringSubmatch(text, -1)
 	versions := make([]string, 0, len(headings))
@@ -203,4 +229,11 @@ func changelogLinkProblems(text string) (int, []string) {
 	}
 	slices.Sort(problems)
 	return len(versions), problems
+}
+
+// changelogProse is a CHANGELOG with its fenced code blanked, line for
+// line, for every reader of its headings, links and entries: an example
+// in a fence is none of them.
+func changelogProse(text string) string {
+	return strings.Join(docsProse(text), "\n")
 }

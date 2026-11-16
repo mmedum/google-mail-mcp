@@ -562,7 +562,7 @@ func schemaDiffStrings(v any) []string {
 // commit. Recording it after the tag instead would fail every branch
 // from the moment the tag is pushed until a second change lands.
 func schemaBaselineVersion(changelog string) string {
-	if m := changelogVersionHeading.FindStringSubmatch(changelog); m != nil {
+	if m := changelogVersionHeading.FindStringSubmatch(changelogProse(changelog)); m != nil {
 		return "v" + m[1]
 	}
 	return ""
@@ -576,7 +576,7 @@ func schemaBaselineVersion(changelog string) string {
 // the surface.
 func schemaDiffUndeclared(breaking []change, changelog, baseline string) ([]string, error) {
 	version := strings.TrimPrefix(baseline, "v")
-	unreleased, _, found := strings.Cut(changelog, "\n## ["+version+"]")
+	unreleased, _, found := strings.Cut(changelogProse(changelog), "\n## ["+version+"]")
 	if !found {
 		return nil, fmt.Errorf("%s has no ## [%s] heading for the baseline %s, so no break can be declared against it",
 			changelogFile, version, baseline)

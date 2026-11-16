@@ -297,6 +297,23 @@ func (g *docsGate) lines(rel string) ([]string, bool) {
 	return l, true
 }
 
+// docsHeadingLevel is an ATX heading's level, the run of #s before the
+// blank that ends it, or 0 for a line that is not a heading
+// (https://spec.commonmark.org/0.31.2/#atx-headings).
+func docsHeadingLevel(line string) int {
+	if !docsATXHeading.MatchString(line) {
+		return 0
+	}
+	return len(line) - len(strings.TrimLeft(line, "#"))
+}
+
+// docsEndsSection reports whether a line is a heading that ends a section
+// of the given level: one at that level or above it.
+func docsEndsSection(line string, level int) bool {
+	l := docsHeadingLevel(line)
+	return l > 0 && l <= level
+}
+
 // docsProse is a Markdown document's lines with fenced code blanked, so
 // an example in a fence is neither a heading nor a citation. Blanking
 // rather than dropping keeps the line numbers.
@@ -1073,7 +1090,7 @@ func (g *docsGate) checkMarkdown(file string) {
 		// heading sits inside that section and leaves it as it is.
 		if file == changelogFile {
 			if m := docsATXHeading.FindStringSubmatch(line); m != nil {
-				switch len(line) - len(strings.TrimLeft(line, "#")) {
+				switch docsHeadingLevel(line) {
 				case 2:
 					removed = false
 				case 3:
@@ -1355,7 +1372,7 @@ func (g *docsGate) checkCodemap() {
 		return
 	}
 	named := map[string]int{}
-	for i := start + 1; i < len(lines) && !strings.HasPrefix(lines[i], "## "); i++ {
+	for i := start + 1; i < len(lines) && !docsEndsSection(lines[i], 2); i++ {
 		for _, span := range docsCodeSpans(lines[i]) {
 			if m := docsPackageName.FindStringSubmatch(span); m != nil && named[m[1]] == 0 {
 				named[m[1]] = i + 1

@@ -53,7 +53,7 @@ func TestSmokePassesAWellBehavedServer(t *testing.T) {
 	bin := smokeFake(t)
 	t.Setenv("SMOKE_FAKE_MODE", "")
 	var out sink
-	if err := smokeRun(&out, bin); err != nil {
+	if err := smokeRun(&out, bin, mcp.SupportedProtocolVersions()); err != nil {
 		t.Fatal(err)
 	}
 	out.mustSay(t, "tools registered: default 2, read-only 1, send 3, destructive 3, settings 3, settings and destructive 5, "+
@@ -81,7 +81,7 @@ func TestSmokeFailsEachWay(t *testing.T) {
 	for mode, want := range cases {
 		t.Run(mode, func(t *testing.T) {
 			t.Setenv("SMOKE_FAKE_MODE", mode)
-			err := smokeRun(&sink{}, bin)
+			err := smokeRun(&sink{}, bin, mcp.SupportedProtocolVersions())
 			if err == nil {
 				t.Fatalf("mode %s passed", mode)
 			}
@@ -112,10 +112,7 @@ func TestSmokeAbruptDisconnectMatchesByCode(t *testing.T) {
 }
 
 func TestSmokeRefusesAnSDKWithoutTheRevision(t *testing.T) {
-	saved := smokeSupported
-	defer func() { smokeSupported = saved }()
-	smokeSupported = func() []string { return []string{"2024-11-05"} }
-	if err := smokeRun(&sink{}, "unused"); err == nil || !strings.Contains(err.Error(), "lacks the current revision") {
+	if err := smokeRun(&sink{}, "unused", []string{"2024-11-05"}); err == nil || !strings.Contains(err.Error(), "lacks the current revision") {
 		t.Errorf("got %v", err)
 	}
 }
@@ -163,7 +160,7 @@ func TestSmokeFailsAServerWithoutServerDiscover(t *testing.T) {
 	bin := smokeFake(t)
 	t.Setenv("SMOKE_FAKE_MODE", "legacy")
 	var out sink
-	err := smokeRun(&out, bin)
+	err := smokeRun(&out, bin, mcp.SupportedProtocolVersions())
 	if err == nil || !strings.Contains(err.Error(), "server/discover") {
 		t.Fatalf("err = %v; want a server/discover failure", err)
 	}

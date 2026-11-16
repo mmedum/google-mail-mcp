@@ -100,10 +100,14 @@ vuln:
 licenses:
 	$(GO) run $(GOLICENSES) check ./... --allowed_licenses=Apache-2.0,BSD-2-Clause,BSD-3-Clause,MIT,ISC
 
+# gitleaks walks `git log --all` unless --log-opts names the commits
+# (https://github.com/gitleaks/gitleaks/blob/v8.30.1/sources/git.go#L90-L94),
+# and CI's full clone holds every pushed branch, so the history scan reads
+# HEAD's history alone. CI checks out the whole history for it.
 .PHONY: secrets
-secrets: ## Credentials in the tree and in every commit the clone holds
+secrets: ## Credentials in the tree and in every commit HEAD reaches
 	$(GO) run $(GITLEAKS) dir . --config .gitleaks.toml --redact --no-banner
-	$(GO) run $(GITLEAKS) git . --config .gitleaks.toml --redact --no-banner
+	$(GO) run $(GITLEAKS) git --log-opts=HEAD . --config .gitleaks.toml --redact --no-banner
 
 .PHONY: actionlint
 actionlint: ## The workflows are valid

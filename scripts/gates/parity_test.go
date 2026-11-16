@@ -247,9 +247,78 @@ func TestParityReadsEveryRuleOfATarget(t *testing.T) {
 			"the api-diff gate is manual by the registry, and `make check` runs it; declare it inCheck",
 		}},
 		{"a recipe line's prefixes", []docsEdit{
-			replace("Makefile", "\t$(GO) vet ./...\n", "\t@-+$(GO) vet ./...\n"),
+			replace("Makefile", "\t$(GO) vet ./...\n", "\t@+$(GO) vet ./...\n"),
 		}, nil},
+		{"a recipe line make goes on past", []docsEdit{
+			replace("Makefile", "\t$(GO) vet ./...\n", "\t-$(GO) vet ./...\n"),
+		}, []string{"Makefile:85: vet's recipe line starts with -, so make goes on when it fails"}},
+		{".IGNORE", []docsEdit{
+			replace("Makefile", "vet:\n", ".IGNORE: g00\nvet:\n"),
+		}, []string{"Makefile: .IGNORE makes make ignore a failing command; drop it"}},
+		{"a line the Makefile reader does not read", []docsEdit{
+			replace("Makefile", "vet:\n", "include other.mk\nvet:\n"),
+		}, []string{`Makefile:84: "include other.mk" is a directive or an assignment, which this reader does not read`}},
+		{"a recipe that passes whatever it ran", []docsEdit{
+			replace("Makefile", "\t$(GATES) g00\n", "\t$(GATES) g00 || true\n"),
+		}, []string{"Makefile:6: g00's recipe line is one where `|| true` passes whatever came before, so a failing check passes"}},
 	})
+}
+
+// What a push to main runs is what `make check` is held to, and CI runs a
+// check through make, failing when it fails.
+func TestParityHoldsCheckToWhatAPushRuns(t *testing.T) {
+	const ci = ".github/workflows/ci.yml"
+	notRun := []string{
+		"`make check` runs g00 and ci.yml never does",
+		"the g00 gate runs in check by the registry, and no job of ci.yml a push to main runs calls it",
+	}
+	checkParityCases(t, []parityCase{
+		{"a step a pull request alone runs", []docsEdit{
+			replace(ci, "      - name: g00\n", "      - name: g00\n        if: github.event_name == 'pull_request'\n"),
+		}, notRun},
+		{"a step whose failure passes", []docsEdit{
+			replace(ci, "      - name: g00\n", "      - name: g00\n        continue-on-error: true\n"),
+		}, notRun},
+		{"a step a matrix filter runs", []docsEdit{
+			replace(ci, "      - name: g00\n", "      - name: g00\n        if: matrix.os == 'ubuntu-latest'\n"),
+		}, nil},
+		{"a step that never runs", []docsEdit{
+			replace(ci, "      - name: g00\n", "      - name: g00\n        if: false\n"),
+		}, notRun},
+		{"a step under a condition other than a matrix filter", []docsEdit{
+			replace(ci, "      - name: g00\n", "      - name: g00\n        if: github.event_name != 'push'\n"),
+		}, notRun},
+		{"a CI line that passes whatever it ran", []docsEdit{
+			replace(ci, "        run: make g00\n", "        run: make g00 || true\n"),
+		}, []string{"ci.yml runs `make g00 || true`, where `|| true` passes whatever came before, so a failing check passes"}},
+		{"a gate CI calls outside make", []docsEdit{
+			replace(ci, "        run: make g00\n", "        run: go run ./scripts/gates g00\n"),
+		}, []string{"ci.yml runs `go run ./scripts/gates g00`, a gate called outside make; call its make target, " +
+			"so CI and `make check` run one recipe"}},
+	})
+}
+
+func TestShellSwallowed(t *testing.T) {
+	for line, want := range map[string]string{
+		"make leaks":                "",
+		"make leaks && make pins":   "",
+		"make leaks || true":        "`|| true` passes whatever came before",
+		"make leaks || :":           "`|| :` passes whatever came before",
+		"make leaks || exit 0":      "`|| exit 0` passes whatever came before",
+		"make leaks || exit 1":      "",
+		"make leaks; true":          "`; true` ends it with success whatever came before",
+		"make leaks; make pins":     "",
+		"make leaks &":              "& runs a command in the background, where its failure is never seen",
+		"! make leaks":              "! turns a failure into success",
+		"set +e; make leaks":        "set +e lets the commands after it fail",
+		"make leaks 2>&1 | tee log": "",
+		"out=$(gofmt -l .); exit 1": "",
+		"echo 'make x || true'":     "",
+	} {
+		if got := shellSwallowed(shellSplit(line)); got != want {
+			t.Errorf("shellSwallowed(%q) = %q, want %q", line, got, want)
+		}
+	}
 }
 
 // A tool CI runs with go run is one `make check` runs at the same version.
