@@ -567,6 +567,10 @@ generated fields cannot take. It flags an `@` before a dotted domain
 outside the example and invalid set, a Gmail web URL, a keyword such as
 `message` before a hex id outside the fixture range, and the Google
 OAuth shapes. `make leaks-history` reads every blob, commit message and tag.
+It passes a `Co-authored-by:` trailer naming an address that authors
+a commit in the history, since git publishes that address in the
+commit's header, and a GitHub squash merge can add one for an author
+of a squashed commit.
 A tracked binary is a finding. gitleaks covers credentials in the tree
 and in HEAD's history, through `make secrets`.
 
