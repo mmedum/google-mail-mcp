@@ -525,6 +525,22 @@ func want(text, s string) error {
 	return nil
 }
 
+// refusedForConfirm checks a refusal for a missing confirm: it names
+// the tool and gives the reason that tool's confirm field holds.
+func refusedForConfirm(tool string) func(*env, string) error {
+	prefix := tool + " takes confirm: true, because "
+	return func(_ *env, text string) error {
+		_, rest, ok := strings.Cut(text, prefix)
+		if !ok {
+			return fmt.Errorf("the result does not contain %q", prefix)
+		}
+		if reason, _, _ := strings.Cut(rest, ". Pass it"); strings.TrimSpace(reason) == "" {
+			return fmt.Errorf("the refusal gives no reason")
+		}
+		return nil
+	}
+}
+
 // ownsAll requires exactly n distinct ids of one kind in text, every one
 // the run's own. Fewer means the server missed inserted mail; one the run
 // did not insert means the scoping failed, which is the worse failure.

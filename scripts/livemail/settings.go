@@ -368,7 +368,7 @@ var settingsSteps = []step{
 		args: func(e *env) map[string]any {
 			return map[string]any{"from": filterSender(e.seed.label), "query": "trash"}
 		},
-		check: func(_ *env, text string) error { return want(text, "confirm: true") }},
+		check: refusedForConfirm("create_trash_filter")},
 
 	// The dry run carries every criterion, as create_filter's does; the
 	// filter it would make is never made.
@@ -455,7 +455,7 @@ var settingsSteps = []step{
 		args: func(e *env) map[string]any {
 			return map[string]any{"filter_id": e.filters[0], "criteria": e.filterCriteria[e.filters[0]]}
 		},
-		check: func(_ *env, text string) error { return want(text, "confirm: true") }},
+		check: refusedForConfirm("delete_filter")},
 
 	{name: "delete a filter, dry run", tool: "delete_filter", needs: needFilter,
 		args: func(e *env) map[string]any {
