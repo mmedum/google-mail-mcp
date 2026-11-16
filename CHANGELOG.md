@@ -15,6 +15,8 @@ lifted verbatim.
 
 ## [Unreleased]
 
+## [4.0.3] - 2026-11-16
+
 ### Changed
 
 - `--dump-schemas` carries every wording a tool description takes under other settings, labeled by the fewest settings that give it.
@@ -323,7 +325,8 @@ lifted verbatim.
 - Repository gates run by `make check` and CI: leaks, pins, error classes, API coverage, schema diff, smoke, staleness and more.
 - Signed release archives for six platforms with SBOMs, build provenance, a Claude Desktop bundle and an MCP registry entry.
 
-[Unreleased]: https://github.com/mmedum/google-mail-mcp/compare/v4.0.2...HEAD
+[Unreleased]: https://github.com/mmedum/google-mail-mcp/compare/v4.0.3...HEAD
+[4.0.3]: https://github.com/mmedum/google-mail-mcp/compare/v4.0.2...v4.0.3
 [4.0.2]: https://github.com/mmedum/google-mail-mcp/compare/v4.0.1...v4.0.2
 [4.0.1]: https://github.com/mmedum/google-mail-mcp/compare/v4.0.0...v4.0.1
 [4.0.0]: https://github.com/mmedum/google-mail-mcp/compare/v3.3.0...v4.0.0
