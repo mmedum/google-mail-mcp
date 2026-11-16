@@ -63,7 +63,7 @@ type SendDraftOut struct {
 type DeletePermanentlyIn struct {
 	MessageIDs []string `json:"message_ids,omitempty" jsonschema:"message ids from a search or read you have seen"`
 	ThreadIDs  []string `json:"thread_ids,omitempty" jsonschema:"thread ids; every message in each thread is deleted"`
-	Confirm    bool     `json:"confirm,omitempty" jsonschema:"must be true: deleted mail skips the trash and cannot be restored"`
+	Confirm    bool     `json:"confirm,omitempty" jsonschema:"must be true: deleted mail skips the trash and cannot be restored, while trash keeps it for 30 days"`
 	DryRun     bool     `json:"dry_run,omitempty" jsonschema:"read each item and report what would be deleted"`
 }
 
@@ -118,8 +118,8 @@ func registerGated(s *mcp.Server, d Deps) {
 		"the labels it had, and one that fails does not stop the rest. A draft goes with delete_draft. 1 unit, then " +
 		"30 per message and 60 per thread." + dryRunNote},
 		func(ctx context.Context, in DeletePermanentlyIn) (ItemsOut, error) {
-			iw, err := svc.DeletePermanently(ctx, service.Purge{Targets: service.Targets{MessageIDs: in.MessageIDs,
-				ThreadIDs: in.ThreadIDs}, Confirm: in.Confirm})
+			iw, err := svc.DeletePermanently(ctx, service.Targets{MessageIDs: in.MessageIDs,
+				ThreadIDs: in.ThreadIDs})
 			if err != nil {
 				return ItemsOut{}, err
 			}
@@ -130,7 +130,7 @@ func registerGated(s *mcp.Server, d Deps) {
 		"every message and thread that carries it, and cannot be restored; the mail itself stays. confirm must be " +
 		"true. The result says how many messages carried it. System labels cannot be deleted. 7 units." + dryRunNote},
 		func(ctx context.Context, in DeleteLabelIn) (LabelDeleteOut, error) {
-			lw, err := svc.DeleteLabel(ctx, in.Label, in.Confirm)
+			lw, err := svc.DeleteLabel(ctx, in.Label)
 			if err != nil {
 				return LabelDeleteOut{}, err
 			}

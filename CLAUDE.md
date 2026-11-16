@@ -54,7 +54,7 @@ that depends on it.
 9. **Never delete for good by default.** Removal is trash (D-51).
    `delete_permanently` and `delete_label` need
    `GMAIL_ENABLE_DESTRUCTIVE=true`, the only setting that requests
-   `https://mail.google.com/` (D-52), and take `confirm` (D-66).
+   `https://mail.google.com/` (D-52), and take `confirm` (D-109).
 10. **Never write from a query.** Writes take explicit ids, at most 100
     (D-44). A filter cannot forward (D-56); one that trashes is its own
     tool, `create_trash_filter` (D-57).

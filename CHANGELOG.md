@@ -15,6 +15,10 @@ lifted verbatim.
 
 ## [Unreleased]
 
+### Changed
+
+- A delete or `create_trash_filter` called without `confirm` is refused in one wording that gives the reason, before its other inputs are checked.
+
 ### Security
 
 - Built with Go 1.27.4, which fixes GO-2026-6859 (CVE-2026-97054) in `net/http`, which `govulncheck` found reachable: an HTTP/1 server could crash on a header race.

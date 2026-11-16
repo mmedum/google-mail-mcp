@@ -167,7 +167,7 @@ func registerSettings(s *mcp.Server, d Deps) {
 			if err != nil {
 				return FilterWriteOut{}, err
 			}
-			fw, err := svc.CreateFilter(ctx, service.FilterSpec{Criteria: c, Trash: true, Confirm: in.Confirm})
+			fw, err := svc.CreateFilter(ctx, service.FilterSpec{Criteria: c, Trash: true})
 			if err != nil {
 				return FilterWriteOut{}, err
 			}
@@ -183,7 +183,7 @@ func registerSettings(s *mcp.Server, d Deps) {
 			if err != nil {
 				return FilterWriteOut{}, err
 			}
-			fw, err := svc.DeleteFilter(ctx, in.FilterID, c, in.Confirm)
+			fw, err := svc.DeleteFilter(ctx, in.FilterID, c)
 			if err != nil {
 				return FilterWriteOut{}, err
 			}

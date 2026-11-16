@@ -46,7 +46,7 @@ It can call any registered tool under your credentials. A client may
 ignore tool annotations, so registration is the control. Sending,
 permanent deletion and settings writes register only with their switches
 (D-48, D-52, D-55). A write that cannot be undone takes `confirm` and
-repeats what it acts on (D-47, D-66); those are witnesses the model
+repeats what it acts on (D-47, D-109); those are witnesses the model
 writes, never your approval. An address a message talked into a draft is
 one the model has to type again in `confirm_recipients` (D-49). Past
 that, Google's per-scope authorization is the bound, and

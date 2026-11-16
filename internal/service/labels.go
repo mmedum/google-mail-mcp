@@ -177,12 +177,8 @@ func (s *Service) UpdateLabel(ctx context.Context, label string, sp LabelSpec) (
 // DeleteLabel deletes a user label, which takes it off every message
 // and thread that carries it and cannot be undone. The label is read
 // with its counts first, so the result says how much mail loses it.
-func (s *Service) DeleteLabel(ctx context.Context, label string, confirm bool) (model.LabelWrite, error) {
+func (s *Service) DeleteLabel(ctx context.Context, label string) (model.LabelWrite, error) {
 	out := model.LabelWrite{Op: "delete", DryRun: gapi.WritesForbidden(ctx)}
-	if !confirm && !out.DryRun {
-		return out, gapi.Errf(gapi.ClassBlocked,
-			"delete_label removes the label from every message that carries it and cannot be undone. Pass confirm: true to delete it")
-	}
 	ls, err := s.labels(ctx)
 	if err != nil {
 		return out, err

@@ -51,7 +51,7 @@ type confirmingProbeIn struct {
 	ID      string `json:"id" jsonschema:"an id"`
 	DryRun  bool   `json:"dry_run,omitempty"`
 	Fail    string `json:"fail,omitempty"`
-	Confirm bool   `json:"confirm,omitempty"`
+	Confirm bool   `json:"confirm,omitempty" jsonschema:"must be true: a probe cannot be undone"`
 }
 
 // registerProbes registers one probe per Kind, named after the kind.
@@ -289,7 +289,12 @@ func hint(b *bool) string {
 }
 
 type confirmIn struct {
-	Confirm bool `json:"confirm,omitempty"`
+	Confirm bool `json:"confirm,omitempty" jsonschema:"must be true: a probe cannot be undone"`
+}
+
+// unexplainedConfirmIn takes confirm with no reason for it.
+type unexplainedConfirmIn struct {
+	Confirm bool `json:"confirm,omitempty" jsonschema:"set it"`
 }
 
 // registers reports whether register accepted a tool of kind k taking
@@ -302,25 +307,69 @@ func registers[In any](k Kind) (ok bool) {
 	return true
 }
 
-// confirm says a write cannot be undone, so a tool that takes it
-// is annotated destructive, and a plain Write, which another write
-// undoes, takes none.
+// stringConfirmIn takes a confirm that is not a bool.
+type stringConfirmIn struct {
+	Confirm string `json:"confirm,omitempty" jsonschema:"must be true: a probe cannot be undone"`
+}
+
+// confirm says a write cannot be undone, so only a kind that cannot be
+// undone takes it, which wrap checks, and an auto-reply, whose service
+// checks it for turning the reply on. A confirm that is not a bool is no
+// witness at all.
 func TestAToolThatTakesConfirmIsAnnotatedDestructive(t *testing.T) {
 	for _, k := range allKinds {
-		want := k != Read && k != ReadWritesLocally && k != Adding && k != Write
+		want := k == WriteForGood || k == Destructive || k == SettingsForGood || k == AutoReply
 		if got := registers[confirmIn](k); got != want {
 			t.Errorf("%s with confirm: registered %t, want %t", k, got, want)
+		}
+		if registers[stringConfirmIn](k) {
+			t.Errorf("%s with a string confirm registered", k)
 		}
 	}
 }
 
 // Every delete, and every kind that cannot be undone, takes confirm: a
-// witness that the caller meant it.
+// witness that the caller meant it, described with the reason.
 func TestAKindThatCannotBeUndoneTakesConfirm(t *testing.T) {
 	for _, k := range allKinds {
 		want := k != WriteForGood && k != Destructive && k != SettingsForGood
 		if got := registers[probeIn](k); got != want {
 			t.Errorf("%s without confirm: registered %t, want %t", k, got, want)
 		}
+		if got := registers[unexplainedConfirmIn](k); got != (k == AutoReply) {
+			t.Errorf("%s with confirm and no reason: registered %t, want %t", k, got, k == AutoReply)
+		}
+	}
+}
+
+// A call that cannot be undone is refused [blocked] without confirm, with
+// the reason its field gives, before the handler runs; with confirm, or
+// as a dry run, it goes through.
+func TestACallThatCannotBeUndoneNeedsConfirm(t *testing.T) {
+	h := testutil.Connect(t, func(s *mcp.Server) { registerProbes(s, Deps{Config: FullSurface(config.Config{})}) })
+	refused := 0
+	for _, k := range allKinds {
+		name := strings.ReplaceAll(k.String(), "-", "_")
+		res := h.Call(t, name, map[string]any{"id": "m1"})
+		if !k.confirmsEveryCall() {
+			if res.IsError {
+				t.Errorf("%s without confirm: %s, want it to run", name, testutil.Text(res))
+			}
+			continue
+		}
+		refused++
+		want := "[blocked] " + name + " takes confirm: true, because a probe cannot be undone. Pass it only when the person asked for this"
+		if got := testutil.Text(res); !res.IsError || got != want {
+			t.Errorf("%s without confirm = %q, want %q", name, got, want)
+		}
+		for _, args := range []map[string]any{{"id": "m1", "confirm": true}, {"id": "m1", "dry_run": true}} {
+			var out probeOut
+			if res := h.CallInto(t, name, args, &out); res.IsError || out.Seen != "m1" {
+				t.Errorf("%s %v: %s, want the handler to run", name, args, testutil.Text(res))
+			}
+		}
+	}
+	if refused != 3 {
+		t.Errorf("%d kinds refused a call without confirm, want 3", refused)
 	}
 }

@@ -105,8 +105,6 @@ type FilterSpec struct {
 	AddLabels, RemoveLabels []string
 	// The common actions, as flags. Only create_trash_filter sets Trash.
 	Archive, MarkRead, Star, Trash bool
-	// Confirm is required when the filter trashes matching mail.
-	Confirm bool
 }
 
 // Labels a filter may not add, and may not remove. Trash is
@@ -135,10 +133,6 @@ func (s *Service) CreateFilter(ctx context.Context, sp FilterSpec) (model.Filter
 	}
 	if c.SizeComparison != "" && c.SizeComparison != "larger" && c.SizeComparison != "smaller" {
 		return out, gapi.Errf(gapi.ClassInvalid, "size_comparison is larger or smaller")
-	}
-	if sp.Trash && !sp.Confirm && !out.DryRun {
-		return out, gapi.Errf(gapi.ClassBlocked,
-			"this filter moves every matching message that arrives to the trash, unseen. Pass confirm: true to create it")
 	}
 	unlock, err := s.lockSettings(ctx, out.DryRun)
 	if err != nil {
@@ -312,14 +306,11 @@ func (s *Service) settleFilter(ctx context.Context, w gmail.FilterWrite, before 
 // criteria are the filter's criteria as list_filters gives them. They put
 // what is deleted into the call, where a client's prompt shows it, and
 // the delete is refused if the filter's are others.
-func (s *Service) DeleteFilter(ctx context.Context, id string, criteria gmail.FilterCriteria, confirm bool) (model.FilterWrite, error) {
+func (s *Service) DeleteFilter(ctx context.Context, id string, criteria gmail.FilterCriteria) (model.FilterWrite, error) {
 	out := model.FilterWrite{Op: "delete", DryRun: gapi.WritesForbidden(ctx)}
 	id = strings.TrimSpace(id)
 	if id == "" {
 		return out, gapi.Errf(gapi.ClassInvalid, "filter_id is required; list_filters shows the ids")
-	}
-	if !confirm && !out.DryRun {
-		return out, gapi.Errf(gapi.ClassBlocked, "delete_filter cannot be undone. Pass confirm: true to delete it")
 	}
 	unlock, err := s.lockSettings(ctx, out.DryRun)
 	if err != nil {
