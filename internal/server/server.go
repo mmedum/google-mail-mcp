@@ -246,6 +246,10 @@ type SchemaDump struct {
 	// Kinds names each tool's kind, which decides the switch it sits
 	// behind; clients read annotations, and two kinds share them.
 	Kinds map[string]string `json:"kinds"`
+	// Descriptions are the wordings a tool's description takes under
+	// other settings than the full surface's, by tool, then by the fewest
+	// settings that give each (settingDescriptions).
+	Descriptions map[string]map[string]string `json:"descriptions"`
 }
 
 // DumpSchemas writes the full surface — every tool whatever the flags,
@@ -271,7 +275,82 @@ func DumpSchemas(ctx context.Context, w io.Writer, d Deps) error {
 		}
 	}
 	d.Config = tools.FullSurface(config.Config{})
-	return dump(ctx, w, New(d), d.Version, tools.Kinds(d.Deps), instructions)
+	descriptions := settingDescriptions(d.Deps)
+	return dump(ctx, w, New(d), d.Version, tools.Kinds(d.Deps), instructions, descriptions)
+}
+
+// settingSwitches are the settings that decide which tools register and
+// how some describe themselves, each by the variable that sets it.
+// TestSettingSwitchesCoverTheConfig holds it to config.Config.
+var settingSwitches = []struct {
+	env string
+	set func(*config.Config)
+}{
+	{config.EnvPrefix + "READ_ONLY", func(c *config.Config) { c.ReadOnly = true }},
+	{config.EnvPrefix + "ENABLE_SEND", func(c *config.Config) { c.EnableSend = true }},
+	{config.EnvPrefix + "ENABLE_DESTRUCTIVE", func(c *config.Config) { c.EnableDestructive = true }},
+	{config.EnvPrefix + "ENABLE_SETTINGS", func(c *config.Config) { c.EnableSettings = true }},
+	{config.EnvPrefix + "DRAFT_SIGNATURE", func(c *config.Config) { c.DraftSignature = true }},
+	{config.EnvPrefix + "LOCAL_DIR", func(c *config.Config) { c.LocalDir = tools.FullSurface(config.Config{}).LocalDir }},
+}
+
+// settingDescriptions reads the descriptions under every combination of
+// settingSwitches that config accepts, and keeps each that differs from
+// the full surface's d.Config gives, by tool, under the fewest settings
+// that give it ("default" for none). The full surface's own wording is
+// the tool's description in the dump.
+func settingDescriptions(d tools.Deps) map[string]map[string]string {
+	type combination struct {
+		cfg   config.Config
+		label string
+		size  int
+	}
+	var all []combination
+	for mask := range 1 << len(settingSwitches) {
+		var c combination
+		var names []string
+		for i, s := range settingSwitches {
+			if mask&(1<<i) != 0 {
+				s.set(&c.cfg)
+				names = append(names, s.env)
+			}
+		}
+		if len(c.cfg.Conflicts()) > 0 {
+			continue
+		}
+		slices.Sort(names)
+		c.label, c.size = strings.Join(names, "+"), len(names)
+		if c.size == 0 {
+			c.label = "default"
+		}
+		all = append(all, c)
+	}
+	// Fewest settings first, then by label, so a wording's label depends
+	// neither on chance nor on settingSwitches' order.
+	slices.SortFunc(all, func(a, b combination) int {
+		if a.size != b.size {
+			return a.size - b.size
+		}
+		return strings.Compare(a.label, b.label)
+	})
+
+	full := tools.Descriptions(d)
+	out := map[string]map[string]string{}
+	seen := map[string]bool{}
+	for _, c := range all {
+		d.Config = c.cfg
+		for name, text := range tools.Descriptions(d) {
+			if text == full[name] || seen[name+"\x00"+text] {
+				continue
+			}
+			seen[name+"\x00"+text] = true
+			if out[name] == nil {
+				out[name] = map[string]string{}
+			}
+			out[name][c.label] = text
+		}
+	}
+	return out
 }
 
 // instructionModes are the configurations, beside the full surface,
@@ -301,11 +380,15 @@ func withSession(ctx context.Context, srv *mcp.Server, use func(*mcp.ClientSessi
 // dump lists srv's surface through an in-memory client and writes it,
 // stamped with the build's version. instructions are other modes'; srv's
 // own are added as the full surface's.
-func dump(ctx context.Context, w io.Writer, srv *mcp.Server, build string, kinds, instructions map[string]string) error {
+func dump(ctx context.Context, w io.Writer, srv *mcp.Server, build string, kinds, instructions map[string]string,
+	descriptions map[string]map[string]string) error {
 	out := SchemaDump{Server: Name, Version: build, SDKVersion: version.Module(sdkModule),
-		Instructions: maps.Clone(instructions), Kinds: kinds}
+		Instructions: maps.Clone(instructions), Kinds: kinds, Descriptions: descriptions}
 	if out.Instructions == nil {
 		out.Instructions = map[string]string{}
+	}
+	if out.Descriptions == nil {
+		out.Descriptions = map[string]map[string]string{}
 	}
 	err := withSession(ctx, srv, func(cs *mcp.ClientSession) error {
 		out.Instructions["full"] = cs.InitializeResult().Instructions

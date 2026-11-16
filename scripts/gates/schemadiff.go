@@ -255,8 +255,12 @@ func schemaDiffCompare(old, now *schemaDiffSurface) surfaceChanges {
 		}
 	}
 	for _, part := range changedParts(old.rest, now.rest) {
-		top, _, _ := strings.Cut(part, ".")
-		c.changed = append(c.changed, change{item: top, text: part + " changed"})
+		item, tool, _ := strings.Cut(part, ".")
+		// A wording under other settings is its tool's (server.SchemaDump).
+		if item == "descriptions" && tool != "" {
+			item = tool
+		}
+		c.changed = append(c.changed, change{item: item, text: part + " changed"})
 	}
 	c.breaking = append(c.breaking, fields...)
 	return c

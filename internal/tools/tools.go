@@ -27,6 +27,8 @@ type Deps struct {
 	namesOnly bool
 	// kinds collects each registered tool's kind, when set.
 	kinds map[string]string
+	// descriptions collects each registered tool's description, when set.
+	descriptions map[string]string
 }
 
 // registrations is every group of tools, in the order they appear in
@@ -65,6 +67,16 @@ func Kinds(d Deps) map[string]string {
 	d.kinds = map[string]string{}
 	Register(nil, d)
 	return d.kinds
+}
+
+// Descriptions maps each tool registered under d's configuration to the
+// description a client is given, for the schema dump, which reads it
+// under every combination of the switches without building a server.
+func Descriptions(d Deps) map[string]string {
+	d.namesOnly = true
+	d.descriptions = map[string]string{}
+	Register(nil, d)
+	return d.descriptions
 }
 
 // FullSurface is the configuration under which every tool registers,

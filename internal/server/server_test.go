@@ -7,6 +7,7 @@ import (
 	"errors"
 	"log/slog"
 	"maps"
+	"reflect"
 	"regexp"
 	"slices"
 	"strings"
@@ -275,6 +276,111 @@ func TestTheDumpCarriesEverySentenceOfTheInstructions(t *testing.T) {
 	}
 }
 
+// The dump carries every wording a tool's description takes under other
+// settings, labeled by the fewest settings that give it, so an edit to
+// any of them is a change the schema gates see.
+func TestTheDumpCarriesEverySettingsWording(t *testing.T) {
+	_, dump := dumpOf(t, config.Config{})
+	labels := map[string][]string{}
+	for tool, byLabel := range dump.Descriptions {
+		labels[tool] = slices.Sorted(maps.Keys(byLabel))
+	}
+	want := map[string][]string{
+		"create_draft":  {"GMAIL_DRAFT_SIGNATURE"},
+		"create_filter": {"GMAIL_ENABLE_SETTINGS"},
+		"get_settings":  {"GMAIL_ENABLE_SETTINGS", "default"},
+		"list_filters":  {"GMAIL_ENABLE_SETTINGS", "default"},
+	}
+	if !maps.EqualFunc(labels, want, slices.Equal) {
+		t.Errorf("description labels = %v, want %v", labels, want)
+	}
+	// Each label is the wording that setting gives, not another's.
+	for _, c := range []struct{ tool, label, says string }{
+		{"get_settings", "default", "This server cannot change any of them."},
+		{"get_settings", "GMAIL_ENABLE_SETTINGS", "update_signature changes a signature;"},
+		{"create_draft", "GMAIL_DRAFT_SIGNATURE", "This server signs a new draft"},
+	} {
+		if got := dump.Descriptions[c.tool][c.label]; !strings.Contains(got, c.says) {
+			t.Errorf("%s under %s = %q, want it to say %q", c.tool, c.label, got, c.says)
+		}
+	}
+	for _, tool := range dump.Tools {
+		for label, d := range dump.Descriptions[tool.Name] {
+			if d == tool.Description {
+				t.Errorf("%s under %s repeats the full surface's wording", tool.Name, label)
+			}
+		}
+	}
+}
+
+// Every setting that can change a tool is a switch the dump enumerates:
+// each switch sets its field, and a field no switch sets changes neither
+// which tools register nor how any describes itself.
+func TestSettingSwitchesCoverTheConfig(t *testing.T) {
+	typ := reflect.TypeFor[config.Config]()
+	switched := map[int]bool{}
+	for _, s := range settingSwitches {
+		var c config.Config
+		s.set(&c)
+		v := reflect.ValueOf(c)
+		for i := range typ.NumField() {
+			if !v.Field(i).IsZero() {
+				switched[i] = true
+			}
+		}
+	}
+	if len(switched) != len(settingSwitches) {
+		t.Errorf("%d switches set %d fields, want one field each", len(settingSwitches), len(switched))
+	}
+	checked := 0
+	for _, base := range []config.Config{{}, tools.FullSurface(config.Config{DraftSignature: true})} {
+		want := tools.Descriptions(tools.Deps{Config: base})
+		for i := range typ.NumField() {
+			if switched[i] {
+				continue
+			}
+			cfg := base
+			f := reflect.ValueOf(&cfg).Elem().Field(i)
+			switch f.Kind() {
+			case reflect.String:
+				f.SetString("x")
+			case reflect.Bool:
+				f.SetBool(true)
+			case reflect.Int64:
+				f.SetInt(1)
+			default:
+				t.Fatalf("config.Config.%s is a %s, which this test cannot set", typ.Field(i).Name, f.Kind())
+			}
+			checked++
+			if got := tools.Descriptions(tools.Deps{Config: cfg}); !maps.Equal(got, want) {
+				t.Errorf("config.Config.%s changes the tools or their descriptions, so it belongs in settingSwitches", typ.Field(i).Name)
+			}
+		}
+	}
+	if checked < 12 {
+		t.Errorf("checked %d fields over two bases, want at least 12", checked)
+	}
+}
+
+// The descriptions read from the registrations are those a client is
+// given, so the wordings the dump reads that way are the real ones.
+func TestDescriptionsAreWhatAClientIsGiven(t *testing.T) {
+	for _, cfg := range []config.Config{{}, {ReadOnly: true}, tools.FullSurface(config.Config{DraftSignature: true})} {
+		want := tools.Descriptions(tools.Deps{Config: cfg})
+		h := testutil.ConnectServer(t, New(Deps{Deps: tools.Deps{Config: cfg}, Version: "test"}))
+		got := map[string]string{}
+		for tool, err := range h.Client.Tools(context.Background(), nil) {
+			if err != nil {
+				t.Fatal(err)
+			}
+			got[tool.Name] = tool.Description
+		}
+		if len(got) == 0 || !maps.Equal(got, want) {
+			t.Errorf("under %+v, tools/list gives %d descriptions that differ from the %d registered", cfg, len(got), len(want))
+		}
+	}
+}
+
 // The dump carries each tool whole — _meta and output schema included —
 // and resources, templates and prompts, sorted.
 func TestDumpCarriesTheWholeSurface(t *testing.T) {
@@ -291,7 +397,7 @@ func TestDumpCarriesTheWholeSurface(t *testing.T) {
 	s.AddPrompt(&mcp.Prompt{Name: "summarize"},
 		func(context.Context, *mcp.GetPromptRequest) (*mcp.GetPromptResult, error) { return nil, nil })
 	var buf bytes.Buffer
-	if err := dump(context.Background(), &buf, s, "v9.9.9", map[string]string{"alpha": "read", "zeta": "send"}, nil); err != nil {
+	if err := dump(context.Background(), &buf, s, "v9.9.9", map[string]string{"alpha": "read", "zeta": "send"}, nil, nil); err != nil {
 		t.Fatal(err)
 	}
 	var got SchemaDump
