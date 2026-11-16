@@ -18,12 +18,12 @@ type goRun struct {
 }
 
 // goValueFlags are the flags the go command reads its next word for, as
-// go1.27.3's `go help build`, `go help run`, `go help vet` and `go tool vet
+// go1.27.4's `go help build`, `go help run`, `go help vet` and `go tool vet
 // -flags` list them: the build flags and build's -o, run's -exec, vet's
 // -vettool and the vet tool's own
 // (https://pkg.go.dev/cmd/go#hdr-Compile_packages_and_dependencies). The
 // help leaves out three debug flags that take a value too
-// (https://github.com/golang/go/blob/go1.27.3/src/cmd/go/internal/work/build.go#L358-L361).
+// (https://github.com/golang/go/blob/go1.27.4/src/cmd/go/internal/work/build.go#L358-L361).
 // c is the vet tool's lines of context. `go test -c` is a boolean, so no
 // gate reads a go test's words through this map.
 var goValueFlags = map[string]bool{
