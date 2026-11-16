@@ -1,9 +1,9 @@
 {
   "note": "Written by `go run ./scripts/gates api-diff`; nobody edits this. Verdicts live in testdata/api-coverage.tsv (methods) and testdata/api-fields.tsv (fields).",
   "url": "https://gmail.googleapis.com/$discovery/rest?version=v1",
-  "fetched": "2026-11-03",
+  "fetched": "2026-11-16",
   "version": "v1",
-  "revision": "20261026",
+  "revision": "20261109",
   "methods": [
     {
       "id": "gmail.users.drafts.create",
@@ -13,6 +13,8 @@
         "https://mail.google.com/",
         "https://www.googleapis.com/auth/gmail.addons.current.action.compose",
         "https://www.googleapis.com/auth/gmail.compose",
+        "https://www.googleapis.com/auth/gmail.drafts",
+        "https://www.googleapis.com/auth/gmail.drafts.create",
         "https://www.googleapis.com/auth/gmail.modify"
       ]
     },
@@ -24,6 +26,7 @@
         "https://mail.google.com/",
         "https://www.googleapis.com/auth/gmail.addons.current.action.compose",
         "https://www.googleapis.com/auth/gmail.compose",
+        "https://www.googleapis.com/auth/gmail.drafts",
         "https://www.googleapis.com/auth/gmail.modify"
       ]
     },
@@ -34,6 +37,8 @@
       "scopes": [
         "https://mail.google.com/",
         "https://www.googleapis.com/auth/gmail.compose",
+        "https://www.googleapis.com/auth/gmail.drafts",
+        "https://www.googleapis.com/auth/gmail.drafts.readonly",
         "https://www.googleapis.com/auth/gmail.modify",
         "https://www.googleapis.com/auth/gmail.readonly"
       ]
@@ -45,6 +50,8 @@
       "scopes": [
         "https://mail.google.com/",
         "https://www.googleapis.com/auth/gmail.compose",
+        "https://www.googleapis.com/auth/gmail.drafts",
+        "https://www.googleapis.com/auth/gmail.drafts.readonly",
         "https://www.googleapis.com/auth/gmail.modify",
         "https://www.googleapis.com/auth/gmail.readonly"
       ]
@@ -68,6 +75,7 @@
         "https://mail.google.com/",
         "https://www.googleapis.com/auth/gmail.addons.current.action.compose",
         "https://www.googleapis.com/auth/gmail.compose",
+        "https://www.googleapis.com/auth/gmail.drafts",
         "https://www.googleapis.com/auth/gmail.modify"
       ]
     },
@@ -89,6 +97,8 @@
       "path": "gmail/v1/users/{userId}/history",
       "scopes": [
         "https://mail.google.com/",
+        "https://www.googleapis.com/auth/gmail.messages",
+        "https://www.googleapis.com/auth/gmail.messages.readonly",
         "https://www.googleapis.com/auth/gmail.metadata",
         "https://www.googleapis.com/auth/gmail.modify",
         "https://www.googleapis.com/auth/gmail.readonly"
@@ -101,6 +111,7 @@
       "scopes": [
         "https://mail.google.com/",
         "https://www.googleapis.com/auth/gmail.labels",
+        "https://www.googleapis.com/auth/gmail.labels.create",
         "https://www.googleapis.com/auth/gmail.modify"
       ]
     },
@@ -121,6 +132,7 @@
       "scopes": [
         "https://mail.google.com/",
         "https://www.googleapis.com/auth/gmail.labels",
+        "https://www.googleapis.com/auth/gmail.labels.readonly",
         "https://www.googleapis.com/auth/gmail.metadata",
         "https://www.googleapis.com/auth/gmail.modify",
         "https://www.googleapis.com/auth/gmail.readonly"
@@ -133,6 +145,7 @@
       "scopes": [
         "https://mail.google.com/",
         "https://www.googleapis.com/auth/gmail.labels",
+        "https://www.googleapis.com/auth/gmail.labels.readonly",
         "https://www.googleapis.com/auth/gmail.metadata",
         "https://www.googleapis.com/auth/gmail.modify",
         "https://www.googleapis.com/auth/gmail.readonly"
@@ -166,6 +179,8 @@
         "https://mail.google.com/",
         "https://www.googleapis.com/auth/gmail.addons.current.message.action",
         "https://www.googleapis.com/auth/gmail.addons.current.message.readonly",
+        "https://www.googleapis.com/auth/gmail.messages",
+        "https://www.googleapis.com/auth/gmail.messages.readonly",
         "https://www.googleapis.com/auth/gmail.modify",
         "https://www.googleapis.com/auth/gmail.readonly"
       ]
@@ -175,7 +190,9 @@
       "verb": "POST",
       "path": "gmail/v1/users/{userId}/messages/batchDelete",
       "scopes": [
-        "https://mail.google.com/"
+        "https://mail.google.com/",
+        "https://www.googleapis.com/auth/gmail.messages",
+        "https://www.googleapis.com/auth/gmail.messages.delete"
       ]
     },
     {
@@ -184,6 +201,9 @@
       "path": "gmail/v1/users/{userId}/messages/batchModify",
       "scopes": [
         "https://mail.google.com/",
+        "https://www.googleapis.com/auth/gmail.messages",
+        "https://www.googleapis.com/auth/gmail.messages.delete",
+        "https://www.googleapis.com/auth/gmail.messages.modify",
         "https://www.googleapis.com/auth/gmail.modify"
       ]
     },
@@ -192,7 +212,9 @@
       "verb": "DELETE",
       "path": "gmail/v1/users/{userId}/messages/{id}",
       "scopes": [
-        "https://mail.google.com/"
+        "https://mail.google.com/",
+        "https://www.googleapis.com/auth/gmail.messages",
+        "https://www.googleapis.com/auth/gmail.messages.delete"
       ]
     },
     {
@@ -204,6 +226,8 @@
         "https://www.googleapis.com/auth/gmail.addons.current.message.action",
         "https://www.googleapis.com/auth/gmail.addons.current.message.metadata",
         "https://www.googleapis.com/auth/gmail.addons.current.message.readonly",
+        "https://www.googleapis.com/auth/gmail.messages",
+        "https://www.googleapis.com/auth/gmail.messages.readonly",
         "https://www.googleapis.com/auth/gmail.metadata",
         "https://www.googleapis.com/auth/gmail.modify",
         "https://www.googleapis.com/auth/gmail.readonly"
@@ -235,6 +259,8 @@
       "path": "gmail/v1/users/{userId}/messages",
       "scopes": [
         "https://mail.google.com/",
+        "https://www.googleapis.com/auth/gmail.messages",
+        "https://www.googleapis.com/auth/gmail.messages.readonly",
         "https://www.googleapis.com/auth/gmail.metadata",
         "https://www.googleapis.com/auth/gmail.modify",
         "https://www.googleapis.com/auth/gmail.readonly"
@@ -246,6 +272,9 @@
       "path": "gmail/v1/users/{userId}/messages/{id}/modify",
       "scopes": [
         "https://mail.google.com/",
+        "https://www.googleapis.com/auth/gmail.messages",
+        "https://www.googleapis.com/auth/gmail.messages.delete",
+        "https://www.googleapis.com/auth/gmail.messages.modify",
         "https://www.googleapis.com/auth/gmail.modify"
       ]
     },
@@ -258,7 +287,8 @@
         "https://www.googleapis.com/auth/gmail.addons.current.action.compose",
         "https://www.googleapis.com/auth/gmail.compose",
         "https://www.googleapis.com/auth/gmail.modify",
-        "https://www.googleapis.com/auth/gmail.send"
+        "https://www.googleapis.com/auth/gmail.send",
+        "https://www.googleapis.com/auth/gmail.send.self"
       ]
     },
     {
@@ -267,6 +297,8 @@
       "path": "gmail/v1/users/{userId}/messages/{id}/trash",
       "scopes": [
         "https://mail.google.com/",
+        "https://www.googleapis.com/auth/gmail.messages",
+        "https://www.googleapis.com/auth/gmail.messages.delete",
         "https://www.googleapis.com/auth/gmail.modify"
       ]
     },
@@ -276,6 +308,8 @@
       "path": "gmail/v1/users/{userId}/messages/{id}/untrash",
       "scopes": [
         "https://mail.google.com/",
+        "https://www.googleapis.com/auth/gmail.messages",
+        "https://www.googleapis.com/auth/gmail.messages.delete",
         "https://www.googleapis.com/auth/gmail.modify"
       ]
     },
@@ -433,7 +467,8 @@
       "verb": "POST",
       "path": "gmail/v1/users/{userId}/settings/filters",
       "scopes": [
-        "https://www.googleapis.com/auth/gmail.settings.basic"
+        "https://www.googleapis.com/auth/gmail.settings.basic",
+        "https://www.googleapis.com/auth/gmail.settings.filters"
       ]
     },
     {
@@ -441,7 +476,8 @@
       "verb": "DELETE",
       "path": "gmail/v1/users/{userId}/settings/filters/{id}",
       "scopes": [
-        "https://www.googleapis.com/auth/gmail.settings.basic"
+        "https://www.googleapis.com/auth/gmail.settings.basic",
+        "https://www.googleapis.com/auth/gmail.settings.filters"
       ]
     },
     {
@@ -452,7 +488,9 @@
         "https://mail.google.com/",
         "https://www.googleapis.com/auth/gmail.modify",
         "https://www.googleapis.com/auth/gmail.readonly",
-        "https://www.googleapis.com/auth/gmail.settings.basic"
+        "https://www.googleapis.com/auth/gmail.settings.basic",
+        "https://www.googleapis.com/auth/gmail.settings.filters",
+        "https://www.googleapis.com/auth/gmail.settings.filters.readonly"
       ]
     },
     {
@@ -463,7 +501,9 @@
         "https://mail.google.com/",
         "https://www.googleapis.com/auth/gmail.modify",
         "https://www.googleapis.com/auth/gmail.readonly",
-        "https://www.googleapis.com/auth/gmail.settings.basic"
+        "https://www.googleapis.com/auth/gmail.settings.basic",
+        "https://www.googleapis.com/auth/gmail.settings.filters",
+        "https://www.googleapis.com/auth/gmail.settings.filters.readonly"
       ]
     },
     {
@@ -730,7 +770,9 @@
       "verb": "DELETE",
       "path": "gmail/v1/users/{userId}/threads/{id}",
       "scopes": [
-        "https://mail.google.com/"
+        "https://mail.google.com/",
+        "https://www.googleapis.com/auth/gmail.messages",
+        "https://www.googleapis.com/auth/gmail.messages.delete"
       ]
     },
     {
@@ -742,6 +784,8 @@
         "https://www.googleapis.com/auth/gmail.addons.current.message.action",
         "https://www.googleapis.com/auth/gmail.addons.current.message.metadata",
         "https://www.googleapis.com/auth/gmail.addons.current.message.readonly",
+        "https://www.googleapis.com/auth/gmail.messages",
+        "https://www.googleapis.com/auth/gmail.messages.readonly",
         "https://www.googleapis.com/auth/gmail.metadata",
         "https://www.googleapis.com/auth/gmail.modify",
         "https://www.googleapis.com/auth/gmail.readonly"
@@ -753,6 +797,8 @@
       "path": "gmail/v1/users/{userId}/threads",
       "scopes": [
         "https://mail.google.com/",
+        "https://www.googleapis.com/auth/gmail.messages",
+        "https://www.googleapis.com/auth/gmail.messages.readonly",
         "https://www.googleapis.com/auth/gmail.metadata",
         "https://www.googleapis.com/auth/gmail.modify",
         "https://www.googleapis.com/auth/gmail.readonly"
@@ -764,6 +810,9 @@
       "path": "gmail/v1/users/{userId}/threads/{id}/modify",
       "scopes": [
         "https://mail.google.com/",
+        "https://www.googleapis.com/auth/gmail.messages",
+        "https://www.googleapis.com/auth/gmail.messages.delete",
+        "https://www.googleapis.com/auth/gmail.messages.modify",
         "https://www.googleapis.com/auth/gmail.modify"
       ]
     },
@@ -773,6 +822,8 @@
       "path": "gmail/v1/users/{userId}/threads/{id}/trash",
       "scopes": [
         "https://mail.google.com/",
+        "https://www.googleapis.com/auth/gmail.messages",
+        "https://www.googleapis.com/auth/gmail.messages.delete",
         "https://www.googleapis.com/auth/gmail.modify"
       ]
     },
@@ -782,6 +833,8 @@
       "path": "gmail/v1/users/{userId}/threads/{id}/untrash",
       "scopes": [
         "https://mail.google.com/",
+        "https://www.googleapis.com/auth/gmail.messages",
+        "https://www.googleapis.com/auth/gmail.messages.delete",
         "https://www.googleapis.com/auth/gmail.modify"
       ]
     },
