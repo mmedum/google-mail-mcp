@@ -127,6 +127,22 @@ type Config struct {
 	APIBase string
 }
 
+// Conflicts are the switches c sets together that Build refuses. Read-only
+// with a write switch has no coherent meaning, and guessing which one was
+// meant would either drop a guard or a tool.
+func (c Config) Conflicts() []error {
+	var errs []error
+	for _, on := range []struct {
+		set  bool
+		name string
+	}{{c.EnableSend, "ENABLE_SEND"}, {c.EnableDestructive, "ENABLE_DESTRUCTIVE"}, {c.EnableSettings, "ENABLE_SETTINGS"}} {
+		if c.ReadOnly && on.set {
+			errs = append(errs, fmt.Errorf("%w: %sREAD_ONLY and %s%s are both set; choose one", ErrInvalid, EnvPrefix, EnvPrefix, on.name))
+		}
+	}
+	return errs
+}
+
 // Scopes is what login requests under this configuration.
 func (c Config) Scopes() []string {
 	return scopes.ForMode(c.ReadOnly, c.EnableDestructive, c.EnableSettings)
@@ -316,15 +332,8 @@ func (s *Settings) Build() (Config, error) {
 			"decides each call. Unset it, and leave %sENABLE_SEND, %sENABLE_DESTRUCTIVE and %sENABLE_SETTINGS off for a "+
 			"client that runs with nobody watching", ErrInvalid, EnvPrefix, removedRequirePrompt, EnvPrefix, EnvPrefix, EnvPrefix))
 	}
-	// Read-only with a write flag has no coherent meaning, and guessing
-	// which one was meant would either drop a guard or a tool.
-	for _, on := range []struct {
-		set  bool
-		name string
-	}{{c.EnableSend, "ENABLE_SEND"}, {c.EnableDestructive, "ENABLE_DESTRUCTIVE"}, {c.EnableSettings, "ENABLE_SETTINGS"}} {
-		if c.ReadOnly && on.set {
-			add(fmt.Errorf("%w: %sREAD_ONLY and %s%s are both set; choose one", ErrInvalid, EnvPrefix, EnvPrefix, on.name))
-		}
+	for _, err := range c.Conflicts() {
+		add(err)
 	}
 
 	c.LocalDir, err = parseLocalDir(s.LocalDir)

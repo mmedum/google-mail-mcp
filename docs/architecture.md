@@ -445,7 +445,7 @@ README, [configuration.md](configuration.md) and
 | D-82 | A reply carries both halves, never the same bytes twice | accepted | TestAReplyCarriesBothHalves |
 | D-83 | An unknown value is left out, never sent as a zero | accepted | TestAnUnknownDateIsLeftOut, TestAnInternalDateOfZeroIsNoDate |
 | D-84 | The released tool surface is a contract held by a committed baseline | accepted | schema-diff, schema-ack, TestSchemaDiffFailsEachBreakingChange, TestSchemaDiffBaselineMustBeTheNewestRelease, TestSchemaAckNeedsEveryItemNamed |
-| D-85 | Instructions and descriptions are built from the configuration | accepted | TestInstructionsNameOnlyRegisteredTools, TestInstructionsDescribeWritingOnlyWhereItExists, TestSettingsDescriptionsFollowTheFlags, TestTheDumpCarriesEverySentenceOfTheInstructions |
+| D-85 | Instructions and descriptions are built from the configuration | accepted | TestInstructionsNameOnlyRegisteredTools, TestInstructionsDescribeWritingOnlyWhereItExists, TestSettingsDescriptionsFollowTheFlags, TestTheDumpCarriesEverySentenceOfTheInstructions, TestTheDumpCarriesEverySettingsWording, TestSettingSwitchesCoverTheConfig, TestDescriptionsAreWhatAClientIsGiven |
 | D-86 | Resources carry the same text as their tools | accepted | TestResources, smoke |
 | D-87 | The live driver reads only what it wrote and reaches nobody by default | accepted | TestTheGuardRefusesReadsOutsideTheRun, TestTheGuardHoldsWritesToTheRun, TestTheGuardHoldsSendsToSendTo, TestSendingSpikesNeedASecondAddress, TestTheSettingsAreKeptBeforeAnythingChanges, TestASignatureGmailWillNotTakeBackIsNeverChanged |
 | D-88 | The live transcript goes through one redacting writer | accepted | transcript, TestEveryLinePrintedIsRedacted, TestTheCloudProjectNumberInAReceivedHeaderIsMasked, TestHistoryIDsAreMasked |
@@ -568,6 +568,10 @@ generated fields cannot take. It flags an `@` before a dotted domain
 outside the example and invalid set, a Gmail web URL, a keyword such as
 `message` before a hex id outside the fixture range, and the Google
 OAuth shapes. `make leaks-history` reads every blob, commit message and tag.
+It passes a `Co-authored-by:` trailer naming an address that authors
+a commit in the history, since git publishes that address in the
+commit's header, and a GitHub squash merge can add one for an author
+of a squashed commit.
 A tracked binary is a finding. gitleaks covers credentials in the tree
 and in HEAD's history, through `make secrets`.
 
@@ -2308,10 +2312,18 @@ fails. Text that says a write exists when it does not is worse. The
 schema dump carries every sentence of the instructions, and tests hold
 each description to its switches.
 
-Rejected: one fixed wording for every configuration.
-Cost: `--dump-schemas` prints one wording of each description that
-depends on the settings, so a change to another wording passes
-`schema-ack` unseen (#51).
+The dump also carries every other wording of each description, labeled
+by the fewest settings that give it. It reads the registrations under
+every combination of the switches that the configuration accepts, so a
+description that starts to depend on a switch is dumped with no list of
+descriptions to update. A setting outside the switches that changes a
+tool fails a test. `schema-ack` names a changed wording by its tool.
+
+Rejected: one fixed wording for every configuration; a hand-kept list
+of the descriptions that depend on the settings, which the next one
+would miss.
+Cost: a new switch must join `settingSwitches`, and the dump reads the
+registrations once per accepted combination of the switches.
 
 ### D-86 Resources carry the same text as their tools
 

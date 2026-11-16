@@ -245,7 +245,14 @@ func leaksScanHistory(out io.Writer, root string) error {
 	if err != nil {
 		return err
 	}
-	var h leaksHistoryScan
+	people, err := gitOutput(root, "log", "--all", "--format=%ae%n%ce")
+	if err != nil {
+		return err
+	}
+	h := leaksHistoryScan{authors: map[string]bool{}}
+	for address := range strings.SplitSeq(people, "\n") {
+		h.authors[strings.ToLower(strings.TrimSpace(address))] = true
+	}
 	if err := leaksCatFile(root, shas, func(o leaksObject) { h.scan(o, paths) }); err != nil {
 		return err
 	}
@@ -271,7 +278,8 @@ func leaksScanHistory(out io.Writer, root string) error {
 		return fmt.Errorf("read %d commit(s) of %d and %d blob(s); the scan is not seeing the history",
 			h.commits, want, h.blobs)
 	}
-	_, _ = fmt.Fprintf(out, "history leaks ok (%d commits, %d tag messages, %d blobs)\n", h.commits, h.tagMsgs, h.blobs)
+	_, _ = fmt.Fprintf(out, "history leaks ok (%d commits, %d tag messages, %d blobs; %d co-author trailers name an author)\n",
+		h.commits, h.tagMsgs, h.blobs, h.trailers)
 	return nil
 }
 
@@ -312,6 +320,30 @@ func leaksHistoryObjects(root string) (shas []string, paths map[string]string, e
 type leaksHistoryScan struct {
 	findings                []string
 	blobs, commits, tagMsgs int
+	// authors is every author and committer address in the history, and
+	// trailers counts the Co-authored-by addresses passed for naming one.
+	authors  map[string]bool
+	trailers int
+}
+
+// leaksCoAuthor is a Co-authored-by trailer line: what precedes the
+// address, and the address.
+var leaksCoAuthor = regexp.MustCompile(`(?im)^(co-authored-by:[^<\n]*)<([^>\n]+)>[ \t]*\r?$`)
+
+// withoutAuthorTrailers drops the address of each Co-authored-by trailer
+// that authors or commits a commit in the history, and keeps the rest of
+// the line to scan. Git publishes that address in the commit's header,
+// so the trailer, which a GitHub squash merge can add for an author of a
+// squashed commit, reveals nothing new.
+func (h *leaksHistoryScan) withoutAuthorTrailers(message string) string {
+	return leaksCoAuthor.ReplaceAllStringFunc(message, func(line string) string {
+		m := leaksCoAuthor.FindStringSubmatch(line)
+		if !h.authors[strings.ToLower(strings.TrimSpace(m[2]))] {
+			return line
+		}
+		h.trailers++
+		return m[1]
+	})
 }
 
 // scan reads one object: a blob's content, or a commit's or tag's
@@ -342,7 +374,7 @@ func (h *leaksHistoryScan) scan(o leaksObject, paths map[string]string) {
 			h.tagMsgs++
 		}
 		_, message, _ := strings.Cut(string(o.body), "\n\n")
-		for _, f := range leaksFind(message) {
+		for _, f := range leaksFind(h.withoutAuthorTrailers(message)) {
 			h.findings = append(h.findings, where+" message: "+f)
 		}
 	}

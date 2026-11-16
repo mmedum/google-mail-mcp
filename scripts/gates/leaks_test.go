@@ -200,3 +200,34 @@ func TestLeaksHistoryReadsBlobsMessagesAndTags(t *testing.T) {
 		t.Errorf("the tree scan failed on a clean tree: %v", err)
 	}
 }
+
+// A Co-authored-by trailer naming an address that authors a commit in the
+// history passes, since git already publishes it in that commit's header.
+// Any other address, or the same one outside a trailer, is still a leak.
+func TestLeaksHistoryPassesATrailerNamingAnAuthor(t *testing.T) {
+	root := leaksRepo(t, 2)
+	ada := leaksPlant("ada", "@", "acme.co.uk")
+	gitIn(t, root, "commit", "-q", "--allow-empty", "--author", "Ada <"+ada+">", "-m", "work")
+	gitIn(t, root, "commit", "-q", "--allow-empty", "-m", "Squash\n\nCo-authored-by: Ada < "+strings.ToUpper(ada)+" >\r")
+	var out sink
+	if err := leaksScanHistory(&out, root); err != nil {
+		t.Fatalf("a trailer naming an author failed: %v\n%s", err, out.String())
+	}
+	out.mustSay(t, "history leaks ok (3 commits")
+	out.mustSay(t, "1 co-author trailers name an author")
+
+	for _, message := range []string{
+		"Squash\n\nCo-authored-by: Bea <" + leaksPlant("bea", "@", "acme.co.uk") + ">",
+		"Thanks to " + ada,
+		"Squash\n\nCo-authored-by: " + leaksPlant("bea", "@", "acme.co.uk") + " <" + ada + ">",
+	} {
+		root := leaksRepo(t, 2)
+		gitIn(t, root, "commit", "-q", "--allow-empty", "--author", "Ada <"+ada+">", "-m", "work")
+		gitIn(t, root, "commit", "-q", "--allow-empty", "-m", message)
+		out := sink{}
+		if err := leaksScanHistory(&out, root); err == nil {
+			t.Errorf("%q passed", message)
+		}
+		out.mustSay(t, "message: an address")
+	}
+}
