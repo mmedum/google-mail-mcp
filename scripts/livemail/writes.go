@@ -342,7 +342,7 @@ var writeSteps = []step{
 		args: func(e *env) map[string]any {
 			return map[string]any{"draft_id": e.replyDraft, "message_id": e.replyMessage}
 		},
-		check: func(_ *env, text string) error { return want(text, "confirm: true") }},
+		check: refusedForConfirm("delete_draft")},
 
 	{name: "delete a draft, dry run", tool: "delete_draft",
 		args: func(e *env) map[string]any {

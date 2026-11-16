@@ -203,7 +203,7 @@ var gatedSteps = []step{
 
 	{name: "a label delete without confirm is refused", tool: "delete_label", refuses: "blocked",
 		args:  func(e *env) map[string]any { return map[string]any{"label": e.seed.label.name + "-renamed"} },
-		check: func(_ *env, text string) error { return want(text, "confirm: true") }},
+		check: refusedForConfirm("delete_label")},
 
 	{name: "delete a label, dry run", tool: "delete_label",
 		args: func(e *env) map[string]any {
@@ -226,7 +226,7 @@ var gatedSteps = []step{
 
 	{name: "a permanent delete without confirm is refused", tool: "delete_permanently", refuses: "blocked",
 		args:  func(e *env) map[string]any { return map[string]any{"message_ids": []any{e.seed.messages[2]}} },
-		check: func(_ *env, text string) error { return want(text, "cannot be undone") }},
+		check: refusedForConfirm("delete_permanently")},
 
 	{name: "delete permanently, dry run", tool: "delete_permanently",
 		args: func(e *env) map[string]any {
