@@ -194,15 +194,33 @@ func register[In any, Out Renderer](s *mcp.Server, d Deps, sp Spec, h Handler[In
 	if !sp.Kind.allowed(d.Config) {
 		return
 	}
-	confirms := takesConfirm[In]()
+	confirm, reason := confirmField[In]()
+	confirms := confirm >= 0
 	if sp.Kind.confirmsEveryCall() && !confirms {
 		panic("tools: " + sp.Name + " is " + sp.Kind.String() + ", which cannot be undone, and takes no confirm")
+	}
+	if confirms && reflect.TypeFor[In]().Field(confirm).Type.Kind() != reflect.Bool {
+		panic("tools: " + sp.Name + "'s confirm is not a bool")
+	}
+	// Only an auto-reply checks confirm itself, since only turning the
+	// reply on needs it; any other confirm wrap would not check.
+	if confirms && !sp.Kind.confirmsEveryCall() && sp.Kind != AutoReply {
+		panic("tools: " + sp.Name + " takes confirm, and its kind " + sp.Kind.String() + " can be undone, so it takes none")
 	}
 	if hint := sp.Kind.annotations().DestructiveHint; confirms && (hint == nil || !*hint) {
 		panic("tools: " + sp.Name + " takes confirm, and its kind " + sp.Kind.String() + " is not annotated destructive")
 	}
-	if confirms && sp.Kind == Write {
-		panic("tools: " + sp.Name + " takes confirm, and a Write is undone by another write, so it takes none")
+	// The refusal gives the reason the field's description gives, so the
+	// model reads one why in the schema and in the refusal.
+	refusal := ""
+	if sp.Kind.confirmsEveryCall() {
+		why, ok := strings.CutPrefix(reason, confirmReason)
+		if !ok || why == "" {
+			panic("tools: " + sp.Name + "'s confirm is described without \"" + confirmReason + "\" and the reason")
+		}
+		refusal = sp.Name + " takes confirm: true, because " + why + ". Pass it only when the person asked for this"
+	} else {
+		confirm = -1
 	}
 	if d.registered != nil {
 		*d.registered = append(*d.registered, sp.Name)
@@ -230,7 +248,7 @@ func register[In any, Out Renderer](s *mcp.Server, d Deps, sp Spec, h Handler[In
 	if sp.Kind.requiresUserInteraction() {
 		tool.Meta = mcp.Meta{interactionKey: true}
 	}
-	mcp.AddTool(s, tool, wrap(h, dryRunField[In]()))
+	mcp.AddTool(s, tool, wrap(h, dryRunField[In](), confirm, refusal))
 }
 
 // interactionKey is the _meta key Claude Code prompts on every call for.
@@ -255,14 +273,22 @@ type costed interface{ setUnits(units int) }
 func (c *Cost) setUnits(units int) { c.Units = units }
 
 // wrap is what every handler gets without asking: a dry run that cannot
-// write, an error rendered "[class] message" as a tool error, the units
-// spent filled into an output that embeds Cost, and Content set from
-// Render so the SDK does not fill it with the JSON of the output.
-func wrap[In any, Out Renderer](h Handler[In, Out], dryRun int) mcp.ToolHandlerFor[In, Out] {
+// write, a call that cannot be undone refused without confirm, an error
+// rendered "[class] message" as a tool error, the units spent filled
+// into an output that embeds Cost, and Content set from Render so the
+// SDK does not fill it with the JSON of the output. confirm is the index
+// of the field a call must set, or -1, and refusal what a call without
+// it is told.
+func wrap[In any, Out Renderer](h Handler[In, Out], dryRun, confirm int, refusal string) mcp.ToolHandlerFor[In, Out] {
 	return func(ctx context.Context, _ *mcp.CallToolRequest, in In) (*mcp.CallToolResult, Out, error) {
 		var zero Out
-		if dryRun >= 0 && reflect.ValueOf(in).Field(dryRun).Bool() {
+		dry := dryRun >= 0 && reflect.ValueOf(in).Field(dryRun).Bool()
+		if dry {
 			ctx = gapi.WithoutWrites(ctx)
+		}
+		// A dry run changes nothing, so it previews without the witness.
+		if confirm >= 0 && !dry && !reflect.ValueOf(in).Field(confirm).Bool() {
+			return nil, zero, fail(gapi.Errf(gapi.ClassBlocked, "%s", refusal))
 		}
 		out, err := h(ctx, in)
 		if err != nil {
@@ -288,21 +314,25 @@ func fail(err error) error {
 	return fmt.Errorf("[%s] %s", gapi.ClassUnavailable, err.Error())
 }
 
-// takesConfirm reports whether In has confirm: the argument by which the
-// caller says it meant a write that cannot be undone. It is a witness,
-// never approval: the model sets it.
-func takesConfirm[In any]() bool {
+// confirmReason opens the description of every confirm a call must set;
+// the reason follows it.
+const confirmReason = "must be true: "
+
+// confirmField is the index and description of In's confirm, or -1: the
+// argument by which the caller says it meant a write that cannot be
+// undone. It is a witness, never approval: the model sets it.
+func confirmField[In any]() (int, string) {
 	t := reflect.TypeFor[In]()
 	if t.Kind() != reflect.Struct {
-		return false
+		return -1, ""
 	}
 	for i := range t.NumField() {
 		name, _, _ := strings.Cut(t.Field(i).Tag.Get("json"), ",")
 		if name == "confirm" {
-			return true
+			return i, t.Field(i).Tag.Get("jsonschema")
 		}
 	}
-	return false
+	return -1, ""
 }
 
 // dryRunField is the index of the input's dry_run bool, or -1. Found by

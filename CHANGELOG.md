@@ -18,6 +18,7 @@ lifted verbatim.
 ### Changed
 
 - `--dump-schemas` carries every wording a tool description takes under other settings, labeled by the fewest settings that give it.
+- A delete or `create_trash_filter` called without `confirm` is refused in one wording that gives the reason, before its other inputs are checked.
 - `golang.org/x/oauth2` v0.38.0, `golang.org/x/sys` v0.50.0, `golang.org/x/text` v0.44.0 and `golang.org/x/sync` v0.25.0.
 
 ### Security

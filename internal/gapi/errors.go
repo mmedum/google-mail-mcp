@@ -41,7 +41,7 @@ const (
 	ClassAmbiguous Class = "ambiguous"
 	// ClassBlocked: a guard refused what the API would have allowed
 	// (D-49), or a write that cannot be undone came without confirm: true
-	// (D-66). The caller passes the override, or does not; it passes
+	// (D-109). The caller passes the override, or does not; it passes
 	// confirm only when the person asked for that write.
 	ClassBlocked Class = "blocked"
 	// ClassRateLimited: a per-user, project or sending limit (D-78, D-79).

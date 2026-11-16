@@ -287,7 +287,7 @@ func registerWrite(s *mcp.Server, d Deps) {
 		"it; the delete is refused as stale if the draft changed since. Only the draft goes; the thread it answers is " +
 		"left alone. 30 units." + dryRunNote + untrustedNote},
 		func(ctx context.Context, in DeleteDraftIn) (DraftWriteOut, error) {
-			dw, err := svc.DeleteDraft(ctx, in.DraftID, in.MessageID, in.Confirm)
+			dw, err := svc.DeleteDraft(ctx, in.DraftID, in.MessageID)
 			if err != nil {
 				return DraftWriteOut{}, err
 			}

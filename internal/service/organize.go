@@ -258,26 +258,15 @@ func (s *Service) move(restore bool) itemWrite {
 	}
 }
 
-// Purge is what delete_permanently was asked for.
-type Purge struct {
-	Targets
-	// Confirm must be set: nothing deleted this way can be restored.
-	Confirm bool
-}
-
 // DeletePermanently deletes each message and thread named for good,
 // skipping the trash. Each item is read first, so the result
 // shows the labels it had; a draft's message is refused for that item
 // and points to delete_draft.
-func (s *Service) DeletePermanently(ctx context.Context, in Purge) (model.ItemsWrite, error) {
+func (s *Service) DeletePermanently(ctx context.Context, in Targets) (model.ItemsWrite, error) {
 	out := model.ItemsWrite{Op: "delete_permanently", DryRun: gapi.WritesForbidden(ctx)}
 	targets, err := in.list()
 	if err != nil {
 		return out, err
-	}
-	if !in.Confirm && !out.DryRun {
-		return out, gapi.Errf(gapi.ClassBlocked,
-			"delete_permanently skips the trash and cannot be undone; trash keeps mail for 30 days. Pass confirm: true to delete")
 	}
 	ls, err := s.labels(ctx)
 	if err != nil {

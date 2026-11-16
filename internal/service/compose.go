@@ -1101,20 +1101,16 @@ func dedupe(ids []string) []string {
 }
 
 // DeleteDraft deletes a draft, which Gmail does permanently: a draft
-// never goes to the trash. confirm must be set, and witness is the
-// message the caller read the draft holding, as for an update (D-53): a
-// draft changed since is refused [stale], so what is deleted is what was
-// read. A dry run reads the draft and deletes nothing.
-func (s *Service) DeleteDraft(ctx context.Context, id, witness string, confirm bool) (model.DraftWrite, error) {
+// never goes to the trash. witness is the message the caller read the
+// draft holding, as for an update (D-53): a draft changed since is
+// refused [stale], so what is deleted is what was read. A dry run reads
+// the draft and deletes nothing.
+func (s *Service) DeleteDraft(ctx context.Context, id, witness string) (model.DraftWrite, error) {
 	out := model.DraftWrite{Op: "delete", DryRun: gapi.WritesForbidden(ctx), DraftID: id}
 	witness = strings.TrimSpace(witness)
 	if witness == "" {
 		return out, gapi.Errf(gapi.ClassInvalid,
 			"message_id is required: pass the message_id get_draft returned, so a draft changed since is not deleted")
-	}
-	if !confirm && !out.DryRun {
-		return out, gapi.Errf(gapi.ClassBlocked,
-			"delete_draft deletes the draft permanently; drafts do not go to the trash. Pass confirm: true to delete it")
 	}
 	g, err := s.client.GetDraft(ctx, id, gapi.FormatMetadata)
 	if err != nil {

@@ -195,7 +195,7 @@ compare the granted scopes with the required ones and say what differs
 (D-73). `tools.Register` adds every tool through `register`. A gated
 tool is left out, and a kind that cannot be undone without `confirm`
 panics at start, so the mistake fails in every configuration (D-63,
-D-64, D-66).
+D-64, D-109).
 
 ### A read
 
@@ -283,7 +283,7 @@ project (D-76).
   under their switches, and the full-mail scope is asked for only with
   the destructive switch (D-48, D-52, D-55, D-64).
 - Every write that cannot be undone takes `confirm` and repeats what it
-  acts on (D-47, D-66).
+  acts on (D-47, D-109).
 - The server never asks the person a question (D-65).
 - No tool changes the server's own settings (D-69).
 - Every reply carries `structuredContent` and a text rendering (D-82).
@@ -426,7 +426,7 @@ README, [configuration.md](configuration.md) and
 | D-63 | Every tool goes through one `register`, whose `Kind` decides the rest | accepted | TestAnnotationsAndMetaComeFromKind, TestRegistrationGates, TestSurfaceByMode, TestSmokeShapeFollowsRegister, TestSmokeModesCoverEveryKind |
 | D-64 | A gated tool is unregistered, never registered and refusing | accepted | TestGatedToolsRegisterOnlyWithTheirFlag, TestSettingsToolsRegisterOnlyWithTheirFlags, TestDownloadsAreRegisteredOnlyWithALocalDir, smoke |
 | D-65 | The server asks the person nothing; per-call approval is the client's | accepted | forbidigo, TestHarness, TestElicitationIsDeclaredAndDeclined, review |
-| D-66 | `confirm` is a witness on every write that cannot be undone, never approval | accepted | TestAKindThatCannotBeUndoneTakesConfirm, TestAToolThatTakesConfirmIsAnnotatedDestructive |
+| D-66 | `confirm` is a witness on every write that cannot be undone, never approval | superseded by D-109 | TestAKindThatCannotBeUndoneTakesConfirm, TestAToolThatTakesConfirmIsAnnotatedDestructive |
 | D-67 | `destructiveHint` is true on every kind but Read, Read (local write) and Adding | accepted | TestAnnotationsAndMetaComeFromKind, TestDumpDestructive, TestStalenessMustAsk, TestStalenessReadmePermissionRules |
 | D-68 | Only `delete_permanently` and `delete_label` carry the mark | accepted | TestOnlyTheWidestDeletesCarryTheMark |
 | D-69 | No tool widens the server's own reach | accepted | TestNoToolWritesTheServersOwnSettings |
@@ -469,6 +469,7 @@ README, [configuration.md](configuration.md) and
 | D-106 | Plain text goes out as `format=flowed` | rejected | — |
 | D-107 | `login` revokes the refresh token it replaces | rejected | — |
 | D-108 | `Kind` splits into an effect and a gate | rejected | — |
+| D-109 | `confirm` is a witness `register` checks once, with the reason its field gives | accepted | TestACallThatCannotBeUndoneNeedsConfirm, TestAKindThatCannotBeUndoneTakesConfirm, TestAToolThatTakesConfirmIsAnnotatedDestructive |
 
 ### D-01 One stdio binary per person, on their own OAuth client
 
@@ -1850,7 +1851,7 @@ what a tool does to the world and which switch it sits behind.
 
 Rules kept by hand at every call site are ways to be quietly wrong, one
 tool at a time. A rule kept in one function holds for a tool added
-later. `register` panics at start on a combination it refuses (D-66),
+later. `register` panics at start on a combination it refuses (D-109),
 so the mistake fails in every configuration. Tests drive the surface in
 each mode, and the smoke gate drives the shipped binary in a mode per
 kind.
@@ -1894,7 +1895,7 @@ consent: the client gathers it "from the user or other sources"
 D-104 records why asking was declined.
 
 What holds on every client is what the server itself enforces:
-registration (D-64), `confirm` (D-66), the guards and witnesses (D-47,
+registration (D-64), `confirm` (D-109), the guards and witnesses (D-47,
 D-49), and `dry_run` (D-43). forbidigo refuses both ways of asking,
 `ServerSession.Elicit` and an input-required result. The test harness's
 client declares elicitation and fails any call that asks, so every tool
@@ -1906,6 +1907,9 @@ Cost: a client that runs with nobody watching makes every registered
 write. Leave the send, destructive and settings switches off for one.
 
 ### D-66 `confirm` is a witness on every write that cannot be undone, never approval
+
+Superseded by D-109, which checks `confirm` once in `register` rather
+than in each service.
 
 Every write that cannot be undone takes `confirm: true`: every delete,
 `create_trash_filter`, and `set_vacation` turning the reply on. It is a
@@ -2789,4 +2793,33 @@ Rejected: splitting `Kind` into an effect and a set of switches.
 Cost: a kind exists for each combination of effect and switch, and the
 vocabulary grows with them.
 
-Next ID: D-109
+### D-109 `confirm` is a witness `register` checks once, with the reason its field gives
+
+Every tool whose kind cannot be undone takes `confirm: true`: every
+delete and `create_trash_filter`. It is a witness that the caller meant
+the call, never approval, since the model sets it. `set_vacation` takes
+it too, but only to turn the reply on, so its service checks it.
+
+`register` refuses three things at start. A kind that cannot be undone
+must take `confirm`, a bool described as `must be true: ` and the
+reason. No other kind takes it but an auto-reply, so no `confirm` goes
+unchecked. A tool that takes it must be annotated destructive.
+
+The wrapper every handler runs in refuses a call to such a tool without
+`confirm` as `[blocked]`, before the handler, naming the tool and the
+reason the field gives. A dry run changes nothing, so it passes without
+`confirm`. One check holds every such tool, including one added later,
+and the model reads the same reason in the schema and in the refusal.
+
+The descriptions, the server instructions and the refusal say to pass
+it only when the person asked for that write. A model that passes it
+has read that sentence, which is all a witness can show.
+
+Rejected: each service refusing its absence in its own words, which a
+new tool's service can forget; `confirm` on a Write, which another
+write undoes, so the witness would be noise on every routine call.
+Cost: the refusal comes before the handler validates the input, so a
+call missing both `confirm` and a required input hears about `confirm`
+first.
+
+Next ID: D-110
