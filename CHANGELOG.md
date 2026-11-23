@@ -15,6 +15,10 @@ lifted verbatim.
 
 ## [Unreleased]
 
+### Changed
+
+- `golang.org/x/net` v0.63.0.
+
 ## [4.0.3] - 2026-11-16
 
 ### Changed
