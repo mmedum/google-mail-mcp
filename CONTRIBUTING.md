@@ -69,7 +69,7 @@ runs one.
 | `release` | `.goreleaser.yaml` against `release.yml`: the bundle signed, uploaded and attested | check |
 | `mcpb` | the bundle manifest against its vendored schema and the names the packer stages | check |
 | `server-json` | the registry entry against its vendored schema and the registry's rules | check |
-| `changelog` | a pull request adds a CHANGELOG entry, unless it cuts a release | CI |
+| `changelog` | a pull request adds a CHANGELOG entry, unless it cuts a release or only bumps the modules go.mod requires, the MCP SDK excepted | CI |
 | `schema-ack` | a pull request names each changed item of the tool surface in a commit footer | CI |
 | `release-notes` | one version's CHANGELOG section, which is the release note | release |
 | `mcpb-pack` | packs the bundle from what goreleaser built | release |
@@ -235,7 +235,9 @@ in `internal/gmail` needs a row in `testdata/api-fields.tsv`, and
 
 Every user-visible change gets an entry under `## [Unreleased]` in
 `CHANGELOG.md`, in the same pull request that makes the change. Leave out
-changes only contributors see, unless they must act on them.
+changes only contributors see, unless they must act on them. A bump of a
+module that go.mod requires needs no entry, unless it bumps the MCP SDK or
+fixes an advisory (`docs/release.md`).
 
 - **An entry is a bullet at the margin.** The `changelog` gate counts
   nothing else, and nothing in fenced code.

@@ -153,7 +153,7 @@ func init() {
 		"checklist": {run: checklist, runsIn: inCheck,
 			doc: "CLAUDE.md's definition of done against the Makefile's check: prerequisites"},
 		"changelog": {run: changelog, minArgs: 2, maxArgs: 2, args: "BASE HEAD", runsIn: inCI,
-			doc: "a pull request adds a CHANGELOG entry unless it is a release cut"},
+			doc: "a pull request adds a CHANGELOG entry unless it is a release cut or only bumps required modules, the MCP SDK excepted"},
 		"schema-ack": {run: schemaAck, minArgs: 2, maxArgs: 2, args: "BASE HEAD", runsIn: inCI,
 			doc: "a pull request's commits name, in a footer, each item of the tool surface it changes"},
 		"changelog-links": {run: changelogLinks, runsIn: inCheck,
