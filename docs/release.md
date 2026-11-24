@@ -16,10 +16,17 @@ provenance, and `publish-mcp.yml` then publishes the MCP registry entry.
   against what upstream serves.
 - `make release-rehearse` builds the release unsigned under `dist/`, and
   `make release-notes VERSION=Unreleased` prints the release page.
-- `make vuln` in a worktree of the previous tag. A dependency bump
-  carries no CHANGELOG line of its own. For each advisory reported there
-  and not at `HEAD`, find the change that cleared it. When that change is
-  a bump, the advisory gets its line under Security.
+- Run `govulncheck` on the previous tag. A dependency bump other than
+  the MCP SDK carries no CHANGELOG line of its own. For each advisory
+  reported there and not at `HEAD`, find the change that cleared it.
+  When that change is such a bump, the advisory gets its line under
+  Security.
+
+  ```bash
+  git worktree add ../google-mail-mcp-prev "$(git describe --tags --abbrev=0)"
+  make -C ../google-mail-mcp-prev vuln
+  git worktree remove ../google-mail-mcp-prev
+  ```
 - On a minor release, read what Google's hosted Gmail MCP server offers.
   If it gains trash, local attachment transfer and bounded reads, say so
   in the README's goals.
