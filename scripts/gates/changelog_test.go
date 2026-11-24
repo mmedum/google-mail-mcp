@@ -348,6 +348,12 @@ func TestChangelogCheckWaiverAndWatchedFiles(t *testing.T) {
 			"CHANGELOG.md":    "# Changelog\n\n## [Unreleased]\n\n## [0.1.0] - 2026-01-01\n\n- First.\n- Late.\n\n[Unreleased]: https://h\n",
 		}, "refactor\n\nChangelog: none, a rename", true},
 		{"a shipped file whose name git quotes", map[string]string{"internal/a/naïve notes.md": "x\n"}, "change", true},
+		{"a footer whose word ends with a period", map[string]string{"internal/a/a.go": "package a // renamed\n"},
+			"refactor\n\nChangelog: none. internal rename only", false},
+		{"a footer in the reference form", map[string]string{"internal/a/a.go": "package a // renamed\n"},
+			"refactor\n\nChangelog #none, a rename", true},
+		{"a bump of the MCP SDK with a footer", map[string]string{"internal/a/a.go": "package a // renamed\n",
+			"go.mod": strings.Replace(changelogGoMod, "go-sdk v1.8.0", "go-sdk v1.9.0", 1)}, "refactor\n\nChangelog: none, a rename", true},
 		{"the release build", map[string]string{".goreleaser.yaml": "version: 2\n"}, "change", true},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
@@ -368,5 +374,24 @@ func TestChangelogCheckWaiverAndWatchedFiles(t *testing.T) {
 				t.Errorf("changelogCheck = %v; want a pass", err)
 			}
 		})
+	}
+}
+
+// Only the newest commit's footer counts: it ends the squashed commit's
+// message, so a footer in an earlier commit waives nothing.
+func TestChangelogCheckReadsTheNewestCommitsFooter(t *testing.T) {
+	isolateGit(t)
+	root := gitRepo(t, map[string]string{
+		"CHANGELOG.md":    "# Changelog\n\n## [Unreleased]\n\n[Unreleased]: https://h\n",
+		"internal/a/a.go": "package a\n",
+		"go.mod":          changelogGoMod,
+	})
+	gitIn(t, root, "commit", "-q", "--allow-empty", "-m", "refactor\n\nChangelog: none, a rename")
+	writeFiles(t, root, map[string]string{"internal/a/a.go": "package a // renamed\n"})
+	gitIn(t, root, "add", "-A")
+	gitIn(t, root, "commit", "-qm", "refactor, part two")
+	var out sink
+	if err := changelogCheck(&out, root, "HEAD~2", "HEAD", map[string]bool{"internal/a": true}); err == nil {
+		t.Errorf("a footer in an earlier commit waived the entry: %s", out.String())
 	}
 }

@@ -239,9 +239,11 @@ changes only contributors see, unless they must act on them. A bump of a
 module that go.mod requires needs no entry, unless it bumps the MCP SDK or
 fixes an advisory (`docs/release.md`). A change nobody using the server can
 see, such as a refactor, ends a commit's message with a footer that says
-why: `Changelog: none, the text is unchanged line for line`. It covers the
-whole pull request, which lands as one squashed commit, so split a
-user-visible change into its own pull request.
+why: `Changelog: none, the text is unchanged line for line`. Only the
+newest commit's footer counts, since it ends the squashed commit's
+message, so put it there, and split a user-visible change into its own
+pull request. The footer waives nothing when the CHANGELOG changed, when
+go.mod changed outside its require lines, or when the MCP SDK moved.
 
 - **An entry is a bullet at the margin.** The `changelog` gate counts
   nothing else, and nothing in fenced code.
