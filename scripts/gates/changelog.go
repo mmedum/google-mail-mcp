@@ -23,7 +23,7 @@ const changelogFile = "CHANGELOG.md"
 // see named there. Tests and fixtures under them are not, and neither is
 // a Go package the binary does not link, such as the gmailtest fake:
 // they change nothing a user runs.
-var changelogWatched = []string{"cmd/", "internal/", "packaging/", "go.mod"}
+var changelogWatched = []string{"cmd/", "internal/", "packaging/", "go.mod", ".goreleaser.yaml"}
 
 var (
 	// changelogVersionHeading is a release heading. The version is semver,
@@ -89,11 +89,11 @@ func changelogCheck(out io.Writer, root, base, head string, shipped map[string]b
 		return err
 	}
 	base = strings.TrimSpace(mergeBase)
-	changed, err := gitOutput(root, "diff", "--name-only", base, head)
+	changed, err := gitOutput(root, "diff", "--name-only", "--no-renames", "-z", base, head)
 	if err != nil {
 		return err
 	}
-	files := strings.Fields(changed)
+	files := strings.FieldsFunc(changed, func(r rune) bool { return r == 0 })
 	touched := changelogTouched(files, shipped)
 	watched, err := withoutGoModBump(root, base, head, touched)
 	if err != nil {
@@ -114,11 +114,24 @@ func changelogCheck(out io.Writer, root, base, head string, shipped map[string]b
 	if err != nil {
 		return err
 	}
-	if strings.TrimSpace(diff) == "" {
-		return fmt.Errorf("%d shipped file(s) changed (%s) and %s did not", len(watched),
-			strings.Join(watched[:min(3, len(watched))], ", "), changelogFile)
+	n := 0
+	if strings.TrimSpace(diff) != "" {
+		n = changelogAddedUnderUnreleased(diff)
 	}
-	n := changelogAddedUnderUnreleased(diff)
+	if n == 0 {
+		log, err := gitOutput(root, "log", "--format=%B%x00", base+".."+head)
+		if err != nil {
+			return err
+		}
+		if reason := changelogWaiver(strings.Split(log, "\x00")); reason != "" {
+			_, _ = fmt.Fprintf(out, "changelog ok: %d shipped file(s) changed, and a commit says no entry is needed: %s\n", len(watched), reason)
+			return nil
+		}
+	}
+	if strings.TrimSpace(diff) == "" {
+		return fmt.Errorf("%d shipped file(s) changed (%s) and %s did not. If nothing a user sees changed, end a "+
+			"commit's message with `Changelog: none, <why>`", len(watched), strings.Join(watched[:min(3, len(watched))], ", "), changelogFile)
+	}
 	if n == 0 {
 		return fmt.Errorf("%s changed and no line was added under [Unreleased]; an entry under a released "+
 			"heading is invisible to the release it belongs to", changelogFile)
@@ -145,6 +158,28 @@ func changelogTouched(files []string, shipped map[string]bool) []string {
 		}
 	}
 	return out
+}
+
+// changelogWaiver is the reason a commit footer gives for needing no
+// entry: `Changelog: none, <why>`, the token and the word in any case. A
+// footer with no reason after "none" waives nothing.
+func changelogWaiver(messages []string) string {
+	for _, message := range messages {
+		for _, f := range footers(message) {
+			if !strings.EqualFold(f.token, "Changelog") {
+				continue
+			}
+			text := strings.TrimSpace(f.text)
+			end := strings.IndexAny(text, ",;:-— \n")
+			if end < 0 {
+				continue
+			}
+			if reason := strings.TrimSpace(strings.TrimLeft(text[end:], ",;:-— ")); strings.EqualFold(text[:end], "none") && reason != "" {
+				return reason
+			}
+		}
+	}
+	return ""
 }
 
 // changelogNotedModules need an entry whenever their version moves: the

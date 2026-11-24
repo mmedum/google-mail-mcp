@@ -320,3 +320,49 @@ func TestChangelogCheckFromTheMergeBase(t *testing.T) {
 	}
 	out.mustSay(t, "a dependency bump needs no entry")
 }
+
+// A change nobody using the server can see passes with a `Changelog: none`
+// footer that says why, in any case; a footer with no reason, or a word
+// that only starts with "none", waives nothing. A shipped file git quotes
+// and the release build are watched.
+func TestChangelogCheckWaiverAndWatchedFiles(t *testing.T) {
+	isolateGit(t)
+	shipped := map[string]bool{"internal/a": true}
+	for _, tc := range []struct {
+		name    string
+		files   map[string]string
+		message string
+		refused bool
+	}{
+		{"a refactor with a Changelog: none footer", map[string]string{"internal/a/a.go": "package a // renamed\n"},
+			"refactor\n\nChangelog: none, the text is unchanged line for line", false},
+		{"a Changelog: None footer in another case", map[string]string{"internal/a/a.go": "package a // renamed\n"},
+			"refactor\n\nChangelog: None, a rename", false},
+		{"a refactor with no footer", map[string]string{"internal/a/a.go": "package a // renamed\n"}, "refactor", true},
+		{"a Changelog: none footer with no reason", map[string]string{"internal/a/a.go": "package a // renamed\n"},
+			"refactor\n\nChangelog: none", true},
+		{"a Changelog footer whose word only starts with none", map[string]string{"internal/a/a.go": "package a // renamed\n"},
+			"change\n\nChangelog: nonetheless user-visible", true},
+		{"a shipped file whose name git quotes", map[string]string{"internal/a/naïve notes.md": "x\n"}, "change", true},
+		{"the release build", map[string]string{".goreleaser.yaml": "version: 2\n"}, "change", true},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			root := gitRepo(t, map[string]string{
+				"CHANGELOG.md":    "# Changelog\n\n## [Unreleased]\n\n[Unreleased]: https://h\n",
+				"internal/a/a.go": "package a\n",
+				"go.mod":          changelogGoMod,
+			})
+			writeFiles(t, root, tc.files)
+			gitIn(t, root, "add", "-A")
+			gitIn(t, root, "commit", "-qm", tc.message)
+			var out sink
+			err := changelogCheck(&out, root, "HEAD~1", "HEAD", shipped)
+			switch {
+			case tc.refused && err == nil:
+				t.Errorf("changelogCheck passed: %s; want a refusal", out.String())
+			case !tc.refused && err != nil:
+				t.Errorf("changelogCheck = %v; want a pass", err)
+			}
+		})
+	}
+}
