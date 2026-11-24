@@ -343,12 +343,16 @@ func TestChangelogCheckWaiverAndWatchedFiles(t *testing.T) {
 			"refactor\n\nChangelog: none", true},
 		{"a Changelog footer whose word only starts with none", map[string]string{"internal/a/a.go": "package a // renamed\n"},
 			"change\n\nChangelog: nonetheless user-visible", true},
+		{"a footer beside an entry under a released heading", map[string]string{
+			"internal/a/a.go": "package a // renamed\n",
+			"CHANGELOG.md":    "# Changelog\n\n## [Unreleased]\n\n## [0.1.0] - 2026-01-01\n\n- First.\n- Late.\n\n[Unreleased]: https://h\n",
+		}, "refactor\n\nChangelog: none, a rename", true},
 		{"a shipped file whose name git quotes", map[string]string{"internal/a/naïve notes.md": "x\n"}, "change", true},
 		{"the release build", map[string]string{".goreleaser.yaml": "version: 2\n"}, "change", true},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			root := gitRepo(t, map[string]string{
-				"CHANGELOG.md":    "# Changelog\n\n## [Unreleased]\n\n[Unreleased]: https://h\n",
+				"CHANGELOG.md":    "# Changelog\n\n## [Unreleased]\n\n## [0.1.0] - 2026-01-01\n\n- First.\n\n[Unreleased]: https://h\n",
 				"internal/a/a.go": "package a\n",
 				"go.mod":          changelogGoMod,
 			})

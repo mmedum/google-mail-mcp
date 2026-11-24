@@ -18,7 +18,6 @@ lifted verbatim.
 ### Changed
 
 - `golang.org/x/net` v0.63.0.
-- For contributors: a change nobody using the server can see passes the `changelog` gate with a `Changelog: none, <why>` commit footer.
 
 ## [4.0.3] - 2026-11-16
 

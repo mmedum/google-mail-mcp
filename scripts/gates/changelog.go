@@ -13,13 +13,13 @@ import (
 )
 
 // The CHANGELOG gates: a pull request that changes what ships adds an
-// entry under [Unreleased] (`changelog`, CI only, since it needs the
-// pull request's base), and every heading has its link reference
-// (`changelog-links`, in check, since it reads one file).
+// entry under [Unreleased] or says `Changelog: none, <why>` (`changelog`,
+// CI only, since it needs the pull request's base), and every heading has
+// its link reference (`changelog-links`, in check, since it reads one file).
 
 const changelogFile = "CHANGELOG.md"
 
-// changelogWatched are the trees a reader of the changelog expects to
+// changelogWatched are the trees and files a reader of the changelog expects to
 // see named there. Tests and fixtures under them are not, and neither is
 // a Go package the binary does not link, such as the gmailtest fake:
 // they change nothing a user runs.
@@ -79,7 +79,8 @@ func shippedPackageDirs(root string) (map[string]bool, error) {
 }
 
 // changelogCheck fails when the diff from base to head touches watched
-// source without adding a line under [Unreleased]. shipped holds the
+// source without adding a line under [Unreleased], unless the CHANGELOG is
+// untouched and a commit says `Changelog: none, <why>`. shipped holds the
 // package directories the binary links.
 func changelogCheck(out io.Writer, root, base, head string, shipped map[string]bool) error {
 	// Measured from the merge-base, so a base branch that moved on, its
@@ -114,11 +115,11 @@ func changelogCheck(out io.Writer, root, base, head string, shipped map[string]b
 	if err != nil {
 		return err
 	}
-	n := 0
-	if strings.TrimSpace(diff) != "" {
-		n = changelogAddedUnderUnreleased(diff)
-	}
-	if n == 0 {
+	const hint = "If nothing a user sees changed, leave the CHANGELOG as it is and end a commit's message with " +
+		"`Changelog: none, <why>`"
+	if strings.TrimSpace(diff) == "" {
+		// The waiver is read only here: a CHANGELOG the pull request changed
+		// is judged by its entries, so a footer cannot hide a misplaced one.
 		log, err := gitOutput(root, "log", "--format=%B%x00", base+".."+head)
 		if err != nil {
 			return err
@@ -127,14 +128,13 @@ func changelogCheck(out io.Writer, root, base, head string, shipped map[string]b
 			_, _ = fmt.Fprintf(out, "changelog ok: %d shipped file(s) changed, and a commit says no entry is needed: %s\n", len(watched), reason)
 			return nil
 		}
+		return fmt.Errorf("%d shipped file(s) changed (%s) and %s did not. %s", len(watched),
+			strings.Join(watched[:min(3, len(watched))], ", "), changelogFile, hint)
 	}
-	if strings.TrimSpace(diff) == "" {
-		return fmt.Errorf("%d shipped file(s) changed (%s) and %s did not. If nothing a user sees changed, end a "+
-			"commit's message with `Changelog: none, <why>`", len(watched), strings.Join(watched[:min(3, len(watched))], ", "), changelogFile)
-	}
+	n := changelogAddedUnderUnreleased(diff)
 	if n == 0 {
 		return fmt.Errorf("%s changed and no line was added under [Unreleased]; an entry under a released "+
-			"heading is invisible to the release it belongs to", changelogFile)
+			"heading is invisible to the release it belongs to. %s", changelogFile, hint)
 	}
 	_, _ = fmt.Fprintf(out, "changelog ok: %d shipped file(s) changed, %d line(s) added under [Unreleased]\n", len(watched), n)
 	return nil
