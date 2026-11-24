@@ -176,7 +176,7 @@ checklist: ## CLAUDE.md's definition of done against `check`
 	$(GATES) checklist
 
 .PHONY: changelog
-changelog: ## A pull request adds a CHANGELOG entry, unless it cuts a release
+changelog: ## A pull request adds a CHANGELOG entry, unless it cuts a release or only bumps required modules
 	$(GATES) changelog $(CHANGELOG_BASE) $(CHANGELOG_HEAD)
 
 .PHONY: schema-ack

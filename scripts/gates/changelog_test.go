@@ -219,3 +219,104 @@ func TestChecklist(t *testing.T) {
 		t.Error("a CLAUDE.md with no definition of done was accepted")
 	}
 }
+
+// changelogGoMod is go.mod as the go command writes it, with both forms
+// of require.
+const changelogGoMod = "module m\n\ngo 1.27.4\n\nrequire (\n\texample.com/a v1.0.0\n\tgithub.com/modelcontextprotocol/go-sdk v1.8.0\n" +
+	"\texample.com/b v0.1.0 // indirect\n)\n\nrequire example.com/c v1.2.0\n"
+
+// changelogGoModCommented carries the comments the go command keeps after
+// `require (` and after `)`.
+var changelogGoModCommented = strings.NewReplacer("require (\n", "require ( // direct\n", ")\n\n", ") // direct\n\n").
+	Replace(changelogGoMod)
+
+// A go.mod that changed only in its require entries needs no entry; any
+// other change to it, or a bump of the MCP SDK, still does.
+func TestChangelogCheckDependencyBump(t *testing.T) {
+	isolateGit(t)
+	bumpA := strings.NewReplacer("a v1.0.0", "a v1.1.0")
+	cases := []struct {
+		name  string
+		goMod string // the base's go.mod; empty: changelogGoMod
+		files map[string]string
+		want  string // empty: passes
+	}{
+		{"a dependency bump", "", map[string]string{
+			"go.mod": strings.NewReplacer("a v1.0.0", "a v1.1.0", "c v1.2.0", "c v1.3.0",
+				"// indirect\n)", "// indirect\n\texample.com/d v0.2.0 // indirect\n)").Replace(changelogGoMod),
+		}, ""},
+		{"a dependency bump between commented parens", changelogGoModCommented, map[string]string{
+			"go.mod": bumpA.Replace(changelogGoModCommented),
+		}, ""},
+		{"a dependency bump with code", "", map[string]string{
+			"go.mod":          bumpA.Replace(changelogGoMod),
+			"internal/a/a.go": "package a // changed\n",
+		}, "1 shipped file(s) changed (internal/a/a.go)"},
+		{"a go directive change", "", map[string]string{
+			"go.mod": strings.Replace(changelogGoMod, "go 1.27.4", "go 1.27.5", 1),
+		}, "1 shipped file(s) changed (go.mod)"},
+		{"a toolchain directive", "", map[string]string{
+			"go.mod": strings.Replace(changelogGoMod, "go 1.27.4\n", "go 1.27.4\n\ntoolchain go1.27.5\n", 1),
+		}, "1 shipped file(s) changed (go.mod)"},
+		{"a replace after a commented paren", changelogGoModCommented, map[string]string{
+			"go.mod": changelogGoModCommented + "\nreplace example.com/a => example.com/fork v1.0.0\n",
+		}, "1 shipped file(s) changed (go.mod)"},
+		{"a bump of the MCP SDK", "", map[string]string{
+			"go.mod": strings.Replace(changelogGoMod, "go-sdk v1.8.0", "go-sdk v1.9.0", 1),
+		}, "1 shipped file(s) changed (go.mod)"},
+		{"a require block left open", "", map[string]string{
+			"go.mod": bumpA.Replace(strings.Replace(changelogGoMod, ")\n", "", 1)),
+		}, "1 shipped file(s) changed (go.mod)"},
+		{"a bump in a require the go command would not spell", strings.Replace(changelogGoMod, "require (", "require(", 1),
+			map[string]string{"go.mod": bumpA.Replace(strings.Replace(changelogGoMod, "require (", "require(", 1))},
+			"1 shipped file(s) changed (go.mod)"},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			goMod := tc.goMod
+			if goMod == "" {
+				goMod = changelogGoMod
+			}
+			root := gitRepo(t, map[string]string{
+				"CHANGELOG.md":    "# Changelog\n\n## [Unreleased]\n\n[Unreleased]: https://h\n",
+				"internal/a/a.go": "package a\n",
+				"go.mod":          goMod,
+			})
+			writeFiles(t, root, tc.files)
+			gitIn(t, root, "commit", "-qam", "topic")
+			var out sink
+			err := changelogCheck(&out, root, "HEAD~1", "HEAD", map[string]bool{"internal/a": true})
+			switch {
+			case tc.want == "" && err != nil:
+				t.Errorf("want a pass, got %v", err)
+			case tc.want == "":
+				out.mustSay(t, "a dependency bump needs no entry")
+			case err == nil || !strings.Contains(err.Error(), tc.want):
+				t.Errorf("want an error with %q, got %v", tc.want, err)
+			}
+		})
+	}
+}
+
+// A base branch that moved its go directive after the fork leaves a
+// topic's dependency bump a bump: the gate measures from the merge-base.
+func TestChangelogCheckFromTheMergeBase(t *testing.T) {
+	isolateGit(t)
+	root := gitRepo(t, map[string]string{
+		"CHANGELOG.md":    "# Changelog\n\n## [Unreleased]\n\n[Unreleased]: https://h\n",
+		"internal/a/a.go": "package a\n",
+		"go.mod":          changelogGoMod,
+	})
+	gitIn(t, root, "branch", "base")
+	gitIn(t, root, "checkout", "-q", "-b", "topic")
+	writeFiles(t, root, map[string]string{"go.mod": strings.Replace(changelogGoMod, "a v1.0.0", "a v1.1.0", 1)})
+	gitIn(t, root, "commit", "-qam", "bump")
+	gitIn(t, root, "checkout", "-q", "base")
+	writeFiles(t, root, map[string]string{"go.mod": strings.Replace(changelogGoMod, "go 1.27.4", "go 1.27.5", 1)})
+	gitIn(t, root, "commit", "-qam", "base moved")
+	var out sink
+	if err := changelogCheck(&out, root, "base", "topic", map[string]bool{"internal/a": true}); err != nil {
+		t.Fatalf("a bump on a branch whose base moved failed: %v", err)
+	}
+	out.mustSay(t, "a dependency bump needs no entry")
+}
