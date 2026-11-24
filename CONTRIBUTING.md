@@ -237,7 +237,11 @@ Every user-visible change gets an entry under `## [Unreleased]` in
 `CHANGELOG.md`, in the same pull request that makes the change. Leave out
 changes only contributors see, unless they must act on them. A bump of a
 module that go.mod requires needs no entry, unless it bumps the MCP SDK or
-fixes an advisory (`docs/release.md`).
+fixes an advisory (`docs/release.md`). A change nobody using the server can
+see, such as a refactor, ends a commit's message with a footer that says
+why: `Changelog: none, the text is unchanged line for line`. It covers the
+whole pull request, which lands as one squashed commit, so split a
+user-visible change into its own pull request.
 
 - **An entry is a bullet at the margin.** The `changelog` gate counts
   nothing else, and nothing in fenced code.
